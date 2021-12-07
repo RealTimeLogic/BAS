@@ -159,3 +159,39 @@ The above construction makes Lua use integer only and excludes floating point nu
 * LUA_NUMBER_INTEGER=0
 
 See inc/arch/XXX/luaconf.h for details.
+
+# Additional Build Examples
+
+## VxWorks
+
+The following example shows how to compile Mako Server for VxWorks 7. Use the LSP Application Manager example if you are using an older VxWorks version.
+
+```
+wr-cc -o examples/MakoServer/mako -fmerge-all-constants \
+    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_HAS_ANSI_IO -DMAKO -DUSE_SQL=0\
+    -DLUA_NUMBER_INTEGER=0\
+    -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
+    src/BAS.c\
+    src/arch/VxWorks/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
+    examples/MakoServer/src/MakoMain.c\
+    -lnet
+```
+
+Note that we are not including SQLite support. You can include SQLite by using the SQLite version provided by Wind River.
+
+## ThreadX/NetX using IAR
+
+The following example shows how to compile the generic BAS library for ThreadX and NetX using IAR for ARM. We have the following directories tx (ThreadX), nx (NetX), and BAS.
+
+```
+iccarm -e -c --diag_suppress pe188,Pa089,Pe546^
+  -Itx -Inx^
+  -IBAS/inc -IBAS/inc/arch/ThreadX^
+  BAS/src/BAS.c
+```
+
+Using the above compilation settings, you would also need to include src/arch/ThreadX/ThreadLib.c, src/arch/ThreadX/SoDisp.c, and optionally src/DiskIo/FileX/BaFile.c.
+
+## FreeRTOS/lwIP for ESP32
+
+See the [ESP32 IoT Developer Prototyping Kit](https://realtimelogic.com/downloads/bas/ESP32/) tutorial.

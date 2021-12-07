@@ -11,6 +11,9 @@
 #define LUA_NOIOLIB
 #define LUA_PATH_DEFAULT ""
 #define LUA_CPATH_DEFAULT ""
+#ifndef lua_getlocaledecpoint
+#define lua_getlocaledecpoint() '.'
+#endif
 
 /* Redirect sprintf functions to the more stack friendly BA versions */
 #undef snprintf
