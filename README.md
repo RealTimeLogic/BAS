@@ -1,7 +1,13 @@
 # BAS Amalgamated
 ### Barracuda App Server Amalgamated
 
-Speed up your IoT and edge computing design with the Barracuda App Server, a compact client/server multi-protocol stack and toolkit with an efficient integrated scripting engine. The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. See the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
+Speed up your IoT and edge computing design with the Barracuda App Server, a compact client/server multi-protocol stack and toolkit with an efficient integrated scripting engine.
+
+![Barracuda App Server Amalgamated](https://realtimelogic.com/images/BarracudaAppServer.png)
+
+The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. See the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
+
+## Components
 
 BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amalgamated includes all APIs found in the BAS SDK, but with a limited set of examples and tools. BAS Amalgamated includes the following source code components.  
 
@@ -9,6 +15,12 @@ BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amal
 * ThreadLib.c: Kernel porting layer
 * SoDisp.c: TCP/IP porting layer (the socket dispatcher)
 * BaFile.c: File system porting layer (optional)
+
+## Who Can Use BAS Amalgamated
+
+BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section just below the [Porting instructions](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
+
+## How To Compile
 
 To compile BAS, include BAS.c, src/arch/XXX/ThreadLib.c, src/arch/NET/XXX/SoDisp.c, and optionally src/DiskIo/XXX/BaFile.c, where XXX is the required porting layer. In addition, the compiler's include path must include inc/arch/XXX, inc/arch/NET/XXX, and optionally inc/DiskIo/XXX
 
@@ -19,11 +31,11 @@ BAS is extremely flexible and can, for example, be used as follows:
 
 BAS Amalgamated is very easy to compile and several command line compilation examples are shown below. You can add the code to any IDE and Makefile system.
 
-### BAS Amalgamated Examples
+## BAS Amalgamated Examples
 
 BAS Amalgamated includes two examples from the BAS SDK, the [Mako Server](https://realtimelogic.com/ba/doc/?url=Mako.html) and the [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html). The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS.
 
-#### Mako Server
+### Mako Server
 
 The following example builds the Mako Server without SQLite for HLOS. You can copy and paste the command into a Linux shell. Note that you can also download pre-compiled Mako Server versions for many operating systems on the [Mako Server Web Site](https://makoserver.net/).
 
@@ -90,7 +102,7 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
     -lpthread -lm -ldl
 ```
 
-#### LSP Application Manager
+### LSP Application Manager
 
 The [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html) is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following examples.
 
