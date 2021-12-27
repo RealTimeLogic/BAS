@@ -17,7 +17,7 @@ The amalgamation includes the following components:
 3: BAS-Amalgamated (GPLv3, or custom; See LICENSE file)
 */
 
-	
+
 #ifdef _WIN32
 #else /*  _WIN32 */
 #define _GNU_SOURCE
@@ -42,9 +42,7 @@ void sendFatalError(const char* eMsg,
 
 #include <SharkSSL.h>
 #include <SharkSslASN1.h>
-
-
-
+	
 
  /******************************* BEGIN LUA ***********************************/
 
@@ -31201,8 +31199,8 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len);
 #define cacherange                 0x8
 
 
-#define asixppresource                       rewindsingle
-#define fixupvideo                        ts409partitions
+#define SHARKSSL_KEYTYPE_RSA                       rewindsingle
+#define SHARKSSL_KEYTYPE_EC                        ts409partitions
 
 #define coupledexynos(e)               (mcbspregister(e) & cacherange)
 #define allocatoralloc(e)             (mcbspregister(e) & mutantchannel)
@@ -31233,14 +31231,14 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len);
 
 
 #if (SHARKSSL_ENABLE_CA_LIST  || SHARKSSL_ENABLE_CERTSTORE_API)
-#define writeunlock                 8
-#define nativeiosapic              (writeunlock + 4)
-#define registermmcsd0                0x00
+#define SHARKSSL_CA_LIST_NAME_SIZE                 8
+#define nativeiosapic              (SHARKSSL_CA_LIST_NAME_SIZE + 4)
+#define SHARKSSL_CA_LIST_INDEX_TYPE                0x00
 
 #ifdef __IAR_SYSTEMS_ICC__
 
 #else
-#if (writeunlock != claimresource(writeunlock))
+#if (SHARKSSL_CA_LIST_NAME_SIZE != claimresource(SHARKSSL_CA_LIST_NAME_SIZE))
 #error SHARKSSL CA_STORE_API: UNSUPPORTED CA_LIST_NAME_SIZE
 #endif
 #endif
@@ -31250,8 +31248,8 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len);
 #define SHARKSSL_CA_LIST_PTR_TYPE                  0xAD
 #define SHARKSSL_MAX_SNAME_LEN                     32
 
-#if (SHARKSSL_MAX_SNAME_LEN < writeunlock)
-#error SHARKS_MAX_SNAME_LEN must be >= writeunlock
+#if (SHARKSSL_MAX_SNAME_LEN < SHARKSSL_CA_LIST_NAME_SIZE)
+#error SHARKS_MAX_SNAME_LEN must be >= SHARKSSL_CA_LIST_NAME_SIZE
 #endif
 
 typedef struct SharkSslCSCert
@@ -31411,7 +31409,7 @@ int  systemcapabilities(const SharkSslSignParam*);
 SHARKSSL_API int  spromregister(SharkSslCertParam*, const U8*, U32, U8*);
 U8   SharkSslCertDN_equal(const SharkSslCertDN*, const SharkSslCertDN*);
 SHARKSSL_API U16 interrupthandler(SharkSslCertKey*, SharkSslCert);
-U16  multistate(const SharkSslCert, U8*);
+U16  SharkSslCert_vectSize_keyType(const SharkSslCert, U8*);
 #if SHARKSSL_ENABLE_CLIENT_AUTH
 U8   domainassociate(SharkSslCert, U8*, U16);
 #endif
@@ -34072,7 +34070,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   #if SHARKSSL_ENABLE_CERTSTORE_API
                   baAssert(SHARKSSL_CA_LIST_PTR_SIZE == claimresource(SHARKSSL_CA_LIST_PTR_SIZE));
                   #endif
-                  if ((o->caListCertReq[0] != registermmcsd0)
+                  if ((o->caListCertReq[0] != SHARKSSL_CA_LIST_INDEX_TYPE)
                         #if SHARKSSL_ENABLE_CERTSTORE_API
                         && (o->caListCertReq[0] != SHARKSSL_CA_LIST_PTR_TYPE)
                         #endif
@@ -34094,16 +34092,16 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      #if SHARKSSL_ENABLE_CERTSTORE_API
                      if (o->caListCertReq[0] == SHARKSSL_CA_LIST_PTR_TYPE)
                      {
-                        pCert = *(SharkSslCert*)&cp[writeunlock];
-                        cp += writeunlock + SHARKSSL_CA_LIST_PTR_SIZE;  
+                        pCert = *(SharkSslCert*)&cp[SHARKSSL_CA_LIST_NAME_SIZE];
+                        cp += SHARKSSL_CA_LIST_NAME_SIZE + SHARKSSL_CA_LIST_PTR_SIZE;  
                      }
                      else
                      #endif
                      {
-                        crLen  = (U32)cp[writeunlock+0] << 24;
-                        crLen += (U32)cp[writeunlock+1] << 16;
-                        crLen += (U16)cp[writeunlock+2] << 8;
-                        crLen +=      cp[writeunlock+3];
+                        crLen  = (U32)cp[SHARKSSL_CA_LIST_NAME_SIZE+0] << 24;
+                        crLen += (U32)cp[SHARKSSL_CA_LIST_NAME_SIZE+1] << 16;
+                        crLen += (U16)cp[SHARKSSL_CA_LIST_NAME_SIZE+2] << 8;
+                        crLen +=      cp[SHARKSSL_CA_LIST_NAME_SIZE+3];
                         pCert  = (SharkSslCert)&(o->caListCertReq[crLen]);
                         cp    += nativeiosapic;  
                      }
@@ -35566,11 +35564,11 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   csLen = nativeiosapic;
                   if (o->sharkSsl->caList[0] == SHARKSSL_CA_LIST_PTR_TYPE)
                   {
-                     csLen = writeunlock + SHARKSSL_CA_LIST_PTR_SIZE;
+                     csLen = SHARKSSL_CA_LIST_NAME_SIZE + SHARKSSL_CA_LIST_PTR_SIZE;
                   }
                   else
                   #endif
-                  if (o->sharkSsl->caList[0] != registermmcsd0)
+                  if (o->sharkSsl->caList[0] != SHARKSSL_CA_LIST_INDEX_TYPE)
                   {
                      return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
                   }
@@ -35590,24 +35588,24 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
 
                   
                   sp = afterhandler;
-                  afterhandler += writeunlock;
+                  afterhandler += SHARKSSL_CA_LIST_NAME_SIZE;
 
                   
                   i = 0;
                   if ((certParam->certInfo.issuer.commonName) && (certParam->certInfo.issuer.commonNameLen))
                   {
                      i = certParam->certInfo.issuer.commonNameLen;
-                     memcpy(sp, certParam->certInfo.issuer.commonName, writeunlock);
+                     memcpy(sp, certParam->certInfo.issuer.commonName, SHARKSSL_CA_LIST_NAME_SIZE);
                   }
                   else if ((certParam->certInfo.issuer.organization) && (certParam->certInfo.issuer.organizationLen))
                   {
                      i = certParam->certInfo.issuer.organizationLen;
-                     memcpy(sp, certParam->certInfo.issuer.organization, writeunlock);
+                     memcpy(sp, certParam->certInfo.issuer.organization, SHARKSSL_CA_LIST_NAME_SIZE);
                   }
                   
-                  if (i >= writeunlock)
+                  if (i >= SHARKSSL_CA_LIST_NAME_SIZE)
                   {
-                     i = writeunlock;
+                     i = SHARKSSL_CA_LIST_NAME_SIZE;
                   }
                   if (i == 0)
                   {
@@ -35638,15 +35636,15 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                         #if SHARKSSL_ENABLE_CERTSTORE_API
                         if (o->sharkSsl->caList[0] == SHARKSSL_CA_LIST_PTR_TYPE)
                         {
-                           tb = *(U8**)&tp[writeunlock];
+                           tb = *(U8**)&tp[SHARKSSL_CA_LIST_NAME_SIZE];
                         }
                         else
                         #endif
                         {
-                           crLen  = (U32)tp[writeunlock+0] << 24;
-                           crLen += (U32)tp[writeunlock+1] << 16;
-                           crLen += (U16)tp[writeunlock+2] << 8;
-                           crLen +=      tp[writeunlock+3];
+                           crLen  = (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE+0] << 24;
+                           crLen += (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE+1] << 16;
+                           crLen += (U16)tp[SHARKSSL_CA_LIST_NAME_SIZE+2] << 8;
+                           crLen +=      tp[SHARKSSL_CA_LIST_NAME_SIZE+3];
                            #if SHARKSSL_ENABLE_CERTSTORE_API
                            tb = (U8*)&(o->sharkSsl->caList[crLen]);
                            #endif
@@ -70075,7 +70073,7 @@ U16 interrupthandler(SharkSslCertKey *disableclock, SharkSslCert kernelvaddr)
 
 
 
-U16  multistate(const SharkSslCert kernelvaddr, U8 *earlyconsole)
+U16  SharkSslCert_vectSize_keyType(const SharkSslCert kernelvaddr, U8 *earlyconsole)
 {
    SharkSslCertKey disableclock;
    U16 icachealiases;
@@ -70096,7 +70094,7 @@ U16  multistate(const SharkSslCert kernelvaddr, U8 *earlyconsole)
       {
          if (earlyconsole)
          {
-            *earlyconsole = asixppresource;
+            *earlyconsole = SHARKSSL_KEYTYPE_RSA;
          }
          
          icachealiases += supportedvector(disableclock.modLen);
@@ -70110,7 +70108,7 @@ U16  multistate(const SharkSslCert kernelvaddr, U8 *earlyconsole)
       {
          if (earlyconsole)
          {
-            *earlyconsole = fixupvideo;
+            *earlyconsole = SHARKSSL_KEYTYPE_EC;
          }
          
          icachealiases += (U16)(2 * attachdevice(disableclock.modLen));
@@ -70146,7 +70144,7 @@ U16  multistate(const SharkSslCert kernelvaddr, U8 *earlyconsole)
 
 SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey sourcerouting)
 {
-   return multistate((SharkSslCert)sourcerouting, (U8*)0);
+   return SharkSslCert_vectSize_keyType((SharkSslCert)sourcerouting, (U8*)0);
 }
 
 
@@ -72568,7 +72566,7 @@ SharkSslCertStore_assemble(SharkSslCertStore *o, SharkSslCAList *flushcounts)
    }
    else
    {
-      p = (U8*)baMalloc(4 + o->elements * (writeunlock +
+      p = (U8*)baMalloc(4 + o->elements * (SHARKSSL_CA_LIST_NAME_SIZE +
                                            SHARKSSL_CA_LIST_PTR_SIZE));
       *flushcounts = o->caList = (SharkSslCAList)p;
       if (p == (void*)0)
@@ -72585,8 +72583,8 @@ SharkSslCertStore_assemble(SharkSslCertStore *o, SharkSslCAList *flushcounts)
       for (kernelvaddr = (SharkSslCSCert*)DoubleListEnumerator_getElement(&instructioncounter); kernelvaddr;
            kernelvaddr = (SharkSslCSCert*)DoubleListEnumerator_nextElement(&instructioncounter))
       {
-         memcpy(p, kernelvaddr->name, writeunlock);
-         p += writeunlock;
+         memcpy(p, kernelvaddr->name, SHARKSSL_CA_LIST_NAME_SIZE);
+         p += SHARKSSL_CA_LIST_NAME_SIZE;
          *(U8**)p = kernelvaddr->ptr;
          p += SHARKSSL_CA_LIST_PTR_SIZE;
       }
@@ -98837,7 +98835,7 @@ flash1partitions(lua_State *L)
    if(SharkSslCertStore_assemble(cs, &ca))
    {
       
-      size_t listOff = (4 + cs->elements * (writeunlock
+      size_t listOff = (4 + cs->elements * (SHARKSSL_CA_LIST_NAME_SIZE
                                              + SHARKSSL_CA_LIST_PTR_SIZE));
       size_t icachealiases = listOff;
       DoubleListEnumerator_constructor(&instructioncounter, &cs->certList);
@@ -98848,7 +98846,7 @@ flash1partitions(lua_State *L)
       }
       p = alloccontroller = (U8*)lua_newuserdata(L, icachealiases);
 
-      *p++ = registermmcsd0;
+      *p++ = SHARKSSL_CA_LIST_INDEX_TYPE;
       *p++ = 0;
       *p++ = (U8)(((cs->elements) >> 8));
       *p++ = (U8)((cs->elements) & 0xFF);
@@ -98858,8 +98856,8 @@ flash1partitions(lua_State *L)
            kernelvaddr = (SharkSslCSCert*)DoubleListEnumerator_nextElement(&instructioncounter))
       {
          size_t certSize;
-         memcpy(p, kernelvaddr->name, writeunlock);
-         p += writeunlock;
+         memcpy(p, kernelvaddr->name, SHARKSSL_CA_LIST_NAME_SIZE);
+         p += SHARKSSL_CA_LIST_NAME_SIZE;
          *p++ = (U8)(listOff >> 24);
          *p++ = (U8)(listOff >> 16);
          *p++ = (U8)(listOff >>  8);
