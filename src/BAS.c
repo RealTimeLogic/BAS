@@ -38743,6 +38743,7 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
          switch (*fmt)
          {
             case '\160': driverchipcommon |= FLAG_POINTER;
+               
             case '\170': case '\130':
             case '\157': case '\165':
             case '\144': case '\151':
@@ -83782,14 +83783,9 @@ namedentries(IoIntfPtr fdc37m81xconfig, const char* gpio1config, void* a, void* 
       if( (handlersetup < 0 && ! strcmp(gpio1config, "\143\154\157\163\145")) ||
           ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
       {
-         if(o->lstream->f)
-         {
-            handlersetup = 0;
-            lua_rawgeti(o->L, LUA_REGISTRYINDEX, o->fileRef);
-            lua_pop(o->L, f_close(o->L)+1);
-         }
          luaL_unref(o->L, LUA_REGISTRYINDEX, o->fileRef);
          o->lstream=0;
+         handlersetup=0;
       }
    }
    return handlersetup;
