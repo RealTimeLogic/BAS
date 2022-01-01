@@ -20,6 +20,11 @@ BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amal
 
 BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section just below the [Porting instructions](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
 
+## Before Downloading the Source Code
+
+The Barracuda App Server is a complex product with many options. Before downloading the source, download one of the [pre-compiled binaries with included Lua tutorials](https://realtimelogic.com/downloads/bas/). For FreeRTOS users: check out the super easy to use [ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) designed for educational purposes.
+
+
 ## How To Compile
 
 To compile BAS, include BAS.c, src/arch/XXX/ThreadLib.c, src/arch/NET/XXX/SoDisp.c, and optionally src/DiskIo/XXX/BaFile.c, where XXX is the required porting layer. In addition, the compiler's include path must include inc/arch/XXX, inc/arch/NET/XXX, and optionally inc/DiskIo/XXX
