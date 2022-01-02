@@ -40,7 +40,7 @@ BAS Amalgamated is very easy to compile and several command line compilation exa
 
 BAS Amalgamated includes two examples from the BAS SDK, the [Mako Server](https://realtimelogic.com/ba/doc/?url=Mako.html) and the [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html). The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS.
 
-### Mako Server
+### Mako Server (HLOS)
 
 The following example builds the Mako Server without SQLite for HLOS. You can copy and paste the command into a Linux shell. Note that you can also download pre-compiled Mako Server versions for many operating systems on the [Mako Server Web Site](https://makoserver.net/).
 
@@ -107,7 +107,7 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
     -lpthread -lm -ldl
 ```
 
-### LSP Application Manager
+### LSP Application Manager (RTOS)
 
 The [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html) is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following examples.
 
@@ -209,6 +209,6 @@ iccarm -e -c --diag_suppress pe188,Pa089,Pe546^
 
 Using the above compilation settings, you would also need to include src/arch/ThreadX/ThreadLib.c, src/arch/ThreadX/SoDisp.c, and optionally src/DiskIo/FileX/BaFile.c.
 
-## FreeRTOS/lwIP for ESP32
+## FreeRTOS IoT Educational Kit
 
-See the [ESP32 IoT Developer Prototyping Kit](https://realtimelogic.com/downloads/bas/ESP32/) tutorial.
+Check out the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) if you are interested in testing the Barracuda App Server on a FreeRTOS powered ESP32. The ESP32 is great for educational purposes.
