@@ -1,3 +1,8 @@
+#!/bin/bash
+# Compile Mako Server as follows:
+#  wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+# Details: https://github.com/RealTimeLogic/BAS
+
 
 function abort() {
     printf "$1\n\n";
@@ -11,10 +16,10 @@ function install() {
 
 if [  -z ${CC+x} ]; then
     command -v gcc >/dev/null 2>&1 || install
-    echo "Using the gcc compiler"
-else
-    echo "Using compiler $CC"
+    CC=gcc
+    echo "Setting default compiler"
 fi
+echo "Using compiler $CC"
 command -v git >/dev/null 2>&1 || install
 command -v unzip >/dev/null 2>&1 || install
 
@@ -35,7 +40,7 @@ if ! [ -f "src/sqlite3.c" ]; then
     echo "Downloading: $SQLITE"
     wget --no-check-certificate $SQLITE || abort $LINENO
     SQLITE=${SQLITE##*/}
-    unzip $SQLITE || abort $LINENO
+    unzip -o $SQLITE || abort $LINENO
     popd
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
 fi
