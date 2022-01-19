@@ -47,7 +47,7 @@ fi
 
 echo "Compiling using $CC........"
 $CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_64BIT -DLUA_USE_LINUX -DMAKO\
+    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\

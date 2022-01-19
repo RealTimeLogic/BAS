@@ -46,7 +46,7 @@ The following example builds the Mako Server without SQLite for HLOS. You can co
 
 ```
 gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_64BIT -DLUA_USE_LINUX -DMAKO -DUSE_SQL=0\
+    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO -DUSE_SQL=0\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
@@ -90,7 +90,7 @@ cl /O2^
  /link /machine:X64 /OUT:examples/MakoServer/mako.exe
 ```
 
-The above command requires setting up the [command line for 64 bit compilation](https://docs.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170). The above can be copied and pasted "as is" into a command window. Note that we do not need to add /DBA_64BIT since this is picked up automatically when the compiler environment for Windows is set to 64 bit.
+The above command requires setting up the [command line for 64 bit compilation](https://docs.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170). The above can be copied and pasted "as is" into a command window.
 
 **Including SQLite in the Build**
 
@@ -98,7 +98,7 @@ The Mako Server can optionally be linked with the SQLite database engine. The fo
 
 ```
 gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_64BIT -DLUA_USE_LINUX -DMAKO\
+    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
