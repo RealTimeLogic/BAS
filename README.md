@@ -184,7 +184,7 @@ See inc/arch/XXX/luaconf.h for details.
 The following example shows how to compile Mako Server for VxWorks 7. Use the LSP Application Manager example if you are using an older VxWorks version.
 
 ```
-wr-cc -o examples/MakoServer/mako -fmerge-all-constants \
+wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_HAS_ANSI_IO -DMAKO -DUSE_SQL=0\
     -DLUA_NUMBER_INTEGER=0\
     -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
