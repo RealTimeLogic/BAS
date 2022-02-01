@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: LspAppMgr.c 5065 2022-01-31 23:53:26Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2021
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2022
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -400,6 +400,9 @@ barracuda(void)
    /* Add reverse server connection. This requires SharkTrustX.
     */
    balua_revcon(L);
+#endif
+#if USE_DLMALLOC
+   balua_mallinfo(L); /* Mem info. See dlmalloc.c */
 #endif
 
    /* Dispatcher mutex must be locked when running the .config script

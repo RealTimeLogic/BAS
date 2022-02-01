@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: TargConfig.h 5065 2022-01-31 23:53:26Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -203,6 +203,20 @@
  ***********************************************************************/
 #ifdef BA_LEAK_CHECK
 #include <LeakDetect.h>
+#elif defined(USE_DLMALLOC)
+#ifdef __cplusplus
+extern "C" {
+#endif
+void init_dlmalloc(char* heapstart, char* heapend);
+void* dlmalloc(size_t bytes);
+void* dlrealloc(void* oldmem, size_t bytes);
+void dlfree(void* mem);
+#ifdef __cplusplus
+}
+#endif
+#define  baMalloc(size) dlmalloc(size)
+#define baRealloc(ptr, size) dlrealloc(ptr, size);
+#define baFree(ptr) dlfree(ptr)
 #else
 #include <malloc.h>
 #define baMalloc(size) malloc(size)

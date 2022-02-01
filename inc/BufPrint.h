@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BufPrint.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BufPrint.h 5029 2022-01-16 21:32:09Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2018
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -85,39 +85,68 @@ BA_API int basnprintf(char* buf, int len, const char* fmt, ...);
 
 /** BufPrint flush callback function.
 
-A BufPrint instance calls the flush callback function when buffer is
-full. The callback can either extend the buffer or flush and reset the
-buffer.
+A BufPrint instance calls the flush callback function when the buffer
+is full or when #BufPrint::flush is called. The callback can either
+extend the buffer or flush and reset the buffer.
+
+The following default callback is set if no callback is installed when
+calling the BufPrint constructor:
+
+\code
+BufPrint_defaultFlush(struct BufPrint* bp, int sizeRequired)
+{
+   bp->cursor=0; // Reset
+   baAssert(sizeRequired == 0); // Program error in code calling BufPrint_xxx
+   return sizeRequired ? -1 : 0;
+}
+\endcode
 
 \param o the object. BufPrint is typically upcasted to the derived object.
-\param sizeRequired the required expands size if the callback is
-expanding the buffer. Not used when flushing and resetting the buffer.
+\param sizeRequired the minimum size the buffer must expand. Note that
+sizeRequired will be zero when the callback is called via
+BufPrint::flush
+
 */
 typedef int (*BufPrint_Flush)(struct BufPrint* o, int sizeRequired);
 
 /** The BufPrint class, which implements an ANSI compatible printf
-    method, is an abstract class used as a base for many of the
-    Barracuda classes.
+    method, is a base class used by several other classes.
 
-    The output from printf is formatted in an internal buffer. This
-    class does not allocate memory for the buffer. Thus, any class
-    using BufPrint must provide a buffer BufPrint can use. BufPrint
-    calls the callback function BufPrint_Flush when the buffer is
-    full.
+    This class does not allocate memory for the buffer. Thus, any
+    class using BufPrint must provide a buffer BufPrint can use. The
+    output from printf is formatted in the buffer passed into the
+    constructor. BufPrint calls the callback function BufPrint_Flush
+    when the buffer is full. See #BufPrint_Flush for additional details.
  */
 typedef struct BufPrint
 {
 #ifdef __cplusplus
 
-      /** BufPrint constructor.
+      /** BufPrint constructor. When using this constructor, make sure
+          to also call setBuf(). C constructor name: BufPrint_constructor
 
           \param userData an optional argument stored in the BufPrint
           object and accessible in the flush callback.
-          \sa getUserData()
+          \param flush a pointer to the flush callback function. See
+          #BufPrint_Flush for details.
 
-          \param flush a pointer to the flush callback function.
+          \sa setBuf(), getUserData()
       */
       BufPrint(void* userData=0, BufPrint_Flush flush=0);
+
+   /** BufPrint constructor. When using this constructor, make sure
+       to also call setBuf(). C constructor name: BufPrint_constructor2
+       
+       \param buf the buffer
+       \param size the buffer size
+       \param userData an optional argument stored in the BufPrint
+       object and accessible in the flush callback.
+       \param flush a pointer to the flush callback function. See
+       #BufPrint_Flush for details.
+       
+       \sa setBuf(), getUserData()
+   */
+   BufPrint(char* buf,int size,void* userData=0,BufPrint_Flush flush=0);
 
       /** Returns the user data pointer set in the constructor.
        */
@@ -240,6 +269,8 @@ extern "C" {
 #define BufPrint_getBufSize(o) (o)->cursor
 BA_API void BufPrint_constructor(
    BufPrint* o,void* userData,BufPrint_Flush flush);
+BA_API void BufPrint_constructor2(
+   BufPrint* o, char* buf,int size,void* userData,BufPrint_Flush flush);
 #define BufPrint_destructor(o)
 BA_API int BufPrint_vprintf(BufPrint* o, const char* fmt, va_list argList);
 BA_API int BufPrint_printf(BufPrint* o, const char* fmt, ...);
@@ -259,6 +290,9 @@ inline void* BufPrint::getUserData() {
 }
 inline BufPrint::BufPrint(void* userData, BufPrint_Flush flush) {
    BufPrint_constructor(this, userData,flush); }
+inline BufPrint::BufPrint(
+   char* buf,int size,void* userData,BufPrint_Flush flush) {
+   BufPrint_constructor2(this,buf,size,userData,flush); }
 inline int BufPrint::vprintf(const char* fmt, va_list argList) {
    return BufPrint_vprintf(this, fmt, argList); }
 inline int BufPrint::printf(const char* fmt, ...) {

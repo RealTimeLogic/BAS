@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: balua.h 5065 2022-01-31 23:53:26Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2020
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -327,6 +327,7 @@ BA_API void luaopen_ba_redirector(lua_State *L);
 BA_API void ba_ldbgmon(
    lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData);
 BA_API void balua_revcon(lua_State* L);
+BA_API void balua_mallinfo(lua_State* L);
 
 #ifdef __cplusplus
 }

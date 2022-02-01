@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 4918 2021-12-02 00:02:30Z wini $
+ *   $Id: MakoMain.c 5065 2022-01-31 23:53:26Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,7 +39,7 @@
 #endif
 
 #ifndef MAKO
-#error The macro MAKO must be defined when you compile the Mako Server
+#error The macro MAKO must be defined when you compile the Mako Server (for all BAS files)
 #endif
 
 #include "mako.h"
@@ -726,15 +726,29 @@ setUser(int argc, char** argv)
    findFlag(argc, argv, 'u', &userName);
    if(userName)
    {
-      if(getuid()==0 && getgid()==0)
+      gid_t gid=0;
+      uid_t uid=0;
+      if(getuid()!=0 || getgid()!=0)
       {
+         errQuit("Cannot use command line option: -u %s. "
+                 "You are not root.\n", userName);
+      }
+      if(isdigit(userName[1]))
+      {
+         gid=uid=U32_atoi(userName);
+         makoprintf(FALSE,"Setting user to id '%d'\n", uid);
+      }
+      else
+      {
+         int ngroups;
+         gid_t* groups;
          struct passwd* pwd;
          makoprintf(FALSE,"Setting user to '%s'\n", userName);
          pwd = getpwnam(userName);
          if(pwd)
          {
-            int ngroups=sysconf(_SC_NGROUPS_MAX);
-            gid_t* groups=(gid_t*)baMalloc(ngroups * sizeof(gid_t));
+            ngroups=sysconf(_SC_NGROUPS_MAX);
+            groups=(gid_t*)baMalloc(ngroups * sizeof(gid_t));
             if(!groups ||
                getgrouplist(userName, pwd->pw_gid, groups, &ngroups) < 0 ||
                setgroups(ngroups,groups) < 0)
@@ -743,18 +757,16 @@ setUser(int argc, char** argv)
             }
             baFree(groups);
             setenv("HOME",pwd->pw_dir, TRUE);
-            if(setgid(pwd->pw_gid) || setuid(pwd->pw_uid))
-            {
-               errQuit("setgid: %s\n",strerror(errno));
-            }
-            /* www.dwheeler.com/secure-programs/Secure-Programs-HOWTO/environment-variables.html */
-            /* environ=0; */
-            return; /* success */
+            uid=pwd->pw_uid;
+            gid=pwd->pw_gid;
          }
-         errQuit("Cannot find user %s.\n",userName);
+         else
+            errQuit("Cannot find user %s.\n",userName);
       }
-      errQuit("Cannot use command line option: -u %s. "
-              "You are not root.\n", userName);
+      if(gid==0 || uid == 0 || setgid(gid) || setuid(uid))
+      {
+         errQuit("setgid/setuid: %s\n",strerror(errno));
+      }
    }
 }
 #endif
@@ -1663,7 +1675,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    HttpServer_destructor(&server);
    SoDisp_destructor(&disp);
 
-   ThreadMutex_release(&mutex);   
+   ThreadMutex_release(&mutex);
    ThreadMutex_destructor(&mutex);
    if(daemonMode)
       makoprintf(TRUE,"Terminating Mako Server\n");
@@ -1687,7 +1699,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 
 
 
-#if !defined(_WIN32) && !defined(CUSTOM_PLAT)
+#if !defined(_WIN32) && !defined(CUSTOM_PLAT) && !defined(NO_MAIN)
 int
 main(int argc, char* argv[], char* envp[])
 {

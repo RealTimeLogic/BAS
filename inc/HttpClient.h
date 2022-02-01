@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpClient.h 5065 2022-01-31 23:53:26Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2020
  *
@@ -110,7 +110,7 @@ typedef struct
 #define HttpClientHeader_val(c,o) ((c)->db.super.buf + (o)->val)
 
 
-#define HTTP_CLIENT_MAX_HEADERS 32
+#define HTTP_CLIENT_MAX_HEADERS 64
 
 #define HttpClient_SocksProxy   1
 #define HttpClient_ProxyConnect 2

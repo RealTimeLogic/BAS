@@ -212,3 +212,5 @@ Using the above compilation settings, you would also need to include src/arch/Th
 ## FreeRTOS IoT Educational Kit
 
 Check out the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) if you are interested in testing the Barracuda App Server on a FreeRTOS powered ESP32. The ESP32 is great for educational purposes.
+
+![SharkSSL ESP32 IDE](https://media-exp1.licdn.com/dms/image/sync/C5627AQFfr0J3aeGcNA/articleshare-shrink_800/0/1642957505069?e=1643817600&v=beta&t=ZT7oxhl9ldGVMakuKUUOIb3iTjYIsDT1jdx1lSbdPg4)

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JEncoder.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: JEncoder.h 5029 2022-01-16 21:32:09Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2018
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -49,7 +49,19 @@
 /** The JEncoder can serialize a JSON JVAL syntax tree to the JSON
     text format. The JEncoder can also be used for assembling JSON
     text from calling the primitive methods in this class.
- */
+
+Example:
+\code
+   JErr err;
+   char buf[40]; //Must be sufficiently large for the JSON string
+   BufPrint jBuf(buf,sizeof(buf));
+   JEncoder jEnc(&err,&jBuf);
+   jEnc.set("{d}", "The number of the day is", 5);
+   //jBuf.buf == buf
+   buf[jBuf.cursor]=0; // So we can use printf
+   printf("%s\n",buf); // Prints: {"The number of the day is":5}
+\endcode
+*/
 typedef struct JEncoder
 {
 #ifdef __cplusplus
