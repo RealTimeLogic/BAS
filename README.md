@@ -218,4 +218,4 @@ Using the above compilation settings, you would also need to include src/arch/Th
 
 Check out the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) if you are interested in testing the Barracuda App Server on a FreeRTOS powered ESP32. The ESP32 is great for educational purposes.
 
-![SharkSSL ESP32 IDE](https://i.ibb.co/C6mQcYn/The-Shark-SSL-ESP32-IDE.gif)
+![SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/LspAppMgrWFSLink.png)
