@@ -72,6 +72,13 @@
 #define dlmAssert(x)
 #endif
 
+#ifndef EINVAL
+#define EINVAL (28) /* Invalid argument */
+#endif
+#ifndef ENOMEM
+#define ENOMEM  (49) /* Not enough space */
+#endif
+
 /* Random generator */
 #undef time
 #define time(x) baGetMsClock()
@@ -1551,7 +1558,7 @@ DLMALLOC_EXPORT int mspace_mallopt(int, int);
 #undef dlmAssert
 #define dlmAssert(x) if(!(x)) ABORT
 #else /* ABORT_ON_ASSERT_FAILURE */
-#include <dlmAssert.h>
+#define dlmAssert baAssert
 #endif /* ABORT_ON_ASSERT_FAILURE */
 #else  /* DEBUG */
 #ifndef dlmAssert

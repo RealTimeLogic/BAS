@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: SoDisp.c 5068 2022-02-02 03:10:31Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -79,11 +79,17 @@
 #define setCallBackData(ncon, httpSock) (ncon)->callbackData=httpSock
 #define getCallBackData(ncon) (HttpSocket*)(ncon)->callbackData
 #elif LWIP_SOCKET != 0
+#if LWIP_VERSION_MAJOR < 2 || (LWIP_VERSION_MAJOR == 2 && LWIP_VERSION_MINOR < 2)
 /* Cast the application's socket int member to/from HttpSocket* */
 #define USING_INT_AS_VOID_PTR
 #define setCallBackData(ncon, httpSock) (ncon)->socket=(int)httpSock
 #define getCallBackData(ncon)  /* -1: closed */                 \
    (HttpSocket*)((ncon)->socket == -1 ? 0 : (ncon)->socket)
+#else
+#define setCallBackData(ncon, httpSock) (ncon)->callback_arg.ptr=httpSock
+#define getCallBackData(ncon) (HttpSocket*)                             \
+   (HttpSocket*)((ncon)->callback_arg.socket == -1 ? 0 : (ncon)->callback_arg.ptr)
+#endif     
 #else
 #error Must set callBackData pointer in api.h or define LWIP_SOCKET=1
 #endif

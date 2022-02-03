@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5065 2022-01-31 23:53:26Z wini $
+ *   $Id: LspAppMgr.c 5070 2022-02-03 16:21:53Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2022
  *               http://www.realtimelogic.com
@@ -369,13 +369,19 @@ barracuda(void)
    The following macro makes it possible to disable the DiskIo.
    Command line: make ..... nodisk=1
 */
-#ifndef NO_BAIO_DISK
+#ifdef NO_BAIO_DISK
+   HttpTrace_printf(0, "DiskIo not included. Use NetIo!\n");
+#else
    DiskIo_constructor(&diskIo);
    /* REF-1 */
-   if( ! platformInitDiskIo || (*platformInitDiskIo)(&diskIo) == 0)
+   if( platformInitDiskIo && (*platformInitDiskIo)(&diskIo) == 0)
    {
       /* Add optional IO interfaces */
       balua_iointf(L, "disk",  (IoIntf*)&diskIo);
+   }
+   else
+   {
+      HttpTrace_printf(0, "Installing DiskIo failed!\n");
    }
 #endif
 

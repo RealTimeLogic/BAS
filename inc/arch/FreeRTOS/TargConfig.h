@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: TargConfig.h 5069 2022-02-03 13:58:42Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2021
+ *   COPYRIGHT:  Real Time Logic, 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -92,7 +92,7 @@ void dlfree(void* mem);
 #ifdef __cplusplus
 extern "C" {
 #endif
-void baInitUnixTime(BaTime time);
+void baSetUnixTime(BaTime time);
 #ifdef ESP_PLATFORM
 #define baGetUnixTime() ((BaTime)time(0))
 #else

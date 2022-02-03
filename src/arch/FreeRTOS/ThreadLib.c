@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      SOURCE
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 5071 2022-02-03 17:15:45Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -29,6 +29,7 @@
 
 
 #include <ThreadLib.h>
+#include <string.h>
 
 #if configUSE_TIMERS != 1
 #error configUSE_TIMERS must be enabled

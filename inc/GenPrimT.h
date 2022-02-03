@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: GenPrimT.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: GenPrimT.h 5069 2022-02-03 13:58:42Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2021
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -55,6 +55,15 @@
 #define SHARKSSL_HMAC_API       1
 #define SHARKSSL_ENABLE_AES_CBC 1
 #define SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT 1
+
+#ifdef __ICCARM__
+#pragma diag_suppress=Pa084
+#pragma diag_suppress=Pa089
+#pragma diag_suppress=Pa181
+#pragma diag_suppress=Pe188
+#pragma diag_suppress=Pe546
+#pragma diag_suppress=Pe550
+#endif
 
 /** @addtogroup UtilityFunctions
     @{

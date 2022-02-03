@@ -51,7 +51,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wsequence-point"
+#endif
+#ifdef __ICCARM__
+#pragma diag_suppress=Pa079
+#endif
 
 typedef struct
 {

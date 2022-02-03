@@ -12,7 +12,7 @@
  *
  *   $Id$
  *
- *   COPYRIGHT:  Real Time Logic, 2016 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2016 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -523,7 +523,17 @@ DiskIo_stat(IoIntfPtr super, const char* rname, IoStat* st)
       FILINFO finfo;
       remEndingSlash(aname);
       if( (status=f_stat(aname, &finfo)) != FR_OK)
-         setErrCode(&status, 0);
+      {
+         if(strncmp(o->rootPath,aname,strlen(aname)))
+            setErrCode(&status, 0);
+         else
+         {
+            status=0;
+            st->isDir = TRUE;
+            st->lastModified = 0;
+            st->size = 0;
+         }
+      }
       else
       {
          st->isDir = (AM_DIR & finfo.fattrib) ? TRUE : FALSE;
