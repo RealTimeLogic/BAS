@@ -18,7 +18,7 @@ BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amal
 
 ## Who Can Use BAS Amalgamated
 
-BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section just below the [Porting instructions](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
+BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section just below the [Barracuda App Server Porting instructions](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
 
 ## Before Downloading the Source Code
 
@@ -201,7 +201,7 @@ Note that we are not including SQLite support. You can include SQLite by using t
 The following example shows how to compile the generic BAS library for ThreadX and NetX using IAR for ARM. We have the following directories tx (ThreadX), nx (NetX), and BAS.
 
 ```
-iccarm -e -c --diag_suppress pe188,Pa089,Pe546^
+iccarm -e -c^
   -Itx -Inx^
   -IBAS/inc -IBAS/inc/arch/ThreadX^
   BAS/src/BAS.c
@@ -212,10 +212,30 @@ Using the above compilation settings, you would also need to include src/arch/Th
 ## FreeRTOS
 
 #### i.MX RT1020
-[Download](https://realtimelogic.com/eval/bin/MIMXRT1020.zip) a ready to compile and run project for [i.MX RT1020](https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt1020-evaluation-kit:MIMXRT1020-EVK).
+[Download](https://realtimelogic.com/downloads/bas/?target=RT1020) a ready to compile and run project for [i.MX RT1020](https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt1020-evaluation-kit:MIMXRT1020-EVK).
 
 #### IoT ESP32 Educational Kit
 
 Check out the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) if you are interested in testing the Barracuda App Server on a FreeRTOS powered ESP32. The ESP32 is great for educational purposes.
 
 ![SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/LspAppMgrWFSLink.png)
+
+
+# Barracuda App Server Tutorials
+
+* [What is an Embedded Application Server?](https://realtimelogic.com/articles/What-is-an-Embedded-Application-Server)
+* [Using Lua for IoT and Web Application Development](https://realtimelogic.com/articles/Lua-FastTracks-Embedded-Web-Application-Development)
+* [Online Interactive Lua and LSP Tutorials](https://tutorial.realtimelogic.com/)
+* [Modern Approach to Embedding a Web Server in a Device](https://realtimelogic.com/articles/Modern-Approach-to-Embedding-a-Web-Server-in-a-Device)
+* [The Ultimate Guide to Embedded Web Server Technology](https://realtimelogic.com/articles/Embedded-Web-Server-Tutorials)
+* [A Large List of Mako/BAS Tutorials](https://makoserver.net/tutorials/)
+* [Ready To Run Examples (GitHub)](https://github.com/RealTimeLogic/LSP-Examples)
+ 
+### DZone BAS and Mako Server Tutorials
+* [AWS IoT MQTT Tutorial Using Lua](https://dzone.com/articles/aws-iot-mqtt-tutorial-using-lua)
+* [Easy IoT and Device Management for Non-C Coders](https://dzone.com/articles/easy-iot-amp-device-management-for-non-c-coders)
+* [IoT as an Alternative to VPN for Secure Remote Device Access](https://dzone.com/articles/iot-as-an-alternative-to-vpn-for-secure-remote-dev)
+* [Cheaper Alternatives to IoT Cloud Services](https://dzone.com/articles/cheaper-alternatives-to-iot-cloud-services)
+* [Have We Forgotten the Ancient Lessons About Building Defense Systems?](https://dzone.com/articles/have-we-forgotten-the-ancient-lessons)
+* [Exploiting MQTT Using Lua](https://dzone.com/articles/exploiting-mqtt-using-lua)
+* [An Arduino ESP8266 Christmas Light Controller](https://dzone.com/articles/arduino-esp8266-iot-light-controller)
