@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDisp.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: SoDisp.h 5078 2022-02-10 22:52:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2002-2021
  *
@@ -193,7 +193,7 @@ inline void SoDisp::removeConnection(SoDispCon* con) {
 inline void SoDisp::run(S32 timeout) {
    SoDisp_run(this, timeout); }
 inline ThreadMutex* SoDisp::getMutex() {
-   return SoDisp_getMutex(this); }
+   return this->mutex; }
 #ifdef OSE
 inline union SIGNAL* SoDisp::receive(S32 time, SIGSELECT* sel) {
    return SoDisp_receive(this, time, sel); }

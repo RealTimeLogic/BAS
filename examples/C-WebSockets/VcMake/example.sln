@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "example", "example.vcxproj", "{9F306073-1553-A423-05EF-07C3ED230904}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		release_noodbc|Win32 = release_noodbc|Win32
+		release_nosql|Win32 = release_nosql|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9F306073-1553-A423-05EF-07C3ED230904}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.Debug|Win32.Build.0 = Debug|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.release_noodbc|Win32.ActiveCfg = Release|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.release_noodbc|Win32.Build.0 = Release|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.release_nosql|Win32.ActiveCfg = Release|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.release_nosql|Win32.Build.0 = Release|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.Release|Win32.ActiveCfg = Release|Win32
+		{9F306073-1553-A423-05EF-07C3ED230904}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -33202,7 +33202,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          csLen -= hsLen;
          #endif
 
-         now = baGetUnixTime();
+         now = (U32)baGetUnixTime();
          *tp++ = (U8)(now >> 24);
          *tp++ = (U8)(now >> 16);
          *tp++ = (U8)(now >> 8);
@@ -34016,7 +34016,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          *tp++ = o->major;
          *tp++ = o->minor;
 
-         now = baGetUnixTime();
+         now = (U32)baGetUnixTime();
          *tp++ = (U8)(now >> 24);
          *tp++ = (U8)(now >> 16);
          *tp++ = (U8)(now >> 8);
@@ -42345,13 +42345,14 @@ cpuidleresources(IoIntf* io,
          if(sffsdrnandflash || notifierretry == 0)
          {
             dc21285enable(FALSE, doublefsqrt, gpio1config, sffsdrnandflash, 0);
-            return;
+            goto L_close;
          }
          if(HttpResponse_dataAdded(doublefsqrt, (U32)notifierretry))
-            return; 
+            goto L_close; 
          baAssert(icachealiases >= notifierretry);
          icachealiases -= notifierretry;
       }
+     L_close:
       in->closeFp(in);
    }
    else
@@ -78038,7 +78039,7 @@ SharkSslSession *sa1111device(SharkSslSessionCache *commoncontiguous,
       SharkSslSession *oldestSession = 0;
       U32 t, uart2hwmod, now;
 
-      now = baGetUnixTime();
+      now = (U32)baGetUnixTime();
       t = 0xFFFFFFFF;
       func2fixup = (SharkSslSession*)selectaudio(commoncontiguous->cache);
       filtermatch(commoncontiguous);
@@ -78153,7 +78154,7 @@ SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
    {
       U32 now, uart2hwmod;
 
-      now = baGetUnixTime();
+      now = (U32)baGetUnixTime();
       filtermatch(commoncontiguous);
       if (SharkSsl_isClient(o->sharkSsl))
       {
@@ -111211,14 +111212,15 @@ ahashreqtfm(lua_State* L)
 static int
 flushcache(lua_State* L)
 {
-   ThreadSemaphore sem;
    LRevCon* lrc = checkLRevCon(L);
    if(lrc->headers) 
    {
+      ThreadMutex* m;
+      ThreadSemaphore sem;
       ThreadSemaphore_constructor(&sem);
       lrc->ShutdownSem=&sem;
       HttpClient_close(&lrc->httpc);
-      ThreadMutex* m = HttpServer_getMutex(lrc->server);
+      m = HttpServer_getMutex(lrc->server);
       ThreadMutex_release(m);
       ThreadSemaphore_wait(&sem);
       ThreadMutex_set(m);

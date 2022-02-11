@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 4919 2021-12-02 21:34:55Z wini $
+ *   $Id: BaFile.c 5078 2022-02-10 22:52:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2021
  *
@@ -958,7 +958,7 @@ int DiskIo_setRootDir(DiskIo* o, const char* root)
          if(o->rootPath)
             baFree(o->rootPath);
 
-         if(*root == '.')
+         if(*root == '.' && !root[1])
          {
             cwd = (char*)baMalloc(1024);
             if(cwd)

@@ -1,0 +1,158 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html,body,table {
+    height:100%;
+}
+
+table{
+    width:100%;
+}
+
+body,html{
+    background-color: #121211;
+}
+
+body {
+    font: 13px Helvetica, Arial;
+}
+
+td {
+    vertical-align: top;
+}
+
+form input {
+    border-radius:5px;
+    outline: none;
+    display: block;
+    float:left;
+    border: 0;
+    padding: 10px;
+    width: 100%;
+}
+
+form button {
+    display:none;
+    float:left;
+    width:60px;
+    margin: 0 0 0 -60px;
+    background: rgb(130, 224, 255);
+    border: none;
+    padding: 10px;
+}
+
+#messages{
+    width:100%;
+    height:100%;
+    position:relative;
+}
+
+#messages ul {
+    list-style-type: none;
+    margin: 0; padding: 0;
+}
+
+#messages li { padding: 5px 10px; }
+#messages li.enter {color:#1C82A1;}
+#messages li.leave {color:#b4201e;}
+#messages {background:#414141;}
+#users { height:100%;width:250px;}
+
+.user-header{
+    display:block;
+    color:#fff;
+    font-size:20px;
+    font-weight:bold;
+    margin:10px;
+}
+
+#users,#messages ,#users div ,#messages > div,#dialog {
+    border-radius:10px;
+}
+
+.top-mk{margin:8px;border-bottom:1px solid #787878;font-weight:bold;font-size:18px;}
+
+#users li{
+    font-size:18px ;
+    padding:10px;
+    color:#fff;
+    background-color:#b4201e;
+    list-style-type: none;
+    margin:5px;
+    border-radius:4px;
+}
+
+#users div,#messages > div{
+    background-color: #121211;  
+}
+
+#messages > div{
+    overflow:auto;
+    position:absolute;
+    top: 5px;
+    bottom: 45px;
+    left: 5px;
+    right:5px;
+}
+
+#messages form{
+    overflow:auto;
+    position:absolute;
+    height: 40px;
+    bottom: 0px;
+    left: 5px;
+    right:5px;
+}
+
+
+.dp{position:absolute;margin-top:20px;margin-left:30px;}
+
+.green{color:#55b60f;margin-right:5px}
+
+.arrow{
+    position:relative;
+    width:15px;top:3px;margin-left:5px;margin-right:5px;}
+
+.message-board{
+    margin-top:5px;
+    font-weight:bold;
+    color:#fff;
+    padding:10px !important;
+    border-radius:4px;
+    background-color:#414141;
+    margin-left:5px;
+    margin-right:5px;
+}
+.blue{color:#4569b9;font-weight:bold;}
+#dialog{
+    padding:5px;
+    background:#EDEDEE;
+    border: 1px solid;
+    width:400px;
+    height:80px;
+    margin:auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+}
+
+#nickname{outline:none;padding:5px;}
+
+#users li {
+    transition: background 0.8s ease;
+}
+
+#users li.writing {
+    background: green !important;
+}
+
+table.BasicChat
+{
+  width:100%;
+  color:white;
+}

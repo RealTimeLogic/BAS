@@ -1,15 +1,15 @@
 # BAS Amalgamated
 ### Barracuda App Server Amalgamated
 
-Speed up your IoT and edge computing design with the Barracuda App Server, a compact client/server multi-protocol stack and toolkit with an efficient integrated scripting engine.
+Speed up your web, IoT, and edge computing design with the Barracuda App Server, a compact client/server multi-protocol stack and toolkit with an efficient integrated scripting engine.
 
 ![Barracuda App Server Amalgamated](https://realtimelogic.com/images/BarracudaAppServer.png)
 
-The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. See the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
+The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. Refer to the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
 ## Components
 
-BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amalgamated includes all APIs found in the BAS SDK, but with a limited set of examples and tools. BAS Amalgamated includes the following source code components.  
+BAS Amalgamated is a compact version of BAS, extracted from the BAS SDK. BAS Amalgamated includes all APIs found in the BAS SDK, but with a limited set of examples and tools. BAS Amalgamated includes the following source code components.  
 
 * BAS.c: Platform independent code (amalgamation of many files)
 * ThreadLib.c: Kernel porting layer
@@ -18,11 +18,11 @@ BAS Amalgamated is a compact version of BAS extracted from the BAS SDK. BAS Amal
 
 ## Who Can Use BAS Amalgamated
 
-BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section just below the [Barracuda App Server Porting instructions](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
+BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section in the [Porting Barracuda to an Embedded System](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
 
 ## Before Downloading the Source Code
 
-The Barracuda App Server is a complex product with many options. Before downloading the source, download one of the [pre-compiled binaries with included Lua tutorials](https://realtimelogic.com/downloads/bas/). For FreeRTOS users: check out the super easy to use [ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) designed for educational purposes.
+The Barracuda App Server is a complex product with many options. Before downloading the source code, consider downloading one of the [pre-compiled binaries with included Lua tutorials](https://realtimelogic.com/downloads/bas/). For FreeRTOS users, check out the super easy to use [ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) designed for educational purposes.
 
 
 ## How To Compile
@@ -38,9 +38,31 @@ BAS Amalgamated is very easy to compile and several command line compilation exa
 
 ## BAS Amalgamated Examples
 
-BAS Amalgamated includes two examples from the BAS SDK, the [Mako Server](https://realtimelogic.com/ba/doc/?url=Mako.html) and the [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html). The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS.
+BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mako-server-hlos), the [LSP Application Manager](#lsp-application-manager-rtos), and the [C++ WebSocket Server Example](examples/C-WebSockets/README.md).
+
+* The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
+* The C++ WebSocket Server Example shows how to implement everything using C code (no Lua). With this example, you are effectivly using only [Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/) components.
 
 ### Mako Server (HLOS)
+
+The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can be compiled for Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
+
+#### TL;DR (Linux):
+
+Download and compile the code for Linux as follows:
+
+```
+wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+```
+Download and cross-compile the code for (embedded) Linux as follows:
+
+```
+export CC=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc
+wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+Change the above CC environment variable to your cross-compiler.
+```
+
+#### Details:
 
 The following example builds the Mako Server without SQLite for HLOS. You can copy and paste the command into a Linux shell. Note that you can also download pre-compiled Mako Server versions for many operating systems on the [Mako Server Web Site](https://makoserver.net/).
 
@@ -109,7 +131,12 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 ### LSP Application Manager (RTOS)
 
-The [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html) is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following examples.
+The LSP Application Manager turns the Barracuda App Server into an interactive development tool. See the [Online LSP Application Manager Documentation](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html) for details.
+
+![LSP Application Manager](https://realtimelogic.com/ba/doc/en/examples/lspappmgr/figure3.png)
+
+The LSP Application Manager is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
+
 
 The LSP Application Manager is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
 
@@ -131,7 +158,7 @@ The file LspZip.c is the LSP Application Manager's resources converted to a C fi
 
 If you run the server after compiling it, you will see no printouts. The server tries to open port 80 and if that fails, it tries to open port 9357. Embedded systems with a console can enable the [trace library](https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpTrace.html) by providing a callback for the data being printed. You can also view the trace in a browser by navigating to http://ip-addr/rtl/tracelogger/. See the [TraceLogger Documentation](https://realtimelogic.com/ba/doc/?url=auxlua.html#tracelogger) for details and our online tutorial server for a demo: [https://tutorial.realtimelogic.com/rtl/tracelogger/](https://tutorial.realtimelogic.com/rtl/tracelogger/)
 
-A file system is not required and the following example shows how to compile the LSP Application Manager without including BaFile.c
+The LSP Application Manager does not require a file system, and the following example shows how to compile the LSP Application Manager without including BaFile.c
 
 ```
 gcc -o examples/lspappmgr/lspappmgr -DNO_BAIO_DISK -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
@@ -181,7 +208,7 @@ See inc/arch/XXX/luaconf.h for details.
 
 ## VxWorks
 
-The following example shows how to compile Mako Server for VxWorks 7. Use the LSP Application Manager example if you are using an older VxWorks version.
+The following example shows how to compile Mako Server for VxWorks 7. Use the [LSP Application Manager](#lsp-application-manager-rtos) example if you are using an older VxWorks version.
 
 ```
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\

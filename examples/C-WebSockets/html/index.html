@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>WebSocket Chat Demo</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+
+<script>
+
+//Get websocket URL from path
+function wsURL(path) {
+    var l = window.location;
+    if(path == undefined) path = l.pathname;
+    return ((l.protocol === "https:") ? "wss://" : "ws://") +
+        l.hostname +
+        (l.port!=80 && l.port!=443 && l.port.length!=0 ? ":" + l.port : "") +
+        path;
+};
+
+
+function arrayBufferToBase64(buffer) {
+    var binary = '';
+    var bytes = new Uint8Array(buffer);
+    var len = bytes.byteLength;
+    for (var i = 0; i < len; i++) {
+        binary += String.fromCharCode( bytes[ i ] );
+    }
+    return window.btoa(binary);
+};
+
+function print(msg) {
+    $('#messages ul').append("<li>"+msg+"</li>");
+};
+
+
+$(function() {
+    if("WebSocket" in window)
+    {
+        var ws = new WebSocket(wsURL("/my-web-socket-service")); 
+       ws.binaryType = "arraybuffer";
+        ws.onopen = function()
+        {
+            print("Connected.");
+        };
+        ws.onmessage = function (evt) 
+        {
+            var msg = evt.data;
+            if(typeof msg === "string")
+                print(msg);
+            else
+            {
+                $("<img>", {
+                    "src": "data:image/jpeg;base64,"+arrayBufferToBase64(evt.data),
+                }).appendTo("#messages");
+                $('#messages').append("<br>");
+            }
+        };
+        ws.onclose = function()
+        { 
+            print("Connection closed."); 
+        };
+
+        function sendChatMsg() {
+            ws.send($('#msg').val());
+            $('#msg').val('');
+            $('#msg').focus();
+            return false;
+        };
+
+        function drop(evt) {
+            evt.preventDefault();
+            var files = evt.originalEvent.dataTransfer.files;
+            for(var i = 0; i < files.length; i++) {
+                var file = files[i];
+                if(file.type == "image/jpeg" && file.size <= 0xFFFF) {
+                    var reader = new FileReader();
+                    reader.onload = function (evt) {
+                        ws.send(evt.target.result);
+                    };
+                    reader.readAsArrayBuffer(file);
+                }
+                else
+                    print("Ignoring dropped file: "+file.name)
+            }
+        };
+
+        $('form').submit(sendChatMsg);
+        $('body').bind('drop',drop).bind('dragover',function(evt) {
+            evt.preventDefault();
+        });
+    }
+    else
+    {
+        print("WebSocket NOT supported by your Browser!");
+    }
+
+});
+</script>
+
+  </head>
+  <body>
+    <table class="BasicChat">
+      <tr>
+      <td>
+        <div id="messages">
+          <ul></ul> <!-- Messages will be injected by JavaScript here -->
+          <form>
+            <input placeholder="Enter message..." id="msg" autocomplete="off"/>
+          </form>
+        </div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
