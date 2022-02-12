@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 5076 2022-02-10 16:59:48Z wini $
+ *   $Id: WebSocketServer.h 5079 2022-02-11 20:41:10Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2017
+ *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -57,7 +57,13 @@
     The library is limited to sending and receiving data less to or
     equal 0xFFFF.
 
-    Example: see examples/WebSocket-Chat/README.txt
+    ### Example:
+
+    The Barracuda App Server SDK includes one example using this
+     WebSocket library and a copy of the example
+    [is available on GitHub](https://github.com/RealTimeLogic/BAS/blob/main/examples/C-WebSockets/README.md)
+
+    SDK example dir: examples/WebSocket-Chat/
 
  *  @{
  */

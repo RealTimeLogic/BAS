@@ -194,6 +194,10 @@ The following macros are required if you plan on using the Let's Encrypt plugin.
 * SHARKSSL_ENABLE_CSR_CREATION=1
 * SHARKSSL_ENABLE_CSR_SIGNING=1
 
+The following Mako Server specific macro enables loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When not using a pre-built Mako Server and when using the source code you can instead choose to integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly with your build.
+
+* USE_LUAINTF
+
 All porting layers, except POSIX and Windows, have the following pre-set:
 
 * LUA_NUMBER_INTEGER=1

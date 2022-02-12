@@ -34,7 +34,7 @@ fi
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
     if [  -z ${SQLITE+x} ]; then
-        SQLITE="https://www.sqlite.org/2022/sqlite-amalgamation-3370200.zip"
+	SQLITE="https://www.sqlite.org/2022/sqlite-amalgamation-3370200.zip"
     fi
     pushd /tmp || abort $LINENO
     echo "Downloading: $SQLITE"
@@ -45,9 +45,15 @@ if ! [ -f "src/sqlite3.c" ]; then
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
 fi
 
-echo "Compiling using $CC........"
+echo "Compiling using $CC; this may take some time........"
 $CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
+    -DUSE_LUAINTF\
+    -DSHARKSSL_ENABLE_ASN1_KEY_CREATION=1\
+    -DSHARKSSL_ENABLE_RSAKEY_CREATE=1\
+    -DSHARKSSL_ENABLE_ECCKEY_CREATE=1\
+    -DSHARKSSL_ENABLE_CSR_CREATION=1\
+    -DSHARKSSL_ENABLE_CSR_SIGNING=1\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
@@ -58,4 +64,3 @@ $CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
 cp examples/MakoServer/mako* ../ || abort $LINENO
 echo "Done"
 echo "You may now run ./mako"
-
