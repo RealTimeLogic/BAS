@@ -105574,7 +105574,7 @@ WSS_destructor(WSS* o)
    SoDispCon_destructor((SoDispCon*)o);
    DynBuffer_destructor(&o->db);
 }
-#ifdef USE_DBGMON
+#if USE_DBGMON == 1
 
 
 #include <balua.h>
@@ -108069,7 +108069,7 @@ ba_ldbgmon(lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData)
 #endif 
 
 #endif
-#ifdef USE_FORKPTY
+#if USE_FORKPTY == 1
 
 
 
@@ -108870,7 +108870,7 @@ balua_forkpty(lua_State* L)
 
 #endif 
 #endif
-#ifdef USE_REDIRECTOR
+#if USE_REDIRECTOR == 1
 
 
 
@@ -109613,7 +109613,7 @@ luaopen_ba_redirector(lua_State *L)
 
 #endif 
 #endif
-#ifdef USE_UBJSON
+#if USE_UBJSON == 1
 
 
 
@@ -110343,7 +110343,7 @@ UBJEncoder_val(UBJEncoder* o)
    return 0;
 }
 #endif
-#ifdef USE_UBJSON
+#if USE_UBJSON == 1
 
 
 
@@ -111020,7 +111020,7 @@ balua_ubjson(lua_State* L)
    lua_pop(L,1);
 }  
 #endif
-#ifdef USE_REVCON
+#if USE_REVCON == 1
 
 
 #include <balua.h>

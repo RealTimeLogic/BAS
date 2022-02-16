@@ -14,6 +14,15 @@ function install() {
     abort "Run the following prior to running this script:\nsudo apt-get install git unzip gcc"
 }
 
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;;
+    Darwin*)    XCFLAGS="-D_OSX_ -DLUA_USE_MACOSX";machine=Mac;;
+    CYGWIN*)    XLIB=-ldl;XCFLAGS="-DLUA_USE_LINUX -DUSE_FORKPTY=0";machine=Cygwin;;
+#    MINGW*)     machine=MinGw;;
+    *)          abort "Unknown machine ${unameOut}"
+esac
+
 if [  -z ${CC+x} ]; then
     command -v gcc >/dev/null 2>&1 || install
     CC=gcc
@@ -52,7 +61,7 @@ fi
 
 echo "Compiling using $CC; this may take some time........"
 $CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
+    $XCFLAGS -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DMAKO\
     -DUSE_LUAINTF\
     -DSHARKSSL_ENABLE_ASN1_KEY_CREATION=1\
     -DSHARKSSL_ENABLE_RSAKEY_CREATE=1\
@@ -64,7 +73,7 @@ $CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
     examples/MakoServer/src/MakoMain.c\
     src/ls_sqlite3.c src/luasql.c src/sqlite3.c\
-    -lpthread -lm -ldl || abort $LINENO
+    -lpthread -lm $XLIB || abort $LINENO
 
 cp examples/MakoServer/mako* ../ || abort $LINENO
 echo "Done"

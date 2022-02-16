@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: TargConfig.h 5092 2022-02-16 21:35:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -51,10 +51,14 @@
 
 
 /*  The default choice for Posix - change by using another arch
- *  or override on compile
+ *  or set at compile time.
  */
 #if !defined(B_LITTLE_ENDIAN) && !defined(B_BIG_ENDIAN)
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define B_BIG_ENDIAN 1
+#else
 #define B_LITTLE_ENDIAN 1
+#endif
 #endif
 
 /***********************************************************************
