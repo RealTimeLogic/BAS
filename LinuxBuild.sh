@@ -33,13 +33,18 @@ fi
 
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
-    if [  -z ${SQLITE+x} ]; then
-	SQLITE="https://www.sqlite.org/2022/sqlite-amalgamation-3370200.zip"
+    if [  -z ${SQLITEURL+x} ]; then
+	SQLITEURL="https://www.sqlite.org/2022/sqlite-amalgamation-3370200.zip"
     fi
+    SQLITE=${SQLITEURL##*/}
     pushd /tmp || abort $LINENO
-    echo "Downloading: $SQLITE"
-    wget --no-check-certificate $SQLITE || abort $LINENO
-    SQLITE=${SQLITE##*/}
+    echo "Downloading: $SQLITEURL"
+    command -v wget >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        wget --no-check-certificate $SQLITEURL || abort $LINENO
+    else
+        curl $SQLITEURL -o $SQLITE
+    fi
     unzip -o $SQLITE || abort $LINENO
     popd
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
