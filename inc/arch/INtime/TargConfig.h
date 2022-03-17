@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5076 2022-02-10 16:59:48Z wini $
+ *   $Id: TargConfig.h 5116 2022-03-14 23:43:47Z wini $
  *
- *   COPYRIGHT:  2020
+ *   COPYRIGHT:  2020 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -118,9 +118,6 @@
 
 #ifndef SHARKSSL_USE_SHA_512
 #define SHARKSSL_USE_SHA_512 1
-#endif
-#ifndef SHARKSSL_ENABLE_OLD_CHACHA20_POLY1305
-#define SHARKSSL_ENABLE_OLD_CHACHA20_POLY1305            1
 #endif
 
 #if 1

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5092 2022-02-16 21:35:39Z wini $
+ *   $Id: TargConfig.h 5116 2022-03-14 23:43:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
@@ -146,9 +146,6 @@
 
 #ifndef SHARKSSL_USE_SHA_512
 #define SHARKSSL_USE_SHA_512 1
-#endif
-#ifndef SHARKSSL_ENABLE_OLD_CHACHA20_POLY1305
-#define SHARKSSL_ENABLE_OLD_CHACHA20_POLY1305            1
 #endif
 
 #if 1

@@ -31122,7 +31122,7 @@ extern "\103" {
    typedef enum xparser_event xparser_event;
 
    
-   extern const char* const bv1[xparserLAST];
+   extern const char* const clonewrapper[xparserLAST];
 
 
 
@@ -38477,7 +38477,7 @@ BaTimer_destructor(BaTimer* o)
 
 
 static int
-bv2(struct BufPrint* bp, int stateparam)
+prefetchablememory(struct BufPrint* bp, int stateparam)
 {
    bp->cursor=0; 
    
@@ -38493,7 +38493,7 @@ basnprintf(char* buf, int len, const char* fmt, ...)
    va_list demuxregids;
    BufPrint bufPrint;
    
-   BufPrint_constructor2(&bufPrint, buf, (len -1), 0, bv2);
+   BufPrint_constructor2(&bufPrint, buf, (len -1), 0, prefetchablememory);
    va_start(demuxregids, fmt);
    propertycount = BufPrint_vprintf(&bufPrint, fmt, demuxregids);
    if( propertycount >= 0 )
@@ -38514,7 +38514,7 @@ basprintf(char* buf, const char* fmt, ...)
    BufPrint bufPrint;
    
    BufPrint_constructor2(
-      &bufPrint, buf, (int)((unsigned int)(~0)/2u), 0, bv2);
+      &bufPrint, buf, (int)((unsigned int)(~0)/2u), 0, prefetchablememory);
    bufPrint.cursor = 0; 
    va_start(demuxregids, fmt);
    propertycount = BufPrint_vprintf(&bufPrint, fmt, demuxregids);
@@ -38634,7 +38634,7 @@ BufPrint_constructor(BufPrint* o, void* suspendvalid, BufPrint_Flush conditionva
 {
    memset(o, 0, sizeof(BufPrint));
    o->userData = suspendvalid;
-   o->flushCB = conditionvalid32 ? conditionvalid32 : bv2;
+   o->flushCB = conditionvalid32 ? conditionvalid32 : prefetchablememory;
 }
 
 BA_API void
@@ -91503,7 +91503,7 @@ static int callback(
 
    if (ret) { 
       const char* eventkillable = lua_tostring(L,-1);
-      const char* allowblocking = bv1[evt];
+      const char* allowblocking = clonewrapper[evt];
       lua_pushnil(L);
       lua_replace(L,top+1); 
       lua_pushfstring(L,"\114\165\141\040\145\162\162\157\162\040\047\045\163\047\040\150\141\156\144\154\151\156\147\040\045\163",eventkillable, allowblocking);
@@ -91540,7 +91540,7 @@ static int devicehotplug(lua_State *L,int trampolineholder)
    lua_newtable(L);
 
    for(i=0;i<xparserLAST;++i) {
-      lua_pushstring(L,bv1[i]);
+      lua_pushstring(L,clonewrapper[i]);
       lua_gettable(L,trampolineholder);
       if (lua_isfunction(L,-1)) {
          lua_rawseti(L,-2,i);
@@ -93721,7 +93721,7 @@ int xparser_has_doc(context* icacherange)          {return icacherange->has_doc;
 void* xparser_userdata(context* icacherange)       {return icacherange->userdata;}
 
 
-const char* const bv1[xparserLAST] = {"\116\117\116\105","\111\116\111\124","\122\105\123\105\124","\124\105\122\115","\123\124\101\122\124","\130\115\114","\123\124\101\122\124\137\105\114\105\115\105\116\124","\105\116\104\137\105\114\105\115\105\116\124","\105\115\120\124\131\137\105\114\105\115\105\116\124","\120\111","\103\117\115\115\105\116\124","\103\104\101\124\101","\124\105\130\124"};
+const char* const clonewrapper[xparserLAST] = {"\116\117\116\105","\111\116\111\124","\122\105\123\105\124","\124\105\122\115","\123\124\101\122\124","\130\115\114","\123\124\101\122\124\137\105\114\105\115\105\116\124","\105\116\104\137\105\114\105\115\105\116\124","\105\115\120\124\131\137\105\114\105\115\105\116\124","\120\111","\103\117\115\115\105\116\124","\103\104\101\124\101","\124\105\130\124"};
 
 
 
@@ -94965,6 +94965,23 @@ static const HttpClientKeyVal defHeader[2]={
 static int secondarystartup(NetIo* o, const char* apecssysdata, U16 guestconfig1);
 static int gpio3resources(NetIo* o, BaBool performreset);
 
+static void
+accesschecked(NetIo* o)
+{
+   if(o->cCon)
+   {
+      if( (o->cCon->mode & HttpClient_InUseByNetIoRes) != 0 )
+      { 
+         o->cCon->mode &= ~HttpClient_InUseByNetIoRes;
+      }
+      else
+      {
+         HttpClient_destructor(o->cCon);
+         baFree(o->cCon);
+      }
+      o->cCon=0;
+   }
+}
 
 static int
 slavechannels(NetIo* o,
@@ -95860,6 +95877,7 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       if(b)
          *((SharkSsl**)b) = o->sharkSslClient;
       NetIo_setSSL(o, (SharkSsl*)a);
+      accesschecked(o);
       return 0;
    }
    else if( ! strcmp(gpio1config, "\141\164\164\141\143\150") )
@@ -96000,6 +96018,7 @@ NetIo_setUser(NetIo* o, const char* buttonsbelkin, const char* emptytables)
    }
    if( buttonsbelkin && !(o->userPass = mkUserPass(buttonsbelkin, emptytables)) )
       return E_MALLOC;
+   accesschecked(o);
    return 0;
 }
 
@@ -96013,6 +96032,7 @@ NetIo_setProxyUser(NetIo* o, const char* buttonsbelkin, const char* emptytables)
    }
    if( buttonsbelkin && !(o->proxyUserPass = mkUserPass(buttonsbelkin, emptytables)) )
       return E_MALLOC;
+   accesschecked(o);
    return 0;
 }
 
@@ -96023,6 +96043,7 @@ gpio3resources(NetIo* o, BaBool performreset)
    o->httpClientMode = performreset ?
       o->httpClientMode | HttpClient_SocksProxy :
       o->httpClientMode & ((U8)~((U8)HttpClient_SocksProxy));
+   accesschecked(o);
    return 0;
 }
 
@@ -96073,6 +96094,7 @@ NetIo_setIPv6(NetIo* o, BaBool writeoutput)
    o->httpClientMode = writeoutput ?
       o->httpClientMode | HttpClient_IPv6 :
       o->httpClientMode & ((U8)~((U8)HttpClient_IPv6));
+   accesschecked(o);
    return 0;
 }
 
@@ -96131,18 +96153,7 @@ NetIo_destructor(NetIo* o)
       baFree(o->proxyUserPass);
    if(o->intfName)
       baFree(o->intfName);
-   if(o->cCon)
-   {
-      if( (o->cCon->mode & HttpClient_InUseByNetIoRes) != 0 )
-      { 
-         o->cCon->mode &= ~HttpClient_InUseByNetIoRes;
-      }
-      else
-      {
-         HttpClient_destructor(o->cCon);
-         baFree(o->cCon);
-      }
-   }
+   accesschecked(o);
    powerstate(o);
    ThreadMutex_destructor(&o->netMutex);
    memset(o, 0, sizeof(NetIo));
@@ -103851,51 +103862,51 @@ static const char CRLF[] = "\015\012";
 static const char EQCRLF[] = "\075\015\012";
 
 
-static int bv3(lua_State *L);
-static int bv4(lua_State *L);
-static int bv5(lua_State *L);
-static int bv6(lua_State *L);
-static int bv7(lua_State *L);
-static int bv8(lua_State *L);
-static int bv9(lua_State *L);
-static int bv10(lua_State *L);
+static int singlefsqrt(lua_State *L);
+static int labelstate(lua_State *L);
+static int backlightdevices(lua_State *L);
+static int queryregister(lua_State *L);
+static int cpuinfochain(lua_State *L);
+static int resourcestart(lua_State *L);
+static int barrierhooks(lua_State *L);
+static int emulaterd8rn16rm0ra12(lua_State *L);
 
 static size_t dot(int c, size_t state, luaL_Buffer *startcounter);
-static void bv11(UC *bv12);
-static size_t bv13(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
-static size_t bv14(const UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
-static size_t bv15(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
+static void keystonetable(UC *internalinput);
+static size_t levelentry(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
+static size_t dummywaitbut(const UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
+static size_t onenandsetname(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 
-static void bv16(UC *bv17, UC *bv18);
-static void bv19(UC c, luaL_Buffer *startcounter);
-static size_t bv20(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
-static size_t bv21(UC c, UC *updatecause, size_t icachealiases, 
-        const char *bv22, luaL_Buffer *startcounter);
-static size_t bv23(UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
+static void prminstdeassert(UC *prminstassert, UC *usb11resources);
+static void afterupdate(UC c, luaL_Buffer *startcounter);
+static size_t simtecpowercontrol(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
+static size_t enablesmartreflex(UC c, UC *updatecause, size_t icachealiases, 
+        const char *enablecoherency, luaL_Buffer *startcounter);
+static size_t gpio6config(UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 
 
 static luaL_Reg mimeFuncs[] = {
-    { "\144\157\164", bv10 },
-    { "\142\066\064", bv4 },
-    { "\145\157\154", bv9 },
-    { "\161\160", bv6 },
-    { "\161\160\167\162\160", bv8 },
-    { "\165\156\142\066\064", bv5 },
-    { "\165\156\161\160", bv7 },
-    { "\167\162\160", bv3 },
+    { "\144\157\164", emulaterd8rn16rm0ra12 },
+    { "\142\066\064", labelstate },
+    { "\145\157\154", barrierhooks },
+    { "\161\160", queryregister },
+    { "\161\160\167\162\160", resourcestart },
+    { "\165\156\142\066\064", backlightdevices },
+    { "\165\156\161\160", cpuinfochain },
+    { "\167\162\160", singlefsqrt },
     { NULL, NULL }
 };
 
 
-static UC bv17[256];
+static UC prminstassert[256];
 static UC qpbase[] = "\060\061\062\063\064\065\066\067\070\071\101\102\103\104\105\106";
-static UC bv18[256];
+static UC usb11resources[256];
 enum {QP_PLAIN, QP_QUOTED, QP_CR, QP_IF_LAST};
 
 
 static const UC b64base[] =
         "\101\102\103\104\105\106\107\110\111\112\113\114\115\116\117\120\121\122\123\124\125\126\127\130\131\132\141\142\143\144\145\146\147\150\151\152\153\154\155\156\157\160\161\162\163\164\165\166\167\170\171\172\060\061\062\063\064\065\066\067\070\071\053\057";
-static UC bv12[256];
+static UC internalinput[256];
 
 
 
@@ -103907,14 +103918,14 @@ MIME_API int luaopen_mime_core(lua_State *L)
    lua_pop(L,1);
 
     
-    bv16(bv17, bv18);
-    bv11(bv12);
+    prminstdeassert(prminstassert, usb11resources);
+    keystonetable(internalinput);
     return 1;
 }
 
 
 
-static int bv3(lua_State *L)
+static int singlefsqrt(lua_State *L)
 {
     size_t icachealiases = 0;
     int dm9000platdata = (int) luaL_checknumber(L, 1);
@@ -103965,16 +103976,16 @@ static int bv3(lua_State *L)
 }
 
 
-static void bv11(UC *bv12) 
+static void keystonetable(UC *internalinput) 
 {
     int i;
-    for (i = 0; i <= 255; i++) bv12[i] = (UC) 255;
-    for (i = 0; i < 64; i++) bv12[b64base[i]] = (UC) i;
-    bv12['\075'] = 0;
+    for (i = 0; i <= 255; i++) internalinput[i] = (UC) 255;
+    for (i = 0; i < 64; i++) internalinput[b64base[i]] = (UC) i;
+    internalinput['\075'] = 0;
 }
 
 
-static size_t bv13(UC c, UC *updatecause, size_t icachealiases, 
+static size_t levelentry(UC c, UC *updatecause, size_t icachealiases, 
         luaL_Buffer *startcounter)
 {
     updatecause[icachealiases++] = c;
@@ -103995,7 +104006,7 @@ static size_t bv13(UC c, UC *updatecause, size_t icachealiases,
 }
 
 
-static size_t bv14(const UC *updatecause, size_t icachealiases, 
+static size_t dummywaitbut(const UC *updatecause, size_t icachealiases, 
         luaL_Buffer *startcounter)
 {
     unsigned long videoprobe = 0;
@@ -104022,20 +104033,20 @@ static size_t bv14(const UC *updatecause, size_t icachealiases,
 }
 
 
-static size_t bv15(UC c, UC *updatecause, size_t icachealiases, 
+static size_t onenandsetname(UC c, UC *updatecause, size_t icachealiases, 
         luaL_Buffer *startcounter)
 {
     
-    if (bv12[c] > 64) return icachealiases;
+    if (internalinput[c] > 64) return icachealiases;
     updatecause[icachealiases++] = c;
     
     if (icachealiases == 4) {
         UC decoded[3];
         int valid, videoprobe = 0;
-        videoprobe =  bv12[updatecause[0]]; videoprobe <<= 6;
-        videoprobe |= bv12[updatecause[1]]; videoprobe <<= 6;
-        videoprobe |= bv12[updatecause[2]]; videoprobe <<= 6;
-        videoprobe |= bv12[updatecause[3]];
+        videoprobe =  internalinput[updatecause[0]]; videoprobe <<= 6;
+        videoprobe |= internalinput[updatecause[1]]; videoprobe <<= 6;
+        videoprobe |= internalinput[updatecause[2]]; videoprobe <<= 6;
+        videoprobe |= internalinput[updatecause[3]];
         decoded[2] = (UC) (videoprobe & 0xff); videoprobe >>= 8;
         decoded[1] = (UC) (videoprobe & 0xff); videoprobe >>= 8;
         decoded[0] = (UC) videoprobe;
@@ -104048,7 +104059,7 @@ static size_t bv15(UC c, UC *updatecause, size_t icachealiases,
 }
 
 
-static int bv4(lua_State *L)
+static int labelstate(lua_State *L)
 {
     UC atom[3];
     size_t isize = 0, asize = 0;
@@ -104066,12 +104077,12 @@ static int bv4(lua_State *L)
     
     luaL_buffinit(L, &startcounter);
     while (updatecause < timerenable) 
-        asize = bv13(*updatecause++, atom, asize, &startcounter);
+        asize = levelentry(*updatecause++, atom, asize, &startcounter);
     updatecause = (UC *) luaL_optlstring(L, 2, NULL, &isize);
     
     if (!updatecause) {
         size_t hugetlbvalid = 0;
-        asize = bv14(atom, asize, &startcounter);
+        asize = dummywaitbut(atom, asize, &startcounter);
         luaL_pushresult(&startcounter);
         
         lua_tolstring(L, -1, &hugetlbvalid);
@@ -104082,14 +104093,14 @@ static int bv4(lua_State *L)
     
     timerenable = updatecause + isize;
     while (updatecause < timerenable) 
-        asize = bv13(*updatecause++, atom, asize, &startcounter);
+        asize = levelentry(*updatecause++, atom, asize, &startcounter);
     luaL_pushresult(&startcounter);
     lua_pushlstring(L, (char *) atom, asize);
     return 2;
 }
 
 
-static int bv5(lua_State *L)
+static int backlightdevices(lua_State *L)
 {
     UC atom[4];
     size_t isize = 0, asize = 0;
@@ -104107,7 +104118,7 @@ static int bv5(lua_State *L)
     
     luaL_buffinit(L, &startcounter);
     while (updatecause < timerenable) 
-        asize = bv15(*updatecause++, atom, asize, &startcounter);
+        asize = onenandsetname(*updatecause++, atom, asize, &startcounter);
     updatecause = (UC *) luaL_optlstring(L, 2, NULL, &isize);
     
     if (!updatecause) {
@@ -104122,7 +104133,7 @@ static int bv5(lua_State *L)
     
     timerenable = updatecause + isize;
     while (updatecause < timerenable) 
-        asize = bv15(*updatecause++, atom, asize, &startcounter);
+        asize = onenandsetname(*updatecause++, atom, asize, &startcounter);
     luaL_pushresult(&startcounter);
     lua_pushlstring(L, (char *) atom, asize);
     return 2;
@@ -104130,28 +104141,28 @@ static int bv5(lua_State *L)
 
 
 
-static void bv16(UC *bv17, UC *bv18)
+static void prminstdeassert(UC *prminstassert, UC *usb11resources)
 {
     int i;
-    for (i = 0; i < 256; i++) bv17[i] = QP_QUOTED;
-    for (i = 33; i <= 60; i++) bv17[i] = QP_PLAIN;
-    for (i = 62; i <= 126; i++) bv17[i] = QP_PLAIN;
-    bv17['\011'] = QP_IF_LAST; 
-    bv17['\040'] = QP_IF_LAST;
-    bv17['\015'] = QP_CR;
-    for (i = 0; i < 256; i++) bv18[i] = 255;
-    bv18['\060'] = 0; bv18['\061'] = 1; bv18['\062'] = 2;
-    bv18['\063'] = 3; bv18['\064'] = 4; bv18['\065'] = 5;
-    bv18['\066'] = 6; bv18['\067'] = 7; bv18['\070'] = 8;
-    bv18['\071'] = 9; bv18['\101'] = 10; bv18['\141'] = 10;
-    bv18['\102'] = 11; bv18['\142'] = 11; bv18['\103'] = 12;
-    bv18['\143'] = 12; bv18['\104'] = 13; bv18['\144'] = 13;
-    bv18['\105'] = 14; bv18['\145'] = 14; bv18['\106'] = 15;
-    bv18['\146'] = 15;
+    for (i = 0; i < 256; i++) prminstassert[i] = QP_QUOTED;
+    for (i = 33; i <= 60; i++) prminstassert[i] = QP_PLAIN;
+    for (i = 62; i <= 126; i++) prminstassert[i] = QP_PLAIN;
+    prminstassert['\011'] = QP_IF_LAST; 
+    prminstassert['\040'] = QP_IF_LAST;
+    prminstassert['\015'] = QP_CR;
+    for (i = 0; i < 256; i++) usb11resources[i] = 255;
+    usb11resources['\060'] = 0; usb11resources['\061'] = 1; usb11resources['\062'] = 2;
+    usb11resources['\063'] = 3; usb11resources['\064'] = 4; usb11resources['\065'] = 5;
+    usb11resources['\066'] = 6; usb11resources['\067'] = 7; usb11resources['\070'] = 8;
+    usb11resources['\071'] = 9; usb11resources['\101'] = 10; usb11resources['\141'] = 10;
+    usb11resources['\102'] = 11; usb11resources['\142'] = 11; usb11resources['\103'] = 12;
+    usb11resources['\143'] = 12; usb11resources['\104'] = 13; usb11resources['\144'] = 13;
+    usb11resources['\105'] = 14; usb11resources['\145'] = 14; usb11resources['\106'] = 15;
+    usb11resources['\146'] = 15;
 }
 
 
-static void bv19(UC c, luaL_Buffer *startcounter)
+static void afterupdate(UC c, luaL_Buffer *startcounter)
 {
     luaL_addchar(startcounter, '\075');
     luaL_addchar(startcounter, qpbase[c >> 4]);
@@ -104159,34 +104170,34 @@ static void bv19(UC c, luaL_Buffer *startcounter)
 }
 
 
-static size_t bv21(UC c, UC *updatecause, size_t icachealiases, 
-        const char *bv22, luaL_Buffer *startcounter)
+static size_t enablesmartreflex(UC c, UC *updatecause, size_t icachealiases, 
+        const char *enablecoherency, luaL_Buffer *startcounter)
 {
     updatecause[icachealiases++] = c;
     
     while (icachealiases > 0) {
-        switch (bv17[updatecause[0]]) {
+        switch (prminstassert[updatecause[0]]) {
             
             case QP_CR:
                 if (icachealiases < 2) return icachealiases;
                 if (updatecause[1] == '\012') {
-                    luaL_addstring(startcounter, bv22);
+                    luaL_addstring(startcounter, enablecoherency);
                     return 0;
-                } else bv19(updatecause[0], startcounter);
+                } else afterupdate(updatecause[0], startcounter);
                 break;
             
             case QP_IF_LAST:
                 if (icachealiases < 3) return icachealiases;
                 
                 if (updatecause[1] == '\015' && updatecause[2] == '\012') {
-                    bv19(updatecause[0], startcounter);
-                    luaL_addstring(startcounter, bv22);
+                    afterupdate(updatecause[0], startcounter);
+                    luaL_addstring(startcounter, enablecoherency);
                     return 0;
                 } else luaL_addchar(startcounter, updatecause[0]);
                 break;
                 
             case QP_QUOTED:
-                bv19(updatecause[0], startcounter);
+                afterupdate(updatecause[0], startcounter);
                 break;
                 
             default:
@@ -104200,26 +104211,26 @@ static size_t bv21(UC c, UC *updatecause, size_t icachealiases,
 }
 
 
-static size_t bv23(UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter)
+static size_t gpio6config(UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter)
 {
     size_t i;
     for (i = 0; i < icachealiases; i++) {
-        if (bv17[updatecause[i]] == QP_PLAIN) luaL_addchar(startcounter, updatecause[i]);
-        else bv19(updatecause[i], startcounter);
+        if (prminstassert[updatecause[i]] == QP_PLAIN) luaL_addchar(startcounter, updatecause[i]);
+        else afterupdate(updatecause[i], startcounter);
     }
     if (icachealiases > 0) luaL_addstring(startcounter, EQCRLF);
     return 0;
 }
 
 
-static int bv6(lua_State *L)
+static int queryregister(lua_State *L)
 {
 
     size_t asize = 0, isize = 0;
     UC atom[3];
     const UC *updatecause = (UC *) luaL_optlstring(L, 1, NULL, &isize);
     const UC *timerenable = updatecause + isize;
-    const char *bv22 = luaL_optstring(L, 3, CRLF);
+    const char *enablecoherency = luaL_optstring(L, 3, CRLF);
     luaL_Buffer startcounter;
     
     if (!updatecause) {
@@ -104232,11 +104243,11 @@ static int bv6(lua_State *L)
     
     luaL_buffinit(L, &startcounter);
     while (updatecause < timerenable)
-        asize = bv21(*updatecause++, atom, asize, bv22, &startcounter);
+        asize = enablesmartreflex(*updatecause++, atom, asize, enablecoherency, &startcounter);
     updatecause = (UC *) luaL_optlstring(L, 2, NULL, &isize);
     
     if (!updatecause) {
-        asize = bv23(atom, asize, &startcounter);
+        asize = gpio6config(atom, asize, &startcounter);
         luaL_pushresult(&startcounter);
         if (!(*lua_tostring(L, -1))) lua_pushnil(L);
         lua_pushnil(L);
@@ -104245,14 +104256,14 @@ static int bv6(lua_State *L)
     
     timerenable = updatecause + isize;
     while (updatecause < timerenable)
-        asize = bv21(*updatecause++, atom, asize, bv22, &startcounter);
+        asize = enablesmartreflex(*updatecause++, atom, asize, enablecoherency, &startcounter);
     luaL_pushresult(&startcounter);
     lua_pushlstring(L, (char *) atom, asize);
     return 2;
 }
 
 
-static size_t bv20(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter) {
+static size_t simtecpowercontrol(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter) {
     int d;
     updatecause[icachealiases++] = c;
     
@@ -104263,7 +104274,7 @@ static size_t bv20(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *sta
             
             if (updatecause[1] == '\015' && updatecause[2] == '\012') return 0;
             
-            c = bv18[updatecause[1]]; d = bv18[updatecause[2]];
+            c = usb11resources[updatecause[1]]; d = usb11resources[updatecause[2]];
             
             if (c > 15 || d > 15) luaL_addlstring(startcounter, (char *)updatecause, 3);
             else luaL_addchar(startcounter, (char) ((c << 4) + d));
@@ -104280,7 +104291,7 @@ static size_t bv20(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *sta
 }
 
 
-static int bv7(lua_State *L)
+static int cpuinfochain(lua_State *L)
 {
     size_t asize = 0, isize = 0;
     UC atom[3];
@@ -104298,7 +104309,7 @@ static int bv7(lua_State *L)
     
     luaL_buffinit(L, &startcounter);
     while (updatecause < timerenable)
-        asize = bv20(*updatecause++, atom, asize, &startcounter);
+        asize = simtecpowercontrol(*updatecause++, atom, asize, &startcounter);
     updatecause = (UC *) luaL_optlstring(L, 2, NULL, &isize);
     
     if (!updatecause) {
@@ -104310,14 +104321,14 @@ static int bv7(lua_State *L)
     
     timerenable = updatecause + isize;
     while (updatecause < timerenable)
-        asize = bv20(*updatecause++, atom, asize, &startcounter);
+        asize = simtecpowercontrol(*updatecause++, atom, asize, &startcounter);
     luaL_pushresult(&startcounter);
     lua_pushlstring(L, (char *) atom, asize);
     return 2;
 }
 
 
-static int bv8(lua_State *L)
+static int resourcestart(lua_State *L)
 {
     size_t icachealiases = 0;
     int dm9000platdata = (int) luaL_checknumber(L, 1);
@@ -104375,15 +104386,15 @@ static int bv8(lua_State *L)
 
 
 #define eolcandidate(c) (c == '\015' || c == '\012')
-static int bv24(int c, int timerenable, const char *bv22, 
+static int breakpointslots(int c, int timerenable, const char *enablecoherency, 
         luaL_Buffer *startcounter)
 {
     if (eolcandidate(c)) {
         if (eolcandidate(timerenable)) {
-            if (c == timerenable) luaL_addstring(startcounter, bv22);
+            if (c == timerenable) luaL_addstring(startcounter, enablecoherency);
             return 0;
         } else {
-            luaL_addstring(startcounter, bv22);
+            luaL_addstring(startcounter, enablecoherency);
             return c;
         }
     } else {
@@ -104393,13 +104404,13 @@ static int bv24(int c, int timerenable, const char *bv22,
 }
 
 
-static int bv9(lua_State *L)
+static int barrierhooks(lua_State *L)
 {
     int registermcasp = (int)luaL_checkinteger(L, 1);
     size_t isize = 0;
     const char *updatecause = luaL_optlstring(L, 2, NULL, &isize);
     const char *timerenable = updatecause + isize;
-    const char *bv22 = luaL_optstring(L, 3, CRLF);
+    const char *enablecoherency = luaL_optstring(L, 3, CRLF);
     luaL_Buffer startcounter;
     luaL_buffinit(L, &startcounter);
     
@@ -104410,7 +104421,7 @@ static int bv9(lua_State *L)
     }
     
     while (updatecause < timerenable)
-        registermcasp = bv24(*updatecause++, registermcasp, bv22, &startcounter);
+        registermcasp = breakpointslots(*updatecause++, registermcasp, enablecoherency, &startcounter);
     luaL_pushresult(&startcounter);
     lua_pushinteger(L, registermcasp);
     return 2;
@@ -104435,7 +104446,7 @@ static size_t dot(int c, size_t state, luaL_Buffer *startcounter)
 }
 
 
-static int bv10(lua_State *L)
+static int emulaterd8rn16rm0ra12(lua_State *L)
 {
     size_t isize = 0, state = (size_t) luaL_checknumber(L, 1);
     const char *updatecause = luaL_optlstring(L, 2, NULL, &isize);
@@ -106059,7 +106070,6 @@ codecdevice(LDbgMon* o)
       char buf[35];
       if(basnprintf(buf,len,"\103\157\156\164\145\156\164\055\114\145\156\147\164\150\072\040\045\144\015\012\015\012",len) < 0)
          return; 
-      JEncoder_commit(&o->jEnc);
       if(SoDispCon_sendDataX((SoDispCon*)o, buf, strlen(buf)) ||
          SoDispCon_sendDataX((SoDispCon*)o, DynBuffer_getBuf(&o->jEncBuf), len))
       {
@@ -106067,7 +106077,7 @@ codecdevice(LDbgMon* o)
       }
       else
       {
-         BufPrint_erase((BufPrint*)&o->jEncBuf);
+         JEncoder_commit(&o->jEnc);
       }
    }
 }

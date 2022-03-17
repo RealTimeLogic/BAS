@@ -409,6 +409,9 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 
 
 #if LUA_NUMBER_INTEGER
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wtautological-compare"
+#endif
 
 #define LUA_NZERO 0
 #define LUA_INTEGER		long
@@ -435,7 +438,7 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 
 #define l_floor(x)	(x)
 
-#define l_mathop(op)	int_##op
+#define l_mathop(op)	op
 #define int_ldexp(x, exp) x*(2^exp)
 #define int_floor(x) x
 #define int_frexp(x, exp) (x)

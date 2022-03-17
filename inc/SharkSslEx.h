@@ -10,9 +10,9 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEx.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: SharkSslEx.h 5100 2022-02-19 16:23:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -135,19 +135,17 @@ typedef enum
    /** The peer's SSL certificate is trusted and the
        subject's common name matches the host name of the URL.
    */
-   SharkSslConTrust_CertCn
+   SharkSslConTrust_CertCn,
 
-#if SHARKSSL_CHECK_DATE
    /** This value is returned instead of SharkSslConTrust_CertCn when a
        certificate is trusted and the SharkSSL code is compiled with
-       SHARKSSL_CHECK_DATE=1 (default). This mode also checks the
+       SHARKSSL_CHECK_DATE=1. This mode also checks the
        certificate's 'from' and 'to' dates with the time returned by
        #baGetUnixTime. The certificate and all intermediates are
        checked, except for the root certificate. Unfortunately, many
-       root certifies have expired and must simply be accepted.
+       root certifies are expired and must simply be accepted.
    */
-   ,SharkSslConTrust_CertCnDate
-#endif
+   SharkSslConTrust_CertCnDate
 } SharkSslConTrust;
 
 #if SHARKSSL_CHECK_DATE == 0

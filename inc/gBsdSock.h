@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: gBsdSock.h 5116 2022-03-14 23:43:47Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -111,6 +111,9 @@ struct HttpSockaddr;
 #define socketRecvfrom recvfrom
 #endif
 
+#ifndef socketGetsockopt
+#define socketGetsockopt getsockopt
+#endif
 
 #ifndef socketSetsockopt
 #define socketSetsockopt setsockopt
@@ -151,6 +154,11 @@ struct HttpSockaddr;
 #ifndef socketConnect
 #define socketConnect connect
 #endif
+
+#ifndef BaSockAddrStorage
+#define BaSockAddrStorage struct sockaddr_storage
+#endif
+
 
 
 /* FD_CLOEXEC if applicable for platform */
@@ -225,7 +233,8 @@ typedef struct {
 #define HttpSocket_hardClose(o) do {\
    struct linger l;\
    l.l_onoff = 1; l.l_linger = 0;\
-   setsockopt((o)->hndl,SOL_SOCKET,SO_LINGER,(char*)&l,sizeof(struct linger));\
+   socketSetsockopt((o)->hndl,SOL_SOCKET,SO_LINGER,     \
+                    (char*)&l,sizeof(struct linger));   \
    socketClose((o)->hndl);\
    HttpSocket_invalidate(o);\
  } while(0)
@@ -263,9 +272,9 @@ typedef struct {
 #ifndef HttpSocket_getPeerName
 #ifdef USE_IPV6
 #define HttpSocket_getPeerName(o, addrMA, port, isIp6MA, status) do {\
-   struct sockaddr_storage a;\
+   BaSockAddrStorage a;\
     basocklen_t aLen = sizeof(a);\
-   if( !(*(status) = getpeername((o)->hndl, (struct sockaddr *)&a, &aLen)) )\
+   if( !(*(status) = socketGetPeerName((o)->hndl, (struct sockaddr *)&a, &aLen)) )\
    {\
       if(isIp6MA){\
          memcpy(&(addrMA)->addr, &((struct sockaddr_in6*)&a)->sin6_addr, 16);\
@@ -293,9 +302,9 @@ typedef struct {
 #ifndef HttpSocket_getSockName
 #ifdef USE_IPV6
 #define HttpSocket_getSockName(o, addrMA, port, isIp6MA, status) do {\
-   struct sockaddr_storage a;\
+   BaSockAddrStorage a;\
     basocklen_t aLen = sizeof(a);\
-   if( !(*(status) = getsockname((o)->hndl, (struct sockaddr *)&a, &aLen)) )\
+   if( !(*(status) = socketGetSockName((o)->hndl,(struct sockaddr*)&a,&aLen)) )\
    {\
       if(isIp6MA){\
          memcpy(&(addrMA)->addr, &((struct sockaddr_in6*)&a)->sin6_addr, 16);\
@@ -442,14 +451,15 @@ do { \
 #endif
 
 #if !defined(HttpSocket_getKeepAlive) && defined(SO_KEEPALIVE)
-#define HttpSocket_getKeepAlive(o,enablePtr,statusPtr) do { \
-   int optval; \
-   socklen_t optlen = sizeof(optval); \
-   *(statusPtr) = \
-      getsockopt((o)->hndl,SOL_SOCKET,SO_KEEPALIVE,(char*)&optval,&optlen)<0 ? \
-      -1 : 0; \
-   *(enablePtr) = optval; \
-} while(0)
+#define HttpSocket_getKeepAlive(o,enablePtr,statusPtr) do {     \
+      int optval;                                               \
+      socklen_t optlen = sizeof(optval);                        \
+      *(statusPtr) =                                            \
+         socketGetsockopt((o)->hndl,SOL_SOCKET,SO_KEEPALIVE,    \
+                          (char*)&optval,&optlen)<0 ?           \
+         -1 : 0;                                                \
+      *(enablePtr) = optval;                                    \
+   } while(0)
 #endif
 
 #if !defined(HttpSocket_setKeepAlive) && defined(SO_KEEPALIVE)
@@ -457,7 +467,8 @@ do { \
    int optval=enable; \
    basocklen_t optlen = sizeof(optval); \
    *(statusPtr) = \
-      setsockopt((o)->hndl,SOL_SOCKET,SO_KEEPALIVE,(char*)&optval,optlen)<0 ? \
+      socketSetsockopt((o)->hndl,SOL_SOCKET,SO_KEEPALIVE,       \
+                       (char*)&optval,optlen)<0 ?               \
       -1 : 0; \
 } while(0)
 #endif

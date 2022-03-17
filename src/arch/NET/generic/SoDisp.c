@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: SoDisp.c 5116 2022-03-14 23:43:47Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2018
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -48,6 +48,14 @@
 #include <HttpTrace.h>
 #include <stddef.h>
 #include <stdlib.h>
+
+#ifndef BA_FD_SET
+#define BA_FD_SET FD_SET
+#define BA_FD_ZERO FD_ZERO
+#define BA_FD_ISSET FD_ISSET
+#define baFdSet fd_set
+#endif
+
 
 /*
   Failure to perform a non blocking connect is signaled via readfds
@@ -97,7 +105,7 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
 
 #define SoDispCon_add2SockSet(o, sockSet, highSockDesc) do { \
    int s = (o)->httpSocket.hndl; \
-   FD_SET(s, &(sockSet)); \
+   BA_FD_SET(s, &(sockSet)); \
    if(s > highSockDesc) \
       highSockDesc = s; \
 } while(0)
@@ -109,14 +117,14 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
 static int
 SoDispCon_rtmo(SoDispCon* o)
 {
-   fd_set recSet;
+   baFdSet recSet;
    struct timeval tv;
    int highSockDesc=0;
    int tmo = o->rtmo*50;
    o->rtmo=0;
    tv.tv_sec = tmo / 1000;
    tv.tv_usec = (tmo % 1000) * 1000;
-   FD_ZERO(&recSet);
+   BA_FD_ZERO(&recSet);
    SoDispCon_add2SockSet(o, recSet, highSockDesc);
    return socketSelect(highSockDesc+1, &recSet, 0, 0, &tv) > 0 ? 0 : -1;
 }
@@ -317,19 +325,19 @@ SoDisp_run(SoDisp* o, S32 timeout)
    SoDisp_moveFromPending2ConList(o);
    do
    {
-      fd_set recSet;
-      fd_set sendSet;
+      baFdSet recSet;
+      baFdSet sendSet;
 #ifdef NON_BLOCK_CON_EX
-      fd_set exceptSet;
+      baFdSet exceptSet;
 #endif
       DoubleLink* curL;
       int highSockDesc=0;
       SoDisp_moveFromPending2ConList(o);
       /* Add to socket set i.e. prepare for select.*/
-      FD_ZERO(&recSet);
-      FD_ZERO(&sendSet);
+      BA_FD_ZERO(&recSet);
+      BA_FD_ZERO(&sendSet);
 #ifdef NON_BLOCK_CON_EX
-      FD_ZERO(&exceptSet);
+      BA_FD_ZERO(&exceptSet);
 #endif
       DoubleListEnumerator_constructor(&o->iter, &o->conList);
       curL = DoubleListEnumerator_getElement(&o->iter);
@@ -402,17 +410,16 @@ SoDisp_run(SoDisp* o, S32 timeout)
             SoDispCon* con = link2Con(curL);
             if(SoDispCon_isValid(con))
             {
-               if(
-                  FD_ISSET(con->httpSocket.hndl, &sendSet)
+               if(BA_FD_ISSET(con->httpSocket.hndl, &sendSet)
 #ifdef NON_BLOCK_CON_EX
-                  || FD_ISSET(con->httpSocket.hndl, &exceptSet)
+                  || BA_FD_ISSET(con->httpSocket.hndl, &exceptSet)
 #endif
                   )
                {
                   SoDispCon_dispSendEvent(con);
                }
                if(o->curL == curL &&
-                  FD_ISSET(con->httpSocket.hndl, &recSet))
+                  BA_FD_ISSET(con->httpSocket.hndl, &recSet))
                {
                   SoDispCon_setDispHasRecData(con);
                   SoDispCon_dispRecEvent(con);
