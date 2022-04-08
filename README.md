@@ -43,7 +43,7 @@ BAS Amalgamated is very easy to compile and several command line compilation exa
 BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mako-server-hlos), the [LSP Application Manager](#lsp-application-manager-rtos), and the [C++ WebSocket Server Example](examples/C-WebSockets/README.md).
 
 * The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
-* The C++ WebSocket Server Example shows how to implement everything using C code (no Lua). With this example, you are effectivly using only [Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/) components.
+* The C++ WebSocket Server Example shows how to implement everything using C code (no Lua). With this example, you are effectively using the [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) component.
 
 ### Mako Server (HLOS)
 
