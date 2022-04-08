@@ -1,7 +1,9 @@
 # BAS Amalgamated
 ### Barracuda App Server Amalgamated
 
-Speed up your web, IoT, and edge computing design with the Barracuda App Server, a compact client/server multi-protocol stack and toolkit with an efficient integrated scripting engine.
+The Barracuda App Server is an embeddable C code library with support for the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS (ThreadX/NetX), Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
+
+Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
 ![Barracuda App Server Amalgamated](https://realtimelogic.com/images/BarracudaAppServer.png)
 

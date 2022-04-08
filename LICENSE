@@ -1,14 +1,16 @@
-BAS Amalgamated is either licensed for use under the GPLv3 or a standard
+BAS Amalgamated is either licensed for use under the GPLv2 or a standard
 commercial license. For our users who cannot use BAS Amalgamated under
-GPLv3, a commercial license to BAS Amalgamated is available.
+GPLv2, a commercial license to BAS Amalgamated is available (details below).
 
-The following clarification is for users that choose to use GPLv3 and
-to distribute derivative work. The GPLv3 license applies to all BAS APIs
+The following clarification is for users that choose to use GPLv2 and
+to distribute derivative work. The GPLv2 license applies to all BAS APIs
 including, but not limited to the BAS C APIs, BAS Lua APIs, and web
 content hosted by a BAS derivative product. Web content hosted by the
 server is considered part of the application as a whole.
 
-GPLv3: https://www.gnu.org/licenses/gpl-3.0.en.html
+GPLv2: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
 
-A free commercial license for small companies is available. See
-the license page for details: https://realtimelogic.com/contactus/license/
+A free commercial license for small companies is available.
+
+See the license page for details:
+https://realtimelogic.com/contactus/license/
