@@ -210,6 +210,30 @@ The above construction makes Lua use integer only and excludes floating point nu
 
 See inc/arch/XXX/luaconf.h for details.
 
+# Porting Layers
+
+| OS+TCP | include | source |
+| ----------- | ----------- | ----------- |
+| Digi | inc/arch/Digi | src/arch/Digi/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| embOS | inc/arch/NET/embOSIP inc/arch/embOS | src/arch/embOS/ThreadLib.c src/arch/NET/embOSIP/SoDisp.c |
+| FreeRTOS+lwIP | inc/arch/NET/LwIP inc/arch/FreeRTOS | src/arch/FreeRTOS/ThreadLib.c src/arch/NET/LwIP/SoDisp.c |
+| FreeRTOS+TCP | inc/arch/FreeRTOS | src/arch/FreeRTOS/ThreadLib.c src/arch/FreeRTOS/SoDisp.c |
+| INTEGRITY | inc/arch/NET/Posix inc/arch/INTEGRITY | src/arch/INTEGRITY/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| INtime | inc/arch/NET/INtime inc/arch/INtime | src/arch/INtime/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| Linux+epoll | inc/arch/NET/epoll inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/epoll/SoDisp.c |
+| MQX | inc/arch/NET/MQX inc/arch/MQX | src/arch/MQX/ThreadLib.c src/arch/NET/MQX/SoDisp.c |
+| Nucleus | inc/arch/NET/Nucleus inc/arch/Nucleus | src/arch/Nucleus/ThreadLib.c src/arch/NET/Nucleus/SoDisp.c |
+| Posix (Linux, Mac, QNX) | inc/arch/NET/Posix inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| Quadros | inc/arch/Quadros | src/arch/Quadros/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| SMX | inc/arch/NET/SMX-NET inc/arch/SMX | src/arch/SMX/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| ThreadX+NetX | inc/arch/ThreadX | src/arch/ThreadX/ThreadLib.c src/arch/ThreadX/SoDisp.c |
+| VxWorks | inc/arch/VxWorks | src/arch/VxWorks/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| Windows | inc/arch/NET/Windows inc/arch/Windows | src/arch/Windows/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| Windows CE | inc/arch/NET/CE inc/arch/Windows | src/arch/Windows/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+| Zephyr | inc/arch/Zephyr | src/arch/Zephyr/ThreadLib.c src/arch/NET/generic/SoDisp.c |
+
+The generic directory 'inc' must also be in the include path.
+
 # Additional Build Examples
 
 ## VxWorks
