@@ -51,7 +51,7 @@ The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can b
 
 #### TL;DR (Linux):
 
-Download and compile the code for Linux as follows:
+See the tutorial [Embedded Linux Web Interface Design](https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design) for details; however, the server can be downloaded and compiled for Linux as follows:
 
 ```
 wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
