@@ -5,7 +5,7 @@ The Barracuda App Server is an embeddable C code library with support for the fo
 
 Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
-![Barracuda App Server Amalgamated](https://realtimelogic.com/images/BarracudaAppServer.png)
+![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)
 
 The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. Refer to the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
