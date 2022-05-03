@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5142 2022-05-03 19:08:40Z wini $
+ *   $Id: SoDisp.c 2953 2013-08-01 14:06:32Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2010 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -49,25 +49,9 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#ifndef BA_FD_SET
-#define BA_FD_SET FD_SET
-#define BA_FD_ZERO FD_ZERO
-#define BA_FD_ISSET FD_ISSET
-#define baFdSet fd_set
-#endif
-
-
-/*
-  Failure to perform a non blocking connect is signaled via readfds
-  for POSIX select, however, Windows uses a non standard mechanism and
-  signals this via exceptfds.
-  NON_BLOCK_CON_EX -> Non Blocking Connect failures signaled via Exceptfds
-*/
-#ifdef BA_WINDOWS
-#define NON_BLOCK_CON_EX
-#endif
 
 extern UserDefinedErrHandler barracudaUserDefinedErrHandler;
+
 
 
 BA_API void
@@ -81,7 +65,7 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
       recursiveCall=1;
       HttpTrace_printf(0,"Fatal error detected in Barracuda.\n"
                        "E1 = %d, E2=%d\n"
-                       "%s, line %d\n",
+                       "%s, line %d",
                        ecode1, ecode2,
                        file, line);
       HttpTrace_flush();
@@ -97,6 +81,43 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
 }
 
 
+void
+HttpSockaddr_gethostbyname(
+   HttpSockaddr* o, const char* host, BaBool ip6, int* status)
+{
+   o->isIp6=ip6;
+   *status=-1;
+   HttpSockaddr_inetAddr(o, host, ip6, status);
+   if(*status)
+   {
+      NU_HOSTENT* hentry;
+      STATUS nstatus;
+      hentry = NU_Get_IP_Node_By_Name(
+         (CHAR*)host,
+         ip6 ? NU_FAMILY_IP6 : NU_FAMILY_IP,
+         ip6 ? DNS_ALL | DNS_V4MAPPED : 0,
+         &nstatus);
+      if(hentry)
+      {
+         if(status == NU_SUCCESS)
+         {
+            int i;
+            int len = ip6 ? 16 : 4;
+            for(i=0 ; i < len ; i++)
+            {
+               if(hentry->h_addr_list[i] != 0)
+                  break;
+            }
+            if(i != len)
+            {
+               memcpy(o->addr,hentry->h_addr_list, len);
+               *status=0;
+            }
+         }
+         NU_Free_Host_Entry(hentry);
+      }
+   }
+}
 
 
 #define link2Con(l) \
@@ -105,7 +126,7 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
 
 #define SoDispCon_add2SockSet(o, sockSet, highSockDesc) do { \
    int s = (o)->httpSocket.hndl; \
-   BA_FD_SET(s, &(sockSet)); \
+   NU_FD_Set(s, &(sockSet)); \
    if(s > highSockDesc) \
       highSockDesc = s; \
 } while(0)
@@ -117,15 +138,13 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
 static int
 SoDispCon_rtmo(SoDispCon* o)
 {
-   baFdSet recSet;
-   struct timeval tv;
+   FD_SET recSet;
    int highSockDesc=0;
-   int tmo = o->rtmo*50;
-   tv.tv_sec = tmo / 1000;
-   tv.tv_usec = (tmo % 1000) * 1000;
-   BA_FD_ZERO(&recSet);
+   BaTime tmo = (BaTime)o->rtmo*50;
+   NU_FD_Init(&recSet);
    SoDispCon_add2SockSet(o, recSet, highSockDesc);
-   return socketSelect(highSockDesc+1, &recSet, 0, 0, &tv) > 0 ? 0 : -1;
+   return NU_Select(
+      highSockDesc+1, &recSet, 0, 0, baMsTime2TxTicks(tmo)) > 0 ? 0 : -1;
 }
 
 
@@ -145,24 +164,14 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
       ThreadMutex_release(m);
       if(o->rtmo)
       {
-         SoDisp* disp;
-         if(SoDispCon_recEvActive(o))
-         {
-            disp=SoDispCon_getDispatcher(o);
-            SoDisp_deactivateRec(disp, o);
-         }
-         else
-            disp=0;
          status=SoDispCon_rtmo(o);
          if(*isTerminated || status)
          {
             ThreadMutex_set(m);
             if(*isTerminated)
                return E_SOCKET_READ_FAILED;
-            return E_TIMEOUT;
+            return E_SOCKET_READ_TIMEOUT;
          }
-         if(disp)
-            SoDisp_activateRec(disp, o);
       }
       HttpSocket_recv(&o->httpSocket,data,len,&status);
       ThreadMutex_set(m);
@@ -175,7 +184,7 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
       {
          status=SoDispCon_rtmo(o);
          if(status)
-            return E_TIMEOUT;
+            return E_SOCKET_READ_TIMEOUT;
       }
       HttpSocket_recv(&o->httpSocket,data,len,&status);
    }
@@ -234,14 +243,6 @@ SoDisp_addConnection(SoDisp* o, SoDispCon* con)
 BA_API void
 SoDisp_activateRec(SoDisp* o, SoDispCon* con)
 {
-
-#if defined(FD_SETSIZE) && defined(BA_POSIX)
-   if(con->httpSocket.hndl > FD_SETSIZE)
-   {
-      baFatalE(FE_SOCKET,FD_SETSIZE);
-   }
-#endif
-
    baAssert(!SoDispCon_recEvActive(con));
    SoDispCon_setRecEvActive(con);
    if( ! SoDispCon_sendEvActive(con) )
@@ -269,7 +270,6 @@ SoDisp_deactivateRec(SoDisp* o, SoDispCon* con)
 }
 
 
-#ifndef NO_ASYNCH_RESP
 void
 SoDisp_activateSend(SoDisp* o, SoDispCon* con)
 {
@@ -299,7 +299,7 @@ SoDisp_deactivateSend(SoDisp* o, SoDispCon* con)
       DoubleLink_unlink(&con->dispatcherLink);
    }
 }
-#endif
+
 
 void
 SoDisp_removeConnection(SoDisp* o, SoDispCon* con)
@@ -314,30 +314,21 @@ SoDisp_removeConnection(SoDisp* o, SoDispCon* con)
 void
 SoDisp_run(SoDisp* o, S32 timeout)
 {
-
-   struct timeval tv;
-   struct timeval* tvp;
-   int descriptors=0;
-
+   INT descriptors=0;
    SoDisp_mutexSet(o);
    o->doExit = FALSE;
    SoDisp_moveFromPending2ConList(o);
    do
    {
-      baFdSet recSet;
-      baFdSet sendSet;
-#ifdef NON_BLOCK_CON_EX
-      baFdSet exceptSet;
-#endif
+      FD_SET recSet;
+      FD_SET sendSet;
       DoubleLink* curL;
-      int highSockDesc=0;
+      UNSIGNED ttmo; /* Tick timeout */
+      INT highSockDesc=0;
       SoDisp_moveFromPending2ConList(o);
       /* Add to socket set i.e. prepare for select.*/
-      BA_FD_ZERO(&recSet);
-      BA_FD_ZERO(&sendSet);
-#ifdef NON_BLOCK_CON_EX
-      BA_FD_ZERO(&exceptSet);
-#endif
+      NU_FD_Init(&recSet);
+      NU_FD_Init(&sendSet);
       DoubleListEnumerator_constructor(&o->iter, &o->conList);
       curL = DoubleListEnumerator_getElement(&o->iter);
       while(curL)
@@ -348,12 +339,7 @@ SoDisp_run(SoDisp* o, S32 timeout)
             if(SoDispCon_recEvActive(con))
                SoDispCon_add2SockSet(con, recSet, highSockDesc);
             if(SoDispCon_sendEvActive(con))
-            {
                SoDispCon_add2SockSet(con, sendSet, highSockDesc);
-#ifdef NON_BLOCK_CON_EX
-               SoDispCon_add2SockSet(con, exceptSet, highSockDesc);
-#endif
-            }
             curL = DoubleListEnumerator_nextElement(&o->iter);
          }
          else
@@ -367,31 +353,10 @@ SoDisp_run(SoDisp* o, S32 timeout)
                curL = o->curL;
          }
       }
-
-      if(timeout >= 0)
-      {
-         tv.tv_sec = timeout / 1000;
-         tv.tv_usec = (timeout % 1000) * 1000;
-         tvp=&tv;
-      }
-      else
-      {
-         tv.tv_sec = o->pollDelay / 1000;
-         tv.tv_usec = (o->pollDelay % 1000) * 1000;
-         tvp=&tv;
-      }
-
+      ttmo = baMsTime2TxTicks(timeout >= 0 ? timeout :  o->pollDelay);
       SoDisp_mutexRelease(o);
       if(highSockDesc)
-      {
-         descriptors = socketSelect(highSockDesc+1, &recSet, &sendSet, 
-#ifdef NON_BLOCK_CON_EX
-                                    &exceptSet,
-#else
-                                    0,
-#endif
-                                    tvp);
-      }
+         descriptors = NU_Select(highSockDesc+1, &recSet, &sendSet, 0, ttmo);
       else
       {
          descriptors=0;
@@ -400,7 +365,7 @@ SoDisp_run(SoDisp* o, S32 timeout)
       SoDisp_mutexSet(o);
 
       /*Check socket descriptors and execute if data.*/
-      if(descriptors > 0)
+      if(descriptors >= 0)
       {
          DoubleListEnumerator_constructor(&o->iter, &o->conList);
          o->curL = curL = DoubleListEnumerator_getElement(&o->iter);
@@ -409,16 +374,12 @@ SoDisp_run(SoDisp* o, S32 timeout)
             SoDispCon* con = link2Con(curL);
             if(SoDispCon_isValid(con))
             {
-               if(BA_FD_ISSET(con->httpSocket.hndl, &sendSet)
-#ifdef NON_BLOCK_CON_EX
-                  || BA_FD_ISSET(con->httpSocket.hndl, &exceptSet)
-#endif
-                  )
+               if(NU_FD_Check(con->httpSocket.hndl, &sendSet))
                {
                   SoDispCon_dispSendEvent(con);
                }
                if(o->curL == curL &&
-                  BA_FD_ISSET(con->httpSocket.hndl, &recSet))
+                  NU_FD_Check(con->httpSocket.hndl, &recSet))
                {
                   SoDispCon_setDispHasRecData(con);
                   SoDispCon_dispRecEvent(con);
@@ -458,11 +419,9 @@ SoDisp_run(SoDisp* o, S32 timeout)
       }
       else
       {
-#if 0
-         TRPR(("Select failed\n"));
-#endif
          SoDisp_mutexRelease(o);
-         Thread_sleep(10); /*Give other thread time to cleanup (remove) socket*/
+         /* Give other thread time to cleanup (remove) socket */
+         Thread_sleep(10);
          SoDisp_mutexSet(o);
       }
    } while( (timeout < 0 || descriptors > 0) && ! o->doExit );

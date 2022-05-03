@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: SharkSSL.h 5131 2022-04-26 20:10:40Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2021
  *
@@ -1298,6 +1298,10 @@ U8  SharkSslCon_getAlertDescription(SharkSslCon *o);
 /** Returns the active session's [chiper suite](@ref Ciphersuites)
  */
 SHARKSSL_API U16 SharkSslCon_getCiphersuite(SharkSslCon *o);
+
+/** Returns the active session's [protocol version](@ref SharkSslProtocol)
+ */
+#define SharkSslCon_getProtocol(o) (SHARKSSL_PROTOCOL_TLS_1_2)
 
 #endif
 

@@ -28,6 +28,6 @@
 extern int basnprintf(char* buf, int len, const char* fmt, ...);
 extern int basprintf(char* buf, const char* fmt, ...);
 
-#include "../gluaconf.h"
+#include <gluaconf.h>
 
 #endif

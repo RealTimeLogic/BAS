@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5065 2022-01-31 23:53:26Z wini $
+ *   $Id: balua.h 5134 2022-04-27 22:40:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
  *
@@ -171,7 +171,11 @@ BA_API void* baLMalloc(lua_State* L, size_t size);
 BA_API lua_State* _balua_create(const BaLua_param* p, int version);
 
 /** 
-    Install the Lua version of the client login tracker
+    Install Lua bindings for the default login tracker. See one of the two following C code examples for how to use this function: MakoMain.c or LspAppMgr.c
+    \param noOfLoginTrackerNodes tracker size
+    \param maxNumberOfLogins how many login attempts before user (IP address) is banned
+    \param banTime how long in seconds to ban an IP address
+    \sa #LoginTracker #LoginTrackerIntf
 */
 BA_API int balua_usertracker_create(
    lua_State* L, U32 noOfLoginTrackerNodes, U32 maxNumberOfLogins,

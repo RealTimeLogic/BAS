@@ -6818,6 +6818,8 @@ LUALIB_API int luaL_loadfilex (lua_State *L, const char *filename,
 #else
 LUALIB_API int luaL_loadfilex (lua_State *L, const char *filename,
                                const char *mode) {
+   (void)filename;
+   (void)mode;
    lua_pushliteral(L, "loadfile not supported");
    return LUA_ERRFILE;
 }
@@ -31264,8 +31266,12 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 
 #elif (__GNUC__)  
 #if !defined(_OSX_) && GCC_VERSION >= 402
+#ifdef __bswap_32
+#define blockarray  (U32)__bswap_32
+#else
 #include <byteswap.h>
 #define blockarray  (U32)__builtin_bswap32
+#endif
 #endif
 #endif
 
@@ -52727,6 +52733,7 @@ SoDispCon_asyncConnect(SoDispCon* o,
 BA_API int
 SoDispCon_asyncConnectNext(SoDispCon* o)
 {
+   (void)o;
    return E_CANNOT_CONNECT;
 }
 #endif
@@ -81329,24 +81336,28 @@ typedef struct
 #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
 #define probehandler(x,y,z) brightnesslimit->fmulmod(x, y, z, mod, brightnesslimit->mu);
 #define traceguest(x,y,z)  brightnesslimit->mulmod(x, y, z, mod, &brightnesslimit->D.mem[0]);
-void shtype_t_mulmodNORMAL(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord *afterhandler)
+static void registernotifier(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord *afterhandler)
 {
    hotplugpgtable(o1, o2, deltadevices);
    envdatamcheck(deltadevices, cpuidfeature, afterhandler);
 }
 
-void shtype_t_mulmodMONTGOMERY(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord mu)
+static void branchlikely(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord mu)
 {
    writebytes(o1, o2, deltadevices, cpuidfeature, mu);
 }
 
-void shtype_t_mulmodNIST(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord mu)
+static void helpersetup(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord *afterhandler)
 {
-   (void)mu;
+   (void)afterhandler;
    hotplugpgtable(o1, o2, deltadevices);
    availableasids(deltadevices, cpuidfeature);
 }
 
+static void softlockupwatchdog(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord mu)
+{
+   helpersetup(o1, o2, deltadevices, cpuidfeature, &mu);
+}
 #elif SHARKSSL_ECC_USE_NIST  
    #define probehandler(x,y,z) hotplugpgtable(x, y, z); availableasids(z, mod)
    #define traceguest(x,y,z)  hotplugpgtable(x, y, z); availableasids(z, mod)
@@ -81367,8 +81378,8 @@ void SharkSslEC_temp_setmulmod(SharkSslEC_temp *brightnesslimit, SharkSslECCurve
    if (((shtype_tWord)-3) == o->a.beg[0])
    {
       #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
-      brightnesslimit->mulmod = (func_mulmod)shtype_t_mulmodNIST;
-      brightnesslimit->fmulmod = shtype_t_mulmodNIST;
+      brightnesslimit->mulmod = helpersetup;
+      brightnesslimit->fmulmod = softlockupwatchdog;
       #endif
       brightnesslimit->factor_a = NULL;
       brightnesslimit->mu = 0;
@@ -81376,8 +81387,8 @@ void SharkSslEC_temp_setmulmod(SharkSslEC_temp *brightnesslimit, SharkSslECCurve
    else
    {
       #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
-      brightnesslimit->mulmod = shtype_t_mulmodNORMAL;
-      brightnesslimit->fmulmod = shtype_t_mulmodMONTGOMERY;
+      brightnesslimit->mulmod = registernotifier;
+      brightnesslimit->fmulmod = branchlikely;
       #endif
       brightnesslimit->factor_a = &(o->a);
       brightnesslimit->mu = remapcfgspace(&o->prime);
@@ -94373,6 +94384,8 @@ HttpClient_request(HttpClient* o,
       o->lastError=E_INCORRECT_USE;
       return E_INCORRECT_USE;
    }
+   if (o->readTmo == 0)
+      o->readTmo = 100; 
    o->lastError=E_INCORRECT_USE;
    o->httpStatus=E_SOCKET_CLOSED;
 
@@ -94512,6 +94525,7 @@ L_defPorts:
 #ifdef NO_SHARKSSL
          return updateproperty(o, E_NOT_TRUSTED);
 #else
+         SoDispCon_setReadTmo((SoDispCon*)o, o->readTmo);
          if( (r3000write=SoDispCon_upgrade((SoDispCon*)o,
                                      o->sharkSslClient, 0,
                                      o->host,o->portNo)) <= 0)
@@ -98851,8 +98865,6 @@ BA_API const LSharkSSLFuncs** getSharkSSLFuncs();
 
 
 
-static const char invalidOptFmt[] = {"\101\162\147\040\043\045\144\054\040\151\156\166\141\154\151\144\040\157\160\164\072\040\045\163"};
-
 #define BASHARKSSL "\102\101\123\110\101\122\113\123\123\114"
 #define checksharkix(L,ix) luaL_checkudata(L,ix,BASHARKSSL)
 
@@ -99780,6 +99792,8 @@ raisesigfpe(lua_State *L)
 
 #if SHARKSSL_ENABLE_CSR_CREATION
 
+static const char clclkregister[] = {"\101\162\147\040\043\045\144\054\040\151\156\166\141\154\151\144\040\157\160\164\072\040\045\163"};
+
 typedef struct
 {
    const char* val;
@@ -99833,7 +99847,7 @@ mcspi1hwmod(lua_State *L, const char* str, int ix)
    const BaSslBitExtReqSet* extReqSet =
       baSearchBitExtReqSet(hashSets, BASET_LEN(hashSets), str);
    if(!extReqSet)
-      luaL_error(L, invalidOptFmt, ix, str);
+      luaL_error(L, clclkregister, ix, str);
    return extReqSet->bit;
 }
 
@@ -99902,7 +99916,7 @@ egpioplatform(lua_State *L)
       extReqSet=baSearchBitExtReqSet(
          nsCertTypeSets, BASET_LEN(nsCertTypeSets), str);
       if(!extReqSet)
-         luaL_error(L, invalidOptFmt, clearflags, str);
+         luaL_error(L, clclkregister, clearflags, str);
       setupcalled.bits |= extReqSet->bit;
       lua_pop(L, 1);
    }
@@ -99919,7 +99933,7 @@ egpioplatform(lua_State *L)
       extReqSet=baSearchBitExtReqSet(
          keyUsageSets, BASET_LEN(keyUsageSets), str);
       if(!extReqSet)
-         luaL_error(L, invalidOptFmt, clearflags+1, str);
+         luaL_error(L, clclkregister, clearflags+1, str);
       latchcontrol.bits |= extReqSet->bit;
       lua_pop(L, 1);
    }
@@ -104493,6 +104507,14 @@ devicenames(lua_State* L)
 #include <HttpTrace.h>
 #include "lxrc.h"
 
+#ifndef LTHREAD_DBG
+#if !defined(NDEBUG) || defined(_DEBUG)
+#define LTHREAD_DBG 1
+#else 
+#define LTHREAD_DBG 0
+#endif
+#endif
+
 #define LTHREADMGR "\114\124\110\122\105\101\104\115\107\122" 
 
 #define toLThreadMgr(L) (LThreadMgr*)luaL_checkudata(L,1,LTHREADMGR)
@@ -104552,6 +104574,11 @@ static void icachealias(lua_State* L,LThreadCont* tc,LThreadMgr* tm);
 static int interruptpcsxx(lua_State* L, LThreadMgr* tm);
 static LThreadMgr* LThreadMgr_get(lua_State* L);
 
+#if LTHREAD_DBG
+static lua_CFunction runThreadCoFuncPtr;
+#else
+#define runThreadCoFuncPtr unmapmemslot
+#endif
 
 static LThread*
 LThread_removeFirstThread(DoubleList* entryinsert)
@@ -104569,6 +104596,54 @@ pciclk66setup(LThread* o)
    Thread_destructor((Thread*)o);
 }
 
+
+#if LTHREAD_DBG
+
+static void
+notifyremove(lua_State* L)
+{
+   lua_pushlightuserdata(L, (void*)notifyremove); 
+   lua_rawget(L, LUA_REGISTRYINDEX);
+   if( ! lua_istable(L, -1) )
+   {  
+      lua_pop(L,1);
+      lua_newtable(L);
+      lua_pushlightuserdata(L, (void*)notifyremove); 
+      lua_pushvalue(L, -2); 
+      lua_rawset(L, LUA_REGISTRYINDEX);  
+   }
+}
+
+
+static int
+entrytarget(lua_State* L)
+{
+   int s;
+
+   notifyremove(L);
+   lua_pushthread(L); 
+   lua_pushboolean(L,TRUE); 
+   lua_rawset(L, -3); 
+   lua_pop(L,1); 
+
+   s=lua_pcall(L,0,1,-2);
+
+   notifyremove(L);
+   lua_pushthread(L); 
+   lua_pushnil(L); 
+   lua_rawset(L, -3); 
+   lua_pop(L,1); 
+
+   return s;
+}
+#endif 
+
+
+static int
+unmapmemslot(lua_State* L)
+{
+   return lua_pcall(L,0,1,-2);
+}
 
 static void
 devicedisable(Thread* fdc37m81xconfig)
@@ -104596,7 +104671,7 @@ devicedisable(Thread* fdc37m81xconfig)
      L_nextJob:
       lua_pushcclosure(L,balua_errorhandler,0);
       lua_rawgeti(L,LUA_REGISTRYINDEX, tc->fref);
-      s=lua_pcall(L,0,1,-2);
+      s=runThreadCoFuncPtr(L);
       luaL_unref(L, LUA_REGISTRYINDEX, tc->fref); 
       tc->fref=0;
       if(s)
@@ -104855,12 +104930,41 @@ encodeimmediate(lua_State* L)
    return 1;
 }
 
+#if LTHREAD_DBG
+static int
+shadowstart(lua_State* L)
+{
+   int ix=1;
+   if(lua_isboolean(L,1))
+   {
+      runThreadCoFuncPtr = lua_toboolean(L,1) ? entrytarget : unmapmemslot;
+      return 0;
+   }
+   lua_newtable(L);
+   notifyremove(L);
+   lua_pushnil(L);  
+   while(lua_next(L, -2) != 0) 
+   {
+      lua_pop(L, 1); 
+      lua_pushinteger(L, ix); 
+      lua_pushvalue(L, -2); 
+      lua_rawset(L, -5); 
+      ix++;
+   }
+   lua_pop(L,1); 
+   return 1; 
+}
+#endif 
+
 
 
 static const luaL_Reg lib[] = {
    {"\162\165\156", buttondevinit},
    {"\143\162\145\141\164\145", encodeimmediate},
    {"\143\157\156\146\151\147\165\162\145", storerelease},
+#if LTHREAD_DBG
+   {"\144\142\147", shadowstart},
+#endif
    {NULL, NULL}
 };
 
@@ -104899,6 +105003,9 @@ balua_thread(lua_State* L)
    luaL_newlib(L,lib);
    lua_setfield(L,-2,"\164\150\162\145\141\144");
    lua_pop(L,1);
+#if LTHREAD_DBG
+   runThreadCoFuncPtr = unmapmemslot;
+#endif
    return timerresources;
 }
 

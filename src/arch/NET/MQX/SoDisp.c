@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: SoDisp.c 5142 2022-05-03 19:08:40Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -110,7 +110,6 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
             ThreadMutex_set(m);
             if(*isTerminated)
                return E_SOCKET_READ_FAILED;
-            o->rtmo=0;
             return E_TIMEOUT;
          }
       }
@@ -124,7 +123,6 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
       if(o->rtmo)
       {
          status=SoDispCon_rtmo(o);
-         o->rtmo=0;
          if(status)
             return E_TIMEOUT;
       }

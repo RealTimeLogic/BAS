@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpCfg.h 5141 2022-05-03 18:45:53Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2006 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -41,17 +41,24 @@
 
 
 #include <TargConfig.h>
+#include <smx.h>
 
+#ifndef OS_H /* not uCOS */
 #include <OSENV.H>
 #undef INLINE_SUPPORT
 #define INLINE_SUPPORT 0
 #include <rtip.h>
+#else
+#include <smxns.h>
+#endif
 #include <socket.h>
 
 #include <stddef.h>
 
 #define socketSend(socket, buffer, buf_len, flags)  \
-    sendto((socket), (buffer), (buf_len), (flags), (PSOCKADDR)0, 0)
+    sendto((socket), (const char*)(buffer), (buf_len), (flags), (PSOCKADDR)0, 0)
+      
+#define socketSelect selectsocket      
 
 #include <gBsdDspO.h>
 #include <NetConv.h>
@@ -62,6 +69,13 @@
 /***********************************************************************
  *  The HttpSocket API
  ***********************************************************************/
+
+#define basocklen_t u32
+
+#ifndef INADDR_NONE
+#define	INADDR_NONE -1
+#endif
+
 
 /* Overload the following default data and functions in gBsdSock.h */
 
@@ -86,7 +100,7 @@ int socketWouldBlockSMX(int s);
 
 #define HttpSocket_accept(o, conSock, status) do { \
    struct sockaddr_in whatever; \
-   int sin_len = sizeof(whatever); \
+   basocklen_t sin_len = sizeof(whatever); \
    (conSock)->hndl=socketAccept((o)->hndl, (PSOCKADDR)&whatever, &sin_len); \
    *(status) = (HttpSocket_isValid(conSock)) ? 0 : -1; \
 }while(0)

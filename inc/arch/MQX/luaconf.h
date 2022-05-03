@@ -31,6 +31,6 @@ extern int basprintf(char* buf, const char* fmt, ...);
 
 #define errno 0
 
-#include "../gluaconf.h"
+#include <gluaconf.h>
 
 #endif

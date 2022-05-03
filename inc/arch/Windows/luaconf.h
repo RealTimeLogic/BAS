@@ -23,5 +23,5 @@
 
 #endif
 
-#include "../gluaconf.h"
+#include <gluaconf.h>
 #endif

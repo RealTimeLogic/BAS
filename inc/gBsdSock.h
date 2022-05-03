@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 5116 2022-03-14 23:43:47Z wini $
+ *   $Id: gBsdSock.h 5141 2022-05-03 18:45:53Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
@@ -485,7 +485,7 @@ do { \
                                (char*)&enableFlag, sizeof(int)); \
 }while(0)
 #else
-#define HttpSocket_soReuseaddr(o)
+#define HttpSocket_soReuseaddr(o, status)
 #endif
 #endif
 

@@ -19,6 +19,6 @@ extern int basprintf(char* buf, const char* fmt, ...);
 #define lua_getlocaledecpoint() '.'
 #endif
 
-#include "../gluaconf.h"
+#include <gluaconf.h>
 
 #endif
