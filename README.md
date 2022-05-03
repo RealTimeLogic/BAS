@@ -49,7 +49,11 @@ BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mak
 
 The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can be compiled for Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
 
-#### TL;DR (Linux):
+#### Windows:
+
+Use the Visual Studio project file found in: BAS/examples/MakoServer/VcMake; however, make sure to download SQLite or disable the SQLite build in the project file. 
+
+#### Linux:
 
 See the tutorial [Embedded Linux Web Interface Design](https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design) for details; however, the server can be downloaded and compiled for Linux as follows:
 

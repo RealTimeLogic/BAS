@@ -18,13 +18,7 @@ CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 CFLAGS += -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
 
 # Add features
-CFLAGS += \
-	-DUSE_LUAINTF\
-	-DSHARKSSL_ENABLE_ASN1_KEY_CREATION=1\
-	-DSHARKSSL_ENABLE_RSAKEY_CREATE=1\
-	-DSHARKSSL_ENABLE_ECCKEY_CREATE=1\
-	-DSHARKSSL_ENABLE_CSR_CREATION=1\
-	-DSHARKSSL_ENABLE_CSR_SIGNING=1
+CFLAGS += -DUSE_LUAINTF
 
 CFLAGS += -Iinc -Iinc/arch/Posix
 ifdef EPOLL
@@ -60,7 +54,6 @@ SOURCE += $(notdir $(wildcard src/lpeg/*.c))
 VPATH += src/lpeg
 else
 $(info Excluding LPEG)
-CFLAGS += -DUSE_SQL=0
 endif
 
 ifneq (,$(wildcard MyCustomBindings.c))
