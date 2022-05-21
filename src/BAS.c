@@ -90936,7 +90936,7 @@ enetswdevice(lua_State *L)
    int reservevmcore;
    const char* gpio1config=0;
    int hwmodclass=1;
-   if((lua_isstring(L,1) && !lua_isnumber(L, 1)) || lua_isnil(L,1))
+   if((LUA_TSTRING == lua_type(L, 1)) || lua_isnil(L,1))
    {
       gpio1config=lua_tostring(L,1);
       hwmodclass++;

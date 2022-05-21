@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5142 2022-05-03 19:08:40Z wini $
+ *   $Id: SoDisp.c 5160 2022-05-19 18:02:52Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2019 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2019
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -112,6 +112,7 @@ static void
 SoDispCon_clearRTMO(SoDispCon* o)
 {
    TickType_t tmoTks=portMAX_DELAY;
+   o->rtmo=0;
    FreeRTOS_setsockopt(o->httpSocket.xSocket,0,FREERTOS_SO_RCVTIMEO,&tmoTks,0);
 }
 

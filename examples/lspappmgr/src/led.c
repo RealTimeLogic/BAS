@@ -3,7 +3,7 @@
   controlling one LED.
 
    Code below copied from:
-        https://embedded-app-server.info/Lua-Bindings.lsp
+        https://tutorial.realtimelogic.com/Lua-Bindings.lsp
 
   Lua binding tutorials:
     https://realtimelogic.com/ba/doc/?url=GettingStarted.html#UsingLSP

@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5142 2022-05-03 19:08:40Z wini $
+ *   $Id: SoDisp.c 5160 2022-05-19 18:02:52Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2017
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -151,6 +151,7 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
       SoDisp* disp;
       struct timeval tv={0};
       BaTime tmo = (BaTime)o->rtmo * 50;
+      o->rtmo=0;
       tv.tv_sec = tmo / 1000;
       tv.tv_usec = (tmo % 1000) * 1000; 
       if(SoDispCon_recEvActive(o))

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5142 2022-05-03 19:08:40Z wini $
+ *   $Id: SoDisp.c 5160 2022-05-19 18:02:52Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2002 - 2022
  *
@@ -121,6 +121,7 @@ SoDispCon_rtmo(SoDispCon* o)
    struct timeval tv;
    int highSockDesc=0;
    int tmo = o->rtmo*50;
+   o->rtmo=0;
    tv.tv_sec = tmo / 1000;
    tv.tv_usec = (tmo % 1000) * 1000;
    BA_FD_ZERO(&recSet);

@@ -12,7 +12,7 @@
  *
  *   $Id: SoDisp.c 2234 2010-11-03 09:56:21Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2004
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -128,6 +128,7 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
             ThreadMutex_set(m);
             if(*isTerminated)
                return E_SOCKET_READ_FAILED;
+            o->rtmo=0;
             return E_TIMEOUT;
          }
       }
@@ -141,6 +142,7 @@ SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
       if(o->rtmo)
       {
          status=SoDispCon_rtmo(o);
+         o->rtmo=0;
          if(status)
             return E_TIMEOUT;
       }

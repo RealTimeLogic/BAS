@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: TargConfig.h 5146 2022-05-10 17:15:54Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2021
  *
@@ -115,7 +115,7 @@ void dlfree(void* mem);
 #ifdef __cplusplus
 extern "C" {
 #endif
-void baInitTxUnixTime(U32 time);
+void baSetUnixTime(U32 time);
 U32 baGetUnixTime(void);
 U32 baGetMsClock(void);
 U32 baMsTime2TxTicks(U32 msec);

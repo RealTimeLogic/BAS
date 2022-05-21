@@ -79,10 +79,6 @@
 #define ENOMEM  (49) /* Not enough space */
 #endif
 
-/* Random generator */
-#undef time
-#define time(x) baGetMsClock()
-
 static char* dmalloc_heapstart=0;
 static char* dmalloc_heapend;
 
@@ -814,9 +810,6 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #ifndef USE_BUILTIN_FFS
 #define USE_BUILTIN_FFS 0
 #endif  /* USE_BUILTIN_FFS */
-#ifndef USE_DEV_RANDOM
-#define USE_DEV_RANDOM 0
-#endif  /* USE_DEV_RANDOM */
 #ifndef NO_MALLINFO
 #define NO_MALLINFO 0
 #endif  /* NO_MALLINFO */
@@ -1566,9 +1559,6 @@ DLMALLOC_EXPORT int mspace_mallopt(int, int);
 #endif
 #define DEBUG 0
 #endif /* DEBUG */
-#if !defined(NO_WIN32) && !defined(LACKS_TIME_H)
-#include <time.h>        /* for magic initialization */
-#endif /* NO_WIN32 */
 #ifndef LACKS_STDLIB_H
 #include <stdlib.h>      /* for abort() */
 #endif /* LACKS_STDLIB_H */
@@ -3314,24 +3304,7 @@ static int init_mparams(void) {
 #endif
 
     {
-#if USE_DEV_RANDOM
-      int fd;
-      unsigned char buf[sizeof(size_t)];
-      /* Try to use /dev/urandom, else fall back on using time */
-      if ((fd = open("/dev/urandom", O_RDONLY)) >= 0 &&
-          read(fd, buf, sizeof(buf)) == sizeof(buf)) {
-        magic = *((size_t *) buf);
-        close(fd);
-      }
-      else
-#endif /* USE_DEV_RANDOM */
-#ifdef NO_WIN32
-      magic = (size_t)(GetTickCount() ^ (size_t)0x55555555U);
-#elif defined(LACKS_TIME_H)
-      magic = (size_t)&magic ^ (size_t)0x55555555U;
-#else
-      magic = (size_t)(time(0) ^ (size_t)0x55555555U);
-#endif
+      sharkssl_rng((U8*)&magic, sizeof(magic)); 
       magic |= (size_t)8U;    /* ensure nonzero */
       magic &= ~(size_t)7U;   /* improve chances of fault for bad values */
       /* Until memory modes commonly available, use volatile-write */
@@ -6482,6 +6455,7 @@ init_dlmalloc(char* heapstart, char* heapend)
 #if USE_BA_LOCKS
    ThreadMutex_constructor(&morecore_mutex);
    ThreadMutex_constructor(&magic_init_mutex);
+   sharkssl_entropy((U32)heapend);
 #endif
 }
 

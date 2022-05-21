@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 5146 2022-05-10 17:15:54Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2011
  *
@@ -49,7 +49,7 @@ static U32 timeBase;
    1970), measured in seconds.
 */
 void
-baInitTxUnixTime(U32 time)
+baSetUnixTime(U32 time)
 {
   timeBase=time;
 }
