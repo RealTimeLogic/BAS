@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: SoDispCon.h 5186 2022-06-08 21:13:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2020
+ *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -308,7 +308,8 @@ typedef struct SoDispCon
 #define SoDispCon_newConnectionIsReady(con)
 #endif
 
-BA_API int SoDispCon_getSharkAlert(SoDispCon* o, U8* alertLevel, U8* alertDescription);
+BA_API int SoDispCon_getSharkAlert(
+   SoDispCon* o, U8* alertLevel, U8* alertDescription);
 
 #ifdef __cplusplus
 extern "C" {
@@ -339,7 +340,8 @@ typedef struct
 
 BA_API void* SoDispCon_allocAsynchBuf(SoDispCon* o, int* size);
 BA_API void SoDispCon_releaseAsyncBuf(SoDispCon* con);
-BA_API void SoDispCon_internalAllocAsynchBuf(SoDispCon* con, AllocAsynchBufArgs* args);
+BA_API void SoDispCon_internalAllocAsynchBuf(
+   SoDispCon* con, AllocAsynchBufArgs* args);
 BA_API int SoDispCon_setNonblocking(SoDispCon* o);
 BA_API int SoDispCon_setBlocking(SoDispCon* o);
 BA_API int SoDispCon_peek(SoDispCon* o);
@@ -360,8 +362,10 @@ BA_API void SoDispCon_printSockErr(
    SoDispCon* o,const char* type,HttpSocket* s,int status);
 #define SoDispCon_getId(o) HttpSocket_getId(&(o)->httpSocket)
 /* Internal */
+#ifndef SoDispCon_platReadData
 int SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
                            void* data, int len);
+#endif
 
 BA_API int
 SoDispCon_connect(SoDispCon* o,

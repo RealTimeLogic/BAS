@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5100 2022-02-19 16:23:57Z wini $
+ *   $Id: SharkSSL_cfg.h 5194 2022-06-29 06:39:42Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -46,6 +46,13 @@
 /** @addtogroup SharkSslCfg
 @{
 */
+
+/** TLS 1.2 always enabled - forward compatibility to dual 1.2/1.3 stack 
+ *  (needed for selib.c)
+ */
+#undef  SHARKSSL_TLS_1_2
+#define SHARKSSL_TLS_1_2                                 1
+
 
 /** Enable/disable AES 256
  */

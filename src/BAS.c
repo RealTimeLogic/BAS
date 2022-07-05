@@ -14,7 +14,10 @@ The amalgamation includes the following components:
 
 1: Lua (MIT License)
 2: ZLIB (zlib License)
-3: BAS-Amalgamated (GPLv3, or custom; See LICENSE file)
+3: BAS-Amalgamated (GPLv2, or custom; See LICENSE file)
+
+Ref: https://realtimelogic.com/products/barracuda-application-server/
+
 */
 
 
@@ -45315,7 +45318,6 @@ HttpRequest_getHeaders(HttpRequest* o, int* len)
 }
 
 
-#ifndef NO_SHARKSSL
 BA_API int
 HttpRequest_wsUpgrade(HttpRequest* o)
 {
@@ -45351,7 +45353,6 @@ HttpRequest_wsUpgrade(HttpRequest* o)
    DynBuffer_destructor(&db);
    return handlersetup;
 }
-#endif
 
 
 BA_API const char*
@@ -48840,6 +48841,720 @@ HttpServer_initStatic(void)
 
 
 
+#ifdef NO_SHARKSSL
+
+#define SHARKSSL_USE_MD5 1
+#define SHARKSSL_USE_SHA1 1
+
+
+
+#if defined(__LP64__) && !defined(SHARKSSL_64BIT)
+#define SHARKSSL_64BIT
+#endif
+#ifdef SHARKSSL_64BIT
+#define UPTR U64
+#define SHARKSSL_ALIGNMENT 4
+#endif
+#ifndef UPTR
+#define UPTR                                       U32
+#endif
+
+#if   (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
+#elif (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
+#else
+#define hsotgpdata(w,a,i)                 \
+{                                         \
+   (a)[(i)]     = (U8)((w));              \
+   (a)[(i) + 1] = (U8)((w) >>  8);        \
+   (a)[(i) + 2] = (U8)((w) >> 16);        \
+   (a)[(i) + 3] = (U8)((w) >> 24);        \
+}
+#endif
+
+#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define read64uint32(w,a,i)  (w) = ((__sharkssl_packed U32*)(a))[(i) >> 2]
+#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define read64uint32(w,a,i)  (w) = blockarray(((__sharkssl_packed U32*)(a))[(i) >> 2])
+#else
+#define read64uint32(w,a,i)                 \
+{                                         \
+   (w) = ((U32)(a)[(i)] << 24)            \
+       | ((U32)(a)[(i) + 1] << 16)        \
+       | ((U32)(a)[(i) + 2] <<  8)        \
+       | ((U32)(a)[(i) + 3]);             \
+}
+#endif
+
+
+#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
+#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
+#else
+#define inputlevel(w,a,i)                 \
+{                                         \
+   (a)[(i)]     = (U8)((w) >> 24);        \
+   (a)[(i) + 1] = (U8)((w) >> 16);        \
+   (a)[(i) + 2] = (U8)((w) >>  8);        \
+   (a)[(i) + 3] = (U8)((w));              \
+}
+#endif
+
+#if (SHARKSSL_USE_MD5 || SHARKSSL_USE_SHA1 || SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
+#if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
+static const U8 prusspdata[128] =
+#else
+static const U8 prusspdata[64] =
+#endif
+{
+   0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+#if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+#endif
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+#endif
+
+#if SHARKSSL_USE_MD5
+
+#if SHARKSSL_MD5_SMALL_FOOTPRINT
+static const U32 unregisterclient[64] =
+{
+   0xD76AA478, 0xE8C7B756, 0x242070DB, 0xC1BDCEEE,
+   0xF57C0FAF, 0x4787C62A, 0xA8304613, 0xFD469501,
+   0x698098D8, 0x8B44F7AF, 0xFFFF5BB1, 0x895CD7BE,
+   0x6B901122, 0xFD987193, 0xA679438E, 0x49B40821,
+   0xF61E2562, 0xC040B340, 0x265E5A51, 0xE9B6C7AA,
+   0xD62F105D, 0x02441453, 0xD8A1E681, 0xE7D3FBC8,
+   0x21E1CDE6, 0xC33707D6, 0xF4D50D87, 0x455A14ED,
+   0xA9E3E905, 0xFCEFA3F8, 0x676F02D9, 0x8D2A4C8A,
+   0xFFFA3942, 0x8771F681, 0x6D9D6122, 0xFDE5380C,
+   0xA4BEEA44, 0x4BDECFA9, 0xF6BB4B60, 0xBEBFBC70,
+   0x289B7EC6, 0xEAA127FA, 0xD4EF3085, 0x04881D05,
+   0xD9D4D039, 0xE6DB99E5, 0x1FA27CF8, 0xC4AC5665,
+   0xF4292244, 0x432AFF97, 0xAB9423A7, 0xFC93A039,
+   0x655B59C3, 0x8F0CCC92, 0xFFEFF47D, 0x85845DD1,
+   0x6FA87E4F, 0xFE2CE6E0, 0xA3014314, 0x4E0811A1,
+   0xF7537E82, 0xBD3AF235, 0x2AD7D2BB, 0xEB86D391
+};
+
+static const U8 keypadresources[64] =
+{
+   7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+   5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+   4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+   6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21
+};
+
+static const U8 writefeature[64] =
+{
+   0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,
+   1,6,11,0,5,10,15,4,9,14,3,8,13,2,7,12,
+   5,8,11,14,1,4,7,10,13,0,3,6,9,12,15,2,
+   0,7,14,5,12,3,10,1,8,15,6,13,4,11,2,9
+};
+#endif
+
+
+#ifndef B_LITTLE_ENDIAN
+static void kexecalloc(SharkSslMd5Ctx *registermcasp, const U8 alloccontroller[64])
+#else
+static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
+#endif
+{
+   U32 a, b, c, d;
+   #if SHARKSSL_MD5_SMALL_FOOTPRINT
+   const U32 *p;
+   unsigned int i;
+   #endif
+
+   #ifndef B_LITTLE_ENDIAN
+   U32 countshift[16];
+
+   #if SHARKSSL_MD5_SMALL_FOOTPRINT
+   for (i = 0; !(i & 16); i++)
+   {
+      cleanupcount(countshift[i], alloccontroller, (i << 2));
+   }
+   #else
+   cleanupcount(countshift[0],  alloccontroller,  0);
+   cleanupcount(countshift[1],  alloccontroller,  4);
+   cleanupcount(countshift[2],  alloccontroller,  8);
+   cleanupcount(countshift[3],  alloccontroller, 12);
+   cleanupcount(countshift[4],  alloccontroller, 16);
+   cleanupcount(countshift[5],  alloccontroller, 20);
+   cleanupcount(countshift[6],  alloccontroller, 24);
+   cleanupcount(countshift[7],  alloccontroller, 28);
+   cleanupcount(countshift[8],  alloccontroller, 32);
+   cleanupcount(countshift[9],  alloccontroller, 36);
+   cleanupcount(countshift[10], alloccontroller, 40);
+   cleanupcount(countshift[11], alloccontroller, 44);
+   cleanupcount(countshift[12], alloccontroller, 48);
+   cleanupcount(countshift[13], alloccontroller, 52);
+   cleanupcount(countshift[14], alloccontroller, 56);
+   cleanupcount(countshift[15], alloccontroller, 60);
+   #endif
+   #endif
+
+   #define invalidcontext(x,n) ((U32)((U32)x << n) | ((U32)x >> (32 - n)))
+
+   #define F(x,y,z) ((x & (y ^ z)) ^ z)  
+   #define G(x,y,z) ((z & (x ^ y)) ^ y)  
+   #define H(x,y,z) (x ^ y ^ z)
+   #define I(x,y,z) (y ^ (x | ~z))
+
+   a = registermcasp->state[0];
+   b = registermcasp->state[1];
+   c = registermcasp->state[2];
+   d = registermcasp->state[3];
+
+   #if SHARKSSL_MD5_SMALL_FOOTPRINT
+   p = &unregisterclient[0];
+
+   for (i = 0; (0 == (i & 0x40)); i++)
+   {
+      U32 e;
+
+      a += countshift[writefeature[i]] + *p++;
+      switch (i & 0x30)
+      {
+         case 0x00:
+            a += F(b,c,d);
+            break;
+
+         case 0x10:
+            a += G(b,c,d);
+            break;
+
+         case 0x20:
+            a += H(b,c,d);
+            break;
+
+         default:
+            a += I(b,c,d);
+            break;
+      }
+      a = invalidcontext(a, keypadresources[i]);
+      e = b;
+      b += a;
+      a = d;
+      d = c;
+      c = e;
+   }
+
+   #else  
+   #define class3disable(A, B, C, D, X, S, K) { A += F(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+   #define privilegefault(A, B, C, D, X, S, K) { A += G(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+   #define alternativesapplied(A, B, C, D, X, S, K) { A += H(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+   #define hsmmc3resource(A, B, C, D, X, S, K) { A += I(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+
+   class3disable(a, b, c, d, countshift[0],   7, 0xD76AA478);
+   class3disable(d, a, b, c, countshift[1],  12, 0xE8C7B756);
+   class3disable(c, d, a, b, countshift[2],  17, 0x242070DB);
+   class3disable(b, c, d, a, countshift[3],  22, 0xC1BDCEEE);
+   class3disable(a, b, c, d, countshift[4],   7, 0xF57C0FAF);
+   class3disable(d, a, b, c, countshift[5],  12, 0x4787C62A);
+   class3disable(c, d, a, b, countshift[6],  17, 0xA8304613);
+   class3disable(b, c, d, a, countshift[7],  22, 0xFD469501);
+   class3disable(a, b, c, d, countshift[8],   7, 0x698098D8);
+   class3disable(d, a, b, c, countshift[9],  12, 0x8B44F7AF);
+   class3disable(c, d, a, b, countshift[10], 17, 0xFFFF5BB1);
+   class3disable(b, c, d, a, countshift[11], 22, 0x895CD7BE);
+   class3disable(a, b, c, d, countshift[12],  7, 0x6B901122);
+   class3disable(d, a, b, c, countshift[13], 12, 0xFD987193);
+   class3disable(c, d, a, b, countshift[14], 17, 0xA679438E);
+   class3disable(b, c, d, a, countshift[15], 22, 0x49B40821);
+
+   privilegefault(a, b, c, d, countshift[1],   5, 0xF61E2562);
+   privilegefault(d, a, b, c, countshift[6],   9, 0xC040B340);
+   privilegefault(c, d, a, b, countshift[11], 14, 0x265E5A51);
+   privilegefault(b, c, d, a, countshift[0],  20, 0xE9B6C7AA);
+   privilegefault(a, b, c, d, countshift[5],   5, 0xD62F105D);
+   privilegefault(d, a, b, c, countshift[10],  9, 0x02441453);
+   privilegefault(c, d, a, b, countshift[15], 14, 0xD8A1E681);
+   privilegefault(b, c, d, a, countshift[4],  20, 0xE7D3FBC8);
+   privilegefault(a, b, c, d, countshift[9],   5, 0x21E1CDE6);
+   privilegefault(d, a, b, c, countshift[14],  9, 0xC33707D6);
+   privilegefault(c, d, a, b, countshift[3],  14, 0xF4D50D87);
+   privilegefault(b, c, d, a, countshift[8],  20, 0x455A14ED);
+   privilegefault(a, b, c, d, countshift[13],  5, 0xA9E3E905);
+   privilegefault(d, a, b, c, countshift[2],   9, 0xFCEFA3F8);
+   privilegefault(c, d, a, b, countshift[7],  14, 0x676F02D9);
+   privilegefault(b, c, d, a, countshift[12], 20, 0x8D2A4C8A);
+
+   alternativesapplied(a, b, c, d, countshift[5],   4, 0xFFFA3942);
+   alternativesapplied(d, a, b, c, countshift[8],  11, 0x8771F681);
+   alternativesapplied(c, d, a, b, countshift[11], 16, 0x6D9D6122);
+   alternativesapplied(b, c, d, a, countshift[14], 23, 0xFDE5380C);
+   alternativesapplied(a, b, c, d, countshift[1],   4, 0xA4BEEA44);
+   alternativesapplied(d, a, b, c, countshift[4],  11, 0x4BDECFA9);
+   alternativesapplied(c, d, a, b, countshift[7],  16, 0xF6BB4B60);
+   alternativesapplied(b, c, d, a, countshift[10], 23, 0xBEBFBC70);
+   alternativesapplied(a, b, c, d, countshift[13],  4, 0x289B7EC6);
+   alternativesapplied(d, a, b, c, countshift[0],  11, 0xEAA127FA);
+   alternativesapplied(c, d, a, b, countshift[3],  16, 0xD4EF3085);
+   alternativesapplied(b, c, d, a, countshift[6],  23, 0x04881D05);
+   alternativesapplied(a, b, c, d, countshift[9],   4, 0xD9D4D039);
+   alternativesapplied(d, a, b, c, countshift[12], 11, 0xE6DB99E5);
+   alternativesapplied(c, d, a, b, countshift[15], 16, 0x1FA27CF8);
+   alternativesapplied(b, c, d, a, countshift[2],  23, 0xC4AC5665);
+
+   hsmmc3resource(a, b, c, d, countshift[0],   6, 0xF4292244);
+   hsmmc3resource(d, a, b, c, countshift[7],  10, 0x432AFF97);
+   hsmmc3resource(c, d, a, b, countshift[14], 15, 0xAB9423A7);
+   hsmmc3resource(b, c, d, a, countshift[5],  21, 0xFC93A039);
+   hsmmc3resource(a, b, c, d, countshift[12],  6, 0x655B59C3);
+   hsmmc3resource(d, a, b, c, countshift[3],  10, 0x8F0CCC92);
+   hsmmc3resource(c, d, a, b, countshift[10], 15, 0xFFEFF47D);
+   hsmmc3resource(b, c, d, a, countshift[1],  21, 0x85845DD1);
+   hsmmc3resource(a, b, c, d, countshift[8],   6, 0x6FA87E4F);
+   hsmmc3resource(d, a, b, c, countshift[15], 10, 0xFE2CE6E0);
+   hsmmc3resource(c, d, a, b, countshift[6],  15, 0xA3014314);
+   hsmmc3resource(b, c, d, a, countshift[13], 21, 0x4E0811A1);
+   hsmmc3resource(a, b, c, d, countshift[4],   6, 0xF7537E82);
+   hsmmc3resource(d, a, b, c, countshift[11], 10, 0xBD3AF235);
+   hsmmc3resource(c, d, a, b, countshift[2],  15, 0x2AD7D2BB);
+   hsmmc3resource(b, c, d, a, countshift[9],  21, 0xEB86D391);
+
+   #undef hsmmc3resource
+   #undef alternativesapplied
+   #undef privilegefault
+   #undef class3disable
+   #endif
+
+   registermcasp->state[0] += a;
+   registermcasp->state[1] += b;
+   registermcasp->state[2] += c;
+   registermcasp->state[3] += d;
+
+
+   #undef I
+   #undef H
+   #undef G
+   #undef F
+
+   #undef invalidcontext
+}
+
+
+SHARKSSL_API void SharkSslMd5Ctx_constructor(SharkSslMd5Ctx *registermcasp)
+{
+   baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
+
+   registermcasp->total[0] = 0;
+   registermcasp->total[1] = 0;
+
+   registermcasp->state[0] = 0x67452301;
+   registermcasp->state[1] = 0xEFCDAB89;
+   registermcasp->state[2] = 0x98BADCFE;
+   registermcasp->state[3] = 0x10325476;
+}
+
+
+SHARKSSL_API void SharkSslMd5Ctx_append(SharkSslMd5Ctx *registermcasp, const U8 *in, U32 len)
+{
+   unsigned int dm9000platdata, pxa300evalboard;
+
+   dm9000platdata = (unsigned int)(registermcasp->total[0]) & 0x3F;
+   pxa300evalboard = 64 - dm9000platdata;
+
+   registermcasp->total[0] += len;
+   if (registermcasp->total[0] < len)
+   {
+      registermcasp->total[1]++;
+   }
+
+   if((dm9000platdata) && (len >= pxa300evalboard))
+   {
+      memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
+      #ifndef B_LITTLE_ENDIAN
+      kexecalloc(registermcasp, registermcasp->buffer);
+      #else
+      kexecalloc(registermcasp, (U32*)(registermcasp->buffer));
+      #endif
+      len -= pxa300evalboard;
+      in  += pxa300evalboard;
+      dm9000platdata = 0;
+   }
+
+   while (len >= 64)
+   {
+      #ifndef B_LITTLE_ENDIAN
+      kexecalloc(registermcasp, in);
+      #else
+      memcpy(registermcasp->buffer, in, 64);
+      kexecalloc(registermcasp, (U32*)(registermcasp->buffer));
+      #endif
+      len -= 64;
+      in  += 64;
+   }
+
+   if (len)
+   {
+      memcpy((registermcasp->buffer + dm9000platdata), in, len);
+   }
+}
+
+
+SHARKSSL_API void SharkSslMd5Ctx_finish(SharkSslMd5Ctx *registermcasp, U8 secondaryentry[SHARKSSL_MD5_HASH_LEN])
+{
+   U32 timerenable, dummywrites;
+   U32 timer0start, checkcontext;
+   U8  usbgadgetresource[8];
+
+   timer0start = (registermcasp->total[0] >> 29) | (registermcasp->total[1] <<  3);
+   checkcontext  = (registermcasp->total[0] <<  3);
+
+   hsotgpdata(checkcontext,  usbgadgetresource, 0);
+   hsotgpdata(timer0start, usbgadgetresource, 4);
+
+   timerenable = registermcasp->total[0] & 0x3F;
+   dummywrites = (timerenable < 56) ? (56 - timerenable) : (120 - timerenable);
+
+   SharkSslMd5Ctx_append(registermcasp, (U8*)prusspdata, dummywrites);
+   SharkSslMd5Ctx_append(registermcasp, usbgadgetresource, 8);
+
+   hsotgpdata(registermcasp->state[0], secondaryentry,  0);
+   hsotgpdata(registermcasp->state[1], secondaryentry,  4);
+   hsotgpdata(registermcasp->state[2], secondaryentry,  8);
+   hsotgpdata(registermcasp->state[3], secondaryentry, 12);
+}
+
+
+SHARKSSL_API int sharkssl_md5(const U8* alloccontroller, U16 len, U8 *secondaryentry)
+{
+   #if SHARKSSL_CRYPTO_USE_HEAP
+   SharkSslMd5Ctx *hctx = (SharkSslMd5Ctx *)baMalloc(claimresource(sizeof(SharkSslMd5Ctx)));
+   baAssert(hctx);
+   if (!hctx)
+   {
+      return -1;
+   }
+   #else
+   SharkSslMd5Ctx registermcasp;
+   #define hctx &registermcasp
+   #endif
+
+   baAssert(alloccontroller);
+   baAssert(secondaryentry);
+
+   SharkSslMd5Ctx_constructor(hctx);
+   SharkSslMd5Ctx_append(hctx, alloccontroller, len);
+   SharkSslMd5Ctx_finish(hctx, secondaryentry);
+
+   #if SHARKSSL_CRYPTO_USE_HEAP
+   baFree(hctx);
+   #else
+   #undef hctx
+   #endif
+   return 0;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA1
+
+#ifndef B_BIG_ENDIAN
+static void SharkSslSha1Ctx_process(SharkSslSha1Ctx *registermcasp, const U8 alloccontroller[64])
+#else
+static void SharkSslSha1Ctx_process(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
+#endif
+{
+   U32 a, b, c, d, e, brightnesslimit;
+   #if SHARKSSL_SHA1_SMALL_FOOTPRINT
+   unsigned int i;
+   #endif
+   #ifndef B_BIG_ENDIAN
+   U32 countshift[16];
+
+   #if SHARKSSL_SHA1_SMALL_FOOTPRINT
+   for (i = 0; !(i & 16); i++)
+   {
+      read64uint32(countshift[i], alloccontroller, (i << 2));
+   }
+   #else
+   read64uint32(countshift[0],  alloccontroller,  0);
+   read64uint32(countshift[1],  alloccontroller,  4);
+   read64uint32(countshift[2],  alloccontroller,  8);
+   read64uint32(countshift[3],  alloccontroller, 12);
+   read64uint32(countshift[4],  alloccontroller, 16);
+   read64uint32(countshift[5],  alloccontroller, 20);
+   read64uint32(countshift[6],  alloccontroller, 24);
+   read64uint32(countshift[7],  alloccontroller, 28);
+   read64uint32(countshift[8],  alloccontroller, 32);
+   read64uint32(countshift[9],  alloccontroller, 36);
+   read64uint32(countshift[10], alloccontroller, 40);
+   read64uint32(countshift[11], alloccontroller, 44);
+   read64uint32(countshift[12], alloccontroller, 48);
+   read64uint32(countshift[13], alloccontroller, 52);
+   read64uint32(countshift[14], alloccontroller, 56);
+   read64uint32(countshift[15], alloccontroller, 60);
+   #endif
+   #endif
+
+   #define invalidcontext(x,n) ((U32)((U32)x << n) | ((U32)x >> (32 - n)))
+
+   #define pwdowninverted(x,y,z) ((x & (y ^ z)) ^ z)  
+   #define configparse(x,y,z) (x ^ y ^ z)
+   #define emulationhandler(x,y,z) ((x & y) | ((x | y) & z))
+   #define es3plushwmod(x,y,z) (x ^ y ^ z)
+
+   #define serial0pdata 0x5A827999
+   #define registerrproc 0x6ED9EBA1
+   #define powergpiod 0x8F1BBCDC
+   #define allockernel 0xCA62C1D6
+
+   a = registermcasp->state[0];
+   b = registermcasp->state[1];
+   c = registermcasp->state[2];
+   d = registermcasp->state[3];
+   e = registermcasp->state[4];
+
+   #if SHARKSSL_SHA1_SMALL_FOOTPRINT
+   for (i = 0; i < 80; i++)
+   {
+      if (i >= 16)
+      {
+         brightnesslimit = countshift[i & 0xF] ^ countshift[(i + 2) & 0xF] ^ countshift[(i + 8) & 0xF] ^ countshift[(i + 13) & 0xF];
+         countshift[i & 0xF] = brightnesslimit = invalidcontext(brightnesslimit, 1);
+      }
+      brightnesslimit = countshift[i & 0xF];
+      brightnesslimit += e + invalidcontext(a, 5);
+      if (i < 20)
+      {
+         brightnesslimit += pwdowninverted(b,c,d) + serial0pdata;
+      }
+      else if (i < 40)
+      {
+         brightnesslimit += configparse(b,c,d) + registerrproc;
+      }
+      else if (i < 60)
+      {
+         brightnesslimit += emulationhandler(b,c,d) + powergpiod;
+      }
+      else
+      {
+         brightnesslimit += es3plushwmod(b,c,d) + allockernel;
+      }
+      e = d;
+      d = c;
+      c = invalidcontext(b, 30);
+      b = a;
+      a = brightnesslimit;
+   }
+
+   #else  
+                                   e += (countshift[0]                ) + invalidcontext(a,5) + pwdowninverted(b,c,d) + serial0pdata; b = invalidcontext(b,30);
+                                   d += (countshift[1]                ) + invalidcontext(e,5) + pwdowninverted(a,b,c) + serial0pdata; a = invalidcontext(a,30);
+                                   c += (countshift[2]                ) + invalidcontext(d,5) + pwdowninverted(e,a,b) + serial0pdata; e = invalidcontext(e,30);
+                                   b += (countshift[3]                ) + invalidcontext(c,5) + pwdowninverted(d,e,a) + serial0pdata; d = invalidcontext(d,30);
+                                   a += (countshift[4]                ) + invalidcontext(b,5) + pwdowninverted(c,d,e) + serial0pdata; c = invalidcontext(c,30);
+
+                                   e += (countshift[5]                ) + invalidcontext(a,5) + pwdowninverted(b,c,d) + serial0pdata; b = invalidcontext(b,30);
+                                   d += (countshift[6]                ) + invalidcontext(e,5) + pwdowninverted(a,b,c) + serial0pdata; a = invalidcontext(a,30);
+                                   c += (countshift[7]                ) + invalidcontext(d,5) + pwdowninverted(e,a,b) + serial0pdata; e = invalidcontext(e,30);
+                                   b += (countshift[8]                ) + invalidcontext(c,5) + pwdowninverted(d,e,a) + serial0pdata; d = invalidcontext(d,30);
+                                   a += (countshift[9]                ) + invalidcontext(b,5) + pwdowninverted(c,d,e) + serial0pdata; c = invalidcontext(c,30);
+
+                                   e += (countshift[10]               ) + invalidcontext(a,5) + pwdowninverted(b,c,d) + serial0pdata; b = invalidcontext(b,30);
+                                   d += (countshift[11]               ) + invalidcontext(e,5) + pwdowninverted(a,b,c) + serial0pdata; a = invalidcontext(a,30);
+                                   c += (countshift[12]               ) + invalidcontext(d,5) + pwdowninverted(e,a,b) + serial0pdata; e = invalidcontext(e,30);
+                                   b += (countshift[13]               ) + invalidcontext(c,5) + pwdowninverted(d,e,a) + serial0pdata; d = invalidcontext(d,30);
+                                   a += (countshift[14]               ) + invalidcontext(b,5) + pwdowninverted(c,d,e) + serial0pdata; c = invalidcontext(c,30);
+
+                                   e += (countshift[15]               ) + invalidcontext(a,5) + pwdowninverted(b,c,d) + serial0pdata; b = invalidcontext(b,30);
+   brightnesslimit = countshift[13]^countshift[8] ^countshift[2] ^countshift[0];  d += (countshift[0]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + pwdowninverted(a,b,c) + serial0pdata; a = invalidcontext(a,30);
+   brightnesslimit = countshift[14]^countshift[9] ^countshift[3] ^countshift[1];  c += (countshift[1]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + pwdowninverted(e,a,b) + serial0pdata; e = invalidcontext(e,30);
+   brightnesslimit = countshift[15]^countshift[10]^countshift[4] ^countshift[2];  b += (countshift[2]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + pwdowninverted(d,e,a) + serial0pdata; d = invalidcontext(d,30);
+   brightnesslimit = countshift[0] ^countshift[11]^countshift[5] ^countshift[3];  a += (countshift[3]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + pwdowninverted(c,d,e) + serial0pdata; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[1] ^countshift[12]^countshift[6] ^countshift[4];  e += (countshift[4]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + configparse(b,c,d) + registerrproc; b = invalidcontext(b,30);
+   brightnesslimit = countshift[2] ^countshift[13]^countshift[7] ^countshift[5];  d += (countshift[5]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + configparse(a,b,c) + registerrproc; a = invalidcontext(a,30);
+   brightnesslimit = countshift[3] ^countshift[14]^countshift[8] ^countshift[6];  c += (countshift[6]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + configparse(e,a,b) + registerrproc; e = invalidcontext(e,30);
+   brightnesslimit = countshift[4] ^countshift[15]^countshift[9] ^countshift[7];  b += (countshift[7]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + configparse(d,e,a) + registerrproc; d = invalidcontext(d,30);
+   brightnesslimit = countshift[5] ^countshift[0] ^countshift[10]^countshift[8];  a += (countshift[8]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + configparse(c,d,e) + registerrproc; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[6] ^countshift[1] ^countshift[11]^countshift[9];  e += (countshift[9]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + configparse(b,c,d) + registerrproc; b = invalidcontext(b,30);
+   brightnesslimit = countshift[7] ^countshift[2] ^countshift[12]^countshift[10]; d += (countshift[10] = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + configparse(a,b,c) + registerrproc; a = invalidcontext(a,30);
+   brightnesslimit = countshift[8] ^countshift[3] ^countshift[13]^countshift[11]; c += (countshift[11] = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + configparse(e,a,b) + registerrproc; e = invalidcontext(e,30);
+   brightnesslimit = countshift[9] ^countshift[4] ^countshift[14]^countshift[12]; b += (countshift[12] = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + configparse(d,e,a) + registerrproc; d = invalidcontext(d,30);
+   brightnesslimit = countshift[10]^countshift[5] ^countshift[15]^countshift[13]; a += (countshift[13] = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + configparse(c,d,e) + registerrproc; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[11]^countshift[6] ^countshift[0] ^countshift[14]; e += (countshift[14] = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + configparse(b,c,d) + registerrproc; b = invalidcontext(b,30);
+   brightnesslimit = countshift[12]^countshift[7] ^countshift[1] ^countshift[15]; d += (countshift[15] = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + configparse(a,b,c) + registerrproc; a = invalidcontext(a,30);
+   brightnesslimit = countshift[13]^countshift[8] ^countshift[2] ^countshift[0];  c += (countshift[0]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + configparse(e,a,b) + registerrproc; e = invalidcontext(e,30);
+   brightnesslimit = countshift[14]^countshift[9] ^countshift[3] ^countshift[1];  b += (countshift[1]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + configparse(d,e,a) + registerrproc; d = invalidcontext(d,30);
+   brightnesslimit = countshift[15]^countshift[10]^countshift[4] ^countshift[2];  a += (countshift[2]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + configparse(c,d,e) + registerrproc; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[0] ^countshift[11]^countshift[5] ^countshift[3];  e += (countshift[3]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + configparse(b,c,d) + registerrproc; b = invalidcontext(b,30);
+   brightnesslimit = countshift[1] ^countshift[12]^countshift[6] ^countshift[4];  d += (countshift[4]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + configparse(a,b,c) + registerrproc; a = invalidcontext(a,30);
+   brightnesslimit = countshift[2] ^countshift[13]^countshift[7] ^countshift[5];  c += (countshift[5]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + configparse(e,a,b) + registerrproc; e = invalidcontext(e,30);
+   brightnesslimit = countshift[3] ^countshift[14]^countshift[8] ^countshift[6];  b += (countshift[6]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + configparse(d,e,a) + registerrproc; d = invalidcontext(d,30);
+   brightnesslimit = countshift[4] ^countshift[15]^countshift[9] ^countshift[7];  a += (countshift[7]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + configparse(c,d,e) + registerrproc; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[5] ^countshift[0] ^countshift[10]^countshift[8];  e += (countshift[8]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + emulationhandler(b,c,d) + powergpiod; b = invalidcontext(b,30);
+   brightnesslimit = countshift[6] ^countshift[1] ^countshift[11]^countshift[9];  d += (countshift[9]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + emulationhandler(a,b,c) + powergpiod; a = invalidcontext(a,30);
+   brightnesslimit = countshift[7] ^countshift[2] ^countshift[12]^countshift[10]; c += (countshift[10] = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + emulationhandler(e,a,b) + powergpiod; e = invalidcontext(e,30);
+   brightnesslimit = countshift[8] ^countshift[3] ^countshift[13]^countshift[11]; b += (countshift[11] = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + emulationhandler(d,e,a) + powergpiod; d = invalidcontext(d,30);
+   brightnesslimit = countshift[9] ^countshift[4] ^countshift[14]^countshift[12]; a += (countshift[12] = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + emulationhandler(c,d,e) + powergpiod; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[10]^countshift[5] ^countshift[15]^countshift[13]; e += (countshift[13] = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + emulationhandler(b,c,d) + powergpiod; b = invalidcontext(b,30);
+   brightnesslimit = countshift[11]^countshift[6] ^countshift[0] ^countshift[14]; d += (countshift[14] = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + emulationhandler(a,b,c) + powergpiod; a = invalidcontext(a,30);
+   brightnesslimit = countshift[12]^countshift[7] ^countshift[1] ^countshift[15]; c += (countshift[15] = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + emulationhandler(e,a,b) + powergpiod; e = invalidcontext(e,30);
+   brightnesslimit = countshift[13]^countshift[8] ^countshift[2] ^countshift[0];  b += (countshift[0]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + emulationhandler(d,e,a) + powergpiod; d = invalidcontext(d,30);
+   brightnesslimit = countshift[14]^countshift[9] ^countshift[3] ^countshift[1];  a += (countshift[1]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + emulationhandler(c,d,e) + powergpiod; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[15]^countshift[10]^countshift[4] ^countshift[2];  e += (countshift[2]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + emulationhandler(b,c,d) + powergpiod; b = invalidcontext(b,30);
+   brightnesslimit = countshift[0] ^countshift[11]^countshift[5] ^countshift[3];  d += (countshift[3]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + emulationhandler(a,b,c) + powergpiod; a = invalidcontext(a,30);
+   brightnesslimit = countshift[1] ^countshift[12]^countshift[6] ^countshift[4];  c += (countshift[4]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + emulationhandler(e,a,b) + powergpiod; e = invalidcontext(e,30);
+   brightnesslimit = countshift[2] ^countshift[13]^countshift[7] ^countshift[5];  b += (countshift[5]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + emulationhandler(d,e,a) + powergpiod; d = invalidcontext(d,30);
+   brightnesslimit = countshift[3] ^countshift[14]^countshift[8] ^countshift[6];  a += (countshift[6]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + emulationhandler(c,d,e) + powergpiod; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[4] ^countshift[15]^countshift[9] ^countshift[7];  e += (countshift[7]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + emulationhandler(b,c,d) + powergpiod; b = invalidcontext(b,30);
+   brightnesslimit = countshift[5] ^countshift[0] ^countshift[10]^countshift[8];  d += (countshift[8]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + emulationhandler(a,b,c) + powergpiod; a = invalidcontext(a,30);
+   brightnesslimit = countshift[6] ^countshift[1] ^countshift[11]^countshift[9];  c += (countshift[9]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + emulationhandler(e,a,b) + powergpiod; e = invalidcontext(e,30);
+   brightnesslimit = countshift[7] ^countshift[2] ^countshift[12]^countshift[10]; b += (countshift[10] = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + emulationhandler(d,e,a) + powergpiod; d = invalidcontext(d,30);
+   brightnesslimit = countshift[8] ^countshift[3] ^countshift[13]^countshift[11]; a += (countshift[11] = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + emulationhandler(c,d,e) + powergpiod; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[9] ^countshift[4] ^countshift[14]^countshift[12]; e += (countshift[12] = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + es3plushwmod(b,c,d) + allockernel; b = invalidcontext(b,30);
+   brightnesslimit = countshift[10]^countshift[5] ^countshift[15]^countshift[13]; d += (countshift[13] = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + es3plushwmod(a,b,c) + allockernel; a = invalidcontext(a,30);
+   brightnesslimit = countshift[11]^countshift[6] ^countshift[0] ^countshift[14]; c += (countshift[14] = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + es3plushwmod(e,a,b) + allockernel; e = invalidcontext(e,30);
+   brightnesslimit = countshift[12]^countshift[7] ^countshift[1] ^countshift[15]; b += (countshift[15] = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + es3plushwmod(d,e,a) + allockernel; d = invalidcontext(d,30);
+   brightnesslimit = countshift[13]^countshift[8] ^countshift[2] ^countshift[0];  a += (countshift[0]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + es3plushwmod(c,d,e) + allockernel; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[14]^countshift[9] ^countshift[3] ^countshift[1];  e += (countshift[1]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + es3plushwmod(b,c,d) + allockernel; b = invalidcontext(b,30);
+   brightnesslimit = countshift[15]^countshift[10]^countshift[4] ^countshift[2];  d += (countshift[2]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + es3plushwmod(a,b,c) + allockernel; a = invalidcontext(a,30);
+   brightnesslimit = countshift[0] ^countshift[11]^countshift[5] ^countshift[3];  c += (countshift[3]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + es3plushwmod(e,a,b) + allockernel; e = invalidcontext(e,30);
+   brightnesslimit = countshift[1] ^countshift[12]^countshift[6] ^countshift[4];  b += (countshift[4]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + es3plushwmod(d,e,a) + allockernel; d = invalidcontext(d,30);
+   brightnesslimit = countshift[2] ^countshift[13]^countshift[7] ^countshift[5];  a += (countshift[5]  = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + es3plushwmod(c,d,e) + allockernel; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[3] ^countshift[14]^countshift[8] ^countshift[6];  e += (countshift[6]  = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + es3plushwmod(b,c,d) + allockernel; b = invalidcontext(b,30);
+   brightnesslimit = countshift[4] ^countshift[15]^countshift[9] ^countshift[7];  d += (countshift[7]  = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + es3plushwmod(a,b,c) + allockernel; a = invalidcontext(a,30);
+   brightnesslimit = countshift[5] ^countshift[0] ^countshift[10]^countshift[8];  c += (countshift[8]  = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + es3plushwmod(e,a,b) + allockernel; e = invalidcontext(e,30);
+   brightnesslimit = countshift[6] ^countshift[1] ^countshift[11]^countshift[9];  b += (countshift[9]  = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + es3plushwmod(d,e,a) + allockernel; d = invalidcontext(d,30);
+   brightnesslimit = countshift[7] ^countshift[2] ^countshift[12]^countshift[10]; a += (countshift[10] = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + es3plushwmod(c,d,e) + allockernel; c = invalidcontext(c,30);
+
+   brightnesslimit = countshift[8] ^countshift[3] ^countshift[13]^countshift[11]; e += (countshift[11] = invalidcontext(brightnesslimit,1)) + invalidcontext(a,5) + es3plushwmod(b,c,d) + allockernel; b = invalidcontext(b,30);
+   brightnesslimit = countshift[9] ^countshift[4] ^countshift[14]^countshift[12]; d += (countshift[12] = invalidcontext(brightnesslimit,1)) + invalidcontext(e,5) + es3plushwmod(a,b,c) + allockernel; a = invalidcontext(a,30);
+   brightnesslimit = countshift[10]^countshift[5] ^countshift[15]^countshift[13]; c += (countshift[13] = invalidcontext(brightnesslimit,1)) + invalidcontext(d,5) + es3plushwmod(e,a,b) + allockernel; e = invalidcontext(e,30);
+   brightnesslimit = countshift[11]^countshift[6] ^countshift[0] ^countshift[14]; b += (countshift[14] = invalidcontext(brightnesslimit,1)) + invalidcontext(c,5) + es3plushwmod(d,e,a) + allockernel; d = invalidcontext(d,30);
+   brightnesslimit = countshift[12]^countshift[7] ^countshift[1] ^countshift[15]; a += (countshift[15] = invalidcontext(brightnesslimit,1)) + invalidcontext(b,5) + es3plushwmod(c,d,e) + allockernel; c = invalidcontext(c,30);
+   #endif
+
+   registermcasp->state[0] += a;
+   registermcasp->state[1] += b;
+   registermcasp->state[2] += c;
+   registermcasp->state[3] += d;
+   registermcasp->state[4] += e;
+
+   #undef allockernel
+   #undef powergpiod
+   #undef registerrproc
+   #undef serial0pdata
+
+   #undef es3plushwmod
+   #undef emulationhandler
+   #undef configparse
+   #undef pwdowninverted
+
+   #undef invalidcontext
+}
+
+
+SHARKSSL_API void SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *registermcasp)
+{
+   baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
+
+   registermcasp->total[0] = 0;
+   registermcasp->total[1] = 0;
+
+   registermcasp->state[0] = 0x67452301;
+   registermcasp->state[1] = 0xEFCDAB89;
+   registermcasp->state[2] = 0x98BADCFE;
+   registermcasp->state[3] = 0x10325476;
+   registermcasp->state[4] = 0xC3D2E1F0;
+}
+
+
+SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U8 *in, U32 len)
+{
+   unsigned int dm9000platdata, pxa300evalboard;
+
+   dm9000platdata = (unsigned int)(registermcasp->total[0]) & 0x3F;
+   pxa300evalboard = 64 - dm9000platdata;
+
+   registermcasp->total[0] += len;
+   if (registermcasp->total[0] < len)
+   {
+      registermcasp->total[1]++;
+   }
+
+   if((dm9000platdata) && (len >= pxa300evalboard))
+   {
+      memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
+      #ifndef B_BIG_ENDIAN
+      SharkSslSha1Ctx_process(registermcasp, registermcasp->buffer);
+      #else
+      SharkSslSha1Ctx_process(registermcasp, (U32*)(registermcasp->buffer));
+      #endif
+      len -= pxa300evalboard;
+      in  += pxa300evalboard;
+      dm9000platdata = 0;
+   }
+
+   while (len >= 64)
+   {
+      #ifndef B_BIG_ENDIAN
+      SharkSslSha1Ctx_process(registermcasp, in);
+      #else
+      memcpy(registermcasp->buffer, in, 64);
+      SharkSslSha1Ctx_process(registermcasp, (U32*)(registermcasp->buffer));
+      #endif
+      len -= 64;
+      in  += 64;
+   }
+
+   if (len)
+   {
+      memcpy((registermcasp->buffer + dm9000platdata), in, len);
+   }
+}
+
+
+SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA1_HASH_LEN])
+{
+   U32 timerenable, dummywrites;
+   U32 timer0start, checkcontext;
+   U8  usbgadgetresource[8];
+
+   timer0start = (registermcasp->total[0] >> 29) | (registermcasp->total[1] <<  3);
+   checkcontext  = (registermcasp->total[0] <<  3);
+
+   inputlevel(timer0start, usbgadgetresource, 0);
+   inputlevel(checkcontext,  usbgadgetresource, 4);
+
+   timerenable = registermcasp->total[0] & 0x3F;
+   dummywrites = (timerenable < 56) ? (56 - timerenable) : (120 - timerenable);
+
+   SharkSslSha1Ctx_append(registermcasp, (U8*)prusspdata, dummywrites);
+   SharkSslSha1Ctx_append(registermcasp, usbgadgetresource, 8);
+
+   inputlevel(registermcasp->state[0], secondaryentry,  0);
+   inputlevel(registermcasp->state[1], secondaryentry,  4);
+   inputlevel(registermcasp->state[2], secondaryentry,  8);
+   inputlevel(registermcasp->state[3], secondaryentry, 12);
+   inputlevel(registermcasp->state[4], secondaryentry, 16);
+}
+
+#endif
+#endif
 #ifndef NO_HTTP_SESSION
 
 #ifndef BA_LIB
@@ -55887,7 +56602,6 @@ Authenticator_authenticate(
       }
       if(checkrevision)
       { 
-#ifndef NO_SHARKSSL
          if(baStrnCaseCmp("\142\141\163\151\143", checkrevision, 5))
          { 
             if( ! printtiming &&
@@ -55901,7 +56615,6 @@ Authenticator_authenticate(
                (AuthenticatorIntf*)&o->digestAuth,driverregister, cmd);
          }
          else
-#endif
          {
             buttonsbelkin = AuthenticatorIntf_authenticate(
                (AuthenticatorIntf*)&o->basicAuth,driverregister, cmd);
@@ -55943,13 +56656,11 @@ Authenticator_constructor(Authenticator* o,
       mappingprotection,
       au1300intclknames);
 
-#ifndef NO_SHARKSSL
    DigestAuthenticator_constructor(
       &o->digestAuth,
       eventssysfs,
       mappingprotection,
       au1300intclknames);
-#endif
 
    FormAuthenticator_constructor(
       &o->formAuth,
@@ -56027,14 +56738,12 @@ mfptimerdisable(
          break;
 
       case AuthInfoCT_HA1:
-#ifndef NO_SHARKSSL
       {
          U8 mcspi2hwmod[33];
          calculateHA1Hex(mappingprotection,o->username,o->passwd,mcspi2hwmod);
          if( ! memcmp(memblocksteal->password,mcspi2hwmod,32) )
             return TRUE; 
       }
-#endif
 
       case AuthInfoCT_Invalid: 
          break;
@@ -56665,6 +57374,12 @@ static int subpacketannotation(SharkSslASN1Create *o,
             }
             else
             {
+               if ((allockuser >= 4) && (!memcmp(SAN, "\125\122\111\072", 4)))  
+               {
+                  aborthandler = SUBJECTALTNAME_URI;
+                  SAN += 4;
+                  allockuser -= 4;
+               }
                o->ptr -= allockuser;
 	            memcpy(o->ptr, SAN, allockuser);
                SAN += allockuser;  
@@ -57384,7 +58099,9 @@ DavAuth_destructor(DavAuth* o)
 #define INL_baConvBin2Hex 1
 
 #include <DigestAuthenticator.h>
+#ifndef NO_SHARKSSL
 #include <SharkSslCrypto.h>
+#endif
 #include <BaServerLib.h>
 #include <HttpTrace.h>
 #include <stdlib.h>
@@ -71936,7 +72653,7 @@ int omap3430common(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out
          return (int)SHARKSSL_RSA_WRONG_KEY_LENGTH;
       }
 
-      if (len >= (creategroup - 11))
+      if (len > (creategroup - 11))
       {
          return (int)SHARKSSL_RSA_INPUT_DATA_LENGTH_TOO_BIG;
       }
@@ -100693,7 +101410,8 @@ uwiredevice(lua_State* L)
          {
             if(bsrc->len > (b->len - ix))
               setupiommu(L, "\163\151\172\145");
-            memcpy(b->array + b->startIx + ix, bsrc-> array + bsrc->startIx, bsrc->len);
+            memcpy(b->array + b->startIx + ix, bsrc-> array + bsrc->startIx,
+                   bsrc->len);
             break;
          }
          
@@ -100791,7 +101509,7 @@ preparereboot(lua_State* L)
    len = end - cachesysfs;
    if (len < 0) len = 0;
 
-   if(cachesysfs < b->startIx || (cachesysfs + len) > b->len)
+   if(cachesysfs < 0 || (cachesysfs + len) > b->len)
       setupiommu(L,"\151\156\144\145\170\040\163\143\157\160\145");
 
    lua_pushlstring(L, (char*)(b->array + b->startIx + cachesysfs), len);
@@ -101368,7 +102086,7 @@ hsmmc1resource(LSock* s, lua_State* L, SharkSslCon* mmcsd0resources, int setupua
 
             case WSOP_Ping:
                top=lua_gettop(L);
-               x=removetable(s, L, 0, alloccontroller, 0, wss->bytesRead &&  wss->frameLen ==
+               x=removetable(s,L,0,alloccontroller,0,wss->bytesRead && wss->frameLen ==
                             wss->bytesRead ? wss->bytesRead : 0, WSOP_Pong);
                lua_settop(L,top); 
                if(x < 0)
@@ -101486,8 +102204,12 @@ timerdriver(LSock* s)
       U16 hwmoddeassert=0;
       char buf[64];
       serialports.isIp6 = SoDispCon_isIP6(&s->con.soCon);
+#ifdef USE_SoDispCon_recvfrom
+      sffsdrnandflash=SoDispCon_recvfrom(&s->con.soCon, s->recData, x, &serialports, &hwmoddeassert);
+#else
       HttpSocket_recvfrom(
          &s->con.soCon.httpSocket,s->recData,x,&serialports,&hwmoddeassert,&sffsdrnandflash);
+#endif
       if(sffsdrnandflash > 0)
       {
          x = checkcurrent(s->L,(char*)s->recData,sffsdrnandflash);
@@ -108277,7 +108999,7 @@ doClientError(const char* fmt, ...)
 static ThreadMutex*
 getSoDispMutex(lua_State* L)
 {
-   return balua_getparam(L)->server->dispatcher->mutex;
+   return balua_getparam(L)->mutex;
 }
 
 

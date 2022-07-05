@@ -50,7 +50,18 @@ https://realtimelogic.com/ba/doc/?url=C/introduction.html#refman_cpp
 #include <DoubleList.h>
 #include <HttpResRdr.h>
 #include <BaDiskIo.h>
+#include <ZipIo.h>
 #include <stdio.h>
+
+#if defined(_DEBUG) && !defined(BAIO_DISK)
+// Read resources from file system
+#define BAIO_DISK
+#endif
+
+#if !defined(BAIO_DISK)
+// Read resources from embedded ZIP file html.zip.c
+extern "C" ZipReader * getZipReader(void);
+#endif 
 
 class ChatPage;
 
@@ -283,10 +294,10 @@ ChatPage::ChatPage(const char *pageName, SoDisp* disp) :
 void
 installVirtualDir(HttpServer* server)
 {
-   static DiskIo io;
-   static HttpResRdr readDir(&io,0);
+#if defined(BAIO_DISK)
    int status;
-
+   static DiskIo io;
+   static HttpResRdr readDir(&io, 0);
    status=io.setRootDir("../../html");
    if(status)
       status=io.setRootDir("../html");
@@ -296,6 +307,13 @@ installVirtualDir(HttpServer* server)
                        baErr2Str(status));
       baFatalE(FE_USER_ERROR_1, 0);
    }
+#else // Assume BAIO_EZIP
+   ZipReader* zipReader = getZipReader();
+   if (!zipReader->isValid())
+      baFatalE(FE_USER_ERROR_2, 0);
+   static ZipIo io(zipReader);
+   static HttpResRdr readDir(&io, 0);
+#endif
    server->insertDir(0,&readDir);
    static ChatPage wsp("my-web-socket-service", server->getDispatcher());
    readDir.insertPage(&wsp);

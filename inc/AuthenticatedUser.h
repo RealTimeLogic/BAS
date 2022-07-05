@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: AuthenticatedUser.h 5201 2022-07-04 13:57:29Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2019
+ *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -892,9 +892,7 @@ inline LoginTrackerNode* LoginTracker::find(HttpRequest* request) {
 /** @} */ /* end of Authentication */
 
 /* Internal func */
-#ifndef NO_SHARKSSL
 void calculateHA1Hex(
    const char* realm, const char* uname, const char* pwd, U8 hexbuf[33]);
-#endif
 
 #endif

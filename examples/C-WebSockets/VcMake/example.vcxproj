@@ -13,17 +13,20 @@
   <PropertyGroup Label="Globals">
     <SccProjectName />
     <SccLocalPath />
+    <ProjectGuid>{9F306073-1553-A423-05EF-07C3ED230904}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -123,10 +126,14 @@
   <ItemGroup>
     <ClCompile Include="..\..\..\src\arch\NET\generic\SoDisp.c" />
     <ClCompile Include="..\..\..\src\arch\Windows\ThreadLib.c" />
-    <ClCompile Include="..\..\..\src\BAS.c" />
+    <ClCompile Include="..\..\..\src\BWS.c" />
     <ClCompile Include="..\..\..\src\DiskIo\windows\BaFile.c" />
     <ClCompile Include="..\..\HostInit\HostInit.c" />
     <ClCompile Include="..\..\HostInit\Main.c" />
+    <ClCompile Include="..\obj\release\html.zip.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\src\ChatServer.cpp" />
   </ItemGroup>
   <ItemGroup>

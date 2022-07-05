@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5116 2022-03-14 23:43:47Z wini $
+ *   $Id: TargConfig.h 5186 2022-06-08 21:13:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
@@ -64,7 +64,9 @@
 #endif
 
 #include <windows.h>
+#ifndef BAS_RTOS_WINDOWS_SIM
 #include <winsock2.h>
+#endif
 
 /***********************************************************************
  *  Misc settings
@@ -165,7 +167,8 @@
 #ifdef NDEBUG
 #define baAssert(exp)
 #else
-#define baAssert(exp) ( (exp) ? (void)0 : baFatalEf(FE_ASSERT, 0, __FILE__, __LINE__) )
+#define baAssert(exp) \
+   ( (exp) ? (void)0 : baFatalEf(FE_ASSERT, 0, __FILE__, __LINE__) )
 #endif
 #endif
 

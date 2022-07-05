@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLibArch.h 5202 2022-07-05 06:06:59Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2021
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -95,9 +95,14 @@ typedef struct ThreadSemaphoreBase
 
 #define ThreadSemaphore_destructor(o)
 
-void ThreadSemaphore_wait(ThreadSemaphore*);
-void ThreadSemaphore_signal(ThreadSemaphore*);
-
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ThreadSemaphore_wait(ThreadSemaphoreBase*);
+void ThreadSemaphore_signal(ThreadSemaphoreBase*);
+#ifdef __cplusplus
+}
+#endif 
 
 typedef struct ThreadBase
 {

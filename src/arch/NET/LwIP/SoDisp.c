@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5068 2022-02-02 03:10:31Z wini $
+ *   $Id: SoDisp.c 5186 2022-06-08 21:13:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
@@ -94,7 +94,8 @@
 #error Must set callBackData pointer in api.h or define LWIP_SOCKET=1
 #endif
 
-static SoDisp* disp; /* Set in the SoDisp_constructor. We can have only one instance! */
+ /* Set in the SoDisp_constructor. We can have only one instance! */
+static SoDisp* disp;
 
 /* Enable in lwipopt.h (optional: not required) */
 #if SO_REUSE
@@ -425,7 +426,8 @@ HttpSocket_setTCPNoDelay(HttpSocket* o, int enable, int* status)
 
 
 void
-HttpSocket_sockStream(HttpSocket* o,const char* host,BaBool ip6,int* status)
+_HttpSocket_newSock(HttpSocket* o, const char* host, enum netconn_type t,
+                    BaBool ip6, int* status)
 {
    (void)host;
    *status = -1;
@@ -433,9 +435,10 @@ HttpSocket_sockStream(HttpSocket* o,const char* host,BaBool ip6,int* status)
    {
       o->recEvent = 0;
       o->sendEvent = o->errEvent = FALSE;
-      o->ncon = netconn_new_with_callback(NETCONN_TCP, HttpSocket_netconnCB);
+      o->ncon = netconn_new_with_callback(t, HttpSocket_netconnCB);
       if(o->ncon)
       {
+         o->isDgram = (U8)(t == NETCONN_UDP);
          setCallBackData(o->ncon, o);
          *status = 0;
       }
@@ -531,10 +534,11 @@ HttpSocket_close(HttpSocket* o)
       netconn_close(ncon);
       netconn_delete(ncon);
    }
-   if(o->pb)
+   if(o->nbuf)
    {
-      pbuf_free(o->pb);
-      o->pb=0;
+      o->isDgram ? netbuf_delete((struct netbuf*)o->nbuf) :
+         pbuf_free((struct pbuf*)o->nbuf);
+      o->nbuf=0;
    }
    o->recEvent = 0;
    o->errEvent = o->sendEvent = FALSE;
@@ -580,7 +584,7 @@ HttpSocket_move(HttpSocket* o,HttpSocket* newS)
    SYS_ARCH_PROTECT(lev);
    newS->ncon=o->ncon;
    o->ncon=0;
-   newS->pb = o->pb;
+   newS->nbuf = o->nbuf;
    newS->pbOffs = o->pbOffs;
    newS->recEvent = o->recEvent;
    newS->sendEvent = o->sendEvent;
@@ -591,7 +595,7 @@ HttpSocket_move(HttpSocket* o,HttpSocket* newS)
    SYS_ARCH_UNPROTECT(lev);
    if(o == disp->curSock)
       disp->curSock=0;
-   o->pb=0;
+   o->nbuf=0;
    o->pbOffs=0;
    o->recEvent=0;
    o->sendEvent = o->errEvent = FALSE;
@@ -602,9 +606,29 @@ void HttpSocket_send(HttpSocket* o, struct ThreadMutex* m, BaBool* isTerminated,
                 const void* data, int len, int* retLen)
 {
    err_t err=ERR_ARG;
-   if(o->errEvent)
+   if(o->errEvent || !o->ncon)
    {
       *retLen=E_SOCKET_CLOSED;
+      return;
+   }
+   if(o->isDgram)
+   {
+      struct netbuf* nbuf;
+      char* ndata;
+      if(0 != (nbuf = netbuf_new()))
+      {
+         if(0 != (ndata = netbuf_alloc(nbuf, len)))
+         {
+            memcpy(ndata, data, len);
+            *retLen = netconn_send(o->ncon, nbuf) == ERR_OK ? len :
+               E_SOCKET_WRITE_FAILED;
+         }
+         else
+            *retLen = E_MALLOC;
+         netbuf_delete(nbuf);
+      }
+      else
+         *retLen = E_MALLOC;
       return;
    }
    if(!netconn_is_nonblocking(o->ncon))
@@ -652,6 +676,38 @@ void HttpSocket_send(HttpSocket* o, struct ThreadMutex* m, BaBool* isTerminated,
       *retLen = E_SOCKET_WRITE_FAILED;
    else
       *retLen = len;
+}
+
+void
+HttpSocket_sendto(HttpSocket* o, const void* data, int len,
+                  struct HttpSockaddr* sa,U16 port, int* status)
+{
+   ip_addr_t addr;
+   struct netbuf* nbuf;
+   char* ndata;
+   if(o->errEvent || !o->ncon)
+   {
+      *status=E_SOCKET_CLOSED;
+      return;
+   }
+#if LWIP_IPV6==0
+   memcpy(&addr.addr,sa->addr,4);
+#else
+   memcpy(&addr.u_addr.ip4,sa->addr,4);
+#endif
+   if(0 != (nbuf = netbuf_new()))
+   {
+      if(0 != (ndata = netbuf_alloc(nbuf, len)))
+      {
+         memcpy(ndata, data, len);
+         *status = netconn_sendto(o->ncon,nbuf,&addr,port);
+      }
+      else
+         *status=E_MALLOC;
+      netbuf_delete(nbuf);
+   }
+   else
+      *status=E_MALLOC;
 }
 
 
@@ -730,21 +786,24 @@ _HttpSocket_setKeepAliveEx(
     < zero: an error code
  */
 int
-SoDispCon_platReadData(
-   SoDispCon* o, ThreadMutex* m, BaBool* isTerminated, void* data, int dlen)
+SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
+                  void* data, int dlen, HttpSockaddr* addr, U16* port)
 {
    int offset = 0;
+   int isTcp;
+   struct pbuf* pb;
    HttpSocket* sock = &o->httpSocket;
    int releaseMutex =
       m && ThreadMutex_isOwner(m) && ! SoDispCon_isNonBlocking(o);
    if(sock->errEvent || !sock->ncon)
       return E_SOCKET_CLOSED;
+   isTcp=netconn_type(sock->ncon) == NETCONN_TCP;
    baAssert((netconn_is_nonblocking(sock->ncon) == 0) ==
             (SoDispCon_isNonBlocking(o) == 0));
    for(;;)
    {
       int rlen;
-      if( ! sock->pb )
+      if( ! sock->nbuf )
       {
          err_t err;
          sock->pbOffs = 0;
@@ -753,15 +812,19 @@ SoDispCon_platReadData(
             ThreadMutex_release(m);
             /* rtmo 0 means wait forever, same concept as used by netconn */
             netconn_set_recvtimeout(sock->ncon, o->rtmo*50);
-            err = netconn_recv_tcp_pbuf(sock->ncon, &sock->pb);
+            err = isTcp ?
+               netconn_recv_tcp_pbuf(sock->ncon, (struct pbuf**)&sock->nbuf) :
+               netconn_recv(sock->ncon, (struct netbuf**)&sock->nbuf);
             ThreadMutex_set(m);
             if(*isTerminated)
                return E_SOCKET_READ_FAILED;
-            HttpSocket_checkEvents(&o->httpSocket);
+            HttpSocket_checkEvents(sock);
          }
          else if(sock->recEvent)
          {
-            err = netconn_recv_tcp_pbuf(sock->ncon, &sock->pb);
+            err = isTcp ?
+               netconn_recv_tcp_pbuf(sock->ncon, (struct pbuf**)&sock->nbuf) :
+               netconn_recv(sock->ncon, (struct netbuf**)&sock->nbuf);
             if(ERR_OK != err)
                sock->recEvent=0; /* Ref-spurious */
          }
@@ -769,7 +832,9 @@ SoDispCon_platReadData(
          { /* Special case where mutex is not released, but we
             * block. Used by for example the debug monitor. */
             netconn_set_recvtimeout(sock->ncon, o->rtmo*50);
-            err = netconn_recv_tcp_pbuf(sock->ncon, &sock->pb);
+            err = isTcp ?
+               netconn_recv_tcp_pbuf(sock->ncon, (struct pbuf**)&sock->nbuf) :
+               netconn_recv(sock->ncon, (struct netbuf**)&sock->nbuf);
          }
          else
          {
@@ -777,9 +842,9 @@ SoDispCon_platReadData(
             return offset; /* zero means no data */
          }
          if(ERR_OK != err)
-         {  
+         {
             /* printf("Sock rec err %d, %p\n",err,sock->pb); */
-            sock->pb=0; /* this was set in an lwIP version on 'err' ?? */
+            sock->nbuf=0; /* Make sure not set. See close() */
             SoDispCon_clearSocketHasNonBlockData(o);
             if(offset)
             {
@@ -794,22 +859,33 @@ SoDispCon_platReadData(
                   return 0; /* no data */
                case ERR_CLSD:
                case ERR_RST:
-                  return E_SOCKET_CLOSED;
+                  return E_SOCKET_CLOSED; 
             }
             return E_SOCKET_READ_FAILED;
          }
       }
-      rlen=(int)pbuf_copy_partial(sock->pb,(U8*)data+offset,dlen,sock->pbOffs);
+      pb = isTcp ? (struct pbuf*)sock->nbuf : ((struct netbuf*)sock->nbuf)->p;
+      rlen=(int)pbuf_copy_partial(pb,(U8*)data+offset,dlen,sock->pbOffs);
       if(!rlen)
          return E_SOCKET_READ_FAILED;
       sock->pbOffs += rlen;
       offset += rlen;
       dlen -= rlen;
-      baAssert(dlen >= 0 && sock->pbOffs <= sock->pb->tot_len);
-      if(sock->pbOffs >= sock->pb->tot_len)
+      baAssert(dlen >= 0 && sock->pbOffs <= pb->tot_len);
+      if( ! isTcp && addr )
       {
-         pbuf_free(sock->pb);
-         sock->pb=0;
+         *port = ((struct netbuf*)sock->nbuf)->port;
+#if LWIP_IPV6==0
+         memcpy(addr->addr, &((struct netbuf*)sock->nbuf)->addr.addr, 4);
+#else
+         memcpy(addr->addr, &((struct netbuf*)sock->nbuf)->addr.u_addr.ip4, 4);
+#endif
+         addr->isIp6 = FALSE;
+      }
+      if(sock->pbOffs >= pb->tot_len)
+      {
+         isTcp ? pbuf_free(pb) : netbuf_delete((struct netbuf*)sock->nbuf);
+         sock->nbuf=0;
          if(sock->recEvent)
          {
             if(dlen > 0)
@@ -823,13 +899,12 @@ SoDispCon_platReadData(
 }
 
 
-
 void
 SoDisp_newCon(SoDisp* o, struct SoDispCon* con)
 {
    (void)o;
    (void)con;
-   baAssert( ! con->httpSocket.pb );
+   baAssert( ! con->httpSocket.nbuf );
    DoubleLink_constructor(&con->httpSocket);
 
 }

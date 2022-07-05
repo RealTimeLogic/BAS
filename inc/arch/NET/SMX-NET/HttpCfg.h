@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 5141 2022-05-03 18:45:53Z wini $
+ *   $Id: HttpCfg.h 5170 2022-05-25 20:51:01Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2022
  *
@@ -79,11 +79,32 @@
 
 /* Overload the following default data and functions in gBsdSock.h */
 
+#if 1
 #define socketErrno(s) xn_getlasterror()
+#define socketWouldBlock socketWouldBlockSMX
+#else
+#define socketWouldBlock(s) EWOULDBLOCK == zz_getlasterror(s)
+int zz_getlasterror(int sock);
+#ifdef sodisp_c
+int zz_getlasterror(int sock)
+{
+   int savedErrno = errno;
+   int sockoptErr;
+   int errLen = (int) sizeof (sockoptErr);
+   if(getsockopt(sock,SOL_SOCKET,SO_ERROR,(char*)&sockoptErr,&errLen) >= 0)
+      return (sockoptErr);
+   /* getsockopt() failed. Just use errno (previously saved). */
+   return (savedErrno);
+}
+#endif
+#endif
+
+
+
+
 #define socketIoctl ioctlsocket
 #define socketClose closesocket
 
-#define socketWouldBlock socketWouldBlockSMX
 #ifdef __cplusplus
 extern "C" {
 #endif

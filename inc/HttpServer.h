@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpServer.h 5201 2022-07-04 13:57:29Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2019
+ *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5166
+#define BASLIB_VER_NO 5203
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5166)
+#define BASLIB_VER BASLIB_VER_M(5203)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -218,7 +218,7 @@ typedef struct
 
 /** HttpHeader iterator: see HttpRequest::getHeaders for more information.
  */
-typedef struct
+typedef struct HttpHeader
 {
 #ifdef __cplusplus
       const char* name(HttpRequest* req);
@@ -697,7 +697,7 @@ inline void HttpCookie::activate() {
 /** Standard HTTP header values.
  \sa HttpRequest::getHeaderValue
  */
-typedef struct
+typedef struct HttpStdHeaders
 {
 #ifdef __cplusplus
       /** Returns the connection type for HTTP 1.1 connections,
@@ -965,9 +965,8 @@ typedef struct HttpRequest
           successful handshake and a negative value if the client is
           not a WebSocket client.
       */
-#ifndef NO_SHARKSSL
       int wsUpgrade();
-#endif
+
       /** Return a HTTP header iterator that can iterate and fetch all
           the HTTP headers.
 
@@ -1097,9 +1096,7 @@ BA_API int HttpRequest_setUserObj(
 BA_API const char* HttpRequest_getParameter(
    HttpRequest* o, const char* paramName);
 BA_API HttpHeader* HttpRequest_getHeaders(HttpRequest* o, int* len);
-#ifndef NO_SHARKSSL
 BA_API int HttpRequest_wsUpgrade(HttpRequest* o);
-#endif
 BA_API BaBool HttpRequest_enableKeepAlive(HttpRequest* o);
 BA_API int HttpRequest_pushBackData(HttpRequest* o);
 #ifndef NO_HTTP_SESSION
@@ -1142,11 +1139,9 @@ inline HttpCookie* HttpRequest::getCookie(const char* name) {
    return HttpRequest_getCookie(this, name); }
 inline const char* HttpRequest::getParameter(const char* paramName) {
    return HttpRequest_getParameter(this, paramName); }
-#ifndef NO_SHARKSSL
 inline int HttpRequest::wsUpgrade() {
    return HttpRequest_wsUpgrade(this);
 }
-#endif
 inline HttpHeader* HttpRequest::getHeaders(int* len) {
    return HttpRequest_getHeaders(this, len); }
 inline int HttpRequest::setUserObj(void* userObj, bool overwrite) {
@@ -3193,5 +3188,35 @@ inline struct HttpServer* HttpConnection::getServer() {
 
 /** @} */ /* end of StdWebServer */
 
+/* Internal use */
+#ifdef NO_SHARKSSL
+
+#define SHARKSSL_MD5_HASH_LEN       16
+#define SHARKSSL_SHA1_HASH_LEN      20
+
+typedef struct SharkSslMd5Ctx
+{
+   U32 total[2];
+   U32 state[4];
+   U8  buffer[64];
+} SharkSslMd5Ctx;
+
+SHARKSSL_API void  SharkSslMd5Ctx_constructor(SharkSslMd5Ctx* ctx);
+SHARKSSL_API void  SharkSslMd5Ctx_append(SharkSslMd5Ctx* ctx, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx* ctx, U8 digest[]);
+SHARKSSL_API int   sharkssl_md5(const U8*, U16, U8*); 
+
+typedef struct SharkSslSha1Ctx
+{
+   U32 total[2];
+   U32 state[5];
+   U8  buffer[64];
+} SharkSslSha1Ctx;
+
+SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
+SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[]);
+
+#endif
 
 #endif /* __httpServer_h */
