@@ -48,6 +48,7 @@ https://realtimelogic.com/ba/doc/?url=C/introduction.html#refman_cpp
 #include "../../HostInit/OpenSocketCon.h"
 #include <WebSocketServer.h>
 #include <DoubleList.h>
+#include <SingleList.h>
 #include <HttpResRdr.h>
 #include <BaDiskIo.h>
 #include <ZipIo.h>

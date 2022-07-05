@@ -13,8 +13,8 @@
  *
  *   $Id: lxrc.h 4632 2020-10-13 19:19:59Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002
- *               http://www.realtimelogic.com
+ *   COPYRIGHT:  Real Time Logic, 2022
+ *               https://realtimelogic.com
  *
  *   The copyright to the program herein is the property of
  *   Real Time Logic. The program may be used or copied only
@@ -28,7 +28,9 @@
 #ifndef __lxrc_h
 #define __lxrc_h 
 
+#ifndef NO_SHARKSSL
 #include <SharkSSL.h>
+#endif
 #include <balua.h>
 #include <SoDispCon.h>
 
@@ -56,9 +58,11 @@ balua_thread_Shutdown balua_thread(lua_State* L);
 
 int lGetStdSockOptions(lua_State* L, int tabIx, const char** intf,
                        BaBool* ipv6, BaBool* secure);
+#ifndef NO_SHARKSSL
 void lsharkssl_unlock(lua_State *L,SharkSsl* super);
 SharkSsl* lsharkssl_lock(
    lua_State *L,int tabIx,SharkSsl_Role role,SharkSsl* lockedShark);
+#endif
 int pushCertificate(lua_State *L, SoDispCon* con);
 int pushCiphers(lua_State *L, SoDispCon* con);
 int calcTabSize(lua_State* L, int ix); /* lhttp.c */

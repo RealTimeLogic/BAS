@@ -46,8 +46,9 @@ extern "C" {
 
 #include "lua.h"
 #include "lauxlib.h"
+#ifndef NO_SHARKSSL
 #include "SharkSSL.h"
-
+#endif
 #ifdef __cplusplus
 }
 #endif 
@@ -257,6 +258,7 @@ BA_API lua_Integer balua_checkIntField(lua_State *L, int ix, const char *k);
 
 
 /* Internally used by the xrc code */
+#ifndef NO_SHARKSSL
 typedef struct
 {
    int (*pushCertificate)(lua_State *L, SoDispCon* con);
@@ -267,7 +269,7 @@ typedef struct
 } LSharkSSLFuncs;
  /* Auto set if using xrc/lua/lsharkssl.c */
 extern const LSharkSSLFuncs* lSharkSSLFuncs;
-
+#endif
 
 enum BaUserDataTypes {
    BA_VMPTR=1,

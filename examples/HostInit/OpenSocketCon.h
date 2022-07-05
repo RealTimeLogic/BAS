@@ -41,7 +41,9 @@ C++ code.
 
 #include <HttpTrace.h>
 #include <HttpServCon.h>
+#ifndef NO_SHARKSSL
 #include <HttpSharkSslServCon.h>
+#endif
 #include <BaErrorCodes.h>
 #include "localhost_RSA_2048.h"
 
