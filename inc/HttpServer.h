@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5201 2022-07-04 13:57:29Z wini $
+ *   $Id: HttpServer.h 5204 2022-07-06 06:54:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5203
+#define BASLIB_VER_NO 5204
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5203)
+#define BASLIB_VER BASLIB_VER_M(5204)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -3216,6 +3216,8 @@ typedef struct SharkSslSha1Ctx
 SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
 SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
 SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[]);
+
+typedef void SharkSsl;
 
 #endif
 

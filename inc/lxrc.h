@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 4632 2020-10-13 19:19:59Z wini $
+ *   $Id: lxrc.h 5204 2022-07-06 06:54:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022
  *               https://realtimelogic.com

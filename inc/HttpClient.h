@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 5065 2022-01-31 23:53:26Z wini $
+ *   $Id: HttpClient.h 5204 2022-07-06 06:54:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2020
  *
@@ -37,7 +37,9 @@
 #define __HttpClient_h
 
 #include <DynBuffer.h>
+#ifndef NO_SHARKSSL
 #include <SharkSslEx.h>
+#endif
 
 struct HttpClient;
 
@@ -400,7 +402,9 @@ extern "C" {
 void HttpClient_constructor(HttpClient* o, SoDisp* disp, U8 mode);
 #define HttpClient_setSSL(o, ssl) (o)->sharkSslClient=ssl
 #define HttpClient_setReadTmo(o, timeout) (o)->readTmo=timeout
+#ifndef NO_SHARKSSL
 SharkSslCon* HttpClient_getSharkSslCon(HttpClient* o);
+#endif
 
 void HttpClient_destructor(HttpClient* o);
 int HttpClient_isURL(const char* url);
@@ -421,7 +425,9 @@ void HttpClient_close(HttpClient* o);
 int HttpClient_getStatus(HttpClient* o);
 #define HttpClient_getError(o) (o)->lastError
 #define HttpClient_getSoDispCon(o) ((SoDispCon*)(o))
+#ifndef NO_SHARKSSL
 SharkSslConTrust HttpClient_trusted(HttpClient* o);
+#endif
 #define HttpClient_setAcceptTrusted(o, t) (o)->acceptTrusted=t
 
 #ifdef __cplusplus

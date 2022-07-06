@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5134 2022-04-27 22:40:57Z wini $
+ *   $Id: balua.h 5204 2022-07-06 06:54:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
  *
@@ -269,6 +269,8 @@ typedef struct
 } LSharkSSLFuncs;
  /* Auto set if using xrc/lua/lsharkssl.c */
 extern const LSharkSSLFuncs* lSharkSSLFuncs;
+#else
+extern const void* lSharkSSLFuncs;
 #endif
 
 enum BaUserDataTypes {

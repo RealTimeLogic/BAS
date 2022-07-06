@@ -82828,7 +82828,9 @@ SHARKSSL_API int SharkSslECCKey_create(SharkSslECCKey *mcbspplatform, U16 defaul
 #include <BaErrorCodes.h>
 #include <ZipFileIterator.h>
 #include <HttpTrace.h>
+#ifndef NO_SHARKSSL
 #include <SharkSSL.h>
+#endif
 
 
 BA_API void*
@@ -84204,6 +84206,7 @@ clocksourceunstable(lua_State *L)
       { 
          if(ssl)
          {
+#ifndef NO_SHARKSSL
             if(lSharkSSLFuncs)
             {
                lSharkSSLFuncs->unlockSharkSSL(L, ssl);
@@ -84212,6 +84215,7 @@ clocksourceunstable(lua_State *L)
             {
                baAssert(0);
             }
+#endif
          }
       }
       IoIntf_destructor(io->i);
@@ -84619,6 +84623,7 @@ static int topologymatrix(lua_State *L)
    allowedregister = balua_getStringField(L, 2, "\160\162\157\170\171\165\163\145\162", 0);
    timerdelay = balua_getStringField(L, 2, "\160\162\157\170\171\160\141\163\163", 0);
    apecsmachine = balua_getStringField(L, 2, "\151\156\164\146", 0);
+#ifndef NO_SHARKSSL
    if(lSharkSSLFuncs)
    {
       lua_getfield(L, 2, "\163\150\141\162\153");
@@ -84637,6 +84642,7 @@ static int topologymatrix(lua_State *L)
          }
       }
    }
+#endif
    lua_getfield(L, 2, "\163\157\143\153\163");
    if(lua_isboolean(L, -1))
    {
@@ -86945,7 +86951,9 @@ luaopen_ba_datetime(lua_State* L)
 
 
 #include <HttpServer.h>
+#ifndef NO_SHARKSSL
 #include <HttpSharkSslServCon.h>
+#endif
 #include <BaServerLib.h>
 #include <HttpResRdr.h>
 #include <HttpRecData.h>
@@ -86964,7 +86972,11 @@ luaopen_ba_datetime(lua_State* L)
 
 
 
+#ifdef NO_SHARKSSL
+const void* lSharkSSLFuncs;
+#else
 const LSharkSSLFuncs* lSharkSSLFuncs;
+#endif
 #ifdef BA_DLLBUILD
 BA_API const LSharkSSLFuncs** getSharkSSLFuncs() { return &lSharkSSLFuncs; }
 #endif
@@ -89643,7 +89655,6 @@ sysconswlocked(lua_State* L)
 }
 
 
-#ifndef NO_SHARKSSL
 static int
 asyncdigest(lua_State* L)
 {
@@ -89653,7 +89664,6 @@ asyncdigest(lua_State* L)
    DigestAuthenticator_setAutHeader(luaL_checkstring(L,2),r);
    return 0;
 }
-#endif
 
 #define DEF_RESP_BUF_SIZE 2048
 typedef struct {
@@ -89752,9 +89762,7 @@ static const luaL_Reg baHttpCmdLib[] = {
    {"\167\162\151\164\145\163\151\172\145",            cpufreqnotifier},
    {"\152\163\157\156",                 callchaintrace},
    {"\163\145\164\142\141\163\151\143",             sysconswlocked},
-#ifndef NO_SHARKSSL
    {"\163\145\164\144\151\147\145\163\164",            asyncdigest},
-#endif
    {"\144\145\146\145\162\162\145\144",             disableunused},
    {NULL, NULL}
 };
@@ -90603,16 +90611,12 @@ siblingsmasks(lua_State* L)
             Authenticator_setLoginTracker((Authenticator*)deviceinterrupt,p->tracker);
          break;
       case 1:
-#ifdef NO_SHARKSSL
-         goto L_nodigest;
-#else
          DigestAuthenticator_constructor(
             (DigestAuthenticator*)deviceinterrupt,ui,mappingprotection,&o->loginResp); 
          if(helpersgmii)
             DigestAuthenticator_setLoginTracker(
                (DigestAuthenticator*)deviceinterrupt,p->tracker);
          break;
-#endif
       case 2:
          BasicAuthenticator_constructor(
             (BasicAuthenticator*)deviceinterrupt,ui,mappingprotection,&o->loginResp); 
@@ -90631,19 +90635,11 @@ siblingsmasks(lua_State* L)
                (FormAuthenticator*)deviceinterrupt,p->tracker);
          break;
       case 5:
-#ifdef NO_SHARKSSL
-         goto L_nodigest;
-#else
          DavAuth_constructor((DavAuth*)deviceinterrupt, ui, mappingprotection);
          if(helpersgmii)
             DavAuth_setLoginTracker((DavAuth*)deviceinterrupt,p->tracker);
-#endif
    }
    return 1;
-#ifdef NO_SHARKSSL
-  L_nodigest:
-   luaL_error(L,"\116\157\040\163\150\141\162\153\072\040\156\157\040\144\151\147\145\163\164");
-#endif
 }
 
 
@@ -95617,6 +95613,7 @@ HttpClient_getSharkSslCon(HttpClient* o)
 }
 #endif
 
+#ifndef NO_SHARKSSL
 SharkSslConTrust
 HttpClient_trusted(HttpClient* o)
 {
@@ -95629,7 +95626,7 @@ HttpClient_trusted(HttpClient* o)
    return sc ? SharkSslCon_trusted(sc, o->host, 0) : SharkSslConTrust_NotSSL;
 #endif
 }
-
+#endif
 
 void
 HttpClient_constructor(HttpClient* o,SoDisp* ptraceaccess, U8 shashdigestsize)
