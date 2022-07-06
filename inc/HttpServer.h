@@ -3216,8 +3216,7 @@ typedef struct SharkSslSha1Ctx
 SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
 SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
 SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[]);
-
-typedef void SharkSsl;
+typedef struct SharkSsl { int na; } SharkSsl;
 
 #endif
 
