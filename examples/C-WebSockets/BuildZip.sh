@@ -11,6 +11,7 @@ function failed() {
     exit 1
 }
 
+cd "$(dirname "$0")"
 rm -f obj/release/html.zip
 cd html || failed "cd"
 zip -D -r -9 ../obj/release/html.zip * || failed "zip"
