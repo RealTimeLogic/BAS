@@ -19,6 +19,7 @@ BAS Amalgamated is a compact version of BAS, extracted from the BAS SDK. BAS Ama
 * ThreadLib.c: Kernel porting layer
 * SoDisp.c: TCP/IP porting layer (the socket dispatcher)
 * BaFile.c: File system porting layer (optional)
+* BWS.c: The [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) is also included and the [C++ WebSocket example project](examples/C-WebSockets/README.md) is configured to link with BWS.c. The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes BWS and the WebSocket example.
 
 ## Who Can Use BAS Amalgamated
 
