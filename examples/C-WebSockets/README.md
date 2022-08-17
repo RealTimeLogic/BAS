@@ -2,13 +2,16 @@
 
 This WebSocket example shows how to use the
 [C WebSocket Server](https://realtimelogic.com/ba/doc/en/C/reference/html/group__WebSockets.html)
-included with the Barracuda App Server. The example is designed for
-HLOS, but can easily be ported to a monolithic RTOS system. The
-example includes a Makefile for Linux and a Visual Studio project file
-for Windows.
+included with the
+[Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/)
+and the
+[Barracuda App Server](https://realtimelogic.com/products/barracuda-application-server/). The
+example is designed for HLOS, but can easily be ported to a monolithic
+RTOS system. The example includes a Makefile for Linux and a Visual
+Studio project file for Windows. The makefile and project file are using the [amalgamated Barracuda Embedded Web Server C source code library](https://raw.githubusercontent.com/RealTimeLogic/BAS/main/src/BWS.c); however, you can also link the example code with the [amalgamated Barracuda App Server C source code library](https://raw.githubusercontent.com/RealTimeLogic/BAS/main/src/BAS.c).
 
-The Barracuda App Server's C WebSocket server is one of three
-WebSocket server implementations provided by Real Tim Logic.
+The Barracuda Web & App Server's C WebSocket server is one of three
+WebSocket server implementations provided by Real Time Logic.
 
 1. The
    [Minnow Server](https://realtimelogic.com/products/sharkssl/minnow-server/)
@@ -17,9 +20,10 @@ WebSocket server implementations provided by Real Tim Logic.
    preferably use the SPA amalgamator service for converting the SPA
    assets into a C array.
 
-2. The Barracuda App Server's C WebSocket Server (used in this example)
-   enables hybrid server-side/client-side web applications to
-   communicate using both HTTP and WebSockets.
+2. The Barracuda Embedded Web Server's and Barracuda App Server's C
+   WebSocket Server (used in this example) enables hybrid
+   server-side/client-side web applications to communicate using both
+   HTTP and WebSockets.
 
 3. The
    [Barracuda App Server's Lua WebSocket Server](https://realtimelogic.com/ba/doc/?url=SockLib.html#WebSockets)
