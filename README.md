@@ -11,6 +11,8 @@ Check out the tutorial [Embedded Web Server vs. Embedded Application Server](htt
 
 The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. Refer to the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
+[Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/) (LSP for short) is a [Lua](https://www.lua.org/about.html) API that includes a compact and efficient Lua web framework, non-blocking asynchronous sockets, and many (I)IoT protocols.
+
 ## Components
 
 BAS Amalgamated is a compact version of BAS, extracted from the BAS SDK. BAS Amalgamated includes all APIs found in the BAS SDK, but with a limited set of examples and tools. BAS Amalgamated includes the following source code components.  
