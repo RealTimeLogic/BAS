@@ -100,6 +100,7 @@ extern "C" {
 #endif
 void ThreadSemaphore_wait(ThreadSemaphoreBase*);
 void ThreadSemaphore_signal(ThreadSemaphoreBase*);
+void ThreadSemaphore_signal_from_isr(ThreadSemaphore*);
 #ifdef __cplusplus
 }
 #endif 

@@ -101,6 +101,14 @@ void ThreadSemaphore_signal(ThreadSemaphore* o)
    }
 }
 
+void ThreadSemaphore_signal_from_isr(ThreadSemaphore* o)
+{
+   o->preWaitCount++;
+   if(o->waitTask)
+   {
+      vTaskNotifyGiveFromISR(o->waitTask, NULL);
+   }
+}
 
 static void
 Thread_threadStart(void* thread)
