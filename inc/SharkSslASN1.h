@@ -12,7 +12,7 @@
  *
  *   $Id: SharkSslASN1.h 3670 2015-03-28 21:25:15Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2018 - 2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2018 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in

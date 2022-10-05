@@ -17,7 +17,6 @@ The following options configure the smallest possible SharkSSL library:
 #ifdef SHARKSSL_TINY                                  /* DEFAULT value in SharkSsl_cfg.h */  
 
 #define SHARKSSL_USE_AES_256 0                        /* 1 */
-#define SHARKSSL_USE_AES_128 0                        /* 1 */
 #define SHARKSSL_ENABLE_AES_GCM 0                     /* 1 */
 #define SHARKSSL_USE_SHA_384 0                        /* 1 */
 #define SHARKSSL_USE_SHA_512 0                        /* 0 */ 
@@ -38,7 +37,6 @@ The following options configure the smallest possible SharkSSL library:
 #define SHARKSSL_ENABLE_CERT_CHAIN 0                  /* 1 */
 #define SHARKSSL_ENABLE_CA_LIST 1                     /* 1 */
 #define SHARKSSL_ENABLE_CERTSTORE_API 0               /* 0 */
-#define SHARKSSL_ENABLE_CLONE_CERTINFO 0              /* 1 */
 #define SHARKSSL_SHA256_SMALL_FOOTPRINT 1             /* 0 */
 #define SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K 1        /* 4 */
 #define SHARKSSL_ENABLE_AES_CTR_MODE 0                /* 1 */ 

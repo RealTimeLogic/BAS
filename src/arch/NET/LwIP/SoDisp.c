@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5186 2022-06-08 21:13:22Z wini $
+ *   $Id: SoDisp.c 5284 2022-10-03 09:13:56Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
@@ -58,7 +58,9 @@
 #if LWIP_VERSION_MAJOR < 2
 #include <lwip/api_msg.h>
 #else
-#define LWIP_PROVIDE_ERRNO 
+#ifndef LWIP_PROVIDE_ERRNO
+#define LWIP_PROVIDE_ERRNO
+#endif
 #include <lwip/errno.h>
 #include <lwip/priv/api_msg.h>
 #endif

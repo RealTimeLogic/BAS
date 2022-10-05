@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5194 2022-06-29 06:39:42Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5277 2022-10-01 06:38:04Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -47,14 +47,21 @@
 @{
 */
 
-/** TLS 1.2 always enabled - forward compatibility to dual 1.2/1.3 stack 
- *  (needed for selib.c)
+/** TLS 1.3 stack 
+ *  Disable by setting SHARKSSL_TLS_1_3=0
  */
-#undef  SHARKSSL_TLS_1_2
+#ifndef SHARKSSL_TLS_1_3
+#define SHARKSSL_TLS_1_3                                 1
+#endif
+
+ /** TLS 1.2 stack 
+  *  Disable by setting SHARKSSL_TLS_1_2=0
+  */
+#ifndef SHARKSSL_TLS_1_2
 #define SHARKSSL_TLS_1_2                                 1
+#endif
 
-
-/** Enable/disable AES 256
+  /** Enable/disable AES 256
  */
 #ifndef SHARKSSL_USE_AES_256
 #define SHARKSSL_USE_AES_256                             1
@@ -115,14 +122,14 @@
 
 /** Enable/disable SHA256 support for certificate signatures (SHA256
     ciphersuites are not included).
-    SHA256 must be included (mandatory) for TLS 1.2
+    SHA256 must be included (mandatory) for TLS 1.2 and TLS 1.3
  */
 #ifndef SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
 #endif
 
 /** Enable/disable SHA384 support and also include
-    SHA384 ciphersuites 
+    SHA384 ciphersuites
 */
 #ifndef SHARKSSL_USE_SHA_384
 #define SHARKSSL_USE_SHA_384                             1
@@ -141,7 +148,7 @@
  * SHA1 if you are not using RSA OAEP and/or the examples using SHA1
  */
 #ifndef SHARKSSL_USE_SHA1
-#define SHARKSSL_USE_SHA1                                1
+#define SHARKSSL_USE_SHA1                                0
 #endif
 
 /** MD5 must be enabled to support PCKS1-encoded certificates (public PEM API).
@@ -211,27 +218,32 @@
 
 /**
  * select 1 to enable renegotiation
- * only secure renegotiation (RFC5746) is supported
+ * only secure renegotiation (RFC 5746) is supported
+ * note: with the default #define below, it is enabled
+ * whenever TLS 1.2 is
+ * NOTE: IMPLEMENTED ONLY ON THE SERVER SIDE
  */
 #ifndef SHARKSSL_ENABLE_SECURE_RENEGOTIATION
-#define SHARKSSL_ENABLE_SECURE_RENEGOTIATION             1
+#define SHARKSSL_ENABLE_SECURE_RENEGOTIATION             SHARKSSL_TLS_1_2
 #endif
-
-
-/*
- * TLS 1.2 requires SHA-256, do not modify the following settings
- * DES and ClientHello v2.0 are deprecated in TLS 1.2 - RFC5246
- */
-#undef  SHARKSSL_USE_SHA_256
-#define SHARKSSL_USE_SHA_256                             1
 
 
 /**
  * select 1 to enable DHE_RSA ciphersuites
+ * note: with the default #define below, it is enabled
+ * whenever TLS 1.2 is
  */
 #ifndef SHARKSSL_ENABLE_DHE_RSA
-#define SHARKSSL_ENABLE_DHE_RSA                          1
+#define SHARKSSL_ENABLE_DHE_RSA                          SHARKSSL_TLS_1_2
 #endif
+
+
+ /*
+  * TLS 1.2/1.3 require SHA-256, do not modify the following settings
+  * DES and ClientHello v2.0 are deprecated in TLS 1.2 - RFC5246
+  */
+#undef  SHARKSSL_USE_SHA_256
+#define SHARKSSL_USE_SHA_256                             1
 
 
 /** Enable/disable the SharkSslCon_selectCiphersuite API
@@ -274,6 +286,15 @@
 #define SHARKSSL_ENABLE_RSA_PKCS1                        1
 #endif
 
+
+ /** Enable/disable RSASSA-PSS padding in RSA API (RFC 8017)
+  *  (#SHARKSSL_ENABLE_RSA_API must be enabled)
+  *  note: with the default #define below, it is enabled
+  *  whenever TLS 1.3 is
+  */
+#ifndef SHARKSSL_ENABLE_RSASSA_PSS
+#define SHARKSSL_ENABLE_RSASSA_PSS                       SHARKSSL_TLS_1_3
+#endif
 
 /** Enable/disable OAEP padding in RSA API
  *  (#SHARKSSL_ENABLE_RSA_API must be enabled)
@@ -356,10 +377,12 @@
 
 
 /**
- * select 1 to enable automatic certificate cloning
+ * automatic certificate cloning - always enabled
  */
-#ifndef SHARKSSL_ENABLE_CLONE_CERTINFO
-#define SHARKSSL_ENABLE_CLONE_CERTINFO                   1
+#ifdef SHARKSSL_ENABLE_CLONE_CERTINFO
+#if   !SHARKSSL_ENABLE_CLONE_CERTINFO
+#error SHARKSSL_ENABLE_CLONE_CERTINFO is now enabled by default - please remove its #define
+#endif
 #endif
 
 
@@ -500,19 +523,19 @@
 #endif
 
 
-/** Enable/disable the brainpoolP256r1 curve (RFC5639)
+/** Enable/disable the brainpoolP256r1 curve (RFC 5639)
  */
 #ifndef SHARKSSL_ECC_USE_BRAINPOOLP256R1
 #define SHARKSSL_ECC_USE_BRAINPOOLP256R1                 1
 #endif
 
-/** Enable/disable the brainpoolP384r1 curve (RFC5639)
+/** Enable/disable the brainpoolP384r1 curve (RFC 5639)
  */
 #ifndef SHARKSSL_ECC_USE_BRAINPOOLP384R1
 #define SHARKSSL_ECC_USE_BRAINPOOLP384R1                 1
 #endif
 
-/** Enable/disable the brainpoolP512r1 curve (RFC5639)
+/** Enable/disable the brainpoolP512r1 curve (RFC 5639)
  */
 #ifndef SHARKSSL_ECC_USE_BRAINPOOLP512R1
 #define SHARKSSL_ECC_USE_BRAINPOOLP512R1                 1
@@ -522,6 +545,7 @@
 /**
  * select 1 to enable ECDHE_RSA ciphersuites (RFC 4492)
  * Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
+ * RSA (#SHARKSSL_ENABLE_RSA) must be enabled
  */
 #ifndef SHARKSSL_ENABLE_ECDHE_RSA
 #define SHARKSSL_ENABLE_ECDHE_RSA                        1
@@ -611,5 +635,27 @@
 
 
 /** @} */ /* end group SharkSslCfg */
+
+
+/** TLS 1.3 sanity #defines --- do not edit below this line!
+ */
+#if SHARKSSL_TLS_1_3
+#if !SHARKSSL_TLS_1_2
+#if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
+#undef SHARKSSL_ENABLE_SECURE_RENEGOTIATION
+#define SHARKSSL_ENABLE_SECURE_RENEGOTIATION              0
+#endif
+#if SHARKSSL_ENABLE_DHE_RSA
+#undef SHARKSSL_ENABLE_DHE_RSA
+#define SHARKSSL_ENABLE_DHE_RSA                           0
+#endif
+#endif
+#if (0 == SHARKSSL_USE_AES_128)
+#error TLS 1.3 requires AES 128
+#endif
+#if (0 == SHARKSSL_USE_SHA_256)
+#error TLS 1.3 requires SHA 256
+#endif
+#endif  /* SHARKSSL_TLS_1_3 */
 
 #endif

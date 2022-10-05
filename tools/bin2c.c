@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: bin2c.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: bin2c.c 5284 2022-10-03 09:13:56Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2018
+ *   COPYRIGHT:  Real Time Logic, 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -31,7 +31,11 @@
  *
  *               http://www.realtimelogic.com
  ****************************************************************************
- *
+ 
+
+ Download precompiled versions from:
+ https://realtimelogic.com/downloads/bin2c/
+
  */
 #include <stdio.h>
 #include <stdlib.h>

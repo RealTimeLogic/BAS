@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 5186 2022-06-08 21:13:22Z wini $
+ *   $Id: HttpCfg.h 5284 2022-10-03 09:13:56Z wini $
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
@@ -53,7 +53,7 @@
 #include <TargConfig.h>
 #include <NetConv.h>
 #include <DoubleList.h>
-
+#include <ThreadLib.h>
 
 #ifdef __cplusplus
 extern "C" {

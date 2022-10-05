@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5204
+#define BASLIB_VER_NO 5285
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5204)
+#define BASLIB_VER BASLIB_VER_M(5285)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -3216,7 +3216,8 @@ typedef struct SharkSslSha1Ctx
 SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
 SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
 SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[]);
-typedef struct SharkSsl { int na; } SharkSsl;
+
+typedef void SharkSsl;
 
 #endif
 

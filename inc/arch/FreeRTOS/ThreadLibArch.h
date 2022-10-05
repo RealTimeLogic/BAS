@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 5202 2022-07-05 06:06:59Z wini $
+ *   $Id: ThreadLibArch.h 5276 2022-10-01 06:26:17Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
