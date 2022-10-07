@@ -110347,7 +110347,7 @@ cpuidleconfig(LDbgMon* o)
       JErr_reset(&o->jErr);
       wsf=0;
       JVal_get(o->arguments, &o->jErr, "\173\133\112\135\175","\163\157\165\162\143\145\115\141\160\163",&jv);
-      if(jv)
+      if(JErr_noError(&o->jErr))
       {
          baAssert(o->sourceMapRef==0);
          lua_newtable(o->L);
@@ -110357,7 +110357,8 @@ cpuidleconfig(LDbgMon* o)
          {
             const char* systabcheck;
             const char* hwmodassert;
-            if(JVal_get(jv, &o->jErr, "\133\163\163\135", &systabcheck, &hwmodassert))
+            JVal_get(jv, &o->jErr, "\133\163\163\135", &systabcheck, &hwmodassert);
+            if(JErr_noError(&o->jErr))
             {
                lua_pushstring(o->L, hwmodassert);
                lua_pushstring(o->L, systabcheck);

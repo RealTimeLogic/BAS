@@ -32,15 +32,15 @@ local function getTime()
    return "NIST offline"
 end
 
-local http = require"http".create()
-http:request{
-   url="http://artii.herokuapp.com/make",
-   query = {
+local http = require"httpm".create()
+local rsp,err=http:json(
+   "http://api.textart.io/figlet",
+   {
       text=getTime(),
-      font="epic"
-   }
-}
+      font="epic",
+      encode="false"
+   })
 
 response:setcontenttype"text/plain"
-print(http:read"*a")
+print(rsp and rsp.contents.figlet or err)
 ?>
