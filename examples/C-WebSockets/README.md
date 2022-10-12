@@ -13,30 +13,9 @@ Studio project file for Windows. The makefile and project file are using the [am
 The Barracuda Web & App Server's C WebSocket server is one of three
 WebSocket server implementations provided by Real Time Logic.
 
-1. The
-   [Minnow Server](https://realtimelogic.com/products/sharkssl/minnow-server/)
-   is designed for resource constrained devices such as a Cortex-M0. A
-   Minnow Server application must be designed as an SPA, and
-   preferably use the SPA amalgamator service for converting the SPA
-   assets into a C array.
-
-2. The Barracuda Embedded Web Server's and Barracuda App Server's C
-   WebSocket Server (used in this example) enables hybrid
-   server-side/client-side web applications to communicate using both
-   HTTP and WebSockets.
-
-3. The
-   [Barracuda App Server's Lua WebSocket Server](https://realtimelogic.com/ba/doc/?url=SockLib.html#WebSockets)
-   provides the easiest to use solution, where server side business
-   logic can be designed in the easy to learn Lua scripting
-   language. With the Barracuda App Server, much of the device's high
-   level logic (business logic) can be implemented in Lua.
-   [Lua is popular in games](https://www.makeuseof.com/why-is-lua-popular-for-game-development-how-to-use/),
-   and now
-   [embedded systems can take a similar approach to rapid device code design](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server).
-   See the online
-   [Interactive Lua WebSocket Server Tutorial](https://tutorial.realtimelogic.com/WebSockets.lsp)
-   for details.
+* The Minnow Server is designed for resource constrained devices such as a Cortex-M0 and ESP8266. A Minnow Server application must be designed as an SPA and preferably use the [SPA amalgamator service](https://realtimelogic.com/articles/Creating-SinglePage-Apps-with-the-Minnow-Server#deploy) for converting the SPA assets into a C array. The [SharkSSL ESP8266 IDE](https://realtimelogic.com/downloads/sharkssl/ESP8266/) and the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) include a ready to compile and run Minnow Server example.
+* The [Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/)'s [WebSocket Server](https://realtimelogic.com/ba/doc/en/C/reference/html/group__WebSockets.html) enables hybrid server-side/client-side web applications to communicate using both HTTP(S) and (secure) WebSockets. The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes a ready to compile and run Barracuda Web Server WebSocket example. Consider using this WebSocket server if you plan on using HTTP(S) services in addition to WS(S) services and/or require a dual WSS/WS server.
+* The [Barracuda App Server's WebSocket Server](https://realtimelogic.com/ba/doc/?url=SockLib.html#WebSockets) provides the easiest to use solution, in which server side business logic can be designed in the easy to learn [Lua scripting language](https://realtimelogic.com/products/lua-server-pages/). With the Barracuda App Server, much of the device's high level logic can be implemented in Lua. Just as Lua is popular with rapid game development, now embedded systems can benefit from the same. The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes a ready to compile and run Barracuda App Server project called the [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=examples/lspappmgr/readme.html), which can be used as the foundation for your development. See the online tutorial for an [interactive WebSocket example](https://tutorial.realtimelogic.com/).
 
 ## Howto
 

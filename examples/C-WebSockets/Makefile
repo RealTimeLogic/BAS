@@ -5,6 +5,7 @@ VPATH+=src:../HostInit:../../src:../../src/arch/Posix:../../src/arch/NET/generic
 
 CFLAGS += -c -g -Wall
 CFLAGS += -DBA_FILESIZE64 -DLUA_USE_LINUX
+CFLAGS += -DBAIO_DISK
 CFLAGS += -I../../inc -I../../inc/arch/Posix -I../../inc/arch/NET/Posix
 
 ifndef ODIR
@@ -12,7 +13,7 @@ ODIR = obj
 endif
 
 CPPSRC=ChatServer.cpp
-CSRC=Main.c HostInit.c BAS.c ThreadLib.c SoDisp.c BaFile.c
+CSRC=Main.c HostInit.c BWS.c ThreadLib.c SoDisp.c BaFile.c
 
 # Implicit rules for making .o files from .c files
 $(ODIR)/%.o : %.c
@@ -29,6 +30,7 @@ all: $(ODIR) ChatServer
 
 ChatServer: $(OBJS)
 	g++ -o $@ $^  -lpthread -lm -ldl
+	echo "Build complete; start server: ./ChatServer"
 
 $(ODIR):
 	mkdir $(ODIR)

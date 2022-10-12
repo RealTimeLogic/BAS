@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 5276 2022-10-01 06:26:17Z wini $
+ *   $Id: ThreadLibArch.h 5293 2022-10-12 10:34:41Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
@@ -100,7 +100,7 @@ extern "C" {
 #endif
 void ThreadSemaphore_wait(ThreadSemaphoreBase*);
 void ThreadSemaphore_signal(ThreadSemaphoreBase*);
-void ThreadSemaphore_signal_from_isr(ThreadSemaphore*);
+void ThreadSemaphore_signal_from_isr(ThreadSemaphoreBase*);
 #ifdef __cplusplus
 }
 #endif 
