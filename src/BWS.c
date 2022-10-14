@@ -6124,7 +6124,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                   tb = *(U8**)&tp[SHARKSSL_CA_LIST_NAME_SIZE];
                }
                else
-                  #endif
+               #endif
                {
                   uart2hwmod  = (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 0] << 24;
                   uart2hwmod += (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 1] << 16;
@@ -6136,9 +6136,9 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                }
                #if SHARKSSL_ENABLE_CERTSTORE_API
                if (!(spromregister((SharkSslCertParam*)afterhandler, tb, (U32)-5, NULL) < 0))
-                  #else
+               #else
                if (!(spromregister((SharkSslCertParam*)afterhandler, (U8*)&(displaysetup[uart2hwmod]), (U32)-5, NULL) < 0))
-                  #endif
+               #endif
                {
                   if ((((SharkSslCertParam*)afterhandler)->certInfo.version < 2) || (((SharkSslCertParam*)afterhandler)->certInfo.CAflag))
                   {

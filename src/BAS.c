@@ -33096,7 +33096,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                   tb = *(U8**)&tp[SHARKSSL_CA_LIST_NAME_SIZE];
                }
                else
-                  #endif
+               #endif
                {
                   uart2hwmod  = (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 0] << 24;
                   uart2hwmod += (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 1] << 16;
@@ -33108,9 +33108,9 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                }
                #if SHARKSSL_ENABLE_CERTSTORE_API
                if (!(spromregister((SharkSslCertParam*)afterhandler, tb, (U32)-5, NULL) < 0))
-                  #else
+               #else
                if (!(spromregister((SharkSslCertParam*)afterhandler, (U8*)&(displaysetup[uart2hwmod]), (U32)-5, NULL) < 0))
-                  #endif
+               #endif
                {
                   if ((((SharkSslCertParam*)afterhandler)->certInfo.version < 2) || (((SharkSslCertParam*)afterhandler)->certInfo.CAflag))
                   {
@@ -110151,7 +110151,7 @@ static void
 imagestart(LDbgMon* o)
 {
    switcherwrite(o, "\143\141\160\141\142\151\154\151\164\151\145\163");
-   JEncoder_set(&o->jEnc, "\173\173\133\135\142\142\142\142\142\142\142\142\142\142\142\142\142\142\175\175",
+   JEncoder_set(&o->jEnc, "\173\173\133\135\142\142\142\142\142\142\142\142\142\142\142\142\142\142\142\175\175",
                 "\142\157\144\171", 
                 "\143\141\160\141\142\151\154\151\164\151\145\163", 
                 "\145\170\143\145\160\164\151\157\156\102\162\145\141\153\160\157\151\156\164\106\151\154\164\145\162\163", 
@@ -110159,6 +110159,7 @@ imagestart(LDbgMon* o)
                 "\163\165\160\160\157\162\164\163\103\154\151\160\142\157\141\162\144\103\157\156\164\145\170\164", TRUE,
                 "\163\165\160\160\157\162\164\163\124\145\162\155\151\156\141\164\145\122\145\161\165\145\163\164", TRUE,
                 "\163\165\160\160\157\162\164\163\123\145\164\126\141\162\151\141\142\154\145", TRUE,
+                "\163\165\160\160\157\162\164\163\123\145\164\105\170\160\162\145\163\163\151\157\156",FALSE,
                 "\163\165\160\160\157\162\164\163\103\157\156\146\151\147\165\162\141\164\151\157\156\104\157\156\145\122\145\161\165\145\163\164", TRUE,
                 "\163\165\160\160\157\162\164\163\114\157\147\120\157\151\156\164\163", TRUE,
                 "\163\165\160\160\157\162\164\163\106\165\156\143\164\151\157\156\102\162\145\141\153\160\157\151\156\164\163", TRUE,
