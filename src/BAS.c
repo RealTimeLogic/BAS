@@ -36057,17 +36057,14 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          registeredevent += setupinterface;
          hsDataLen -= setupinterface;
 
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_TLS_1_2 && SHARKSSL_ENABLE_SESSION_CACHE)
+         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_SESSION_CACHE)
          
          if (setupinterface > 0)
          {
-            if (o->session)
+            if ((o->session) && (SharkSslSession_isProtocol(o->session, SHARKSSL_PROTOCOL_TLS_1_3)))
             {
-               if ((SharkSslSession_isProtocol(o->session, SHARKSSL_PROTOCOL_TLS_1_2)) && (sharkssl_kmemcmp(sp, o->session->prot.tls12.id, setupinterface)))
-               {
-                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-                  goto regionfixed;
-               }
+               SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+               goto regionfixed;
             }
          }
          #endif
@@ -37692,7 +37689,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          }
 
          baAssert((SharkSslClonedCertInfo*)0 == o->clonedCertInfo);
-         
          if (realnummemory(o, &o->clonedCertInfo))
          {
             #if SHARKSSL_ENABLE_SESSION_CACHE
@@ -60836,41 +60832,37 @@ SharkSslSCMgr_get(SharkSslSCMgr* o,SharkSslCon* mmcsd0resources,const char* writ
 }
 
 
-SHARKSSL_API void
-SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources,
-                  const char* writereg16, U16 hwmoddeassert,  SharkSslSCMgrNode* n)
+SHARKSSL_API int
+SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources, const char* writereg16, U16 hwmoddeassert)
 {
-   if( ! n && mmcsd0resources->session ) 
+   SharkSslSCMgrNode* n;
+   int handlersetup=-1;
+   int bv1 = o->noOfSessions > 0;
+   SharkSslSession* ss = SharkSslCon_acquireSession(mmcsd0resources);
+   if(ss)
    {
-      SharkSslSession* ss = SharkSslCon_acquireSession(mmcsd0resources);
-      if(!ss) 
+      n=(SharkSslSCMgrNode*)baMalloc(
+         sizeof(SharkSslSCMgrNode)+strlen(writereg16)+1);
+      if(n)
       {
-         hwdebugstate(o, 0); 
-         ss = SharkSslCon_acquireSession(mmcsd0resources);
+         SplayTreeNode_constructor((SplayTreeNode*)n,n);
+         DoubleLink_constructor(&n->dlink);
+         n->ss=ss;
+         n->port=hwmoddeassert;
+         n->hostLen=(U16)strlen(writereg16);
+         strcpy((char*)(n+1),writereg16);
+         n->host=(char*)(n+1);
+         SplayTree_insert(&o->stree, (SplayTreeNode*)n);
+         DoubleList_insertFirst(&o->dlist,&n->dlink);
+         o->noOfSessions++;
+         handlersetup=0;
       }
-      if(ss)
-      {
-         n=(SharkSslSCMgrNode*)baMalloc(
-            sizeof(SharkSslSCMgrNode)+strlen(writereg16)+1);
-         if(n)
-         {
-            SplayTreeNode_constructor((SplayTreeNode*)n,n);
-            DoubleLink_constructor(&n->dlink);
-            n->ss=ss;
-            n->port=hwmoddeassert;
-            n->hostLen=(U16)strlen(writereg16);
-            strcpy((char*)(n+1),writereg16);
-            n->host=(char*)(n+1);
-            SplayTree_insert(&o->stree, (SplayTreeNode*)n);
-            DoubleList_insertFirst(&o->dlist,&n->dlink);
-            o->noOfSessions++;
-         }
-         else
-            SharkSslSession_release(ss, o->ssl);
-      }
+      else
+         SharkSslSession_release(ss, o->ssl);
    }
+
    
-   if(o->noOfSessions > 0)
+   if(bv1)
    {
       DoubleLink* l=DoubleList_lastNode(&o->dlist);
       n=SharkSslSCMgrNode_dlink2Obj(l);
@@ -60880,6 +60872,7 @@ SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources,
          hwdebugstate(o, n); 
       }
    }
+   return handlersetup;
 }
 
 
@@ -79879,9 +79872,11 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
 
 typedef struct
 {
-      SharkSslCon super;
-      DoubleLink link;
-      SoDispCon* con; /* Owner of BaSharkSslCon */
+   SharkSslCon super;
+   DoubleLink link;
+   SoDispCon* con; /* Owner of BaSharkSslCon */
+   char* host;
+   U16 port;
 } BaSharkSslCon;
 
 #ifdef HTTP_TRACE
@@ -80230,6 +80225,21 @@ registersubpacket(
             con->recTermPtr=0;
          }
          con->sslData=0;
+         if(bs->host)
+         { 
+            SharkSslSCMgr* scMgr =
+               (SharkSslSCMgr*)SharkSsl_getIntf(((SharkSslCon*)bs)->sharkSsl);
+            if(scMgr && SharkSslCon_isHandshakeComplete((SharkSslCon*)bs))
+            {
+               if( ! SharkSslSCMgr_get(
+                  scMgr, (SharkSslCon*)bs, bs->host, bs->port) )
+               {
+                  SharkSslSCMgr_save(scMgr,(SharkSslCon*)bs,bs->host,bs->port);
+               }
+            }
+            baFree(bs->host);
+            bs->host=0;
+         }
          DoubleLink_destructor(&bs->link);
          SharkSslCon_terminate((SharkSslCon*)bs);
          return 0;
@@ -80441,18 +80451,24 @@ HttpSharkSslServCon_bindExec(
             rsp=belowstart(con, m, 0, 0);
          } while( ! rsp && ! SharkSslCon_isHandshakeComplete(mmcsd0resources) );
       }
-      #if SHARKSSL_ENABLE_SNI
+#if SHARKSSL_ENABLE_SNI
       
       if ((rsp == E_SHARK_ALERT_RECV) &&
           (0 == SoDispCon_getSharkAlert(con, &aLvl, &aDsc)) &&
-          ((SHARKSSL_ALERT_LEVEL_WARNING == aLvl) && (SHARKSSL_ALERT_UNRECOGNIZED_NAME == aDsc)))
-         {
-            goto _skipWarning112;
-         }
-      #endif
+          ((SHARKSSL_ALERT_LEVEL_WARNING == aLvl) &&
+           (SHARKSSL_ALERT_UNRECOGNIZED_NAME == aDsc)))
+      {
+         goto _skipWarning112;
+      }
+#endif
       if(SharkSslCon_isHandshakeComplete(mmcsd0resources))
       {
-         SharkSslSCMgr_save(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert, scn);
+         if(!scn && SharkSslSCMgr_save(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert))
+         { 
+            ((BaSharkSslCon*)mmcsd0resources)->host = baMalloc(strlen(writereg16)+1);
+            strcpy(((BaSharkSslCon*)mmcsd0resources)->host, writereg16);
+            ((BaSharkSslCon*)mmcsd0resources)->port=(U16)hwmoddeassert;
+         }
          return 1;
       }
       return rsp;
@@ -102718,12 +102734,15 @@ pushCiphers(lua_State *L, SoDispCon* con)
       return reportpanic(L,baErr2Str(E_TLS_NOT_ENABLED));
    switch(SharkSslCon_getCiphersuite(sc))
    {
+      #if SHARKSSL_TLS_1_3
       case TLS_AES_128_GCM_SHA256:
          c="\101\105\123\137\061\062\070\137\107\103\115\137\123\110\101\062\065\066"; break;
       case TLS_AES_256_GCM_SHA384:
          c="\101\105\123\137\062\065\066\137\107\103\115\137\123\110\101\063\070\064"; break;
       case TLS_CHACHA20_POLY1305_SHA256:
          c="\103\110\101\103\110\101\062\060\137\120\117\114\131\061\063\060\065\137\123\110\101\062\065\066"; break;
+      #endif
+      #if SHARKSSL_TLS_1_2
       case TLS_DHE_RSA_WITH_AES_128_GCM_SHA256:
          c="\104\110\105\137\122\123\101\137\127\111\124\110\137\101\105\123\137\061\062\070\137\107\103\115\137\123\110\101\062\065\066"; break;
       case TLS_DHE_RSA_WITH_AES_256_GCM_SHA384:
@@ -102742,6 +102761,7 @@ pushCiphers(lua_State *L, SoDispCon* con)
          c="\105\103\104\110\105\137\105\103\104\123\101\137\127\111\124\110\137\103\110\101\103\110\101\062\060\137\120\117\114\131\061\063\060\065\137\123\110\101\062\065\066"; break;
       case TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
          c="\104\110\105\137\122\123\101\137\127\111\124\110\137\103\110\101\103\110\101\062\060\137\120\117\114\131\061\063\060\065\137\123\110\101\062\065\066"; break;
+      #endif   
       default: c="\125\116\113\116\117\127\116";
    }
    lua_pushstring(L, c);
@@ -104695,8 +104715,7 @@ nodesparsed(LSockWsState* wss, U8* buf, int buddyavail, int len)
    buf[0] = (U8)buddyavail;
    if(len <= 125) 
    {
-      
-      if(flashmatch && len)
+      if(flashmatch)
       {
          buf[1] = 0x80 | (U8)len;
          memcpy(buf+2,wsMask,4);
@@ -105061,13 +105080,21 @@ hsmmc1resource(LSock* s, lua_State* L, SharkSslCon* mmcsd0resources, int setupua
    {
       if(s->wss) 
       {
+         int ix;
          LSockWsState* wss = s->wss;
          U8* sysctlheader=0;
          int nhpoly1305setkey=FALSE;
-         int ix = wss->flags & LSockWsStateFlag_Server ? 6 : 2;
-         while(
-            wss->frameHeaderIx < ix ||
-            (wss->frameHeaderIx < (ix+2) && (wss->frameHeader[1] & 0x7F) > 125))
+         while(wss->frameHeaderIx < 2)
+         {
+            if(x == 0)
+               return 0; 
+            nhpoly1305setkey=TRUE;
+            wss->frameHeader[wss->frameHeaderIx++] = *alloccontroller++;
+            x--;
+         }
+         ix = wss->frameHeader[1] & 0x80 ? 6 : 2; 
+         while(wss->frameHeaderIx < ix ||
+               (wss->frameHeaderIx < (ix+2) && (wss->frameHeader[1]&0x7F) >125))
          {
             if(x == 0)
                return 0; 
@@ -105097,7 +105124,7 @@ hsmmc1resource(LSock* s, lua_State* L, SharkSslCon* mmcsd0resources, int setupua
             if(wss->flags & LSockWsStateFlag_Server)
             {
                
-               if( ! (wss->frameHeader[1] & 0x80) )
+               if(wss->frameLen && ! (wss->frameHeader[1] & 0x80) )
                   return pcie0write(s, L, WSSC_E_PROT_ERR, 0);
             }
             else
@@ -105933,6 +105960,18 @@ thumb16break(lua_State* L)
    if( ! SoDispCon_isValid(con) )
    {
       
+      if(titanpchip0 && ! s->closed)
+      {
+         if(L != s->L)
+            pmresrngroup(L);
+         if( ! s->timer )
+            s->timer=balua_getparam(L)->timer;
+         s->tkey=BaTimer_set(s->timer,adjustitstate,s,(U32)lua_tointeger(L, 2));
+         s->sockState = LSockS_AsyncRead;
+         return lua_yield(L, 0);
+      }
+
+      
       if(s->flags & LSockFlag_ReadCalled)
          helperstart(L, "\072\040\123\157\143\153\145\164\040\143\154\157\163\145\144");
       s->flags |= LSockFlag_ReadCalled;
@@ -105991,11 +106030,12 @@ removetable(LSock* s,lua_State* L,
 #ifndef NO_ASYNCH_RESP
    if(SoDispCon_isNonBlocking(con))
    {
-      int lsdc2format=timerhandler;
+      int lsdc2format;
       if(SoDispCon_sendEvActive(con))
          return hsmmc1pdata(s,L,dIx,alloccontroller,cachesysfs,end,op,0);
       if(s->wss)
          timerhandler+=8; 
+      lsdc2format = timerhandler;
       if( (buf = SoDispCon_allocAsynchBuf(con, &lsdc2format)) == 0)
          return enterirqoff(L, E_MALLOC);
       if(lsdc2format < timerhandler) timerhandler=lsdc2format;
@@ -106003,7 +106043,7 @@ removetable(LSock* s,lua_State* L,
          locationnotifier=nodesparsed(s->wss,buf,op,timercountdown);
       else
          locationnotifier=0;
-      icachealiases = (timerhandler-locationnotifier) < timercountdown ? timerhandler-locationnotifier : timercountdown;
+      icachealiases = (timerhandler-locationnotifier) < timercountdown && timercountdown ? timerhandler-locationnotifier : timercountdown;
       for(;;)
       {
          caviumthunder(s->wss,buf+locationnotifier,alloccontroller+cachesysfs,icachealiases,&reschedinterrupt);
@@ -106049,7 +106089,7 @@ removetable(LSock* s,lua_State* L,
             return enterirqoff(L, E_MALLOC);
          locationnotifier=nodesparsed(s->wss,buf,op,timercountdown);
          icachealiases = (timerhandler-locationnotifier) < timercountdown ? timerhandler-locationnotifier : timercountdown;
-         while(cachesysfs < end)
+         do
          {
             caviumthunder(s->wss,buf+locationnotifier,alloccontroller+cachesysfs,icachealiases,&reschedinterrupt);
             sffsdrnandflash = SoDispCon_sendDataNT(con, 0, icachealiases+locationnotifier);
@@ -106060,7 +106100,7 @@ removetable(LSock* s,lua_State* L,
             if(timerhandler < icachealiases)
                icachealiases=timerhandler;
             locationnotifier=0;
-         }
+         } while (cachesysfs < end);
          
          con->exec(con,0,SoDispCon_ExTypeIdle,0,0);
       }
@@ -106132,6 +106172,17 @@ hwmonchcfg(lua_State* L)
    }
    lua_pushboolean(L, FALSE);
    return 1;
+}
+
+static int
+bv2(lua_State* L)
+{
+   size_t allockuser;
+   LSock* s = toLSock(L);
+   const U8* alloccontroller=(U8*)luaL_optlstring(L,2,"\102\101\123",&allockuser);
+   if( ! s->wss )
+      luaL_error(L,"\116\157\164\040\127\123");
+   return removetable(s,L,0,alloccontroller,0,allockuser, WSOP_Ping);
 }
 
 #ifdef USE_DGRAM
@@ -106246,6 +106297,18 @@ reportasync(lua_State* L)
 {
    LSock* s = toLSock(L);
    return pushCiphers(L, &s->con.soCon);
+}
+
+
+static int
+bv3(lua_State* L)
+{
+   SharkSslCon* sc;
+   LSock* s = toLSock(L);
+   if(SoDispCon_getSharkSslCon(&s->con.soCon, &sc) != TRUE)
+      return reportpanic(L,baErr2Str(E_TLS_NOT_ENABLED));
+   lua_pushboolean(L, SharkSslCon_isResumed(sc));
+   return 1;
 }
 
 
@@ -106630,12 +106693,14 @@ static const luaL_Reg sockLib[] = {
    {"\145\156\141\142\154\145", bypassconsumer},
    {"\162\145\141\144", thumb16break},
    {"\167\162\151\164\145", hwmonchcfg},
+   {"\160\151\156\147", bv2},
 #ifdef USE_DGRAM
    {"\163\145\156\144\164\157", registeruarts},
 #endif
    {"\141\143\143\145\160\164", eventvalid},
    {"\143\145\162\164\151\146\151\143\141\164\145", emac1hwmod},
    {"\143\151\160\150\145\162", reportasync},
+   {"\151\163\162\145\163\165\155\145\144", bv3},
    {"\164\162\165\163\164\145\144", flashread16},
 
    
@@ -107124,7 +107189,7 @@ rm200i8259(lua_State* L)
    const char* v;
    if(lua_type(L, 1) == LUA_TTABLE)
    {
-      lua_getfield(L, 1, "\143"); 
+      lua_getfield(L, 1, "\162\141\167"); 
       c=toHttpClient(L, -1);
    }
    else

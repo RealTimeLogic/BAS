@@ -9085,17 +9085,14 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          registeredevent += setupinterface;
          hsDataLen -= setupinterface;
 
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_TLS_1_2 && SHARKSSL_ENABLE_SESSION_CACHE)
+         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_SESSION_CACHE)
          
          if (setupinterface > 0)
          {
-            if (o->session)
+            if ((o->session) && (SharkSslSession_isProtocol(o->session, SHARKSSL_PROTOCOL_TLS_1_3)))
             {
-               if ((SharkSslSession_isProtocol(o->session, SHARKSSL_PROTOCOL_TLS_1_2)) && (sharkssl_kmemcmp(sp, o->session->prot.tls12.id, setupinterface)))
-               {
-                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-                  goto regionfixed;
-               }
+               SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+               goto regionfixed;
             }
          }
          #endif
@@ -10720,7 +10717,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          }
 
          baAssert((SharkSslClonedCertInfo*)0 == o->clonedCertInfo);
-         
          if (realnummemory(o, &o->clonedCertInfo))
          {
             #if SHARKSSL_ENABLE_SESSION_CACHE
@@ -44787,9 +44783,11 @@ SHARKSSL_API U8 SharkSsl_setCAList(SharkSsl *o, SharkSslCAList displaysetup)
 
 typedef struct
 {
-      SharkSslCon super;
-      DoubleLink link;
-      SoDispCon* con; /* Owner of BaSharkSslCon */
+   SharkSslCon super;
+   DoubleLink link;
+   SoDispCon* con; /* Owner of BaSharkSslCon */
+   char* host;
+   U16 port;
 } BaSharkSslCon;
 
 #ifdef HTTP_TRACE
@@ -45138,6 +45136,21 @@ registersubpacket(
             con->recTermPtr=0;
          }
          con->sslData=0;
+         if(bs->host)
+         { 
+            SharkSslSCMgr* scMgr =
+               (SharkSslSCMgr*)SharkSsl_getIntf(((SharkSslCon*)bs)->sharkSsl);
+            if(scMgr && SharkSslCon_isHandshakeComplete((SharkSslCon*)bs))
+            {
+               if( ! SharkSslSCMgr_get(
+                  scMgr, (SharkSslCon*)bs, bs->host, bs->port) )
+               {
+                  SharkSslSCMgr_save(scMgr,(SharkSslCon*)bs,bs->host,bs->port);
+               }
+            }
+            baFree(bs->host);
+            bs->host=0;
+         }
          DoubleLink_destructor(&bs->link);
          SharkSslCon_terminate((SharkSslCon*)bs);
          return 0;
@@ -45349,18 +45362,24 @@ HttpSharkSslServCon_bindExec(
             rsp=belowstart(con, m, 0, 0);
          } while( ! rsp && ! SharkSslCon_isHandshakeComplete(mmcsd0resources) );
       }
-      #if SHARKSSL_ENABLE_SNI
+#if SHARKSSL_ENABLE_SNI
       
       if ((rsp == E_SHARK_ALERT_RECV) &&
           (0 == SoDispCon_getSharkAlert(con, &aLvl, &aDsc)) &&
-          ((SHARKSSL_ALERT_LEVEL_WARNING == aLvl) && (SHARKSSL_ALERT_UNRECOGNIZED_NAME == aDsc)))
-         {
-            goto _skipWarning112;
-         }
-      #endif
+          ((SHARKSSL_ALERT_LEVEL_WARNING == aLvl) &&
+           (SHARKSSL_ALERT_UNRECOGNIZED_NAME == aDsc)))
+      {
+         goto _skipWarning112;
+      }
+#endif
       if(SharkSslCon_isHandshakeComplete(mmcsd0resources))
       {
-         SharkSslSCMgr_save(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert, scn);
+         if(!scn && SharkSslSCMgr_save(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert))
+         { 
+            ((BaSharkSslCon*)mmcsd0resources)->host = baMalloc(strlen(writereg16)+1);
+            strcpy(((BaSharkSslCon*)mmcsd0resources)->host, writereg16);
+            ((BaSharkSslCon*)mmcsd0resources)->port=(U16)hwmoddeassert;
+         }
          return 1;
       }
       return rsp;
@@ -48688,41 +48707,37 @@ SharkSslSCMgr_get(SharkSslSCMgr* o,SharkSslCon* mmcsd0resources,const char* writ
 }
 
 
-SHARKSSL_API void
-SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources,
-                  const char* writereg16, U16 hwmoddeassert,  SharkSslSCMgrNode* n)
+SHARKSSL_API int
+SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources, const char* writereg16, U16 hwmoddeassert)
 {
-   if( ! n && mmcsd0resources->session ) 
+   SharkSslSCMgrNode* n;
+   int handlersetup=-1;
+   int ZZTSTcleanup = o->noOfSessions > 0;
+   SharkSslSession* ss = SharkSslCon_acquireSession(mmcsd0resources);
+   if(ss)
    {
-      SharkSslSession* ss = SharkSslCon_acquireSession(mmcsd0resources);
-      if(!ss) 
+      n=(SharkSslSCMgrNode*)baMalloc(
+         sizeof(SharkSslSCMgrNode)+strlen(writereg16)+1);
+      if(n)
       {
-         hwdebugstate(o, 0); 
-         ss = SharkSslCon_acquireSession(mmcsd0resources);
+         SplayTreeNode_constructor((SplayTreeNode*)n,n);
+         DoubleLink_constructor(&n->dlink);
+         n->ss=ss;
+         n->port=hwmoddeassert;
+         n->hostLen=(U16)strlen(writereg16);
+         strcpy((char*)(n+1),writereg16);
+         n->host=(char*)(n+1);
+         SplayTree_insert(&o->stree, (SplayTreeNode*)n);
+         DoubleList_insertFirst(&o->dlist,&n->dlink);
+         o->noOfSessions++;
+         handlersetup=0;
       }
-      if(ss)
-      {
-         n=(SharkSslSCMgrNode*)baMalloc(
-            sizeof(SharkSslSCMgrNode)+strlen(writereg16)+1);
-         if(n)
-         {
-            SplayTreeNode_constructor((SplayTreeNode*)n,n);
-            DoubleLink_constructor(&n->dlink);
-            n->ss=ss;
-            n->port=hwmoddeassert;
-            n->hostLen=(U16)strlen(writereg16);
-            strcpy((char*)(n+1),writereg16);
-            n->host=(char*)(n+1);
-            SplayTree_insert(&o->stree, (SplayTreeNode*)n);
-            DoubleList_insertFirst(&o->dlist,&n->dlink);
-            o->noOfSessions++;
-         }
-         else
-            SharkSslSession_release(ss, o->ssl);
-      }
+      else
+         SharkSslSession_release(ss, o->ssl);
    }
+
    
-   if(o->noOfSessions > 0)
+   if(ZZTSTcleanup)
    {
       DoubleLink* l=DoubleList_lastNode(&o->dlist);
       n=SharkSslSCMgrNode_dlink2Obj(l);
@@ -48732,6 +48747,7 @@ SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources,
          hwdebugstate(o, n); 
       }
    }
+   return handlersetup;
 }
 
 

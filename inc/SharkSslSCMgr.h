@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslSCMgr.h 5149 2022-05-14 21:56:07Z gianluca $
+ *   $Id: SharkSslSCMgr.h 5300 2022-10-25 13:21:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2022
  *
@@ -86,7 +86,8 @@ typedef struct
 extern "C" {
 #endif
 
-/** Initialize a SharkSslSCMgr instance.
+/** SharkSslSCMgr simplifies using the session API for TLS clients;
+    the constructor initializes a SharkSslSCMgr instance.
     \param o an uninitialized static object or dynamically allocated object.
     \param ssl an initialized SharkSsl instance.
     \param maxTime the maximum time for stored sessions in seconds. A
@@ -95,16 +96,27 @@ extern "C" {
 SHARKSSL_API void SharkSslSCMgr_constructor(
    SharkSslSCMgr* o, SharkSsl* ssl, U32 maxTime);
 
-/** Get and restore the session, if any.
- */
+/** Resume a session. The returned value is a handle and should not be
+    modified by the client. The method returns NULL if no session could
+    be resumed. The method must be called just after
+    SharkSslCon_isHandshakeComplete() returns true.
+*/
 SHARKSSL_API SharkSslSCMgrNode* SharkSslSCMgr_get(
    SharkSslSCMgr* o,SharkSslCon* scon,const char* host,U16 port);
 
-/** Save the session, if any.
+/** Save the session when #SharkSslSCMgr_get returns NULL. It is an
+    error calling this method if #SharkSslSCMgr_get returns a
+    handle. The method should be called when closing the connection
+    and just before terminating the SharkSslCon object.
+
+    \param o an initialized SharkSslSCMgrNode object
+    \param scon a valid SharkSslCon object.
+    \param host the server's domain name
+    \param port the server's port number e.g. 443
+    \return 0 if session was saved, otherwise -1 is returned.
  */
-SHARKSSL_API void SharkSslSCMgr_save(
-   SharkSslSCMgr* o, SharkSslCon* scon,
-   const char* host, U16 port,  SharkSslSCMgrNode* n);
+SHARKSSL_API int SharkSslSCMgr_save(
+   SharkSslSCMgr* o, SharkSslCon* scon, const char* host, U16 port);
 
 #ifdef __cplusplus
 }

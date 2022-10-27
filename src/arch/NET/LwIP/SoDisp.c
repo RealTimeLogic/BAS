@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5284 2022-10-03 09:13:56Z wini $
+ *   $Id: SoDisp.c 5295 2022-10-14 17:16:12Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
@@ -405,7 +405,7 @@ HttpSocket_setNonblocking(HttpSocket* o, int* status)
 void
 HttpSocket_wouldBlock(HttpSocket* o, int* status)
 {
-   *status = o->ncon && *status == EWOULDBLOCK;
+   *status = o->ncon && (EWOULDBLOCK == *status || ERR_INPROGRESS ==*status);
 }
 
 
