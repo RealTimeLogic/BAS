@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5269 2022-09-23 11:12:06Z gianluca $
+ *   $Id: SharkSSL.h 5349 2022-11-14 12:16:13Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -1078,8 +1078,13 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 readLen);
 SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 maxLen);
 
 
-/** Returns TRUE if the SSL handshake phase is completed. See
-    state #SharkSslCon_Handshake for example code.
+/** Returns the following values:
+    \li 0: The TLS handshake has not completed.
+    \li 1: The TLS handshake has completed.
+    \li 2: The TLS handshake has completed; however, the SharkSSL
+    connection includes additional data that must be processed by calling
+    SharkSslCon_decrypt.
+    See state #SharkSslCon_Handshake for example code.
 */
 U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o);
 
@@ -1527,6 +1532,38 @@ SHARKSSL_API U32   SharkSslSession_getLatestAccessTime(SharkSslSession *o);
     handshaking phase.
  */
 SHARKSSL_API U8 SharkSslCon_requestClientCert(
+   SharkSslCon *o, const void *caList);
+#endif
+
+#if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_EXTENSION && \
+    (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+/** This function is used by client solutions that require server SSL
+    certificate authentication. It implements the "Certificate Authorities"
+    extension as per RFC 8446, section 4.2.4.
+
+    The function must be called before the initial handshake has
+    started. 
+
+    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
+
+    \param caList the SharkSSL CA list is in a binary format optimized
+    for speed and size. The list can be created by calling
+    #SharkSslCertStore_assemble or by using the command line tool
+    [SharkSSLParseCAList](\ref SharkSSLParseCAList). 
+    
+    Whenever the server is requested to provide an SSL certificate, 
+    this certificate must be signed using one of the CA certificates 
+    provided in the caList. The SSL handshake fails if the server's
+    certificate is not trusted or not signed with a known CA
+    certificate. In practice, for the specific connection, caList 
+    will take over the list associated with the SharkSSL object 
+    via #SharkSsl_setCAList.
+
+    \return TRUE (1) if the request is accepted. Returns FALSE (0) if
+    the SharkSSL connection is already going through or done with a
+    handshaking phase.
+ */
+SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
    SharkSslCon *o, const void *caList);
 #endif
 

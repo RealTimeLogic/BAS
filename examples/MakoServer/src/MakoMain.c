@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5065 2022-01-31 23:53:26Z wini $
+ *   $Id: MakoMain.c 5351 2022-11-14 13:10:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2022
  *
@@ -144,6 +144,9 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 
 #if USE_LPEG
 extern int luaopen_lpeg(lua_State *L);
+#endif
+#if USE_PROTOBUF
+extern int luaopen_pb(lua_State* L);
 #endif
 
 #if USE_OPCUA
@@ -1572,6 +1575,11 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 #if USE_LPEG
    luaL_requiref(L, "lpeg", luaopen_lpeg, FALSE);
    lua_pop(L,1); /* Pop lpeg obj: statically loaded, not dynamically. */
+#endif
+#if USE_PROTOBUF
+   /* Google's protobuf for Lua: https://github.com/starwing/lua-protobuf */
+   luaL_requiref(L, "pb", luaopen_pb, FALSE);
+   lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
 #if USE_DBGMON
    /* Add Lua debugger */

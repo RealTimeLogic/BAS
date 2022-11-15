@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5277 2022-10-01 06:38:04Z wini $
+ *   $Id: SharkSSL_cfg.h 5345 2022-11-14 10:21:17Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -200,6 +200,16 @@
 #endif
 
 
+ /**
+ * select 1 to enable support for Certificate Authorities extension
+ * (RFC 8446 section 4.2.4)
+ * note: #SHARKSSL_TLS_1_3 must be enabled
+ */
+#ifndef SHARKSSL_ENABLE_CA_EXTENSION
+#define SHARKSSL_ENABLE_CA_EXTENSION                     1
+#endif
+
+
 /**
  * select 0 to disable RSA ciphersuites
  */
@@ -270,8 +280,8 @@
 
 
  /** Enable/disable RSA API (sharkssl_RSA_public_encrypt,
- *  sharkssl_RSA_private_decrypt, sharkssl_RSA_private_encrypt,
- *  sharkssl_RSA_public_decrypt, SharkSslRSAKey_size)
+ *   sharkssl_RSA_private_decrypt, sharkssl_RSA_private_encrypt,
+ *   sharkssl_RSA_public_decrypt, SharkSslRSAKey_size)
  */
 #ifndef SHARKSSL_ENABLE_RSA_API
 #define SHARKSSL_ENABLE_RSA_API                          1

@@ -20,6 +20,11 @@ Ref: https://realtimelogic.com/products/barracuda-application-server/
 
 */
 
+/* Set USE_BA_LUA=0 if you do not want to use the embedded Lua version */
+#ifndef USE_BA_LUA
+#define USE_BA_LUA 1
+#endif
+
 
 #ifdef _WIN32
 #else /*  _WIN32 */
@@ -27,11 +32,11 @@ Ref: https://realtimelogic.com/products/barracuda-application-server/
 #define _GNU_SOURCE
 #endif
 #endif /*  _WIN32 */
-
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wchar-subscripts"
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough="
+#pragma GCC diagnostic ignored "-Wmisleading-indentation"
 #endif
 
 
@@ -54,10 +59,11 @@ void sendFatalError(const char* eMsg,
 
 #include <SharkSSL.h>
 #include <SharkSslASN1.h>
+
 	
 
  /******************************* BEGIN LUA ***********************************/
-
+#if USE_BA_LUA
 /*
 ** $Id: llimits.h $
 ** Limits, basic types, and some other 'installation-dependent' definitions
@@ -26800,7 +26806,7 @@ LUAMOD_API int luaopen_io (lua_State *L) {
 
 #endif
 
-
+#endif
  /******************************** END LUA ************************************/
 
 	/*
@@ -32163,7 +32169,7 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define clkctrlmanaged                5    
 #define traceentry             4 
 #define SHARKSSL_MAX_SESSION_ID_LEN                32  
-#define SHARKSSL_MAX_SESSION_TICKET_LEN            32  
+#define SHARKSSL_MAX_SESSION_TICKET_LEN            512 
 #define SHARKSSL_SEQ_NUM_LEN                       8    
 #define SHARKSSL_AES_GCM_EXPLICIT_IV_LEN           SHARKSSL_SEQ_NUM_LEN   
 #define SHARKSSL_RANDOM_LEN                        32   
@@ -32276,6 +32282,7 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define uprobeabort                    0x00400000
 #define symbolnodebug            0x00800000
 #define ftracehandler               0x01000000
+#define SHARKSSL_FLAG_CA_EXTENSION_REQUEST         0x02000000
 
 
 #define bcm1x80bcm1x55                     0x01
@@ -32463,8 +32470,8 @@ struct SharkSslSession
       struct
       {
          U32 expiration, ticketAgeAdd;
-         U8  ticket[SHARKSSL_MAX_SESSION_TICKET_LEN];
          U8  PSK[SHARKSSL_MAX_DIGEST_LEN];
+         U8 *ticket;
          U16 ticketLen, link;
       } tls13;
    } prot;
@@ -32562,7 +32569,9 @@ struct SharkSslCon
    SharkSslClonedCertInfo *clonedCertInfo;
    #endif
 
-   #if (SHARKSSL_ENABLE_CA_LIST && SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+   #if ((SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA) && (SHARKSSL_ENABLE_CA_LIST) && \
+        ((SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH) || \
+         (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_EXTENSION)))
    SharkSslCAList caListCertReq;
    #endif
 
@@ -33878,7 +33887,7 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
                paramnamed = (U16)(*registeredevent++) << 8;  
                paramnamed += (*registeredevent++);
                len -= 2;
-               if ((paramnamed != 0) || (len != 0))
+               if (paramnamed != 0)  
                {
                   SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
                   return -1;
@@ -33966,7 +33975,6 @@ static int SharkSslHSParam_setCert(SharkSslHSParam *s, SharkSslCertParsed **cert
    #if SHARKSSL_TLS_1_3
    if (cipherSuiteFlags & SHARKSSL_CS_TLS13)
    {
-      SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
       return -1;  
    }
    #endif
@@ -34003,7 +34011,6 @@ static int SharkSslHSParam_setCert(SharkSslHSParam *s, SharkSslCertParsed **cert
          break;
    }
 
-   SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
    return -1;
 }
 #endif  
@@ -34133,7 +34140,18 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          else
          #endif
          {
+            #if 1
             *tp++ = 0;  
+            #else
+            *tp++ = SHARKSSL_MAX_SESSION_ID_LEN;
+            if (sharkssl_rng(tp, SHARKSSL_MAX_SESSION_ID_LEN) < 0)
+            {
+               resvdexits(o);
+               return SharkSslCon_Error;
+            }
+            
+            tp += SHARKSSL_MAX_SESSION_ID_LEN;
+            #endif
          }
 
          
@@ -34483,6 +34501,98 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          #endif
 
          
+         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_SESSION_CACHE)
+         #if SHARKSSL_TLS_1_2
+         
+         if (o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+         #endif
+         {
+            *tp++ = (U8)(rm200hwint >> 8);
+            *tp++ = (U8)(rm200hwint & 0xFF);
+            *tp++ = 0x00;
+            *tp++ = 0x02;  
+            *tp++ = 0x01;  
+            *tp++ = 0x01;  
+         }
+         #endif  
+
+         
+         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION)
+         #if SHARKSSL_TLS_1_2
+         
+         if (o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+         #endif
+         {
+            if (o->caListCertReq)
+            {
+               SharkSslCert pCert;
+               U8 *cp;
+
+               baAssert(o->flags & SHARKSSL_FLAG_CA_EXTENSION_REQUEST);
+               #if SHARKSSL_ENABLE_CERTSTORE_API
+               baAssert(SHARKSSL_CA_LIST_PTR_SIZE == claimresource(SHARKSSL_CA_LIST_PTR_SIZE));
+               #endif
+               if ((o->caListCertReq[0] != SHARKSSL_CA_LIST_INDEX_TYPE)
+                     #if SHARKSSL_ENABLE_CERTSTORE_API
+                     && (o->caListCertReq[0] != SHARKSSL_CA_LIST_PTR_TYPE)
+                     #endif
+                  )
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
+               }
+               now_ccLen = ((U16)(o->caListCertReq[2]) << 8) + o->caListCertReq[3];
+               if (now_ccLen)  
+               {
+                  *tp++ = (U8)(shutdownnonboot >> 8);
+                  *tp++ = (U8)(shutdownnonboot & 0xFF);
+                  tb = tp;
+                  tp += 4;
+                  cp = (U8*)&(o->caListCertReq[4]);
+                  while (now_ccLen--)
+                  {
+                     int ret;
+                     U16 installidmap;
+                     #if SHARKSSL_ENABLE_CERTSTORE_API
+                     if (o->caListCertReq[0] == SHARKSSL_CA_LIST_PTR_TYPE)
+                     {
+                        pCert = *(SharkSslCert*)&cp[SHARKSSL_CA_LIST_NAME_SIZE];
+                        cp += SHARKSSL_CA_LIST_NAME_SIZE + SHARKSSL_CA_LIST_PTR_SIZE;  
+                     }
+                     else
+                     #endif
+                     {
+                        crLen  = (U32)cp[SHARKSSL_CA_LIST_NAME_SIZE+0] << 24;
+                        crLen += (U32)cp[SHARKSSL_CA_LIST_NAME_SIZE+1] << 16;
+                        crLen += (U16)cp[SHARKSSL_CA_LIST_NAME_SIZE+2] << 8;
+                        crLen +=      cp[SHARKSSL_CA_LIST_NAME_SIZE+3];
+                        pCert  = (SharkSslCert)&(o->caListCertReq[crLen]);
+                        cp    += nativeiosapic;  
+                     }
+                     
+                     ret = spromregister(0, (U8*)pCert, (U32)-2, (U8*)&installidmap);
+                     if (ret > 0)
+                     {
+                        pCert += (U32)ret;
+                        *tp++ = (U8)(installidmap >> 8);
+                        *tp++ = (U8)(installidmap & 0xFF);
+                        memcpy(tp, pCert, installidmap);
+                        tp += installidmap;
+                     }
+                  }
+                  
+                  paramnamed = (U16)(tp - tb - 2);
+                  *tb++ = (U8)(paramnamed >> 8);
+                  *tb++ = (U8)(paramnamed & 0xFF);
+                  paramnamed -= 2;
+                  *tb++ = (U8)(paramnamed >> 8);
+                  *tb   = (U8)(paramnamed & 0xFF);
+               }
+            }
+         }
+         #endif  
+
+         
          #if (SHARKSSL_TLS_1_3 && SHARKSSL_USE_ECC)
          #if SHARKSSL_TLS_1_2
          
@@ -34523,6 +34633,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             
             SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
             tp += i;
+            #endif
             
             paramnamed = (U16)(tp - tb - 2);
             *tb++ = (U8)(paramnamed >> 8);
@@ -34531,7 +34642,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             *tb++ = (U8)(paramnamed >> 8);
             *tb   = (U8)(paramnamed & 0xFF);
          }
-         #endif
          #endif  
 
          
@@ -34546,6 +34656,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             now_ccLen = (U32)baGetUnixTime();
             if (now_ccLen < o->session->prot.tls13.expiration)
             {
+               #if 0
                *tp++ = (U8)(rm200hwint >> 8);
                *tp++ = (U8)(rm200hwint & 0xFF);
                *tp++ = 0x00;
@@ -34553,6 +34664,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                *tp++ = 0x01;  
                *tp++ = 0x01;  
                
+               #endif
                *tp++ = (U8)(allocconsistent >> 8);
                *tp++ = (U8)(allocconsistent & 0xFF);
                tb = tp++;
@@ -36022,12 +36134,10 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          if (*registeredevent++ != o->major)  
          {
             SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-            #if SHARKSSL_SSL_SERVER_CODE
-            goto _sharkssl_hs_alert_handshake_failure;
-            #else
+            #if !SHARKSSL_TLS_1_2
             _sharkssl_hs_alert_handshake_failure:
-            return savedconfig(o, SHARKSSL_ALERT_HANDSHAKE_FAILURE);
             #endif
+            return savedconfig(o, SHARKSSL_ALERT_HANDSHAKE_FAILURE);
          }
          if (*registeredevent++ != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))  
          {
@@ -36315,10 +36425,11 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          #if SHARKSSL_TLS_1_3
          if (o->session)
          {
-            if ((!(o->flags & startqueue)) || (o->session->cipherSuite->id != sharkSslHSParam->cipherSuite->id))
+            if ((!(o->flags & startqueue)) || (o->session->cipherSuite->hashID != sharkSslHSParam->cipherSuite->hashID))
             {
                
                o->session = 0;
+               
             }
             else  
             {
@@ -36656,7 +36767,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          o->state = configcwfon;
          if (atagsprocfs)
          {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
             goto suspendlocal;
          }
          o->inBuf.temp = 0;
@@ -36984,7 +37094,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          #if SHARKSSL_TLS_1_3
          if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3))
          {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
             goto _sharkssl_handshaketype_certificate_request_13;
          }
          #endif
@@ -37676,10 +37785,27 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          if (!(o->flags & serialreset))  
          #endif
          {
-            
+            #if (SHARKSSL_ENABLE_CA_EXTENSION && SHARKSSL_ENABLE_CA_LIST)
+            SharkSslCAList displaysetup;
+
+            if ((o->flags & SHARKSSL_FLAG_CA_EXTENSION_REQUEST) && (SharkSsl_isClient(o->sharkSsl)) && (o->caListCertReq))
+            {
+               displaysetup = o->caListCertReq;
+            }
+            else
+            {
+               displaysetup = o->sharkSsl->caList;
+            }
+            #endif
             if (SharkSslCertParam_validateCertChain(&(sharkSslHSParam->certParam), &(sharkSslHSParam->signParam)
                #if SHARKSSL_ENABLE_CA_LIST
-               , &o->flags, o->sharkSsl->caList, afterhandler
+               , &o->flags
+               #if SHARKSSL_ENABLE_CA_EXTENSION
+               , displaysetup
+               #else
+               , o->sharkSsl->caList
+               #endif
+               , afterhandler
                #endif
             ))
             {
@@ -38007,7 +38133,8 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             if (SharkSslCon_calcMACAndEncryptHS(o) < 0)
             {
                SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-               return -1;
+               resvdexits(o);
+               return SharkSslCon_Error;
             }
             if (o->flags & cachematch)
             {
@@ -38234,6 +38361,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          #endif  
 
       case SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET:
+         
          o->flags |= devicedriver;  
          #if SHARKSSL_ENABLE_SESSION_CACHE
          if (hsDataLen < 9)  
@@ -60835,10 +60963,17 @@ SharkSslSCMgr_get(SharkSslSCMgr* o,SharkSslCon* mmcsd0resources,const char* writ
 SHARKSSL_API int
 SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources, const char* writereg16, U16 hwmoddeassert)
 {
+   DoubleLink* l;
    SharkSslSCMgrNode* n;
    int handlersetup=-1;
-   int bv1 = o->noOfSessions > 0;
+   int ZZTSTcleanup = o->noOfSessions > 0;
    SharkSslSession* ss = SharkSslCon_acquireSession(mmcsd0resources);
+   if(!ss && o->noOfSessions >= mmcsd0resources->sharkSsl->sessionCache.cacheSize)
+   {
+      l=DoubleList_lastNode(&o->dlist);
+      hwdebugstate(o, SharkSslSCMgrNode_dlink2Obj(l));
+      ss = SharkSslCon_acquireSession(mmcsd0resources);
+   }
    if(ss)
    {
       n=(SharkSslSCMgrNode*)baMalloc(
@@ -60862,9 +60997,9 @@ SharkSslSCMgr_save(SharkSslSCMgr* o, SharkSslCon* mmcsd0resources, const char* w
    }
 
    
-   if(bv1)
+   if(ZZTSTcleanup)
    {
-      DoubleLink* l=DoubleList_lastNode(&o->dlist);
+      l=DoubleList_lastNode(&o->dlist);
       n=SharkSslSCMgrNode_dlink2Obj(l);
       if((baGetUnixTime() - SharkSslSession_getLatestAccessTime(n->ss)) >
          o->maxTime)
@@ -80040,29 +80175,43 @@ belowstart(SoDispCon* con, ThreadMutex* m, void* buf, int masterclock)
             {
                ThreadMutex* m=0;
                const U8* alloccontroller = SharkSslCon_getHandshakeData(s);
-               HttpSocket_send(
-                  &con->httpSocket, m, &queueevent, alloccontroller, nb, &sockLen);
+               HttpSocket_send(&con->httpSocket, m, &queueevent, alloccontroller, nb, &sockLen);
                if (nb != sockLen)
                {
-                  if(sockLen<0 || queueevent || !SoDispCon_isNonBlocking(con))
+                  if ((sockLen < 0) || queueevent || (!SoDispCon_isNonBlocking(con)))
+                  {
                      return E_SOCKET_WRITE_FAILED;
+                  }
                   baAssert(sockLen < nb);
                   SoDispCon_setBlocking(con);
                   nb -= sockLen;
                   alloccontroller += sockLen;
-                  HttpSocket_send(
-                     &con->httpSocket, m, &queueevent, alloccontroller, nb, &sockLen);
-                  if(sockLen < 0 || queueevent)
+                  HttpSocket_send(&con->httpSocket, m, &queueevent, alloccontroller, nb, &sockLen);
+                  if ((sockLen < 0) || queueevent)
+                  {
                      return E_SOCKET_WRITE_FAILED;
+                  }
                   SoDispCon_setNonblocking(con);
                }
             }
-            if(SharkSslCon_isHandshakeComplete(s))
+            nb = SharkSslCon_isHandshakeComplete(s);
+            if (nb)
             {
-               if(!buf || !masterclock)
+               if (!buf)
+               {
+                  sockLen = 0;
+                  if (nb > 1)  
+                  {
+                     continue;  
+                  }
+               }
+
+               if ((!buf) || (!masterclock))
+               {
                   return 0;
+               }
             }
-            sockLen=0;
+            sockLen = 0;
             break;
 
          default:
@@ -80956,6 +81105,10 @@ void defaultsdhci0(SharkSslSessionCache *commoncontiguous)
             baAssert(0 == (func2fixup->clonedCertInfo->refcnt));
             baFree((void*)func2fixup->clonedCertInfo);
          }
+         if (SharkSslSession_isProtocol(func2fixup, SHARKSSL_PROTOCOL_TLS_1_3) && (func2fixup->prot.tls13.ticket))
+         {
+            baFree((void*)func2fixup->prot.tls13.ticket);
+         }
       }
       #endif
       memset(selectaudio(commoncontiguous->cache), 0, commoncontiguous->cacheSize * sizeof(SharkSslSession));
@@ -81049,13 +81202,24 @@ SharkSslSession *sa1111device(SharkSslSessionCache *commoncontiguous,
                #endif
                #if SHARKSSL_TLS_1_3
                {
-                  memset(func2fixup->prot.tls13.ticket, 0, SHARKSSL_MAX_SESSION_TICKET_LEN);
-                  if (setupinterface > SHARKSSL_MAX_SESSION_TICKET_LEN)
+                  if (setupinterface > SHARKSSL_MAX_SESSION_TICKET_LEN)  
                   {
-                     setupinterface = SHARKSSL_MAX_SESSION_TICKET_LEN;
+                     func2fixup = 0;  
                   }
-                  memcpy(func2fixup->prot.tls13.ticket, id, setupinterface);
-                  func2fixup->prot.tls13.ticketLen = setupinterface;
+                  else
+                  {
+                     baAssert((hardirqsenabled(func2fixup) != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) || (NULL == func2fixup->prot.tls13.ticket));
+                     func2fixup->prot.tls13.ticket = baMalloc(setupinterface);
+                     if (NULL == func2fixup->prot.tls13.ticket)
+                     {
+                        func2fixup = 0;
+                     }
+                     else
+                     {
+                        memcpy(func2fixup->prot.tls13.ticket, id, setupinterface);
+                        func2fixup->prot.tls13.ticketLen = setupinterface;
+                     }
+                  }
                }
                #endif
             }
@@ -81161,6 +81325,8 @@ SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
             func2fixup = (SharkSslSession*)((U8*)selectaudio(commoncontiguous->cache) + (uart2hwmod * sizeof(SharkSslSession)));
          }
       }
+      #else
+      uart2hwmod = 0;  
       #endif
       for (;;)  
       {
@@ -81191,6 +81357,7 @@ SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
          if ((func2fixup) &&
             (restarthandler(func2fixup, o->major, o->minor)) &&
             (SharkSslSession_isProtocol(func2fixup, SHARKSSL_PROTOCOL_TLS_1_3)) &&
+            (func2fixup->prot.tls13.ticket) &&
             (0 == sharkssl_kmemcmp(func2fixup->prot.tls13.ticket, id, setupinterface)) &&
             (now < func2fixup->prot.tls13.expiration) &&
             (func2fixup->nUse < 0xFFFF))
@@ -82131,6 +82298,10 @@ int SharkSslCon_calcResumptionSecret(SharkSslCon *o, U8 *chargerplatform)
 int SharkSslCon_calcTicketPSK(SharkSslCon *o, U8 *PSK, U8 *broadcastenter, U8 unmapunlock)
 {
    baAssert(SharkSsl_isClient(o->sharkSsl));
+   if (0 == unmapunlock)
+   {
+      broadcastenter = NULL;  
+   }
    brespdisable(o->resumptionMasterSecret, "\162\145\163\165\155\160\164\151\157\156", broadcastenter, PSK, sharkssl_getHashLen(o->rCipherSuite->hashID), unmapunlock, o->rCipherSuite->hashID);
    return 0;
 }
@@ -82907,26 +83078,30 @@ U8 SharkSslCon_encryptMore(SharkSslCon *o)
 }
 
 
-U8 *SharkSslCon_getHandshakeData(SharkSslCon *o)
-{
-   baAssert(o);
-   #if SHARKSSL_TLS_1_2
-   if (o->flags & createmappings)
-   {
-      baAssert(o->outBuf.data);
-      o->flags &= ~createmappings;
-      return (o->outBuf.data);
-   }
-   #endif  
-   baAssert(o->inBuf.data);
-   return (o->inBuf.data);
-}
-
-
 U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o)
 {
    baAssert(o);
    return (o->inBuf.temp);
+}
+
+
+U8 *SharkSslCon_getHandshakeData(SharkSslCon *o)
+{
+   if (SharkSslCon_getHandshakeDataLen(o))
+   {
+      #if SHARKSSL_TLS_1_2
+      if (o->flags & createmappings)
+      {
+         baAssert(o->outBuf.data);
+         o->flags &= ~createmappings;
+         return (o->outBuf.data);
+      }
+      #endif  
+      baAssert(o->inBuf.buf);
+      return (func3fixup(&o->inBuf));
+   }
+
+   return NULL;
 }
 
 
@@ -82939,6 +83114,16 @@ U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o)
       #endif
       )
    {
+      #if SHARKSSL_TLS_1_3
+      if (SharkSsl_isClient(o->sharkSsl) && (o->inBuf.dataLen) 
+         #if SHARKSSL_TLS_1_2
+         && (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) 
+         #endif
+         )
+      {
+         return 2;
+      }
+      #endif
       return 1;
    }
 
@@ -83409,6 +83594,29 @@ U8 SharkSslCon_requestClientCert(SharkSslCon *o, const void *displaysetup)
 #endif
 
 
+#if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_EXTENSION && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+U8 SharkSslCon_setCertificateAuthorities(SharkSslCon *o, const void *displaysetup)
+{
+   if ((o) && (SharkSsl_isClient(o->sharkSsl)) && (o->state <= pciercxcfg070) 
+       #if SHARKSSL_TLS_1_2
+       && (o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+       #endif
+      )
+   {
+      #if SHARKSSL_ENABLE_CA_LIST
+      o->flags |= SHARKSSL_FLAG_CA_EXTENSION_REQUEST;
+      o->caListCertReq = (SharkSslCAList)displaysetup;
+      return 1;
+      #else
+      (void)displaysetup;
+      #endif
+   }
+
+   return 0;
+}
+#endif
+
+
 #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SECURE_RENEGOTIATION)
 U8 SharkSslCon_renegotiate(SharkSslCon *o)
 {
@@ -83580,6 +83788,11 @@ U8 SharkSslSession_release(SharkSslSession *o, SharkSsl *s)
                }
                o->clonedCertInfo = (SharkSslClonedCertInfo*)0;
             }
+            if (SharkSslSession_isProtocol(o, SHARKSSL_PROTOCOL_TLS_1_3) && (o->prot.tls13.ticket))
+            {
+               baFree((void*)o->prot.tls13.ticket);
+               o->prot.tls13.ticket = (U8*)0;
+            }
          }
          #endif  
       }
@@ -83705,12 +83918,27 @@ U32 SharkSslSession_getLatestAccessTime(SharkSslSession *o)
 {
    if (o)
    {
+      #if SHARKSSL_TLS_1_2
       #if SHARKSSL_TLS_1_3
       if (SharkSslSession_isProtocol(o, SHARKSSL_PROTOCOL_TLS_1_2))
       #endif
       {
          return (o->prot.tls12.latestAccess);  
       }
+      #endif
+      #if SHARKSSL_TLS_1_3
+      #if SHARKSSL_TLS_1_2
+      else
+      #endif
+      {
+         U32 now = (U32)baGetUnixTime();
+         baAssert(SharkSslSession_isProtocol(o, SHARKSSL_PROTOCOL_TLS_1_3));
+         if (now < o->prot.tls13.expiration)
+         {
+            return now;
+         }
+      }
+      #endif
    }
 
    return 0;
@@ -104085,7 +104313,7 @@ tininessbefore(lua_State *L)
          "\154\157\143\141\154\040\146\075\142\141\056\157\160\145\156\151\157\050\047\166\155\047\051\072\157\160\145\156\047\056\143\145\162\164\151\146\151\143\141\164\145\057\143\141\143\145\162\164\056\163\150\141\162\153\047\012"
          "\154\157\143\141\154\040\143\075\146\072\162\145\141\144\047\052\141\047\012"
          "\146\072\143\154\157\163\145\050\051\012"
-         "\162\145\164\165\162\156\040\142\141\056\143\162\145\141\164\145\056\163\150\141\162\153\163\163\154\050\143\051"
+         "\162\145\164\165\162\156\040\142\141\056\143\162\145\141\164\145\056\163\150\141\162\153\163\163\154\050\143\054\173\143\141\143\150\145\163\151\172\145\075\064\060\175\051"
       };
       luaL_loadstring(L, stateindex);
       if(LUA_OK != lua_pcall(L, 0, 1, 0))
@@ -106175,7 +106403,7 @@ hwmonchcfg(lua_State* L)
 }
 
 static int
-bv2(lua_State* L)
+ZZTSTLSock_ping(lua_State* L)
 {
    size_t allockuser;
    LSock* s = toLSock(L);
@@ -106301,7 +106529,7 @@ reportasync(lua_State* L)
 
 
 static int
-bv3(lua_State* L)
+ZZTSTLSock_isresumed(lua_State* L)
 {
    SharkSslCon* sc;
    LSock* s = toLSock(L);
@@ -106693,14 +106921,14 @@ static const luaL_Reg sockLib[] = {
    {"\145\156\141\142\154\145", bypassconsumer},
    {"\162\145\141\144", thumb16break},
    {"\167\162\151\164\145", hwmonchcfg},
-   {"\160\151\156\147", bv2},
+   {"\160\151\156\147", ZZTSTLSock_ping},
 #ifdef USE_DGRAM
    {"\163\145\156\144\164\157", registeruarts},
 #endif
    {"\141\143\143\145\160\164", eventvalid},
    {"\143\145\162\164\151\146\151\143\141\164\145", emac1hwmod},
    {"\143\151\160\150\145\162", reportasync},
-   {"\151\163\162\145\163\165\155\145\144", bv3},
+   {"\151\163\162\145\163\165\155\145\144", ZZTSTLSock_isresumed},
    {"\164\162\165\163\164\145\144", flashread16},
 
    

@@ -39,7 +39,7 @@ SOURCE = BAS.c ThreadLib.c SoDisp.c BaFile.c MakoMain.c
 
 #Do we have SQLite?
 ifneq (,$(wildcard src/sqlite3.c))
-$(info including SQLite)
+$(info Including SQLite)
 SOURCE += ls_sqlite3.c luasql.c sqlite3.c
 else
 $(info Excluding SQLite)
@@ -48,13 +48,25 @@ endif
 
 #Do we have LPEG?
 ifneq (,$(wildcard src/lpeg/lpcode.c))
-$(info including LPEG)
+$(info Including LPEG)
 CFLAGS += -DUSE_LPEG=1
 SOURCE += $(notdir $(wildcard src/lpeg/*.c))
 VPATH += src/lpeg
 else
 $(info Excluding LPEG)
 endif
+
+#Do we have Lua Protobuf?
+#https://github.com/starwing/lua-protobuf
+ifneq (,$(wildcard src/lua-protobuf/pb.c))
+$(info Including Lua Protobuf)
+CFLAGS += -DUSE_PROTOBUF=1
+SOURCE += src/lua-protobuf/pb.c
+VPATH += src/lua-protobuf
+else
+$(info Excluding Lua Protobuf)
+endif
+
 
 ifneq (,$(wildcard MyCustomBindings.c))
 $(info including the Lua MyCustomBindings example)
