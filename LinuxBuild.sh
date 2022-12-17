@@ -11,7 +11,7 @@ function abort() {
 }
 
 function install() {
-    abort "Run the following prior to running this script:\nsudo apt-get install git unzip gcc"
+    abort "Run the following prior to running this script:\nsudo apt-get install git unzip gcc make"
 }
 
 unameOut="$(uname -s)"
@@ -31,6 +31,7 @@ fi
 echo "Using compiler $CC"
 command -v git >/dev/null 2>&1 || install
 command -v unzip >/dev/null 2>&1 || install
+command -v make >/dev/null 2>&1 || install
 
 if [ -f src/BAS.c ]; then
     abort "Incorrect use! This script should not be run in the BAS directory.\nDetails: https://github.com/RealTimeLogic/BAS"
@@ -43,7 +44,7 @@ fi
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
     if [  -z ${SQLITEURL+x} ]; then
-	SQLITEURL="https://www.sqlite.org/2022/sqlite-amalgamation-3380300.zip"
+	SQLITEURL="https://www.sqlite.org/2022/sqlite-amalgamation-3400000.zip"
     fi
     SQLITE=${SQLITEURL##*/}
     pushd /tmp || abort $LINENO
@@ -57,6 +58,10 @@ if ! [ -f "src/sqlite3.c" ]; then
     unzip -o $SQLITE || abort $LINENO
     popd
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
+fi
+
+if [ -n "${NOCOMPILE+set}" ]; then
+    exit 0
 fi
 
 echo "Compiling using $CC; this may take some time........"
