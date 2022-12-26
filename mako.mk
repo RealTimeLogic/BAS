@@ -5,8 +5,8 @@
 
 # The makefile is designed for the "Embedded Linux Web Based Device
 # Management" tutorial and will auto include the generated Lua
-# bindings if found. The makefile will also auto include SQLite and
-# LPeg if found. LPeg can be installed as follows:
+# bindings if found. The makefile will also auto include SQLite, Lua
+# Protobuf, and LPeg if found. LPeg can be installed as follows:
 # wget http://www.inf.puc-rio.br/~roberto/lpeg/lpeg-1.0.2.tar.gz
 # cd src
 # tar xvzf ../lpeg-1.0.2.tar.gz
@@ -18,7 +18,9 @@ CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 CFLAGS += -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
 
 # Add features
-CFLAGS += -DUSE_LUAINTF
+CFLAGS += -DUSE_LUAINTF=1
+CFLAGS += -DUSE_DBGMON=1
+CFLAGS += -DUSE_OPCUA=1
 
 CFLAGS += -Iinc -Iinc/arch/Posix
 ifdef EPOLL
@@ -66,7 +68,6 @@ VPATH += src/lua-protobuf
 else
 $(info Excluding Lua Protobuf)
 endif
-
 
 ifneq (,$(wildcard MyCustomBindings.c))
 $(info including the Lua MyCustomBindings example)

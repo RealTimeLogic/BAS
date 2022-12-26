@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ZipFileIterator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: ZipFileIterator.h 5355 2022-11-16 10:33:45Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2019
  *
@@ -62,7 +62,7 @@ struct ZipFileHeaderData;
 
 /** Abstract interface class for reading a ZipFile.
     See the example code FileZipReader for more information.
-    You can also use the <a href="../CspTools.html#bin2c">
+    You can also use the <a href="../../CspTools.html#bin2c">
     bin2c</a> tool if you want to embed the ZIP file in the
     application executable or firmware.
 */
@@ -314,7 +314,7 @@ do { \
 
 
 /** Low level <a target="_blank"
-    href="http://en.wikipedia.org/wiki/Zip_(file_format)#Structure">
+    href="https://en.wikipedia.org/wiki/Zip_(file_format)#Structure">
     ZIP file central directory</a> iterator.
  */
 typedef struct CentralDirIterator

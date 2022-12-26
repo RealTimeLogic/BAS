@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: FormAuthenticator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: FormAuthenticator.h 5360 2022-11-27 19:03:40Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2017
  *
@@ -120,7 +120,10 @@ BA_API void FormAuthenticator_constructor(
    LoginRespIntf* login);
 
 #define FormAuthenticator_destructor(o) do { \
-   if((o)->realm) baFree((o)->realm); (o)->realm=0;} while(0)
+      if((o)->realm)                            \
+         baFree((o)->realm);                    \
+      (o)->realm=0;                             \
+   } while(0)
 
 #define FormAuthenticator_setLoginTracker(o,loginTracker) \
    (o)->tracker=loginTracker

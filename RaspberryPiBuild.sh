@@ -30,6 +30,7 @@ fi
 cd ..
 
 echo "Compiling Mako Server"
+export EPOLL=true
 make -f mako.mk || abort"failed"
 cd ..
 
@@ -52,10 +53,10 @@ if ! [ -f "lua-periphery/README.md" ]; then
     cd ..
 fi
 
-if ! [ -f "/usr/bin/mako" ]; then
-    read -p "Do you want to install the Mako Server in /usr/bin (Y/n)?" </dev/tty
+if ! [ -f "/usr/local/bin/mako" ]; then
+    read -p "Do you want to install the Mako Server in /usr/local/bin (Y/n)?" </dev/tty
     if [ "$REPLY" != "n" ]; then
-        sudo cp BAS/mako BAS/mako.zip lua-periphery/periphery.so /usr/bin/ || abort
+        sudo cp BAS/mako BAS/mako.zip lua-periphery/periphery.so /usr/local/bin/ || abort
         echo "Installed"
     fi
 fi

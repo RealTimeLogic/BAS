@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5201 2022-07-04 13:57:29Z wini $
+ *   $Id: AuthenticatedUser.h 5355 2022-11-16 10:33:45Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
  *
@@ -632,7 +632,7 @@ The LoginFailed method is called when a user attempts to log in and
 the user and/or password is incorrect.
 
 One can potentially
-<a href="http://en.wikipedia.org/wiki/Tarpit_(computing)">tarpit</a>
+<a href="https://en.wikipedia.org/wiki/Tarpit_(computing)">tarpit</a>
 the failed login attempt if you run the HTTP server in threaded mode,
 but a short "login window" is probably more than sufficient in most
 applications. The "login window" length is controlled in the
@@ -790,7 +790,7 @@ inline BaTime LoginTrackerNode::getTime() {
 
 A hacker may write an automated password cracker tool to exploit weak
 passwords. This is often referred to as a
-<a href=" http://en.wikipedia.org/wiki/Dictionary_attack" >
+<a href="https://en.wikipedia.org/wiki/Dictionary_attack" >
 Dictionary attack</a>. 
 
 The purpose with the LoginTracker is to make it virtually impossible

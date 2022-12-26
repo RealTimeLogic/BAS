@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5349 2022-11-14 12:16:13Z gianluca $
+ *   $Id: SharkSSL.h 5359 2022-11-19 07:05:27Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -794,20 +794,35 @@ typedef struct SharkSslCertDN
    U8 emailAddressLen;  /** length in bytes of the field "emailAddress" */
 } SharkSslCertDN;
 
+/** SharkSslCertDN constructor
+ */
 #define SharkSslCertDN_constructor(o) memset(o,0,sizeof(SharkSslCertDN))
-
+/** setCountryName
+ */
 #define SharkSslCertDN_setCountryName(o, countryNameMA) \
    (o)->countryName=(const U8*)countryNameMA,(o)->countryNameLen=(U8)strlen(countryNameMA)
+/** setProvince
+ */
 #define SharkSslCertDN_setProvince(o, provinceMA) \
    (o)->province=(const U8*)provinceMA,(o)->provinceLen=(U8)strlen(provinceMA)
+/** setLocality
+ */
 #define SharkSslCertDN_setLocality(o, localityMA) \
    (o)->locality=(const U8*)localityMA,(o)->localityLen=(U8)strlen(localityMA)
+/** setOrganization
+ */
 #define SharkSslCertDN_setOrganization(o, organizationMA) \
    (o)->organization=(const U8*)organizationMA,(o)->organizationLen=(U8)strlen(organizationMA)
+/** setUnit
+ */
 #define SharkSslCertDN_setUnit(o, unitMA) \
    (o)->unit=(const U8*)unitMA,(o)->unitLen=(U8)strlen(unitMA)
+/** setCommonName
+ */
 #define SharkSslCertDN_setCommonName(o, commonNameMA) \
    (o)->commonName=(const U8*)commonNameMA,(o)->commonNameLen=(U8)strlen(commonNameMA)
+/** setEmailAddress
+ */
 #define SharkSslCertDN_setEmailAddress(o, emailAddressMA) \
    (o)->emailAddress=(const U8*)emailAddressMA,(o)->emailAddressLen=(U8)strlen(emailAddressMA)
 

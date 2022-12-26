@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResRdr.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpResRdr.h 5355 2022-11-16 10:33:45Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -156,7 +156,7 @@ typedef struct HttpResRdr
                   AllocatorIntf* alloc=0, S8 priority=0);
 
       /** Initialize a HttpResRdr for
-          <a href="http://en.wikipedia.org/wiki/Virtual_hosting">
+          <a href="https://en.wikipedia.org/wiki/Virtual_hosting">
           name based virtual hosting</a>.
 
           A HttpResRdr instance initialized for virtual hosting must

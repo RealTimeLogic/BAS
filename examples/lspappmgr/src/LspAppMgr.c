@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5070 2022-02-03 16:21:53Z wini $
+ *   $Id: LspAppMgr.c 5366 2022-12-26 17:46:53Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2022
  *               http://www.realtimelogic.com
@@ -84,6 +84,9 @@ AUX_LUA_BINDINGS_DECL
 #endif
 extern void luaopen_LED(lua_State* L); /* Example Lua binding: led.c */
 
+#if USE_PROTOBUF
+extern int luaopen_pb(lua_State* L);
+#endif
 
 #if USE_DBGMON
 /* This function runs the Lua 'onunload' handlers for all loaded apps
@@ -131,36 +134,6 @@ static int initDiskIo(DiskIo* io)
 #include <stdlib.h>
 static int initDiskIo(DiskIo* io) {
    DiskIo_setRootDir(io,getenv("HOME")); /* Linux user's home dir */
-   return 0;
-}
-#elif defined(ESP_PLATFORM)
-/* ESP32 WROVER specific: https://realtimelogic.com/downloads/bas/ESP32/
-*/
-#include<esp_vfs.h>
-#include<esp_vfs_fat.h>
-#include<esp_system.h>
-static int initDiskIo(DiskIo* io)
-{
-   static const char bp[] = {"/spiflash"}; 
-   const esp_vfs_fat_mount_config_t mcfg = {
-      .max_files = 20,
-      .format_if_mount_failed = true,
-      .allocation_unit_size = CONFIG_WL_SECTOR_SIZE
-   };
-   static BaBool mounted=FALSE;
-   if( ! mounted )
-   {
-      wl_handle_t hndl = WL_INVALID_HANDLE;
-      esp_err_t err = esp_vfs_fat_spiflash_mount(bp, "storage", &mcfg, &hndl); 
-      if (err != ESP_OK)
-      {
-         HttpTrace_printf(0,"Failed to mount FATFS (%s)", esp_err_to_name(err));
-         return -1;
-      }
-      mounted=TRUE;
-   }
-   /* Else: restarted internally by debugger */
-   DiskIo_setRootDir(io,bp);
    return 0;
 }
 #endif
@@ -328,8 +301,7 @@ barracuda(void)
 */
 #if !defined(NO_BAIO_DISK) && \
    (defined(_WIN32) || \
-    defined(BA_POSIX) || \
-    defined(ESP_PLATFORM))
+    defined(BA_POSIX))
    platformInitDiskIo=initDiskIo;
 #endif
 
@@ -410,6 +382,11 @@ barracuda(void)
 #if USE_DLMALLOC
    balua_mallinfo(L); /* Mem info. See dlmalloc.c */
 #endif
+#if USE_PROTOBUF
+   /* Google's protobuf for Lua: https://github.com/starwing/lua-protobuf */
+   luaL_requiref(L, "pb", luaopen_pb, FALSE);
+   lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
+#endif
 
    /* Dispatcher mutex must be locked when running the .config script
     */
@@ -477,5 +454,7 @@ barracuda(void)
    HttpTrace_printf(0,"\n\nRestarting LspAppMgr.\n\n");
    HttpTrace_flush();
    goto L_restart;
+#else
+   (void)tShutdown;
 #endif
 }

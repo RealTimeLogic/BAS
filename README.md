@@ -191,11 +191,12 @@ A recommendation is to initially try the server on an [ESP32 using FreeRTOS and 
 
 BAS Amalgamated (BAS.c) includes features that are by default not compiled. These features can be enabled by the following macros. The macros can be enabled on any platform, including RTOS, unless stated otherwise.
 
-* USE_DBGMON: Include [Lua Debugger Support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
-* USE_REVCON: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both the LSP Application Manager and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/?url=Mako.html#acmebot).
-* USE_FORKPTY: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib), which is available for Linux and QNX. This API is required if you plan on using the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) or the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
-* USE_REDIRECTOR: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy)
-* USE_UBJSON: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/?url=auxlua.html#ubjson)
+* USE_DBGMON=1: Include [Lua Debugger Support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
+* USE_REVCON=1: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both the LSP Application Manager and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/?url=Mako.html#acmebot).
+* USE_OPCUA=1: The OPC-UA stack is implemented in Lua and can be found in mako.zip/.lua/opcua. The OPC-UA stack requires a C module. Enable this flag when compiling BAS if you plan on using OPC-UA.
+* USE_FORKPTY=1: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib), which is available for Linux and QNX. This API is required if you plan on using the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) or the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
+* USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy)
+* USE_UBJSON=1: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/?url=auxlua.html#ubjson)
 
 The following macros are required if you plan on using the Let's Encrypt plugin. The macros are pre-set for the following ports: POSIX (Linux/QNX), Windows, VxWorks, and INtime.
 
@@ -231,6 +232,7 @@ See inc/arch/XXX/luaconf.h for details.
 | INtime | inc/arch/NET/INtime inc/arch/INtime | src/arch/INtime/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Linux+epoll | inc/arch/NET/epoll inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/epoll/SoDisp.c |
 | MQX | inc/arch/NET/MQX inc/arch/MQX | src/arch/MQX/ThreadLib.c src/arch/NET/MQX/SoDisp.c |
+| NuttX | inc/arch/NET/Posix inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Nucleus | inc/arch/NET/Nucleus inc/arch/Nucleus | src/arch/Nucleus/ThreadLib.c src/arch/NET/Nucleus/SoDisp.c |
 | Posix (Linux, Mac, QNX) | inc/arch/NET/Posix inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Quadros | inc/arch/Quadros | src/arch/Quadros/ThreadLib.c src/arch/NET/generic/SoDisp.c |

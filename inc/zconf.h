@@ -3,39 +3,34 @@
  * For conditions of distribution and use, see copyright notice in zlib.h 
  */
 
-/* @(#) $Id: zconf.h 4915 2021-12-01 18:26:55Z wini $ */
+/* @(#) $Id: zconf.h 5364 2022-12-23 17:20:13Z wini $ */
 
 #ifndef _ZCONF_H
 #define _ZCONF_H
 
-/*
- * If you *really* need a unique prefix for all types and library functions,
- * compile with -DZ_PREFIX. The "standard" zlib should be compiled without it.
- */
-#ifdef Z_PREFIX
-#  define deflateInit_	z_deflateInit_
-#  define deflate	z_deflate
-#  define deflateEnd	z_deflateEnd
-#  define inflateInit_ 	z_inflateInit_
-#  define inflate	z_inflate
-#  define inflateEnd	z_inflateEnd
-#  define deflateInit2_	z_deflateInit2_
-#  define deflateSetDictionary z_deflateSetDictionary
-#  define deflateCopy	z_deflateCopy
-#  define deflateReset	z_deflateReset
-#  define deflateParams	z_deflateParams
-#  define inflateInit2_	z_inflateInit2_
-#  define inflateSetDictionary z_inflateSetDictionary
-#  define inflateSync	z_inflateSync
-#  define inflateSyncPoint z_inflateSyncPoint
-#  define inflateReset	z_inflateReset
-#  define compress	z_compress
-#  define compress2	z_compress2
-#  define uncompress	z_uncompress
-#  define adler32	z_adler32
-#  define crc32		z_crc32
-#  define get_crc_table z_get_crc_table
+#  define deflateInit_	zba_deflateInit_
+#  define deflate	zba_deflate
+#  define deflateEnd	zba_deflateEnd
+#  define inflateInit_ 	zba_inflateInit_
+#  define inflate	zba_inflate
+#  define inflateEnd	zba_inflateEnd
+#  define deflateInit2_	zba_deflateInit2_
+#  define deflateSetDictionary zba_deflateSetDictionary
+#  define deflateCopy	zba_deflateCopy
+#  define deflateReset	zba_deflateReset
+#  define deflateParams	zba_deflateParams
+#  define inflateInit2_	zba_inflateInit2_
+#  define inflateSetDictionary zba_inflateSetDictionary
+#  define inflateSync	zba_inflateSync
+#  define inflateSyncPoint zba_inflateSyncPoint
+#  define inflateReset	zba_inflateReset
+#  define compress	zba_compress
+#  define compress2	zba_compress2
+#  define uncompress	zba_uncompress
+#  define adler32	zba_adler32
+#  define get_crc_table zba_get_crc_table
 
+#if 0
 #  define Byte		z_Byte
 #  define uInt		z_uInt
 #  define uLong		z_uLong

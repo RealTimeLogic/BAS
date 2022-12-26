@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpCfg.h 5364 2022-12-23 17:20:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2017
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -67,6 +67,68 @@
  *  The HttpSocket API
  ***********************************************************************/
 
+#ifdef __NuttX__
+
+#ifndef CONFIG_LIBC_NETDB
+#error CONFIG_LIBC_NETDB must be defined
+#endif
+#define HttpSocket_shutdown(o) HttpSocket_close(o)
+#define HttpSocket_hardClose(o) HttpSocket_close(o)
+#define HttpSocket_soReuseaddr(o, status) *(status)=0
+#define HttpSocket_soDontroute(o, enableFlag, status) (*(status))=-1
+#define HttpSocket_soBroadcast(o, enableFlag, status) (*(status))=-1
+//#define HttpSocket_setKeepAlive(o,enable,status) (*(status))=-1
+#undef SO_KEEPALIVE
+#define HttpSocket_setmembership(o,enable,ipv6,multiAddrName,intfName) -1
+#define HttpSocket_setTCPNoDelay(o, enable, status) (*(status)=0)
+#define NO_KEEPALIVEEX
+
+#define HttpSockaddr_gethostbyname(o, host, useIp6, status) do {\
+   *(status)=0;\
+   if(host) {\
+      struct addrinfo hints;\
+      struct addrinfo * retAddrInfoPtr;\
+      memset(&hints,0,sizeof(hints)); \
+      hints.ai_flags = AI_ALL;\
+      hints.ai_family = useIp6 ? AF_INET6 : AF_INET;\
+      if(!getaddrinfo(host, 0, &hints, &retAddrInfoPtr))\
+      {\
+         struct addrinfo * addrInfoPtr;\
+         addrInfoPtr = retAddrInfoPtr;\
+         if (addrInfoPtr->ai_family == AF_INET && !useIp6)\
+         {\
+            struct sockaddr_in * tempSockInPtr =\
+               (struct sockaddr_in*)addrInfoPtr->ai_addr;\
+            *((U32*)(o)->addr) = tempSockInPtr->sin_addr.s_addr;\
+            (o)->isIp6=FALSE;\
+         }\
+         else if(useIp6)\
+         {\
+            struct sockaddr_in6 * tempSockIn6Ptr =\
+               (struct sockaddr_in6*)addrInfoPtr->ai_addr;\
+            memcpy((o)->addr, &tempSockIn6Ptr->sin6_addr, 16);\
+            (o)->isIp6=TRUE;\
+         }\
+         else\
+            *(status)=-1;\
+      }\
+      else\
+         *(status)=-1;\
+   }\
+   else if(useIp6) {\
+      memset((o)->addr, 0, 16);\
+      (o)->isIp6=TRUE;\
+   }\
+   else {\
+      unsigned long ipAddr;\
+      ipAddr = baHtonl(INADDR_ANY);\
+      *((U32*)(o)->addr) = (U32)ipAddr;\
+      (o)->isIp6=FALSE;\
+   }\
+} while(0)
+#endif
+
+
 #if defined(FD_CLOEXEC)
 
 #undef HttpSocket_setcloexec
@@ -93,12 +155,22 @@
 #undef socketSend
 #define socketSend
 
-#define HttpSocket_accept(o, conSock, status) do { int e; \
- (conSock)->hndl=accept((o)->hndl, NULL, NULL); \
- if ((conSock)->hndl < 0) {e=errno; \
- if (e==EINTR||e==EAGAIN) continue;*(status)=e?e:-1;break;}    \
- else {*(status)=0;HttpSocket_setcloexec(o);break;} \
- } while(1)
+#define HttpSocket_accept(o, conSock, status) do {                      \
+      int e;                                                            \
+      (conSock)->hndl=accept((o)->hndl, NULL, NULL);                    \
+      if((conSock)->hndl < 0) {                                         \
+         e=errno;                                                       \
+         if(e==EINTR||e==EAGAIN)                                        \
+            continue;                                                   \
+         *(status) = e ? e : -1;                                        \
+         break;                                                         \
+      }                                                                 \
+      else {                                                            \
+         *(status)=0;                                                   \
+         HttpSocket_setcloexec(o);                                      \
+         break;                                                         \
+      }                                                                 \
+   } while(1)
 
 #define HttpSocket_recv(o, data, len, retLen) do { \
   *(retLen)=recv((o)->hndl,data,len,0); \
@@ -164,7 +236,6 @@ do {\
       *(statusPtr)=1;\
 } while(0)
 #endif
-
 
 /* Include the default HttpSocket functions */
 #include <gBsdSock.h>

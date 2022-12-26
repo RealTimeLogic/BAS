@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaServerLib.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaServerLib.h 5355 2022-11-16 10:33:45Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2002 - 2021
  *
@@ -55,7 +55,7 @@ extern "C" {
     This header file contains functions that are used by the web-server.
     The functions might also be useful for the code you design.
     Some of the functions are replacements for functions in the 
-    <a href="http://www.infosys.utas.edu.au/info/documentation/C/CStdLib.html">
+    <a href="../clib.html">
     C Standard Library</a>. 
 
     \sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>

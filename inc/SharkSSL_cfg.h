@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5345 2022-11-14 10:21:17Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5361 2022-12-08 21:32:28Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -193,6 +193,14 @@
 
 
 /**
+ * select 1 to randomize the order of extensions in ClientHello  
+ */
+#ifndef SHARKSSL_RANDOMIZE_EXTENSIONS
+#define SHARKSSL_RANDOMIZE_EXTENSIONS                    1
+#endif
+
+
+/**
  * select 1 to enable support for Server Name Indication
  */
 #ifndef SHARKSSL_ENABLE_SNI
@@ -229,7 +237,7 @@
 /**
  * select 1 to enable renegotiation
  * only secure renegotiation (RFC 5746) is supported
- * note: with the default #define below, it is enabled
+ * note: with the default define below, it is enabled
  * whenever TLS 1.2 is
  * NOTE: IMPLEMENTED ONLY ON THE SERVER SIDE
  */
@@ -240,7 +248,7 @@
 
 /**
  * select 1 to enable DHE_RSA ciphersuites
- * note: with the default #define below, it is enabled
+ * note: with the default define below, it is enabled
  * whenever TLS 1.2 is
  */
 #ifndef SHARKSSL_ENABLE_DHE_RSA
@@ -299,7 +307,7 @@
 
  /** Enable/disable RSASSA-PSS padding in RSA API (RFC 8017)
   *  (#SHARKSSL_ENABLE_RSA_API must be enabled)
-  *  note: with the default #define below, it is enabled
+  *  note: with the default define below, it is enabled
   *  whenever TLS 1.3 is
   */
 #ifndef SHARKSSL_ENABLE_RSASSA_PSS

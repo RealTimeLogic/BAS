@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpAsynchResp.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpAsynchResp.h 5355 2022-11-16 10:33:45Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2004-2012
+ *   COPYRIGHT:  Real Time Logic LLC, 2004-2022
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -178,10 +178,6 @@ typedef struct HttpAsynchResp
           then the server's TCP stack will signal an RST (reset) back
           to the client. This forces a disconnect before client can
           read response data.
-
-          See Appendix 4 in the
-          <a href="http://httpd.apache.org/docs/1.3/misc/fin_wait_2.html">
-          Apache lingering close doc</a> for more information.
 
           Please note that Barracuda is not implementing this by using
           SO_LINGER, but is instead using a lingering close queue.

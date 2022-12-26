@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5116 2022-03-14 23:43:47Z wini $
+ *   $Id: TargConfig.h 5364 2022-12-23 17:20:13Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
@@ -48,8 +48,6 @@
 #include <dirent.h>
 #endif
 
-
-
 /*  The default choice for Posix - change by using another arch
  *  or set at compile time.
  */
@@ -69,29 +67,31 @@
 
 #define ENABLE_REUSE_ADDR 1
 
+#ifdef __NuttX__
+#define USE_DLMALLOC 1
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wundef"
+#pragma GCC diagnostic ignored "-Wstrict-prototypes"
+#else
 /* https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy
  */
 #ifndef USE_REDIRECTOR
 #define USE_REDIRECTOR 1
 #endif
-
 #ifndef USE_UBJSON
 #define USE_UBJSON 1
 #endif
-
 #ifndef USE_REVCON
 #define USE_REVCON 1
 #endif
-
 #ifndef USE_LPIPE
 #define USE_LPIPE 1
 #endif
-
-
 /* https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib
  */
 #ifndef USE_FORKPTY
 #define USE_FORKPTY 1
+#endif
 #endif
 
 #if defined(GNUC) || defined(__GNU__) || defined(__GNUC_MINOR__)

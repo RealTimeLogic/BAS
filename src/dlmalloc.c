@@ -19,8 +19,13 @@
 */
 
 
+#include <balua.h>
 
 #ifdef USE_DLMALLOC
+
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+#endif
 
 #define HAVE_MORECORE             1 
 #define MORECORE                  baSbrk
@@ -62,7 +67,6 @@
 #define LACKS_STDLIB_H  
 
 
-#include <balua.h>
 #include <HttpTrace.h>
 #include <stddef.h>
 #include <string.h>
@@ -267,7 +271,7 @@ ffs( unsigned int i)
   facilities, if supported.  (This helps avoid carrying around and
   possibly fragmenting memory used only for large chunks.)
 
-  All operations (except malloc_stats and mallinfo) have execution
+  All operations (except malloc_stats and bamallinfo) have execution
   times that are bounded by a constant factor of the number of bits in
   a size_t, not counting any clearing in calloc or copying in realloc,
   or actions surrounding MORECORE and MMAP that have times
@@ -439,7 +443,7 @@ DEBUG                    default: NOT defined
   using runtime checks.  The assertions in the check routines spell
   out in more detail the assumptions and invariants underlying the
   algorithms.  The checking is fairly extensive, and will slow down
-  execution noticeably. Calling malloc_stats or mallinfo with DEBUG
+  execution noticeably. Calling malloc_stats or bamallinfo with DEBUG
   set will attempt to check every non-mmapped allocated and free chunk
   in the course of computing the summaries.
 
@@ -526,12 +530,12 @@ USE_DEV_RANDOM             default: 0 (i.e., not used)
   stamping footers. Otherwise, the current time is used.
 
 NO_MALLINFO                default: 0
-  If defined, don't compile "mallinfo". This can be a simple way
+  If defined, don't compile "bamallinfo". This can be a simple way
   of dealing with mismatches between system declarations and
   those in this file.
 
 MALLINFO_FIELD_TYPE        default: size_t
-  The type of the fields in the mallinfo struct. This was originally
+  The type of the fields in the bamallinfo struct. This was originally
   defined as "int" in SVID etc, but is more usefully defined as
   size_t. The value is used only if  HAVE_USR_INCLUDE_MALLOC_H is not set
 
@@ -838,22 +842,22 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 
 #if !NO_MALLINFO
 /*
-  This version of malloc supports the standard SVID/XPG mallinfo
+  This version of malloc supports the standard SVID/XPG bamallinfo
   routine that returns a struct containing usage properties and
   statistics. It should work on any system that has a
-  /usr/include/malloc.h defining struct mallinfo.  The main
-  declaration needed is the mallinfo struct that is returned (by-copy)
-  by mallinfo().  The malloinfo struct contains a bunch of fields that
+  /usr/include/malloc.h defining struct bamallinfo.  The main
+  declaration needed is the bamallinfo struct that is returned (by-copy)
+  by bamallinfo().  The malloinfo struct contains a bunch of fields that
   are not even meaningful in this version of malloc.  These fields are
-  are instead filled by mallinfo() with other numbers that might be of
+  are instead filled by bamallinfo() with other numbers that might be of
   interest.
 
   HAVE_USR_INCLUDE_MALLOC_H should be set if you have a
   /usr/include/malloc.h file that includes a declaration of struct
-  mallinfo.  If so, it is included; else a compliant version is
-  declared below.  These must be precisely the same for mallinfo() to
+  bamallinfo.  If so, it is included; else a compliant version is
+  declared below.  These must be precisely the same for bamallinfo() to
   work.  The original SVID version of this struct, defined on most
-  systems with mallinfo, declares all fields as ints. But some others
+  systems with bamallinfo, declares all fields as ints. But some others
   define as unsigned long. If your system defines the fields using a
   type of different width than listed here, you MUST #include your
   system version and #define HAVE_USR_INCLUDE_MALLOC_H.
@@ -865,10 +869,10 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #include "/usr/include/malloc.h"
 #else /* HAVE_USR_INCLUDE_MALLOC_H */
 #ifndef STRUCT_MALLINFO_DECLARED
-/* HP-UX (and others?) redefines mallinfo unless _STRUCT_MALLINFO is defined */
+/* HP-UX (and others?) redefines bamallinfo unless _STRUCT_MALLINFO is defined */
 #define _STRUCT_MALLINFO
 #define STRUCT_MALLINFO_DECLARED 1
-struct mallinfo {
+struct bamallinfo {
   MALLINFO_FIELD_TYPE arena;    /* non-mmapped space allocated from system */
   MALLINFO_FIELD_TYPE ordblks;  /* number of free chunks */
   MALLINFO_FIELD_TYPE smblks;   /* always 0 */
@@ -930,7 +934,7 @@ extern "C" {
 #define dlrealloc_in_place     realloc_in_place
 #define dlvalloc               valloc
 #define dlpvalloc              pvalloc
-#define dlmallinfo             mallinfo
+#define dlmallinfo             bamallinfo
 #define dlmallopt              mallopt
 #define dlmalloc_trim          malloc_trim
 #define dlmalloc_stats         malloc_stats
@@ -1075,7 +1079,7 @@ DLMALLOC_EXPORT int dlmallopt(int, int);
   malloc_footprint();
   Returns the number of bytes obtained from the system.  The total
   number of bytes allocated by malloc, realloc etc., is less than this
-  value. Unlike mallinfo, this function returns only a precomputed
+  value. Unlike bamallinfo, this function returns only a precomputed
   result, so can be called frequently to monitor memory consumption.
   Even if locks are otherwise defined, this function does not use them,
   so results might not be up to date.
@@ -1087,7 +1091,7 @@ DLMALLOC_EXPORT size_t dlmalloc_footprint(void);
   Returns the maximum number of bytes obtained from the system. This
   value will be greater than current footprint if deallocated space
   has been reclaimed by the system. The peak number of bytes allocated
-  by malloc, realloc etc., is less than this value. Unlike mallinfo,
+  by malloc, realloc etc., is less than this value. Unlike bamallinfo,
   this function returns only a precomputed result, so can be called
   frequently to monitor memory consumption.  Even if locks are
   otherwise defined, this function does not use them, so results might
@@ -1156,7 +1160,7 @@ DLMALLOC_EXPORT void dlmalloc_inspect_all(void(*handler)(void*, void *, size_t, 
 
 #if !NO_MALLINFO
 /*
-  mallinfo()
+  bamallinfo()
   Returns (by copy) a struct containing various summary statistics:
 
   arena:     current total non-mmapped bytes allocated from system
@@ -1177,7 +1181,7 @@ DLMALLOC_EXPORT void dlmalloc_inspect_all(void(*handler)(void*, void *, size_t, 
   be kept as longs, the reported values may wrap around zero and
   thus be inaccurate.
 */
-DLMALLOC_EXPORT struct mallinfo dlmallinfo(void);
+DLMALLOC_EXPORT struct bamallinfo dlmallinfo(void);
 #endif /* NO_MALLINFO */
 
 /*
@@ -1347,7 +1351,7 @@ DLMALLOC_EXPORT int  dlmalloc_trim(size_t);
   (normally sbrk) outside of malloc.
 
   malloc_stats prints only the most commonly interesting statistics.
-  More information can be obtained by calling mallinfo.
+  More information can be obtained by calling bamallinfo.
 */
 DLMALLOC_EXPORT void  dlmalloc_stats(void);
 
@@ -1491,10 +1495,10 @@ DLMALLOC_EXPORT size_t mspace_max_footprint(mspace msp);
 
 #if !NO_MALLINFO
 /*
-  mspace_mallinfo behaves as mallinfo, but reports properties of
+  mspace_mallinfo behaves as bamallinfo, but reports properties of
   the given space.
 */
-DLMALLOC_EXPORT struct mallinfo mspace_mallinfo(mspace msp);
+DLMALLOC_EXPORT struct bamallinfo mspace_mallinfo(mspace msp);
 #endif /* NO_MALLINFO */
 
 /*
@@ -3612,8 +3616,8 @@ static void do_check_malloc_state(mstate m) {
 /* ----------------------------- statistics ------------------------------ */
 
 #if !NO_MALLINFO
-static struct mallinfo internal_mallinfo(mstate m) {
-  struct mallinfo nm = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static struct bamallinfo internal_mallinfo(mstate m) {
+  struct bamallinfo nm = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
   ensure_initialization();
   if (!PREACTION(m)) {
     check_malloc_state(m);
@@ -5494,7 +5498,7 @@ size_t dlmalloc_set_footprint_limit(size_t bytes) {
 }
 
 #if !NO_MALLINFO
-struct mallinfo dlmallinfo(void) {
+struct bamallinfo dlmallinfo(void) {
   return internal_mallinfo(gm);
 }
 #endif /* NO_MALLINFO */
@@ -6076,7 +6080,7 @@ size_t mspace_set_footprint_limit(mspace msp, size_t bytes) {
 }
 
 #if !NO_MALLINFO
-struct mallinfo mspace_mallinfo(mspace msp) {
+struct bamallinfo mspace_mallinfo(mspace msp) {
   mstate ms = (mstate)msp;
   if (!ok_magic(ms)) {
     USAGE_ERROR_ACTION(ms,ms);
@@ -6349,7 +6353,7 @@ History:
       * Fix error occuring when initial sbrk_base not word-aligned.
       * Rely on page size for units instead of SBRK_UNIT to
         avoid surprises about sbrk alignment conventions.
-      * Add mallinfo, mallopt. Thanks to Raymond Nijssen
+      * Add bamallinfo, mallopt. Thanks to Raymond Nijssen
         (raymond@es.ele.tue.nl) for the suggestion.
       * Add `pad' argument to malloc_trim and top_pad mallopt parameter.
       * More precautions for cases where other routines call sbrk,
@@ -6470,7 +6474,7 @@ static void lmPushKV(lua_State* L, const char* key, MALLINFO_FIELD_TYPE val)
 
 static int lMallinfo(lua_State *L)
 {
-   struct mallinfo info = dlmallinfo();
+   struct bamallinfo info = dlmallinfo();
    lua_newtable(L);
    lmPushKV(L,"arena",info.arena);
    lmPushKV(L,"ordblks",info.ordblks);
