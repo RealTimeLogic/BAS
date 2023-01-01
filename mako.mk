@@ -12,6 +12,10 @@
 # tar xvzf ../lpeg-1.0.2.tar.gz
 # mv lpeg-1.0.2 lpeg
 
+ifdef CROSS_COMPILE
+CC = $(CROSS_COMPILE)gcc
+endif
+
 CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 
 # Add required macros and enable large-file support
