@@ -11,7 +11,7 @@ function abort() {
 }
 
 export NOCOMPILE=true
-wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort"LinuxBuild.sh failed"
+wget --no-check-certificate -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort"LinuxBuild.sh failed"
 cd BAS/src || abort
 
 if ! [ -f "lpeg/lpcode.c" ]; then
@@ -36,7 +36,7 @@ cd ..
 
 if ! [ -f "MakoModuleExample/README.txt" ]; then
     echo "Downloading the Mako Server's Lua C Code Module Library"
-    wget https://makoserver.net/download/MakoModuleExample.zip || abort"Cannot download MakoModuleExample.zip"
+    wget --no-check-certificate https://makoserver.net/download/MakoModuleExample.zip || abort"Cannot download MakoModuleExample.zip"
     unzip MakoModuleExample.zip || abort"Unzip failed"
     rm  MakoModuleExample.zip
 fi
