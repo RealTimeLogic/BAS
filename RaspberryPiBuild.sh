@@ -5,7 +5,8 @@
 # This script automates: https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design
 
 function abort() {
-    printf "$1\n\n";
+    echo "See the following tutorial for how to manually build the code:"
+    echo "https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design"
     read -p "Press ENTER to exit script"
     exit 1;
 }
@@ -19,7 +20,7 @@ if ! [ -f "lpeg/lpcode.c" ]; then
     wget http://www.inf.puc-rio.br/~roberto/lpeg/lpeg-1.0.2.tar.gz
     tar xzf lpeg-1.0.2.tar.gz
     rm lpeg-1.0.2.tar.gz
-    mv lpeg-1.0.2 lpeg || abort"failed"
+    mv lpeg-1.0.2 lpeg || abort
 fi
 
 if ! [ -f "lua-protobuf/pb.c" ]; then
@@ -31,7 +32,7 @@ cd ..
 
 echo "Compiling Mako Server"
 export EPOLL=true
-make -f mako.mk || abort"failed"
+make -f mako.mk || abort
 cd ..
 
 if ! [ -f "MakoModuleExample/README.txt" ]; then
@@ -53,10 +54,14 @@ if ! [ -f "lua-periphery/README.md" ]; then
     cd ..
 fi
 
-if ! [ -f "/usr/local/bin/mako" ]; then
+if [[ -z "${CROSS_COMPILE}" ]]; then
     read -p "Do you want to install the Mako Server in /usr/local/bin (Y/n)?" </dev/tty
     if [ "$REPLY" != "n" ]; then
         sudo cp BAS/mako BAS/mako.zip lua-periphery/periphery.so /usr/local/bin/ || abort
         echo "Installed"
+        exit 0
     fi
 fi
+cp lua-periphery/periphery.so BAS/
+echo "The produced files mako, mako.zip, and periphery.so can be found in the BAS/ directory"
+
