@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5351 2022-11-14 13:10:50Z wini $
+ *   $Id: MakoMain.c 5370 2023-01-02 23:34:32Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -159,6 +159,10 @@ extern void myCustomBindings(lua_State *L);
 #else
 #define myCustomBindings(L)
 #endif
+#endif
+
+#ifdef __APPLE__
+#pragma GCC diagnostic ignored "-Wpointer-sign"
 #endif
 
 typedef struct {

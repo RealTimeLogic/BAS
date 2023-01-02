@@ -11,11 +11,11 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 5370 2023-01-02 23:34:32Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2023
  *
- *   This software is copyrighted by and is the sole property of Real
+ *   this software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
  *   the software remain the property of Real Time Logic LLC.  This
  *   software may only be used in accordance with the terms and
@@ -152,7 +152,7 @@ ThreadSemaphore_constructor(ThreadSemaphore* o)
 {
 #ifdef __APPLE__
    char buf[32];
-   sprintf(buf,"BA:%X",(size_t)o);
+   sprintf(buf,"BA:%p",o);
    o->semPtr=sem_open(buf, O_CREAT,S_IRWXU, 0);
    if(!o->semPtr)
    {
