@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5366 2022-12-26 17:46:53Z wini $
+ *   $Id: LspAppMgr.c 5371 2023-01-09 21:45:59Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2022
  *               http://www.realtimelogic.com
@@ -114,27 +114,45 @@ onunload(lua_State* L, int onunloadRef)
 #endif
 
 
-/* Some operating systems such as ThreadX/FileX require special file
- * system initialization.  This variable can be set to a function by
- * platform specific startup code.  (REF-1).  
+/* RTOS devices typically require special file system initialization.
+ * This variable can be set to a function by platform specific startup
+ * code. (REF-1).
  */
 #ifndef NO_BAIO_DISK
 
 int (*platformInitDiskIo)(DiskIo*);
 
-/* File system init code (exampel code for a few targets) */
-#ifdef _WIN32
+/* File system init code for HLOS */
+#if defined _WIN32 || defined(BA_POSIX)
 #include <stdlib.h>
-static int initDiskIo(DiskIo* io)
+static int initDiskIo(DiskIo* dio)
 {
-   DiskIo_setRootDir(io,getenv("USERPROFILE")); /* Set to Window's home dir */
-   return 0;
-}
-#elif defined(BA_POSIX)
-#include <stdlib.h>
-static int initDiskIo(DiskIo* io) {
-   DiskIo_setRootDir(io,getenv("HOME")); /* Linux user's home dir */
-   return 0;
+   static const char appmgr[] = {"lspappmgr"};
+   int retVal;
+   char* buf;
+   IoStat st;
+   IoIntf* io = (IoIntf*)dio;
+   const char* home = getenv("HOME");
+   if( ! home )
+      home = getenv("USERPROFILE");
+   if( ! home )
+   {
+      HttpTrace_printf(0, "'HOME' environment variable not set\n");
+      return -1;
+   }
+   DiskIo_setRootDir(dio,home);
+   if(io->statFp(io,appmgr,&st) && io->mkDirFp(io,appmgr,0))
+   {
+      HttpTrace_printf(0, "Cannot create %s/%s\n",home,appmgr);
+      return -1;
+   }
+   buf=baMalloc(strlen(home)+sizeof(appmgr)+1);
+   if(!buf) return -1;
+   basprintf(buf,"%s/%s",home,appmgr);
+   HttpTrace_printf(0, "Lspappmgr root directory: %s\n", buf);
+   retVal=DiskIo_setRootDir(dio,buf);
+   baFree(buf);
+   return retVal;
 }
 #endif
 /* End file system init code */
