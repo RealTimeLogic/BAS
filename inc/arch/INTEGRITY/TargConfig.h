@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5146 2022-05-10 17:15:54Z wini $
+ *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2011 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2011 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -89,19 +89,7 @@ typedef unsigned long U32;
 #include <stddef.h>
 
 #ifdef USE_DLMALLOC
-#ifdef __cplusplus
-extern "C" {
-#endif
-void init_dlmalloc(char* heapstart, char* heapend);
-void* dlmalloc(size_t bytes);
-void* dlrealloc(void* oldmem, size_t bytes);
-void dlfree(void* mem);
-#define  baMalloc(size) dlmalloc(size)
-#define baRealloc(ptr, size) dlrealloc(ptr, size);
-#define baFree(ptr) dlfree(ptr)
-#ifdef __cplusplus
-}
-#endif
+#include <dlmalloc.h>
 #else
 #include <stdlib.h>
 #define baMalloc(size) malloc(size)

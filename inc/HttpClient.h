@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 5204 2022-07-06 06:54:33Z wini $
+ *   $Id: HttpClient.h 5374 2023-01-24 01:49:04Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2020
  *
@@ -418,6 +418,7 @@ int HttpClient_request(HttpClient* o,
 
 int HttpClient_sendData(HttpClient* o, const void* data, int len);
 int HttpClient_getBufSize(HttpClient* o);
+int HttpClient_readDataBuffered(HttpClient* o, void* buf, int bufSize);
 int HttpClient_readData(HttpClient* o, void* buf, int bufSize);
 const char* HttpClient_getHeaderValue(HttpClient* o, const char* name);
 HttpClientHeader* HttpClient_getHeaders(HttpClient* o, int* hlen);

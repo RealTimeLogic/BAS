@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2014
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -104,13 +104,7 @@ void* baRealloc(void* ptr, unsigned long size);
 #define baFree(ptr) _mem_free(ptr)
 #else
 #include <stddef.h>
-void init_dlmalloc(char* heapstart, char* heapend);
-void* dlmalloc(size_t bytes);
-void* dlrealloc(void* oldmem, size_t bytes);
-void dlfree(void* mem);
-#define baMalloc(size) dlmalloc(size)
-#define baRealloc(ptr, size) dlrealloc(ptr, size)
-#define baFree(ptr) dlfree(ptr)
+#include <dlmalloc.h>
 #endif
 
 #ifdef __cplusplus

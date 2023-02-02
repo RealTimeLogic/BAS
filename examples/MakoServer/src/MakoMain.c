@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5370 2023-01-02 23:34:32Z wini $
+ *   $Id: MakoMain.c 5375 2023-02-02 21:43:05Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -1668,7 +1668,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);
    /* Destroy all objects, including server listening objects. */
-   lua_close(L);
+   balua_close(L);
 
    IoIntf_destructor(blp.vmio); /* Virtual destr */
    baFree(blp.vmio);

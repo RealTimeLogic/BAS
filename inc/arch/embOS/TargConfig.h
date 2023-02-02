@@ -13,7 +13,7 @@
  *
  *   $Id: TargConfig.h 2195 2010-09-16 12:26:20Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -103,22 +103,7 @@ typedef OS_I8  S8;
 #ifndef USE_DLMALLOC
 #define USE_DLMALLOC
 #endif
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-void init_dlmalloc(char* heapstart, char* heapend);
-void* dlmalloc(size_t bytes);
-void* dlrealloc(void* oldmem, size_t bytes);
-void  dlfree(void* mem);
-
-#define baMalloc(size) dlmalloc(size)
-#define baRealloc(ptr, size) dlrealloc(ptr, size);
-#define baFree(ptr) dlfree(ptr)
-#ifdef __cplusplus
-}
-#endif
+#include <dlmalloc.h>
 
 
 /***********************************************************************

@@ -13,7 +13,7 @@
  *
  *   $Id$
  *
- *   COPYRIGHT:  Real Time Logic, 2022
+ *   COPYRIGHT:  Real Time Logic, 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -71,20 +71,7 @@
 #ifndef USE_DLMALLOC
 #define USE_DLMALLOC
 #endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-void init_dlmalloc(char* heapstart, char* heapend);
-void* dlmalloc(size_t bytes);
-void* dlrealloc(void* oldmem, size_t bytes);
-void dlfree(void* mem);
-#ifdef __cplusplus
-}
-#endif
-#define  baMalloc(size) dlmalloc(size)
-#define baRealloc(ptr, size) dlrealloc(ptr, size)
-#define baFree(ptr) dlfree(ptr)
+#include <dlmalloc.h>
 
 
 /***********************************************************************

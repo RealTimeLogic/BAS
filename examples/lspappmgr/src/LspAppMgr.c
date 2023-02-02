@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5371 2023-01-09 21:45:59Z wini $
+ *   $Id: LspAppMgr.c 5375 2023-02-02 21:43:05Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2022
  *               http://www.realtimelogic.com
@@ -78,7 +78,7 @@ extern ZipReader* getLspZipReader(void);
 #endif
 
 #ifdef AUX_LUA_BINDINGS
-AUX_LUA_BINDINGS_DECL
+AUX_LUA_BINDINGS_DECL;
 #else
 #define AUX_LUA_BINDINGS
 #endif
@@ -352,7 +352,7 @@ barracuda(void)
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L); /* Install optional trace logger library */
    luaopen_LED(L); /* Example Lua binding: led.c */
-   AUX_LUA_BINDINGS /* Expands to nothing if not set */
+   AUX_LUA_BINDINGS; /* Expands to nothing if not set */
 
 /* ezip is for release of the LSP app. mgr.
    Some embedded devices may not have a DiskIo.
@@ -457,7 +457,7 @@ barracuda(void)
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);
    /* Destroy all objects, including server listening objects. */
-   lua_close(L);
+   balua_close(L);
 
    IoIntf_destructor(blp.vmio); /* Virtual destr */
 #ifndef NO_BAIO_DISK

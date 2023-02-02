@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5204 2022-07-06 06:54:33Z wini $
+ *   $Id: balua.h 5375 2023-02-02 21:43:05Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
  *
@@ -170,6 +170,9 @@ BA_API void* baLMalloc(lua_State* L, size_t size);
     Creates the Barracuda Lua VM; Note: use macro balua_create(BaLua_param).
 */
 BA_API lua_State* _balua_create(const BaLua_param* p, int version);
+
+/* Close the Barracuda Lua VM */
+BA_API void balua_close(lua_State* L);
 
 /** 
     Install Lua bindings for the default login tracker. See one of the two following C code examples for how to use this function: MakoMain.c or LspAppMgr.c

@@ -20,6 +20,7 @@
 
 
 #include <balua.h>
+#include <dlmalloc.h>
 
 #ifdef USE_DLMALLOC
 
@@ -6416,6 +6417,13 @@ History:
 
 */
 
+static void (*exhaustedCB)(void)=0;
+
+void dlmalloc_setExhaustedCB(void (*cb)(void))
+{
+   exhaustedCB=cb;
+}
+
 
 /* Barracuda Embedded Web Server custom modifications */
 static void*
@@ -6441,7 +6449,10 @@ baSbrk(ptrdiff_t incr)
 
   if (heapPtr + incr > dmalloc_heapend)
   {
-     HttpTrace_printf(0, "baSbrk exhausted!\n");
+     if(exhaustedCB)
+        exhaustedCB();
+     else
+        HttpTrace_printf(0, "baSbrk exhausted!\n");
      return MFAIL;
   }
 
