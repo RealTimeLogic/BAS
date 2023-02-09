@@ -3,7 +3,7 @@
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
-The Barracuda App Server is an embeddable C code library with support for the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS (ThreadX/NetX), Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
+The Barracuda App Server is an embeddable C code library with support for the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
 
 Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
@@ -237,7 +237,7 @@ See inc/arch/XXX/luaconf.h for details.
 | Posix (Linux, Mac, QNX) | inc/arch/NET/Posix inc/arch/Posix | src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Quadros | inc/arch/Quadros | src/arch/Quadros/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | SMX | inc/arch/NET/SMX-NET inc/arch/SMX | src/arch/SMX/ThreadLib.c src/arch/NET/generic/SoDisp.c |
-| ThreadX+NetX | inc/arch/ThreadX | src/arch/ThreadX/ThreadLib.c src/arch/ThreadX/SoDisp.c |
+| Azure RTOS | inc/arch/ThreadX | src/arch/ThreadX/ThreadLib.c src/arch/ThreadX/SoDisp.c |
 | VxWorks | inc/arch/VxWorks | src/arch/VxWorks/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Windows | inc/arch/NET/Windows inc/arch/Windows | src/arch/Windows/ThreadLib.c src/arch/NET/generic/SoDisp.c |
 | Windows CE | inc/arch/NET/CE inc/arch/Windows | src/arch/Windows/ThreadLib.c src/arch/NET/generic/SoDisp.c |
@@ -264,9 +264,9 @@ wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
 
 Note that we are not including SQLite support. You can include SQLite by using the SQLite version provided by Wind River.
 
-## ThreadX/NetX using IAR
+## Azure RTOS using IAR
 
-The following example shows how to compile the generic BAS library for ThreadX and NetX using IAR for ARM. We have the following directories tx (ThreadX), nx (NetX), and BAS.
+The following example shows how to compile the generic BAS library for Azure RTOS using IAR for ARM. We have the following directories tx (ThreadX), nx (NetX), and BAS.
 
 ```
 iccarm -e -c^
