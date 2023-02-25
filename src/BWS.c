@@ -4469,6 +4469,17 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
+#if   (SHARKSSL_BIGINT_WORDSIZE >= 32)
+#define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a##b##c##d
+#define HEX2_TO_WORDSIZE(a,b)     0x##a##b
+#elif (SHARKSSL_BIGINT_WORDSIZE == 16)
+#define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a##b, 0x##c##d
+#define HEX2_TO_WORDSIZE(a,b)     0x##a##b
+#elif (SHARKSSL_BIGINT_WORDSIZE == 8)
+#define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a, 0x##b, 0x##c, 0x##d
+#define HEX2_TO_WORDSIZE(a,b)     0x##a, 0x##b
+#endif
+
 #if ((SHARKSSL_BIGINT_WORDSIZE == 8) || defined(B_BIG_ENDIAN))
 #define memmove_endianess memmove
 
@@ -4487,13 +4498,13 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len);
 
 
 
-#define hsmmcplatform                         0x40  
-#define sleepstore                        0x80  
-#define cpucfgexits                         0x04  
-#define signalpreserve                        0x04  
-#define switcheractive                       0x08  
-#define iommupdata                           0x10  
-#define fixupdevices                         0x20  
+#define hsmmcplatform                           0x40  
+#define sleepstore                          0x80  
+#define cpucfgexits                           0x04  
+#define signalpreserve                          0x04  
+#define switcheractive                         0x08  
+#define iommupdata                             0x10  
+#define fixupdevices                           0x20  
 
 
 
@@ -4676,10 +4687,10 @@ typedef struct SharkSslDHParam
 #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
 typedef struct SharkSslECDHParam
 {
-   U8 *XY;         /* X,Y coordinates */
-   U8 *k;          /* random secret   */
-   U16 xLen;       /* len of X, Y, k  */
-   U16 curveType;  /* curve ID        */
+   U8 *XY;         /* X[,Y] coordinate[s] */
+   U8 *k;          /* random secret       */
+   U16 xLen;       /* len of X, Y, k      */
+   U16 curveType;  /* curve ID            */
 } SharkSslECDHParam;
 #endif
 
@@ -4762,6 +4773,7 @@ U8   controllerregister(U16 delayusecs);
 
 #define SHARKSSL_ECC_USE_NIST       (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1)
 #define SHARKSSL_ECC_USE_BRAINPOOL  (SHARKSSL_ECC_USE_BRAINPOOLP256R1 || SHARKSSL_ECC_USE_BRAINPOOLP384R1 || SHARKSSL_ECC_USE_BRAINPOOLP512R1)
+#define SHARKSSL_ECC_USE_EDWARDS    (SHARKSSL_ECC_USE_CURVE25519 || SHARKSSL_ECC_USE_CURVE448)
 
 
 
@@ -4818,9 +4830,8 @@ extern "\103" {
 #endif
 
 
-#if (SHARKSSL_ENABLE_RSA || (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_BRAINPOOL))
+#if (SHARKSSL_ENABLE_RSA || (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)))
 shtype_tWord remapcfgspace(const shtype_t *mod);
-void envdatamcheck(shtype_t *injectexception, const shtype_t *mod, shtype_tWord *afterhandler);
 
 #if SHARKSSL_OPTIMIZED_BIGINT_ASM
 extern
@@ -4864,6 +4875,9 @@ U8      timerwrite(const shtype_t *o1, const shtype_t *o2);
 void    hotplugpgtable(const shtype_t *o1, const shtype_t *o2, 
                             shtype_t *deltadevices);
 
+void    envdatamcheck(shtype_t *injectexception, const shtype_t *mod, 
+                               shtype_tWord *afterhandler);
+
 int     suspendfinish(shtype_t *injectexception, const shtype_t *mod);
 
 int     chunkmutex(const shtype_t *validconfig, shtype_t *exp,
@@ -4883,11 +4897,15 @@ int     iommumapping(shtype_t *o, const shtype_t *mod);
 U8      eventtimeout(shtype_t *o);
 #endif
 
+#if SHARKSSL_ECC_USE_EDWARDS
+void    shtype_t_copyfull(const shtype_t *src, shtype_t *pciercxcfg448);
+void    shtype_t_swapConditional(shtype_t *o1, shtype_t *o2, U32 swapFlag);
+#endif
+
 #if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSAKEY_CREATE)
 int     aemifdevice(shtype_t *o);
 int     translateaddress(const shtype_t *o1, const shtype_t *o2,
                            shtype_t *deltadevices);
-
 #endif
 
 #ifdef __cplusplus
@@ -4910,12 +4928,17 @@ typedef struct
    shtype_t x, y;
 } SharkSslECPoint;
 
-typedef struct           
-{                                                        
+
+typedef struct SharkSslECCurve          
+{
+   #if SHARKSSL_ECC_USE_EDWARDS  /* virtual functions */
+   int (*setPoint)(struct SharkSslECCurve*, SharkSslECPoint*);  
+   int (*multiply)(struct SharkSslECCurve *, shtype_t *, SharkSslECPoint *);
+   #endif
    shtype_t  prime;                /* prime */
    shtype_t  order;                /* order */
    SharkSslECPoint G;               /* base point */
-   #if SHARKSSL_ECC_USE_BRAINPOOL
+   #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
    shtype_t  a;              /* parameter a */
    #endif
    #if SHARKSSL_ECC_VERIFY_POINT
@@ -4924,6 +4947,8 @@ typedef struct
    U16 bits;     /* the size of the prime in bits */
 } SharkSslECCurve;
 
+#define SharkSslECCurve_bits_Montgomery_flag  0x8000
+
 
 #define SHARKSSL_SECP256R1_POINTLEN        32
 #define SHARKSSL_SECP384R1_POINTLEN        48
@@ -4931,6 +4956,8 @@ typedef struct
 #define SHARKSSL_BRAINPOOLP256R1_POINTLEN  32
 #define SHARKSSL_BRAINPOOLP384R1_POINTLEN  48
 #define SHARKSSL_BRAINPOOLP512R1_POINTLEN  64
+#define SHARKSSL_CURVE25519_POINTLEN       32
+#define SHARKSSL_CURVE448_POINTLEN         56
 
 #ifdef __cplusplus
 extern "\103" {
@@ -4939,11 +4966,24 @@ extern "\103" {
 
 void    clearerrors(SharkSslECCurve *o, U16 rightsvalid);
 
-int     initialdomain(SharkSslECCurve *o, SharkSslECPoint *p);
+int     SharkSslECCurve_setPoint_NB(SharkSslECCurve *o, SharkSslECPoint *p);
+#if SHARKSSL_ECC_USE_EDWARDS
+int     SharkSslECCurve_setPoint_ED(SharkSslECCurve *o, SharkSslECPoint *p);
+#define initialdomain(o, p) (o)->setPoint(o, p)  
+#else
+#define initialdomain(o, p) SharkSslECCurve_setPoint_NB(o, p)
+#endif
 
 #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
-int     unregisterskciphers(SharkSslECCurve *o, shtype_t *k, 
-                                 SharkSslECPoint *deltadevices);
+int     SharkSslECCurve_multiply_NB(SharkSslECCurve *o, shtype_t *k, 
+                                   SharkSslECPoint *deltadevices);
+#if SHARKSSL_ECC_USE_EDWARDS
+int     SharkSslECCurve_multiply_ED(SharkSslECCurve *o, shtype_t *k, 
+                                   SharkSslECPoint *deltadevices);
+#define unregisterskciphers(o,k,r) (o)->multiply(o, k, r)  
+#else
+#define unregisterskciphers(o,k,r) SharkSslECCurve_multiply_NB(o,k,r)
+#endif
 #endif
 
 #if SHARKSSL_ENABLE_ECDSA
@@ -5074,6 +5114,10 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define resumeprepare             28
 #define sa1111disable             28
 
+#define TLS_NAMEDCURVE_CURVE25519                  29
+#define TLS_NAMEDGROUP_CURVE25519                  29
+#define TLS_NAMEDCURVE_CURVE448                    30
+#define TLS_NAMEDGROUP_CURVE448                    30
 
 
 #define probesystem             0
@@ -5444,6 +5488,12 @@ typedef struct SharkSslHSParam
          U8 srvHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
          U8 cliHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
          #if SHARKSSL_USE_ECC
+         #if SHARKSSL_ECC_USE_CURVE448
+         U8 privKeyCURVE448[SHARKSSL_CURVE448_POINTLEN];
+         #endif
+         #if SHARKSSL_ECC_USE_CURVE25519
+         U8 privKeyCURVE25519[SHARKSSL_CURVE25519_POINTLEN];
+         #endif
          #if SHARKSSL_ECC_USE_SECP384R1
          U8 privKeySECP384R1[SHARKSSL_SECP384R1_POINTLEN];
          #endif
@@ -6290,6 +6340,8 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1 == samplingevent);
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1 == entrytrampoline);
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 == resumeprepare);
+   baAssert(SHARKSSL_EC_CURVE_ID_CURVE25519 == TLS_NAMEDCURVE_CURVE25519);
+   baAssert(SHARKSSL_EC_CURVE_ID_CURVE448 == TLS_NAMEDCURVE_CURVE448);
    #endif
 
    while (len >= 2)
@@ -6596,6 +6648,7 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
                savedsigmask = controllerregister(prminstwrite);
                if (savedsigmask)
                {
+                  
                   if (0 == sharkSslHSParam->ecdhParam.xLen)
                   {
                      sharkSslHSParam->ecdhParam.xLen = savedsigmask;
@@ -6787,6 +6840,8 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1 == gpio3config);
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1 == negativeoffset);
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 == sa1111disable);
+   baAssert(SHARKSSL_EC_CURVE_ID_CURVE25519 == TLS_NAMEDCURVE_CURVE25519);
+   baAssert(SHARKSSL_EC_CURVE_ID_CURVE448 == TLS_NAMEDCURVE_CURVE448);
    #endif
 
    while (len >= 2)
@@ -6866,40 +6921,72 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
             paramnamed = (U16)(*registeredevent++) << 8;
             paramnamed += (*registeredevent++);
             len -= 2;
-            if ((0 == kLen) || (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED) || (len < paramnamed))
+            if ((0 == kLen) || (len < paramnamed))
             {
                SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
                return -1;
             }
-            paramnamed--;
-            len--;
-            if (paramnamed != (U16)(kLen << 1))
+            #if SHARKSSL_ECC_USE_EDWARDS
+            if ((prminstwrite == TLS_NAMEDGROUP_CURVE25519) || (prminstwrite == TLS_NAMEDGROUP_CURVE448))
             {
-               SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-               return -1;
-            }
-            hsParam(o)->ecdhParam.xLen = kLen;
-            hsParam(o)->ecdhParam.XY = registeredevent;      
-            #if SHARKSSL_ECC_USE_SECP384R1
-            if (prminstwrite == pciercxcfg034)
-            {
-               hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP384R1;
-            }
-            else
-            #endif
-            {
-               #if SHARKSSL_ECC_USE_SECP256R1
-               if (prminstwrite == ucb1400pdata)
-               {
-                  
-                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP256R1;
-               }
-               else
-               #endif
+               if (paramnamed != kLen)
                {
                   SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
                   return -1;
                }
+            }
+            else
+            #endif
+            {
+               #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
+               if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  return -1;
+               }
+               paramnamed--;
+               len--;
+               if (paramnamed != (U16)(kLen << 1))
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  return -1;
+               }
+               #else
+               SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+               return -1;
+               #endif
+            }
+            hsParam(o)->ecdhParam.xLen = kLen;
+            hsParam(o)->ecdhParam.XY = registeredevent;      
+            switch (prminstwrite)
+            {
+               #if SHARKSSL_ECC_USE_SECP384R1
+               case pciercxcfg034:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP384R1;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_SECP256R1
+               case ucb1400pdata:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP256R1;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_CURVE25519
+               case TLS_NAMEDGROUP_CURVE25519:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_CURVE448
+               case TLS_NAMEDGROUP_CURVE448:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE448;
+                  break;
+               #endif
+
+               default:
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  return -1;
             }
             len -= paramnamed;
             registeredevent += paramnamed;
@@ -7563,11 +7650,17 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                         #if SHARKSSL_ECC_USE_BRAINPOOLP512R1  
                         0x00, resumeprepare,  
                         #endif
+                        #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE448)
+                        0x00, TLS_NAMEDCURVE_CURVE448,
+                        #endif
                         #if SHARKSSL_ECC_USE_SECP384R1
                         0x00, restoretrace,
                         #endif
                         #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
                         0x00, entrytrampoline,  
+                        #endif
+                        #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE25519)
+                        0x00, TLS_NAMEDCURVE_CURVE25519,
                         #endif
                         #if SHARKSSL_ECC_USE_SECP256R1
                         0x00, spannedpages,
@@ -7716,6 +7809,30 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      tb = tp;
                      tp += 4;
                      configvdcdc2.XY = NULL;
+                     #if SHARKSSL_ECC_USE_CURVE448
+                     configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE448;
+                     i = configvdcdc2.xLen = SHARKSSL_CURVE448_POINTLEN;
+                     configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE448;
+                     *tp++ = (U8)(configvdcdc2.curveType >> 8);
+                     *tp++ = (U8)(configvdcdc2.curveType & 0xFF);
+                     *tp++ = (U8)(i >> 8);
+                     *tp++ = (U8)(i & 0xFF);
+                     
+                     SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
+                     tp += i;
+                     #endif
+                     #if SHARKSSL_ECC_USE_CURVE25519
+                     configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
+                     i = configvdcdc2.xLen = SHARKSSL_CURVE25519_POINTLEN;
+                     configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE25519;
+                     *tp++ = (U8)(configvdcdc2.curveType >> 8);
+                     *tp++ = (U8)(configvdcdc2.curveType & 0xFF);
+                     *tp++ = (U8)(i >> 8);
+                     *tp++ = (U8)(i & 0xFF);
+                     
+                     SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
+                     tp += i;
+                     #endif
                      #if SHARKSSL_ECC_USE_SECP384R1
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeySECP384R1;
                      i = configvdcdc2.xLen = SHARKSSL_SECP384R1_POINTLEN;
@@ -8726,14 +8843,26 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   #if (SHARKSSL_ECC_USE_SECP521R1 && (SHARKSSL_ALIGNMENT >= 4))
                   afterhandler = (U8*)regulatorconsumer(afterhandler);
                   #endif
-                  paramnamed = (U16)(sharkSslHSParam->ecdhParam.xLen << 1);
-                  baAssert(paramnamed < 0x00FF);
-                  i = 5;  
                   *tp++ = mcbsp5hwmod;
                   *tp++ = (sharkSslHSParam->ecdhParam.curveType >> 8);
                   *tp++ = (sharkSslHSParam->ecdhParam.curveType & 0xFF);
-                  *tp++ = (U8)(paramnamed + 1);
-                  *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
+                  #if SHARKSSL_ECC_USE_EDWARDS
+                  if ((sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) || 
+                      (sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE448))
+                  {
+                     paramnamed = sharkSslHSParam->ecdhParam.xLen;
+                     *tp++ = (U8)(paramnamed);
+                     i = 4;  
+                  }
+                  else
+                  #endif
+                  {
+                     paramnamed = (U16)(sharkSslHSParam->ecdhParam.xLen << 1);
+                     baAssert(paramnamed < 0x00FF);
+                     *tp++ = (U8)(paramnamed + 1);
+                     *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
+                     i = 5;  
+                  }
                   
                   if ((int)SharkSslCon_AllocationError ==
                       SharkSslECDHParam_ECDH(&(sharkSslHSParam->ecdhParam), signalpreserve, tp))
@@ -9066,18 +9195,33 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                }
                paramnamed = (*registeredevent++);
                hsDataLen--;
-               if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
+               #if SHARKSSL_ECC_USE_EDWARDS
+               if ((sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) || 
+                   (sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE448))
                {
-                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-                  goto regionfixed;
+                  i = sharkSslHSParam->ecdhParam.xLen;
+                  if ((hsDataLen < paramnamed) || (paramnamed != i))
+                  {
+                     SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                     goto regionfixed;
+                  }
                }
-               hsDataLen--;
-               paramnamed--;
-               i = sharkSslHSParam->ecdhParam.xLen;
-               if ((hsDataLen < paramnamed) || (paramnamed != (U16)(i << 1)))
+               else
+               #endif
                {
-                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-                  goto regionfixed;
+                  if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
+                  {
+                     SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                     goto regionfixed;
+                  }
+                  hsDataLen--;
+                  paramnamed--;
+                  i = sharkSslHSParam->ecdhParam.xLen;
+                  if ((hsDataLen < paramnamed) || (paramnamed != (U16)(i << 1)))
+                  {
+                     SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                     goto regionfixed;
+                  }
                }
                sharkSslHSParam->ecdhParam.XY = registeredevent;      
                if ((int)SharkSslCon_AllocationError ==
@@ -9672,16 +9816,36 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             i = controllerregister(paramnamed);
             paramnamed = (*registeredevent++);
             hsDataLen--;
-            if ((0 == i) || (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED))
-            {
-               goto updatereserved;
-            }
-            hsDataLen--;
-            paramnamed--;
-            if ((hsDataLen < paramnamed) || (paramnamed != (U16)(i << 1)))
+            if (0 == i)
             {
                SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
                goto updatereserved;
+            }
+            #if SHARKSSL_ECC_USE_EDWARDS
+            if ((sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) ||
+                (sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE448))
+            {
+               if ((hsDataLen < paramnamed) || (paramnamed != i))
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  goto updatereserved;
+               }
+            }
+            else
+            #endif
+            {
+               if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  goto updatereserved;
+               }
+               hsDataLen--;
+               paramnamed--;
+               if ((hsDataLen < paramnamed) || (paramnamed != (U16)(i << 1)))
+               {
+                  SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+                  goto updatereserved;
+               }
             }
             sharkSslHSParam->ecdhParam.xLen = i;
             
@@ -9907,7 +10071,16 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
             if (sharkSslHSParam->cipherSuite->flags & irqhandlerfixup)
             {
-               paramnamed = (U16)(sharkSslHSParam->ecdhParam.xLen << 1) + 2 + 4;
+               #if SHARKSSL_ECC_USE_EDWARDS
+               if ((sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) || (sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE448))
+               {
+                  paramnamed = sharkSslHSParam->ecdhParam.xLen + 1 + 4;
+               }
+               else
+               #endif
+               {
+                  paramnamed = (U16)(sharkSslHSParam->ecdhParam.xLen << 1) + 2 + 4;
+               }
             }
             else
             #endif
@@ -10006,9 +10179,19 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             baAssert(paramnamed < 0x0100);
             paramnamed--;  
             *tp++ = paramnamed & 0xFF;
-            *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
-            paramnamed--;
-            baAssert(paramnamed == (U16)(sharkSslHSParam->ecdhParam.xLen << 1));
+            #if SHARKSSL_ECC_USE_EDWARDS
+            if ((sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) || 
+                (sharkSslHSParam->ecdhParam.curveType == SHARKSSL_EC_CURVE_ID_CURVE448))
+            {
+               baAssert(paramnamed == sharkSslHSParam->ecdhParam.xLen);
+            }
+            else
+            #endif
+            {
+               *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
+               paramnamed--;
+               baAssert(paramnamed == (U16)(sharkSslHSParam->ecdhParam.xLen << 1));
+            }
          }
          else
          #endif
@@ -10035,7 +10218,12 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                tp += paramnamed;
                tb  = tp;
                baAssert((paramnamed & 1) == 0);
-               paramnamed >>= 1;
+               #if SHARKSSL_ECC_USE_EDWARDS
+               if ((sharkSslHSParam->ecdhParam.curveType != SHARKSSL_EC_CURVE_ID_CURVE25519) && (sharkSslHSParam->ecdhParam.curveType != SHARKSSL_EC_CURVE_ID_CURVE448))
+               #endif
+               {
+                  paramnamed >>= 1;
+               }
             }
             else
             #endif
@@ -10471,7 +10659,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          o->state = configcwfon;
          if (atagsprocfs)
          {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
             goto suspendlocal;
          }
          o->inBuf.temp = 0;
@@ -11269,46 +11456,6 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          alignmentldmstm(sharkSslHSParam);
          return SharkSslCon_Handshake;
 
-      #if SHARKSSL_TLS_1_3
-      #if SHARKSSL_SSL_CLIENT_CODE
-      case SHARKSSL_HANDSHAKETYPE_ENCRYPTED_EXTENSIONS:
-         if (hsDataLen < 2)
-         {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-            goto regionfixed;
-         }
-         paramnamed = (U16)(*registeredevent++) << 8;
-         paramnamed += *registeredevent++;
-         hsDataLen -= 2;
-         if (hsDataLen != paramnamed)
-         {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-            goto updatereserved;
-         }
-
-         if ((paramnamed) && (registerclass(o, registeredevent, paramnamed)))
-         {
-            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
-            goto regionfixed;
-         }
-         registeredevent += paramnamed;
-         ioremapresource(sharkSslHSParam, tp, hsLen);
-         #if SHARKSSL_ENABLE_SESSION_CACHE
-         if (o->flags & startqueue)
-         {
-            o->state = switcherdevice;
-         }
-         else
-         #endif
-         {
-            o->state = logicmembank;
-         }
-         if (atagsprocfs)
-         {
-            goto suspendlocal;
-         }
-         return SharkSslCon_Handshake;
-
       case modifygraph:
          #if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE)
          #if (SHARKSSL_TLS_1_2 && SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH)
@@ -11471,6 +11618,46 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          o->inBuf.temp = 0;
          return SharkSslCon_Handshake;
          #endif  
+
+      #if SHARKSSL_TLS_1_3
+      #if SHARKSSL_SSL_CLIENT_CODE
+      case SHARKSSL_HANDSHAKETYPE_ENCRYPTED_EXTENSIONS:
+         if (hsDataLen < 2)
+         {
+            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+            goto regionfixed;
+         }
+         paramnamed = (U16)(*registeredevent++) << 8;
+         paramnamed += *registeredevent++;
+         hsDataLen -= 2;
+         if (hsDataLen != paramnamed)
+         {
+            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+            goto updatereserved;
+         }
+
+         if ((paramnamed) && (registerclass(o, registeredevent, paramnamed)))
+         {
+            SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
+            goto regionfixed;
+         }
+         registeredevent += paramnamed;
+         ioremapresource(sharkSslHSParam, tp, hsLen);
+         #if SHARKSSL_ENABLE_SESSION_CACHE
+         if (o->flags & startqueue)
+         {
+            o->state = switcherdevice;
+         }
+         else
+         #endif
+         {
+            o->state = logicmembank;
+         }
+         if (atagsprocfs)
+         {
+            goto suspendlocal;
+         }
+         return SharkSslCon_Handshake;
 
       case SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET:
          
@@ -14884,9 +15071,6 @@ kernelstack(Thread* suspendprepare)
    {
       ThreadSemaphore_wait(&o->sem);
       SoDisp_mutexSet(configbootdata->dispatcher);
-#ifdef BA_SELECT_DISP
-      ThreadSemaphore_signal(&configbootdata->sem); 
-#endif
       state = o->state;
       if(state == HttpCmdThreadState_Idle)
       {
@@ -14919,7 +15103,6 @@ parsefeatures(DoubleLink* l)
 }
 
 
-
 static void
 mcspiclass(HttpCmdThread* o, HttpCommand* cmd, HttpDir* dir)
 {
@@ -14930,16 +15113,6 @@ mcspiclass(HttpCmdThread* o, HttpCommand* cmd, HttpDir* dir)
    o->cmd = cmd;
    o->state = HttpCmdThreadState_RunDir;
    ThreadSemaphore_signal(&o->sem);
-
-   
-#ifdef BA_SELECT_DISP
-   {
-      struct HttpCmdThreadPool* configbootdata=o->pool;
-      SoDisp_mutexRelease(configbootdata->dispatcher);
-      ThreadSemaphore_wait(&configbootdata->sem);
-      SoDisp_mutexSet(configbootdata->dispatcher);
-   }
-#endif
 }
 
 
@@ -14993,9 +15166,6 @@ HttpCmdThreadPool_constructor(HttpCmdThreadPool* o,
       (HttpCmdThreadPoolIntf_DoDir)timercompute);
    DoubleList_constructor(&o->freeList);
    DoubleList_constructor(&o->runningList);
-#ifdef BA_SELECT_DISP
-   ThreadSemaphore_constructor(&o->sem);
-#endif
    o->server = uarchbuild;
    o->dispatcher = HttpServer_getDispatcher(uarchbuild);
    o->pool = (HttpCmdThread*)
@@ -15040,9 +15210,6 @@ HttpCmdThreadPool_destructor(HttpCmdThreadPool* o)
       }
       baFree(o->pool);
       o->pool=0;
-#ifdef BA_SELECT_DISP
-      ThreadSemaphore_destructor(&o->sem);
-#endif
    }
 }
 
@@ -22432,27 +22599,27 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    }
 
    #else  
-   #define class3disable(A, B, C, D, X, S, K) { A += F(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+   #define FF(A, B, C, D, X, S, K) { A += F(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define privilegefault(A, B, C, D, X, S, K) { A += G(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define alternativesapplied(A, B, C, D, X, S, K) { A += H(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define hsmmc3resource(A, B, C, D, X, S, K) { A += I(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
 
-   class3disable(a, b, c, d, countshift[0],   7, 0xD76AA478);
-   class3disable(d, a, b, c, countshift[1],  12, 0xE8C7B756);
-   class3disable(c, d, a, b, countshift[2],  17, 0x242070DB);
-   class3disable(b, c, d, a, countshift[3],  22, 0xC1BDCEEE);
-   class3disable(a, b, c, d, countshift[4],   7, 0xF57C0FAF);
-   class3disable(d, a, b, c, countshift[5],  12, 0x4787C62A);
-   class3disable(c, d, a, b, countshift[6],  17, 0xA8304613);
-   class3disable(b, c, d, a, countshift[7],  22, 0xFD469501);
-   class3disable(a, b, c, d, countshift[8],   7, 0x698098D8);
-   class3disable(d, a, b, c, countshift[9],  12, 0x8B44F7AF);
-   class3disable(c, d, a, b, countshift[10], 17, 0xFFFF5BB1);
-   class3disable(b, c, d, a, countshift[11], 22, 0x895CD7BE);
-   class3disable(a, b, c, d, countshift[12],  7, 0x6B901122);
-   class3disable(d, a, b, c, countshift[13], 12, 0xFD987193);
-   class3disable(c, d, a, b, countshift[14], 17, 0xA679438E);
-   class3disable(b, c, d, a, countshift[15], 22, 0x49B40821);
+   FF(a, b, c, d, countshift[0],   7, 0xD76AA478);
+   FF(d, a, b, c, countshift[1],  12, 0xE8C7B756);
+   FF(c, d, a, b, countshift[2],  17, 0x242070DB);
+   FF(b, c, d, a, countshift[3],  22, 0xC1BDCEEE);
+   FF(a, b, c, d, countshift[4],   7, 0xF57C0FAF);
+   FF(d, a, b, c, countshift[5],  12, 0x4787C62A);
+   FF(c, d, a, b, countshift[6],  17, 0xA8304613);
+   FF(b, c, d, a, countshift[7],  22, 0xFD469501);
+   FF(a, b, c, d, countshift[8],   7, 0x698098D8);
+   FF(d, a, b, c, countshift[9],  12, 0x8B44F7AF);
+   FF(c, d, a, b, countshift[10], 17, 0xFFFF5BB1);
+   FF(b, c, d, a, countshift[11], 22, 0x895CD7BE);
+   FF(a, b, c, d, countshift[12],  7, 0x6B901122);
+   FF(d, a, b, c, countshift[13], 12, 0xFD987193);
+   FF(c, d, a, b, countshift[14], 17, 0xA679438E);
+   FF(b, c, d, a, countshift[15], 22, 0x49B40821);
 
    privilegefault(a, b, c, d, countshift[1],   5, 0xF61E2562);
    privilegefault(d, a, b, c, countshift[6],   9, 0xC040B340);
@@ -22508,7 +22675,7 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    #undef hsmmc3resource
    #undef alternativesapplied
    #undef privilegefault
-   #undef class3disable
+   #undef FF
    #endif
 
    registermcasp->state[0] += a;
@@ -33357,6 +33524,22 @@ int SharkSslASN1Create_boolean(SharkSslASN1Create *o, U8 dm9000device)
 
 #define SHARKSSL_DIM_ARR(a)  (sizeof(a)/sizeof(a[0]))
 
+#if SHARKSSL_ECC_USE_EDWARDS
+
+static void swap_endianess(U8 *d, U16 len)
+{
+   U8 *p = d + len;
+   baAssert(0 == (len & 1));
+   while (d < --p)
+   {
+      *d ^= *p;
+      *p ^= *d;
+      *d ^= *p;
+      d++;
+   }
+}
+#endif
+
 
 #if ((SHARKSSL_BIGINT_WORDSIZE != 8) && !defined(B_BIG_ENDIAN))
 
@@ -33841,7 +34024,7 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    baAssert(op & (signalpreserve | switcheractive));
 
    xy = configvdcdc2->XY;
-   x_len  = configvdcdc2->xLen;         
+   x_len = configvdcdc2->xLen;         
    baAssert(x_len);
 
    
@@ -33891,7 +34074,26 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       
       k = temporaryentry;
       sharkssl_rng(k, x_lenk);
-      k[x_lenk - x_len] |= 0x01;  
+      #if SHARKSSL_ECC_USE_CURVE25519
+      if (SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType)
+      {
+         k[x_lenk - x_len] &= ~0x80;  
+         k[x_lenk - x_len] |=  0x40;  
+         k[x_lenk - 1]     &= ~0x07;  
+      }
+      else
+      #endif
+      #if SHARKSSL_ECC_USE_CURVE448
+      if (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType)
+      {
+         k[x_lenk - x_len] |=  0x80;  
+         k[x_lenk - 1]     &= ~0x03;  
+      }
+      else
+      #endif
+      {
+         k[x_lenk - x_len] |=  0x01;  
+      }
 
       #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       #if SHARKSSL_ECC_USE_SECP521R1
@@ -33913,7 +34115,22 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       onenandpartitions(&spi4000check, (U16)(x_lenr * 8), k);
 
       
-      *(consoledevice(&(spi4000check))) &= *(consoledevice(&(nandflashpartition.prime)));
+      #if SHARKSSL_ECC_USE_BRAINPOOL
+      if (
+          #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+          (SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1 != configvdcdc2->curveType) && 
+          #endif 
+          #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+          (SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1 != configvdcdc2->curveType) && 
+          #endif 
+          #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+          (SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 != configvdcdc2->curveType) &&
+          #endif 
+          (1))
+      #endif
+      {
+         *(consoledevice(&(spi4000check))) &= *(consoledevice(&(nandflashpartition.prime)));
+      }
       if (timerwrite(&spi4000check, &nandflashpartition.prime))
       {
          updatepmull(&spi4000check, &nandflashpartition.prime);
@@ -33958,9 +34175,20 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       #endif
       {
          memmove_endianess(out, (U8*)consoledevice(&(point.x)), x_len);
+         #if SHARKSSL_ECC_USE_EDWARDS
+         if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
+         {
+            swap_endianess(out, x_len);
+         }
+         #endif
          out += x_len;
-         memmove_endianess(out, (U8*)consoledevice(&(point.y)), x_len);
-         out += x_len;
+         #if SHARKSSL_ECC_USE_EDWARDS
+         if ((SHARKSSL_EC_CURVE_ID_CURVE25519 != configvdcdc2->curveType) && (SHARKSSL_EC_CURVE_ID_CURVE448 != configvdcdc2->curveType))
+         #endif
+         {
+            memmove_endianess(out, (U8*)consoledevice(&(point.y)), x_len);
+            out += x_len;
+         }
       }
    }
    else if (op & switcheractive)
@@ -34009,7 +34237,19 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       else
       #endif
       {
-         memmove_endianess(temporaryentry, xy, x_len * 2);
+         #if SHARKSSL_ECC_USE_EDWARDS
+         if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
+         {
+            baAssert(x_len == x_lenr);
+            memmove_endianess(temporaryentry, xy, x_len);
+            swap_endianess(temporaryentry, x_len);
+            memset(temporaryentry + x_len, 0, x_len);
+         }
+         else
+         #endif
+         {
+            memmove_endianess(temporaryentry, xy, x_len * 2);
+         }
       }
       updatefrequency(&point, x_lenr * 8, temporaryentry, temporaryentry + x_lenr);
       if (initialdomain(&nandflashpartition, &point))
@@ -34023,6 +34263,9 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
       if (x_len != x_lenr)
       {
+         #if SHARKSSL_ECC_USE_EDWARDS
+         baAssert((SHARKSSL_EC_CURVE_ID_CURVE25519 != configvdcdc2->curveType) && (SHARKSSL_EC_CURVE_ID_CURVE448 != configvdcdc2->curveType));
+         #endif
          temporaryentry += (U16)(x_lenr * 2);
          memmove_endianess(temporaryentry, (U8*)consoledevice(&(keypoint.x)), x_lenr);
          memcpy(out, temporaryentry + x_lenr - x_len, x_len);
@@ -34031,6 +34274,12 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       #endif
       {
          memmove_endianess(out, (U8*)consoledevice(&(keypoint.x)), x_len);
+         #if SHARKSSL_ECC_USE_EDWARDS
+         if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
+         {
+            swap_endianess(out, x_len);
+         }
+         #endif
       }
    }
 
@@ -35148,27 +35397,27 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    }
 
    #else  
-   #define class3disable(A, B, C, D, X, S, K) { A += F(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
+   #define FF(A, B, C, D, X, S, K) { A += F(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define privilegefault(A, B, C, D, X, S, K) { A += G(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define alternativesapplied(A, B, C, D, X, S, K) { A += H(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
    #define hsmmc3resource(A, B, C, D, X, S, K) { A += I(B,C,D) + X + K; A = invalidcontext(A,S) + B; }
 
-   class3disable(a, b, c, d, countshift[0],   7, 0xD76AA478);
-   class3disable(d, a, b, c, countshift[1],  12, 0xE8C7B756);
-   class3disable(c, d, a, b, countshift[2],  17, 0x242070DB);
-   class3disable(b, c, d, a, countshift[3],  22, 0xC1BDCEEE);
-   class3disable(a, b, c, d, countshift[4],   7, 0xF57C0FAF);
-   class3disable(d, a, b, c, countshift[5],  12, 0x4787C62A);
-   class3disable(c, d, a, b, countshift[6],  17, 0xA8304613);
-   class3disable(b, c, d, a, countshift[7],  22, 0xFD469501);
-   class3disable(a, b, c, d, countshift[8],   7, 0x698098D8);
-   class3disable(d, a, b, c, countshift[9],  12, 0x8B44F7AF);
-   class3disable(c, d, a, b, countshift[10], 17, 0xFFFF5BB1);
-   class3disable(b, c, d, a, countshift[11], 22, 0x895CD7BE);
-   class3disable(a, b, c, d, countshift[12],  7, 0x6B901122);
-   class3disable(d, a, b, c, countshift[13], 12, 0xFD987193);
-   class3disable(c, d, a, b, countshift[14], 17, 0xA679438E);
-   class3disable(b, c, d, a, countshift[15], 22, 0x49B40821);
+   FF(a, b, c, d, countshift[0],   7, 0xD76AA478);
+   FF(d, a, b, c, countshift[1],  12, 0xE8C7B756);
+   FF(c, d, a, b, countshift[2],  17, 0x242070DB);
+   FF(b, c, d, a, countshift[3],  22, 0xC1BDCEEE);
+   FF(a, b, c, d, countshift[4],   7, 0xF57C0FAF);
+   FF(d, a, b, c, countshift[5],  12, 0x4787C62A);
+   FF(c, d, a, b, countshift[6],  17, 0xA8304613);
+   FF(b, c, d, a, countshift[7],  22, 0xFD469501);
+   FF(a, b, c, d, countshift[8],   7, 0x698098D8);
+   FF(d, a, b, c, countshift[9],  12, 0x8B44F7AF);
+   FF(c, d, a, b, countshift[10], 17, 0xFFFF5BB1);
+   FF(b, c, d, a, countshift[11], 22, 0x895CD7BE);
+   FF(a, b, c, d, countshift[12],  7, 0x6B901122);
+   FF(d, a, b, c, countshift[13], 12, 0xFD987193);
+   FF(c, d, a, b, countshift[14], 17, 0xA679438E);
+   FF(b, c, d, a, countshift[15], 22, 0x49B40821);
 
    privilegefault(a, b, c, d, countshift[1],   5, 0xF61E2562);
    privilegefault(d, a, b, c, countshift[6],   9, 0xC040B340);
@@ -35224,7 +35473,7 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    #undef hsmmc3resource
    #undef alternativesapplied
    #undef privilegefault
-   #undef class3disable
+   #undef FF
    #endif
 
    registermcasp->state[0] += a;
@@ -38737,6 +38986,8 @@ SHARKSSL_API int SharkSslAesCcmCtx_decrypt(SharkSslAesCcmCtx *registermcasp,
 #define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_SECP521R1_POINTLEN
 #elif SHARKSSL_ECC_USE_BRAINPOOLP512R1
 #define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_BRAINPOOLP512R1_POINTLEN
+#elif SHARKSSL_ECC_USE_CURVE448
+#define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_CURVE448_POINTLEN
 #elif SHARKSSL_ECC_USE_SECP384R1
 #define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_SECP384R1_POINTLEN
 #elif SHARKSSL_ECC_USE_BRAINPOOLP384R1
@@ -38745,6 +38996,8 @@ SHARKSSL_API int SharkSslAesCcmCtx_decrypt(SharkSslAesCcmCtx *registermcasp,
 #define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_SECP256R1_POINTLEN
 #elif SHARKSSL_ECC_USE_BRAINPOOLP256R1
 #define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_BRAINPOOLP256R1_POINTLEN
+#elif SHARKSSL_ECC_USE_CURVE25519
+#define SHARKSSL_MAX_ECC_POINTLEN  SHARKSSL_CURVE25519_POINTLEN
 #else
 #define SHARKSSL_MAX_ECC_POINTLEN  0
 #endif
@@ -39004,6 +39257,16 @@ U8 controllerregister(U16 defaultsdhci1)
       #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
       case SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1:
          return SHARKSSL_BRAINPOOLP512R1_POINTLEN;
+      #endif
+
+      #if SHARKSSL_ECC_USE_CURVE25519
+      case SHARKSSL_EC_CURVE_ID_CURVE25519:
+         return SHARKSSL_CURVE25519_POINTLEN;
+      #endif
+
+      #if SHARKSSL_ECC_USE_CURVE448
+      case SHARKSSL_EC_CURVE_ID_CURVE448:
+         return SHARKSSL_CURVE448_POINTLEN;
       #endif
 
       default:
@@ -43066,6 +43329,18 @@ void unassignedvector(const shtype_t *src, shtype_t *pciercxcfg448)
 }
 
 
+#if SHARKSSL_ECC_USE_EDWARDS
+
+void shtype_t_copyfull(const shtype_t *src, shtype_t *pciercxcfg448)
+{
+   U32 d = (U32)(src->beg - src->mem);
+   pciercxcfg448->len = src->len;
+   pciercxcfg448->beg = pciercxcfg448->mem + d;
+   memcpy(pciercxcfg448->mem, src->mem, (d + src->len) * SHARKSSL__M);
+}
+#endif
+
+
 
 void deviceparse(const shtype_t *o)
 {
@@ -43099,6 +43374,27 @@ U8 eventtimeout(shtype_t *o)
    }
 
    return (U8)(*p == 0);
+}
+#endif
+
+
+#if SHARKSSL_ECC_USE_EDWARDS
+
+void shtype_t_swapConditional(shtype_t *o1, shtype_t *o2, U32 swapFlag)
+{
+   S32 diff_mem = (S32)(o1->mem - o2->mem);
+   S32 diff_beg = (S32)(o1->beg - o2->beg);
+   S16 diff_len = (S16)(o1->len - o2->len);
+   swapFlag = ~(swapFlag - 1);  
+   diff_mem = (S32)((U32)diff_mem & swapFlag);
+   diff_beg = (S32)((U32)diff_beg & swapFlag);
+   diff_len = (S16)((U16)diff_len & (U16)swapFlag);
+   o2->mem += diff_mem;
+   o1->mem -= diff_mem;
+   o2->beg += diff_beg;
+   o1->beg -= diff_beg;
+   o2->len += diff_len;
+   o1->len -= diff_len;
 }
 #endif
 
@@ -43272,7 +43568,7 @@ void shtype_t_mult_(const shtype_t *o1,
 #else
 {
    shtype_tWord *p1, *p2, *pr, *pt;
-   shtype_tDoubleWord  s;
+   shtype_tDoubleWord s;
    U16 x1, x2;
 
    deltadevices->beg = deltadevices->mem;
@@ -43366,12 +43662,9 @@ void shtype_t_mult_(const shtype_t *o1,
       x2 = 0;
       while (pr >= p1)
       {
-         x1 = (U16)((*pr & (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1))) ? 1 : 0);
+         x1 = (U16)(*pr >> (SHARKSSL_BIGINT_WORDSIZE - 1));  
          *pr <<= 1;
-         if (x2)
-         {
-            *pr |= 0x1;
-         }
+         *pr |= x2;
          pr--;
          x2 = x1;
       }
@@ -43388,7 +43681,9 @@ void shtype_t_mult_(const shtype_t *o1,
          s += *--pr + ((shtype_tDoubleWord)a * a);
          *pr-- = (shtype_tWord)s;
          s >>= SHARKSSL_BIGINT_WORDSIZE;
+         #if (!SHARKSSL_BIGINT_TIMING_RESISTANT)
          if (s)
+         #endif
          {
             s += *pr;
             *pr = (shtype_tWord)s;
@@ -43593,7 +43888,7 @@ int suspendfinish(shtype_t *injectexception,
    return 0;
 }
 
-#if (SHARKSSL_ENABLE_RSA || (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_BRAINPOOL))
+#if (SHARKSSL_ENABLE_RSA || (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)))
 
 shtype_tWord remapcfgspace(const shtype_t *mod)
 {
@@ -43669,7 +43964,13 @@ void writebytes(const shtype_t *o1,
          s = (shtype_tDoubleWord)*pr + c;
          *pr-- = (shtype_tWord)s;
          c = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
-      } while (c > 0);
+      }
+      #if (SHARKSSL_BIGINT_TIMING_RESISTANT)
+      while (pr >= deltadevices->beg);
+      #else
+      while (c > 0);
+      #endif
+      
    }
 
    deltadevices->len = (U16)(mod->len + 1);
@@ -47723,13 +48024,15 @@ U16 disableclean(SharkSslCipherSuite* c)
       hwcapfixup += 4;
    }
    else
-      #endif
+   #endif
+   {
       #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
       if (c->flags & suspendenter)
       {
          hwcapfixup += 12;  
       }
-   #endif
+      #endif
+   }
    baAssert(hwcapfixup < (U16)0x8000);
    return ((U16)(hwcapfixup << 1));
 }
@@ -49107,7 +49410,7 @@ SharkSslSCMgr_constructor(SharkSslSCMgr* o, SharkSsl* ssl, U32 coherencytable)
         traceaddress(o, sizeof(vect)/sizeof(vect[0]), (void*)vect)
 
 
-#if SHARKSSL_ECC_USE_BRAINPOOL
+#if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
 #define SharkSslECCurve_constructor1_(c, i, gpio1config) do {     \
    c->bits = i;                                            \
    fpscroffset(&c->prime, gpio1config##_prime);   \
@@ -49137,7 +49440,7 @@ SharkSslSCMgr_constructor(SharkSslSCMgr* o, SharkSsl* ssl, U32 coherencytable)
 
 #else
 #define SharkSslECCurve_constructor_(c, i, gpio1config)           \
-   SharkSslECCurve_constructor1_(c, i, gpio1config);              
+   SharkSslECCurve_constructor1_(c, i, gpio1config);
 
 #endif
 
@@ -49652,7 +49955,7 @@ static void availableasids(shtype_t *o, shtype_t *mod)
       {
          d += (shtype_tWordS)resolverelocs(o, mod);
       }
-      else 
+      else
       {
          d += (shtype_tWordS)updatepmull(o, mod);
       }
@@ -49671,540 +49974,330 @@ void clearerrors(SharkSslECCurve *o, U16 rightsvalid)
 {
    
    #if SHARKSSL_ECC_USE_SECP256R1
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord SECP256R1_prime[8]   = {0xFFFFFFFF, 0x00000001, 0x00000000, 0x00000000,
-                                                           0x00000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
-   static const shtype_tWord SECP256R1_order[8]   = {0xFFFFFFFF, 0x00000000, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xBCE6FAAD, 0xA7179E84, 0xF3B9CAC2, 0xFC632551};
-   static const shtype_tWord SECP256R1_Gx[8]      = {0x6B17D1F2, 0xE12C4247, 0xF8BCE6E5, 0x63A440F2,
-                                                           0x77037D81, 0x2DEB33A0, 0xF4A13945, 0xD898C296};
-   static const shtype_tWord SECP256R1_Gy[8]      = {0x4FE342E2, 0xFE1A7F9B, 0x8EE7EB4A, 0x7C0F9E16,
-                                                           0x2BCE3357, 0x6B315ECE, 0xCBB64068, 0x37BF51F5};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP256R1_a[1]       = {(shtype_tWord)-3};
+   static const shtype_tWord SECP256R1_prime[]   = {HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(00,00,00,01),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                          HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF)};
+   static const shtype_tWord SECP256R1_order[]   = {HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                          HEX4_TO_WORDSIZE(BC,E6,FA,AD), HEX4_TO_WORDSIZE(A7,17,9E,84),
+                                                          HEX4_TO_WORDSIZE(F3,B9,CA,C2), HEX4_TO_WORDSIZE(FC,63,25,51)};
+   static const shtype_tWord SECP256R1_Gx[]      = {HEX4_TO_WORDSIZE(6B,17,D1,F2), HEX4_TO_WORDSIZE(E1,2C,42,47),
+                                                          HEX4_TO_WORDSIZE(F8,BC,E6,E5), HEX4_TO_WORDSIZE(63,A4,40,F2),
+                                                          HEX4_TO_WORDSIZE(77,03,7D,81), HEX4_TO_WORDSIZE(2D,EB,33,A0),
+                                                          HEX4_TO_WORDSIZE(F4,A1,39,45), HEX4_TO_WORDSIZE(D8,98,C2,96)};
+   static const shtype_tWord SECP256R1_Gy[]      = {HEX4_TO_WORDSIZE(4F,E3,42,E2), HEX4_TO_WORDSIZE(FE,1A,7F,9B),
+                                                          HEX4_TO_WORDSIZE(8E,E7,EB,4A), HEX4_TO_WORDSIZE(7C,0F,9E,16),
+                                                          HEX4_TO_WORDSIZE(2B,CE,33,57), HEX4_TO_WORDSIZE(6B,31,5E,CE),
+                                                          HEX4_TO_WORDSIZE(CB,B6,40,68), HEX4_TO_WORDSIZE(37,BF,51,F5)};
+   #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
+   static const shtype_tWord SECP256R1_a[]       = {(shtype_tWord)-3};
    #endif
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP256R1_b[8]       = {0x5AC635D8, 0xAA3A93E7, 0xB3EBBD55, 0x769886BC,
-                                                           0x651D06B0, 0xCC53B0F6, 0x3BCE3C3E, 0x27D2604B};
+   static const shtype_tWord SECP256R1_b[]       = {HEX4_TO_WORDSIZE(5A,C6,35,D8), HEX4_TO_WORDSIZE(AA,3A,93,E7),
+                                                          HEX4_TO_WORDSIZE(B3,EB,BD,55), HEX4_TO_WORDSIZE(76,98,86,BC),
+                                                          HEX4_TO_WORDSIZE(65,1D,06,B0), HEX4_TO_WORDSIZE(CC,53,B0,F6),
+                                                          HEX4_TO_WORDSIZE(3B,CE,3C,3E), HEX4_TO_WORDSIZE(27,D2,60,4B)};
    #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord SECP256R1_prime[16]  = {0xFFFF, 0xFFFF, 0x0000, 0x0001, 0x0000, 0x0000, 0x0000, 0x0000,
-                                                           0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
-   static const shtype_tWord SECP256R1_order[16]  = {0xFFFF, 0xFFFF, 0x0000, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xBCE6, 0xFAAD, 0xA717, 0x9E84, 0xF3B9, 0xCAC2, 0xFC63, 0x2551};
-   static const shtype_tWord SECP256R1_Gx[16]     = {0x6B17, 0xD1F2, 0xE12C, 0x4247, 0xF8BC, 0xE6E5, 0x63A4, 0x40F2,
-                                                           0x7703, 0x7D81, 0x2DEB, 0x33A0, 0xF4A1, 0x3945, 0xD898, 0xC296};
-   static const shtype_tWord SECP256R1_Gy[16]     = {0x4FE3, 0x42E2, 0xFE1A, 0x7F9B, 0x8EE7, 0xEB4A, 0x7C0F, 0x9E16,
-                                                           0x2BCE, 0x3357, 0x6B31, 0x5ECE, 0xCBB6, 0x4068, 0x37BF, 0x51F5};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP256R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP256R1_b[16]      = {0x5AC6, 0x35D8, 0xAA3A, 0x93E7, 0xB3EB, 0xBD55, 0x7698, 0x86BC,
-                                                           0x651D, 0x06B0, 0xCC53, 0xB0F6, 0x3BCE, 0x3C3E, 0x27D2, 0x604B};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-   static const shtype_tWord SECP256R1_prime[32]  = {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x01,
-                                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                                                           0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-   static const shtype_tWord SECP256R1_order[32]  = {0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xBC, 0xE6, 0xFA, 0xAD, 0xA7, 0x17, 0x9E, 0x84,
-                                                           0xF3, 0xB9, 0xCA, 0xC2, 0xFC, 0x63, 0x25, 0x51};
-   static const shtype_tWord SECP256R1_Gx[32]     = {0x6B, 0x17, 0xD1, 0xF2, 0xE1, 0x2C, 0x42, 0x47,
-                                                           0xF8, 0xBC, 0xE6, 0xE5, 0x63, 0xA4, 0x40, 0xF2,
-                                                           0x77, 0x03, 0x7D, 0x81, 0x2D, 0xEB, 0x33, 0xA0,
-                                                           0xF4, 0xA1, 0x39, 0x45, 0xD8, 0x98, 0xC2, 0x96};
-   static const shtype_tWord SECP256R1_Gy[32]     = {0x4F, 0xE3, 0x42, 0xE2, 0xFE, 0x1A, 0x7F, 0x9B,
-                                                           0x8E, 0xE7, 0xEB, 0x4A, 0x7C, 0x0F, 0x9E, 0x16,
-                                                           0x2B, 0xCE, 0x33, 0x57, 0x6B, 0x31, 0x5E, 0xCE,
-                                                           0xCB, 0xB6, 0x40, 0x68, 0x37, 0xBF, 0x51, 0xF5};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP256R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP256R1_b[32]      = {0x5A, 0xC6, 0x35, 0xD8, 0xAA, 0x3A, 0x93, 0xE7,
-                                                           0xB3, 0xEB, 0xBD, 0x55, 0x76, 0x98, 0x86, 0xBC,
-                                                           0x65, 0x1D, 0x06, 0xB0, 0xCC, 0x53, 0xB0, 0xF6,
-                                                           0x3B, 0xCE, 0x3C, 0x3E, 0x27, 0xD2, 0x60, 0x4B};
-   #endif
-   #endif  
    #endif  
 
    #if SHARKSSL_ECC_USE_SECP384R1
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord SECP384R1_prime[12]  = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFE,
-                                                           0xFFFFFFFF, 0x00000000, 0x00000000, 0xFFFFFFFF};
-   static const shtype_tWord SECP384R1_order[12]  = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xC7634D81, 0xF4372DDF,
-                                                           0x581A0DB2, 0x48B0A77A, 0xECEC196A, 0xCCC52973};
-   static const shtype_tWord SECP384R1_Gx[12]     = {0xAA87CA22, 0xBE8B0537, 0x8EB1C71E, 0xF320AD74,
-                                                           0x6E1D3B62, 0x8BA79B98, 0x59F741E0, 0x82542A38,
-                                                           0x5502F25D, 0xBF55296C, 0x3A545E38, 0x72760AB7};
-   static const shtype_tWord SECP384R1_Gy[12]     = {0x3617DE4A, 0x96262C6F, 0x5D9E98BF, 0x9292DC29,
-                                                           0xF8F41DBD, 0x289A147C, 0xE9DA3113, 0xB5F0B8C0,
-                                                           0x0A60B1CE, 0x1D7E819D, 0x7A431D7C, 0x90EA0E5F};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP384R1_a[1]       = {(shtype_tWord)-3};
+   static const shtype_tWord SECP384R1_prime[]  = {HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FE),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                         HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(FF,FF,FF,FF)};
+   static const shtype_tWord SECP384R1_order[]  = {HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(C7,63,4D,81), HEX4_TO_WORDSIZE(F4,37,2D,DF),
+                                                         HEX4_TO_WORDSIZE(58,1A,0D,B2), HEX4_TO_WORDSIZE(48,B0,A7,7A),
+                                                         HEX4_TO_WORDSIZE(EC,EC,19,6A), HEX4_TO_WORDSIZE(CC,C5,29,73)};
+   static const shtype_tWord SECP384R1_Gx[]     = {HEX4_TO_WORDSIZE(AA,87,CA,22), HEX4_TO_WORDSIZE(BE,8B,05,37),
+                                                         HEX4_TO_WORDSIZE(8E,B1,C7,1E), HEX4_TO_WORDSIZE(F3,20,AD,74),
+                                                         HEX4_TO_WORDSIZE(6E,1D,3B,62), HEX4_TO_WORDSIZE(8B,A7,9B,98),
+                                                         HEX4_TO_WORDSIZE(59,F7,41,E0), HEX4_TO_WORDSIZE(82,54,2A,38),
+                                                         HEX4_TO_WORDSIZE(55,02,F2,5D), HEX4_TO_WORDSIZE(BF,55,29,6C),
+                                                         HEX4_TO_WORDSIZE(3A,54,5E,38), HEX4_TO_WORDSIZE(72,76,0A,B7)};
+   static const shtype_tWord SECP384R1_Gy[]     = {HEX4_TO_WORDSIZE(36,17,DE,4A), HEX4_TO_WORDSIZE(96,26,2C,6F),
+                                                         HEX4_TO_WORDSIZE(5D,9E,98,BF), HEX4_TO_WORDSIZE(92,92,DC,29),
+                                                         HEX4_TO_WORDSIZE(F8,F4,1D,BD), HEX4_TO_WORDSIZE(28,9A,14,7C),
+                                                         HEX4_TO_WORDSIZE(E9,DA,31,13), HEX4_TO_WORDSIZE(B5,F0,B8,C0),
+                                                         HEX4_TO_WORDSIZE(0A,60,B1,CE), HEX4_TO_WORDSIZE(1D,7E,81,9D),
+                                                         HEX4_TO_WORDSIZE(7A,43,1D,7C), HEX4_TO_WORDSIZE(90,EA,0E,5F)};
+   #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
+   static const shtype_tWord SECP384R1_a[]      = {(shtype_tWord)-3};
    #endif
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP384R1_b[12]      = {0xB3312FA7, 0xE23EE7E4, 0x988E056B, 0xE3F82D19,
-                                                           0x181D9C6E, 0xFE814112, 0x0314088F, 0x5013875A,
-                                                           0xC656398D, 0x8A2ED19D, 0x2A85C8ED, 0xD3EC2AEF};
+   static const shtype_tWord SECP384R1_b[]      = {HEX4_TO_WORDSIZE(B3,31,2F,A7), HEX4_TO_WORDSIZE(E2,3E,E7,E4),
+                                                         HEX4_TO_WORDSIZE(98,8E,05,6B), HEX4_TO_WORDSIZE(E3,F8,2D,19),
+                                                         HEX4_TO_WORDSIZE(18,1D,9C,6E), HEX4_TO_WORDSIZE(FE,81,41,12),
+                                                         HEX4_TO_WORDSIZE(03,14,08,8F), HEX4_TO_WORDSIZE(50,13,87,5A),
+                                                         HEX4_TO_WORDSIZE(C6,56,39,8D), HEX4_TO_WORDSIZE(8A,2E,D1,9D),
+                                                         HEX4_TO_WORDSIZE(2A,85,C8,ED), HEX4_TO_WORDSIZE(D3,EC,2A,EF)};
    #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord SECP384R1_prime[24]  = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFE,
-                                                           0xFFFF, 0xFFFF, 0x0000, 0x0000, 0x0000, 0x0000, 0xFFFF, 0xFFFF};
-   static const shtype_tWord SECP384R1_order[24]  = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xC763, 0x4D81, 0xF437, 0x2DDF,
-                                                           0x581A, 0x0DB2, 0x48B0, 0xA77A, 0xECEC, 0x196A, 0xCCC5, 0x2973};
-   static const shtype_tWord SECP384R1_Gx[24]     = {0xAA87, 0xCA22, 0xBE8B, 0x0537, 0x8EB1, 0xC71E, 0xF320, 0xAD74,
-                                                           0x6E1D, 0x3B62, 0x8BA7, 0x9B98, 0x59F7, 0x41E0, 0x8254, 0x2A38,
-                                                           0x5502, 0xF25D, 0xBF55, 0x296C, 0x3A54, 0x5E38, 0x7276, 0x0AB7};
-   static const shtype_tWord SECP384R1_Gy[24]     = {0x3617, 0xDE4A, 0x9626, 0x2C6F, 0x5D9E, 0x98BF, 0x9292, 0xDC29,
-                                                           0xF8F4, 0x1DBD, 0x289A, 0x147C, 0xE9DA, 0x3113, 0xB5F0, 0xB8C0,
-                                                           0x0A60, 0xB1CE, 0x1D7E, 0x819D, 0x7A43, 0x1D7C, 0x90EA, 0x0E5F};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP384R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP384R1_b[24]      = {0xB331, 0x2FA7, 0xE23E, 0xE7E4, 0x988E, 0x056B, 0xE3F8, 0x2D19,
-                                                           0x181D, 0x9C6E, 0xFE81, 0x4112, 0x0314, 0x088F, 0x5013, 0x875A,
-                                                           0xC656, 0x398D, 0x8A2E, 0xD19D, 0x2A85, 0xC8ED, 0xD3EC, 0x2AEF};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-   static const shtype_tWord SECP384R1_prime[48]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
-                                                           0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF};
-   static const shtype_tWord SECP384R1_order[48]  = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xC7, 0x63, 0x4D, 0x81, 0xF4, 0x37, 0x2D, 0xDF,
-                                                           0x58, 0x1A, 0x0D, 0xB2, 0x48, 0xB0, 0xA7, 0x7A,
-                                                           0xEC, 0xEC, 0x19, 0x6A, 0xCC, 0xC5, 0x29, 0x73};
-   static const shtype_tWord SECP384R1_Gx[48]     = {0xAA, 0x87, 0xCA, 0x22, 0xBE, 0x8B, 0x05, 0x37,
-                                                           0x8E, 0xB1, 0xC7, 0x1E, 0xF3, 0x20, 0xAD, 0x74,
-                                                           0x6E, 0x1D, 0x3B, 0x62, 0x8B, 0xA7, 0x9B, 0x98,
-                                                           0x59, 0xF7, 0x41, 0xE0, 0x82, 0x54, 0x2A, 0x38,
-                                                           0x55, 0x02, 0xF2, 0x5D, 0xBF, 0x55, 0x29, 0x6C,
-                                                           0x3A, 0x54, 0x5E, 0x38, 0x72, 0x76, 0x0A, 0xB7};
-   static const shtype_tWord SECP384R1_Gy[48]     = {0x36, 0x17, 0xDE, 0x4A, 0x96, 0x26, 0x2C, 0x6F,
-                                                           0x5D, 0x9E, 0x98, 0xBF, 0x92, 0x92, 0xDC, 0x29,
-                                                           0xF8, 0xF4, 0x1D, 0xBD, 0x28, 0x9A, 0x14, 0x7C,
-                                                           0xE9, 0xDA, 0x31, 0x13, 0xB5, 0xF0, 0xB8, 0xC0,
-                                                           0x0A, 0x60, 0xB1, 0xCE, 0x1D, 0x7E, 0x81, 0x9D,
-                                                           0x7A, 0x43, 0x1D, 0x7C, 0x90, 0xEA, 0x0E, 0x5F};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP384R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP384R1_b[48]      = {0xB3, 0x31, 0x2F, 0xA7, 0xE2, 0x3E, 0xE7, 0xE4,
-                                                           0x98, 0x8E, 0x05, 0x6B, 0xE3, 0xF8, 0x2D, 0x19,
-                                                           0x18, 0x1D, 0x9C, 0x6E, 0xFE, 0x81, 0x41, 0x12,
-                                                           0x03, 0x14, 0x08, 0x8F, 0x50, 0x13, 0x87, 0x5A,
-                                                           0xC6, 0x56, 0x39, 0x8D, 0x8A, 0x2E, 0xD1, 0x9D,
-                                                           0x2A, 0x85, 0xC8, 0xED, 0xD3, 0xEC, 0x2A, 0xEF};
-   #endif
-   #endif  
    #endif  
 
    #if SHARKSSL_ECC_USE_SECP521R1
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord SECP521R1_prime[17]  = {0x000001FF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF};
-   static const shtype_tWord SECP521R1_order[17]  = {0x000001FF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                                           0xFFFFFFFA, 0x51868783, 0xBF2F966B, 0x7FCC0148,
-                                                           0xF709A5D0, 0x3BB5C9B8, 0x899C47AE, 0xBB6FB71E,
-                                                           0x91386409};
-   static const shtype_tWord SECP521R1_Gx[17]     = {0x000000C6, 0x858E06B7, 0x0404E9CD, 0x9E3ECB66,
-                                                           0x2395B442, 0x9C648139, 0x053FB521, 0xF828AF60,
-                                                           0x6B4D3DBA, 0xA14B5E77, 0xEFE75928, 0xFE1DC127,
-                                                           0xA2FFA8DE, 0x3348B3C1, 0x856A429B, 0xF97E7E31,
-                                                           0xC2E5BD66};
-   static const shtype_tWord SECP521R1_Gy[17]     = {0x00000118, 0x39296A78, 0x9A3BC004, 0x5C8A5FB4,
-                                                           0x2C7D1BD9, 0x98F54449, 0x579B4468, 0x17AFBD17,
-                                                           0x273E662C, 0x97EE7299, 0x5EF42640, 0xC550B901,
-                                                           0x3FAD0761, 0x353C7086, 0xA272C240, 0x88BE9476,
-                                                           0x9FD16650};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP521R1_a[1]       = {(shtype_tWord)-3};
+   static const shtype_tWord SECP521R1_prime[]  = {HEX2_TO_WORDSIZE(01,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF)};
+   static const shtype_tWord SECP521R1_order[]  = {HEX2_TO_WORDSIZE(01,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                         HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FA),
+                                                         HEX4_TO_WORDSIZE(51,86,87,83), HEX4_TO_WORDSIZE(BF,2F,96,6B),
+                                                         HEX4_TO_WORDSIZE(7F,CC,01,48), HEX4_TO_WORDSIZE(F7,09,A5,D0),
+                                                         HEX4_TO_WORDSIZE(3B,B5,C9,B8), HEX4_TO_WORDSIZE(89,9C,47,AE),
+                                                         HEX4_TO_WORDSIZE(BB,6F,B7,1E), HEX4_TO_WORDSIZE(91,38,64,09)};
+   static const shtype_tWord SECP521R1_Gx[]     = {HEX2_TO_WORDSIZE(00,C6),
+                                                         HEX4_TO_WORDSIZE(85,8E,06,B7), HEX4_TO_WORDSIZE(04,04,E9,CD),
+                                                         HEX4_TO_WORDSIZE(9E,3E,CB,66), HEX4_TO_WORDSIZE(23,95,B4,42),
+                                                         HEX4_TO_WORDSIZE(9C,64,81,39), HEX4_TO_WORDSIZE(05,3F,B5,21),
+                                                         HEX4_TO_WORDSIZE(F8,28,AF,60), HEX4_TO_WORDSIZE(6B,4D,3D,BA),
+                                                         HEX4_TO_WORDSIZE(A1,4B,5E,77), HEX4_TO_WORDSIZE(EF,E7,59,28),
+                                                         HEX4_TO_WORDSIZE(FE,1D,C1,27), HEX4_TO_WORDSIZE(A2,FF,A8,DE),
+                                                         HEX4_TO_WORDSIZE(33,48,B3,C1), HEX4_TO_WORDSIZE(85,6A,42,9B),
+                                                         HEX4_TO_WORDSIZE(F9,7E,7E,31), HEX4_TO_WORDSIZE(C2,E5,BD,66)};
+   static const shtype_tWord SECP521R1_Gy[]     = {HEX2_TO_WORDSIZE(01,18),
+                                                         HEX4_TO_WORDSIZE(39,29,6A,78), HEX4_TO_WORDSIZE(9A,3B,C0,04),
+                                                         HEX4_TO_WORDSIZE(5C,8A,5F,B4), HEX4_TO_WORDSIZE(2C,7D,1B,D9),
+                                                         HEX4_TO_WORDSIZE(98,F5,44,49), HEX4_TO_WORDSIZE(57,9B,44,68),
+                                                         HEX4_TO_WORDSIZE(17,AF,BD,17), HEX4_TO_WORDSIZE(27,3E,66,2C),
+                                                         HEX4_TO_WORDSIZE(97,EE,72,99), HEX4_TO_WORDSIZE(5E,F4,26,40),
+                                                         HEX4_TO_WORDSIZE(C5,50,B9,01), HEX4_TO_WORDSIZE(3F,AD,07,61),
+                                                         HEX4_TO_WORDSIZE(35,3C,70,86), HEX4_TO_WORDSIZE(A2,72,C2,40),
+                                                         HEX4_TO_WORDSIZE(88,BE,94,76), HEX4_TO_WORDSIZE(9F,D1,66,50)};
+   #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
+   static const shtype_tWord SECP521R1_a[]       = {(shtype_tWord)-3};
    #endif
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP521R1_b[17]      = {0x00000051, 0x953EB961, 0x8E1C9A1F, 0x929A21A0,
-                                                           0xB68540EE, 0xA2DA725B, 0x99B315F3, 0xB8B48991,
-                                                           0x8EF109E1, 0x56193951, 0xEC7E937B, 0x1652C0BD,
-                                                           0x3BB1BF07, 0x3573DF88, 0x3D2C34F1, 0xEF451FD4,
-                                                           0x6B503F00};
+   static const shtype_tWord SECP521R1_b[]      = {HEX2_TO_WORDSIZE(00,51),
+                                                         HEX4_TO_WORDSIZE(95,3E,B9,61), HEX4_TO_WORDSIZE(8E,1C,9A,1F),
+                                                         HEX4_TO_WORDSIZE(92,9A,21,A0), HEX4_TO_WORDSIZE(B6,85,40,EE),
+                                                         HEX4_TO_WORDSIZE(A2,DA,72,5B), HEX4_TO_WORDSIZE(99,B3,15,F3),
+                                                         HEX4_TO_WORDSIZE(B8,B4,89,91), HEX4_TO_WORDSIZE(8E,F1,09,E1),
+                                                         HEX4_TO_WORDSIZE(56,19,39,51), HEX4_TO_WORDSIZE(EC,7E,93,7B),
+                                                         HEX4_TO_WORDSIZE(16,52,C0,BD), HEX4_TO_WORDSIZE(3B,B1,BF,07),
+                                                         HEX4_TO_WORDSIZE(35,73,DF,88), HEX4_TO_WORDSIZE(3D,2C,34,F1),
+                                                         HEX4_TO_WORDSIZE(EF,45,1F,D4), HEX4_TO_WORDSIZE(6B,50,3F,00)};
    #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord SECP521R1_prime[33]  = {0x01FF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF};
-   static const shtype_tWord SECP521R1_order[33]  = {0x01FF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
-                                                           0xFFFF, 0xFFFA, 0x5186, 0x8783, 0xBF2F, 0x966B, 0x7FCC, 0x0148,
-                                                           0xF709, 0xA5D0, 0x3BB5, 0xC9B8, 0x899C, 0x47AE, 0xBB6F, 0xB71E,
-                                                           0x9138, 0x6409};
-   static const shtype_tWord SECP521R1_Gx[33]     = {0x00C6, 0x858E, 0x06B7, 0x0404, 0xE9CD, 0x9E3E, 0xCB66,
-                                                           0x2395, 0xB442, 0x9C64, 0x8139, 0x053F, 0xB521, 0xF828, 0xAF60,
-                                                           0x6B4D, 0x3DBA, 0xA14B, 0x5E77, 0xEFE7, 0x5928, 0xFE1D, 0xC127,
-                                                           0xA2FF, 0xA8DE, 0x3348, 0xB3C1, 0x856A, 0x429B, 0xF97E, 0x7E31,
-                                                           0xC2E5, 0xBD66};
-   static const shtype_tWord SECP521R1_Gy[33]     = {0x0118, 0x3929, 0x6A78, 0x9A3B, 0xC004, 0x5C8A, 0x5FB4,
-                                                           0x2C7D, 0x1BD9, 0x98F5, 0x4449, 0x579B, 0x4468, 0x17AF, 0xBD17,
-                                                           0x273E, 0x662C, 0x97EE, 0x7299, 0x5EF4, 0x2640, 0xC550, 0xB901,
-                                                           0x3FAD, 0x0761, 0x353C, 0x7086, 0xA272, 0xC240, 0x88BE, 0x9476,
-                                                           0x9FD1, 0x6650};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP521R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP521R1_b[33]      = {0x0051, 0x953E, 0xB961, 0x8E1C, 0x9A1F, 0x929A, 0x21A0,
-                                                           0xB685, 0x40EE, 0xA2DA, 0x725B, 0x99B3, 0x15F3, 0xB8B4, 0x8991,
-                                                           0x8EF1, 0x09E1, 0x5619, 0x3951, 0xEC7E, 0x937B, 0x1652, 0xC0BD,
-                                                           0x3BB1, 0xBF07, 0x3573, 0xDF88, 0x3D2C, 0x34F1, 0xEF45, 0x1FD4,
-                                                           0x6B50, 0x3F00};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-   static const shtype_tWord SECP521R1_prime[66]  = {0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF};
-   static const shtype_tWord SECP521R1_order[66]  = {0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                           0xFF, 0xFF, 0xFF, 0xFA, 0x51, 0x86, 0x87, 0x83,
-                                                           0xBF, 0x2F, 0x96, 0x6B, 0x7F, 0xCC, 0x01, 0x48,
-                                                           0xF7, 0x09, 0xA5, 0xD0, 0x3B, 0xB5, 0xC9, 0xB8,
-                                                           0x89, 0x9C, 0x47, 0xAE, 0xBB, 0x6F, 0xB7, 0x1E,
-                                                           0x91, 0x38, 0x64, 0x09};
-   static const shtype_tWord SECP521R1_Gx[66]     = {0x00, 0xC6, 0x85, 0x8E, 0x06, 0xB7,
-                                                           0x04, 0x04, 0xE9, 0xCD, 0x9E, 0x3E, 0xCB, 0x66,
-                                                           0x23, 0x95, 0xB4, 0x42, 0x9C, 0x64, 0x81, 0x39,
-                                                           0x05, 0x3F, 0xB5, 0x21, 0xF8, 0x28, 0xAF, 0x60,
-                                                           0x6B, 0x4D, 0x3D, 0xBA, 0xA1, 0x4B, 0x5E, 0x77,
-                                                           0xEF, 0xE7, 0x59, 0x28, 0xFE, 0x1D, 0xC1, 0x27,
-                                                           0xA2, 0xFF, 0xA8, 0xDE, 0x33, 0x48, 0xB3, 0xC1,
-                                                           0x85, 0x6A, 0x42, 0x9B, 0xF9, 0x7E, 0x7E, 0x31,
-                                                           0xC2, 0xE5, 0xBD, 0x66};
-   static const shtype_tWord SECP521R1_Gy[66]     = {0x01, 0x18, 0x39, 0x29, 0x6A, 0x78,
-                                                           0x9A, 0x3B, 0xC0, 0x04, 0x5C, 0x8A, 0x5F, 0xB4,
-                                                           0x2C, 0x7D, 0x1B, 0xD9, 0x98, 0xF5, 0x44, 0x49,
-                                                           0x57, 0x9B, 0x44, 0x68, 0x17, 0xAF, 0xBD, 0x17,
-                                                           0x27, 0x3E, 0x66, 0x2C, 0x97, 0xEE, 0x72, 0x99,
-                                                           0x5E, 0xF4, 0x26, 0x40, 0xC5, 0x50, 0xB9, 0x01,
-                                                           0x3F, 0xAD, 0x07, 0x61, 0x35, 0x3C, 0x70, 0x86,
-                                                           0xA2, 0x72, 0xC2, 0x40, 0x88, 0xBE, 0x94, 0x76,
-                                                           0x9F, 0xD1, 0x66, 0x50};
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   static const shtype_tWord SECP521R1_a[1]       = {(shtype_tWord)-3};
-   #endif
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord SECP521R1_b[66]      = {0x00, 0x51, 0x95, 0x3E, 0xB9, 0x61,
-                                                           0x8E, 0x1C, 0x9A, 0x1F, 0x92, 0x9A, 0x21, 0xA0,
-                                                           0xB6, 0x85, 0x40, 0xEE, 0xA2, 0xDA, 0x72, 0x5B,
-                                                           0x99, 0xB3, 0x15, 0xF3, 0xB8, 0xB4, 0x89, 0x91,
-                                                           0x8E, 0xF1, 0x09, 0xE1, 0x56, 0x19, 0x39, 0x51,
-                                                           0xEC, 0x7E, 0x93, 0x7B, 0x16, 0x52, 0xC0, 0xBD,
-                                                           0x3B, 0xB1, 0xBF, 0x07, 0x35, 0x73, 0xDF, 0x88,
-                                                           0x3D, 0x2C, 0x34, 0xF1, 0xEF, 0x45, 0x1F, 0xD4,
-                                                           0x6B, 0x50, 0x3F, 0x00};
-   #endif
-   #endif  
    #endif  
 
    #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
    
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord brainpoolP256R1_prime[8]   = {0xA9FB57DB, 0xA1EEA9BC, 0x3E660A90, 0x9D838D72,
-                                                                 0x6E3BF623, 0xD5262028, 0x2013481D, 0x1F6E5377};
-   static const shtype_tWord brainpoolP256R1_order[8]   = {0xA9FB57DB, 0xA1EEA9BC, 0x3E660A90, 0x9D838D71,
-                                                                 0x8C397AA3, 0xB561A6F7, 0x901E0E82, 0x974856A7};
+   static const shtype_tWord brainpoolP256R1_prime[]   = {HEX4_TO_WORDSIZE(A9,FB,57,DB), HEX4_TO_WORDSIZE(A1,EE,A9,BC),
+                                                                HEX4_TO_WORDSIZE(3E,66,0A,90), HEX4_TO_WORDSIZE(9D,83,8D,72),
+                                                                HEX4_TO_WORDSIZE(6E,3B,F6,23), HEX4_TO_WORDSIZE(D5,26,20,28),
+                                                                HEX4_TO_WORDSIZE(20,13,48,1D), HEX4_TO_WORDSIZE(1F,6E,53,77)};
+   static const shtype_tWord brainpoolP256R1_order[]   = {HEX4_TO_WORDSIZE(A9,FB,57,DB), HEX4_TO_WORDSIZE(A1,EE,A9,BC),
+                                                                HEX4_TO_WORDSIZE(3E,66,0A,90), HEX4_TO_WORDSIZE(9D,83,8D,71),
+                                                                HEX4_TO_WORDSIZE(8C,39,7A,A3), HEX4_TO_WORDSIZE(B5,61,A6,F7),
+                                                                HEX4_TO_WORDSIZE(90,1E,0E,82), HEX4_TO_WORDSIZE(97,48,56,A7)};
    
-   static const shtype_tWord brainpoolP256R1_Gx[8]      = {0x8E1F767A, 0x9E119BDF, 0x704C311D, 0x6B892AD3, 
-                                                                 0x80DE4D9A, 0xB97CF30A, 0x27C0D92D, 0x351FD10C};
-   static const shtype_tWord brainpoolP256R1_Gy[8]      = {0x14EB78C6, 0x026EB0A2, 0x16FDF6E8, 0xDFBD8B03, 
-                                                                 0xA618F259, 0xCD950162, 0x9A4FE948, 0xA0917A17};
-   static const shtype_tWord brainpoolP256R1_a[8]       = {0x1E4676AB, 0xD666BC17, 0x95EC1E5E, 0x6398556E, 
-                                                                 0xA68123F1, 0xC1D20C64, 0xD5D18EDF, 0x69696261};
+   static const shtype_tWord brainpoolP256R1_Gx[]      = {HEX4_TO_WORDSIZE(8E,1F,76,7A), HEX4_TO_WORDSIZE(9E,11,9B,DF),
+                                                                HEX4_TO_WORDSIZE(70,4C,31,1D), HEX4_TO_WORDSIZE(6B,89,2A,D3),
+                                                                HEX4_TO_WORDSIZE(80,DE,4D,9A), HEX4_TO_WORDSIZE(B9,7C,F3,0A),
+                                                                HEX4_TO_WORDSIZE(27,C0,D9,2D), HEX4_TO_WORDSIZE(35,1F,D1,0C)};
+   static const shtype_tWord brainpoolP256R1_Gy[]      = {HEX4_TO_WORDSIZE(14,EB,78,C6), HEX4_TO_WORDSIZE(02,6E,B0,A2),
+                                                                HEX4_TO_WORDSIZE(16,FD,F6,E8), HEX4_TO_WORDSIZE(DF,BD,8B,03),
+                                                                HEX4_TO_WORDSIZE(A6,18,F2,59), HEX4_TO_WORDSIZE(CD,95,01,62),
+                                                                HEX4_TO_WORDSIZE(9A,4F,E9,48), HEX4_TO_WORDSIZE(A0,91,7A,17)};
+   static const shtype_tWord brainpoolP256R1_a[]       = {HEX4_TO_WORDSIZE(1E,46,76,AB), HEX4_TO_WORDSIZE(D6,66,BC,17),
+                                                                HEX4_TO_WORDSIZE(95,EC,1E,5E), HEX4_TO_WORDSIZE(63,98,55,6E),
+                                                                HEX4_TO_WORDSIZE(A6,81,23,F1), HEX4_TO_WORDSIZE(C1,D2,0C,64),
+                                                                HEX4_TO_WORDSIZE(D5,D1,8E,DF), HEX4_TO_WORDSIZE(69,69,62,61)};
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP256R1_b[8]       = {0x26DC5C6C, 0xE94A4B44, 0xF330B5D9, 0xBBD77CBF, 
-                                                                 0x95841629, 0x5CF7E1CE, 0x6BCCDC18, 0xFF8C07B6};
+   static const shtype_tWord brainpoolP256R1_b[]       = {HEX4_TO_WORDSIZE(26,DC,5C,6C), HEX4_TO_WORDSIZE(E9,4A,4B,44),
+                                                                HEX4_TO_WORDSIZE(F3,30,B5,D9), HEX4_TO_WORDSIZE(BB,D7,7C,BF),
+                                                                HEX4_TO_WORDSIZE(95,84,16,29), HEX4_TO_WORDSIZE(5C,F7,E1,CE),
+                                                                HEX4_TO_WORDSIZE(6B,CC,DC,18), HEX4_TO_WORDSIZE(FF,8C,07,B6)};
    #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord brainpoolP256R1_prime[16]  = {0xA9FB, 0x57DB, 0xA1EE, 0xA9BC, 0x3E66, 0x0A90, 0x9D83, 0x8D72,
-                                                                 0x6E3B, 0xF623, 0xD526, 0x2028, 0x2013, 0x481D, 0x1F6E, 0x5377};
-   static const shtype_tWord brainpoolP256R1_order[16]  = {0xA9FB, 0x57DB, 0xA1EE, 0xA9BC, 0x3E66, 0x0A90, 0x9D83, 0x8D71,
-                                                                 0x8C39, 0x7AA3, 0xB561, 0xA6F7, 0x901E, 0x0E82, 0x9748, 0x56A7};
-   static const shtype_tWord brainpoolP256R1_Gx[16]     = {0x8E1F, 0x767A, 0x9E11, 0x9BDF, 0x704C, 0x311D, 0x6B89, 0x2AD3, 
-                                                                 0x80DE, 0x4D9A, 0xB97C, 0xF30A, 0x27C0, 0xD92D, 0x351F, 0xD10C};
-   static const shtype_tWord brainpoolP256R1_Gy[16]     = {0x14EB, 0x78C6, 0x026E, 0xB0A2, 0x16FD, 0xF6E8, 0xDFBD, 0x8B03, 
-                                                                 0xA618, 0xF259, 0xCD95, 0x0162, 0x9A4F, 0xE948, 0xA091, 0x7A17};
-   static const shtype_tWord brainpoolP256R1_a[16]      = {0x1E46, 0x76AB, 0xD666, 0xBC17, 0x95EC, 0x1E5E, 0x6398, 0x556E, 
-                                                                 0xA681, 0x23F1, 0xC1D2, 0x0C64, 0xD5D1, 0x8EDF, 0x6969, 0x6261};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP256R1_b[16]      = {0x26DC, 0x5C6C, 0xE94A, 0x4B44, 0xF330, 0xB5D9, 0xBBD7, 0x7CBF, 
-                                                                 0x9584, 0x1629, 0x5CF7, 0xE1CE, 0x6BCC, 0xDC18, 0xFF8C, 0x07B6};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)                         
-   static const shtype_tWord brainpoolP256R1_prime[32]  = {0xA9, 0xFB, 0x57, 0xDB, 0xA1, 0xEE, 0xA9, 0xBC,
-                                                                 0x3E, 0x66, 0x0A, 0x90, 0x9D, 0x83, 0x8D, 0x72,
-                                                                 0x6E, 0x3B, 0xF6, 0x23, 0xD5, 0x26, 0x20, 0x28,
-                                                                 0x20, 0x13, 0x48, 0x1D, 0x1F, 0x6E, 0x53, 0x77};
-   static const shtype_tWord brainpoolP256R1_order[32]  = {0xA9, 0xFB, 0x57, 0xDB, 0xA1, 0xEE, 0xA9, 0xBC,
-                                                                 0x3E, 0x66, 0x0A, 0x90, 0x9D, 0x83, 0x8D, 0x71, 
-                                                                 0x8C, 0x39, 0x7A, 0xA3, 0xB5, 0x61, 0xA6, 0xF7, 
-                                                                 0x90, 0x1E, 0x0E, 0x82, 0x97, 0x48, 0x56, 0xA7};
-   static const shtype_tWord brainpoolP256R1_Gx[32]     = {0x8E, 0x1F, 0x76, 0x7A, 0x9E, 0x11, 0x9B, 0xDF, 
-                                                                 0x70, 0x4C, 0x31, 0x1D, 0x6B, 0x89, 0x2A, 0xD3, 
-                                                                 0x80, 0xDE, 0x4D, 0x9A, 0xB9, 0x7C, 0xF3, 0x0A, 
-                                                                 0x27, 0xC0, 0xD9, 0x2D, 0x35, 0x1F, 0xD1, 0x0C};
-   static const shtype_tWord brainpoolP256R1_Gy[32]     = {0x14, 0xEB, 0x78, 0xC6, 0x02, 0x6E, 0xB0, 0xA2, 
-                                                                 0x16, 0xFD, 0xF6, 0xE8, 0xDF, 0xBD, 0x8B, 0x03, 
-                                                                 0xA6, 0x18, 0xF2, 0x59, 0xCD, 0x95, 0x01, 0x62, 
-                                                                 0x9A, 0x4F, 0xE9, 0x48, 0xA0, 0x91, 0x7A, 0x17};
-   static const shtype_tWord brainpoolP256R1_a[32]      = {0x1E, 0x46, 0x76, 0xAB, 0xD6, 0x66, 0xBC, 0x17, 
-                                                                 0x95, 0xEC, 0x1E, 0x5E, 0x63, 0x98, 0x55, 0x6E, 
-                                                                 0xA6, 0x81, 0x23, 0xF1, 0xC1, 0xD2, 0x0C, 0x64, 
-                                                                 0xD5, 0xD1, 0x8E, 0xDF, 0x69, 0x69, 0x62, 0x61};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP256R1_b[32]      = {0x26, 0xDC, 0x5C, 0x6C, 0xE9, 0x4A, 0x4B, 0x44, 
-                                                                 0xF3, 0x30, 0xB5, 0xD9, 0xBB, 0xD7, 0x7C, 0xBF, 
-                                                                 0x95, 0x84, 0x16, 0x29, 0x5C, 0xF7, 0xE1, 0xCE, 
-                                                                 0x6B, 0xCC, 0xDC, 0x18, 0xFF, 0x8C, 0x07, 0xB6};
-   #endif
-   #endif  
    #endif  
 
    #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
    
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord brainpoolP384R1_prime[12]  = {0x8CB91E82, 0xA3386D28, 0x0F5D6F7E, 0x50E641DF, 
-                                                                 0x152F7109, 0xED5456B4, 0x12B1DA19, 0x7FB71123, 
-                                                                 0xACD3A729, 0x901D1A71, 0x87470013, 0x3107EC53};
-   static const shtype_tWord brainpoolP384R1_order[12]  = {0x8CB91E82, 0xA3386D28, 0x0F5D6F7E, 0x50E641DF, 
-                                                                 0x152F7109, 0xED5456B3, 0x1F166E6C, 0xAC0425A7, 
-                                                                 0xCF3AB6AF, 0x6B7FC310, 0x3B883202, 0xE9046565};
+   static const shtype_tWord brainpoolP384R1_prime[]  = {HEX4_TO_WORDSIZE(8C,B9,1E,82), HEX4_TO_WORDSIZE(A3,38,6D,28),
+                                                               HEX4_TO_WORDSIZE(0F,5D,6F,7E), HEX4_TO_WORDSIZE(50,E6,41,DF),
+                                                               HEX4_TO_WORDSIZE(15,2F,71,09), HEX4_TO_WORDSIZE(ED,54,56,B4),
+                                                               HEX4_TO_WORDSIZE(12,B1,DA,19), HEX4_TO_WORDSIZE(7F,B7,11,23),
+                                                               HEX4_TO_WORDSIZE(AC,D3,A7,29), HEX4_TO_WORDSIZE(90,1D,1A,71),
+                                                               HEX4_TO_WORDSIZE(87,47,00,13), HEX4_TO_WORDSIZE(31,07,EC,53)};
+   static const shtype_tWord brainpoolP384R1_order[]  = {HEX4_TO_WORDSIZE(8C,B9,1E,82), HEX4_TO_WORDSIZE(A3,38,6D,28),
+                                                               HEX4_TO_WORDSIZE(0F,5D,6F,7E), HEX4_TO_WORDSIZE(50,E6,41,DF),
+                                                               HEX4_TO_WORDSIZE(15,2F,71,09), HEX4_TO_WORDSIZE(ED,54,56,B3),
+                                                               HEX4_TO_WORDSIZE(1F,16,6E,6C), HEX4_TO_WORDSIZE(AC,04,25,A7),
+                                                               HEX4_TO_WORDSIZE(CF,3A,B6,AF), HEX4_TO_WORDSIZE(6B,7F,C3,10),
+                                                               HEX4_TO_WORDSIZE(3B,88,32,02), HEX4_TO_WORDSIZE(E9,04,65,65)};
    
-   static const shtype_tWord brainpoolP384R1_Gx[12]     = {0x85007533, 0x88F53FC1, 0x9CDD0DCF, 0xBACD0099, 
-                                                                 0x068B264E, 0xF95C2164, 0x94C378E9, 0x9D202F23, 
-                                                                 0x66FC80E8, 0xD5A886BF, 0xA189DEEB, 0xD438FBC1};
-   static const shtype_tWord brainpoolP384R1_Gy[12]     = {0x2CF4A062, 0x458968B5, 0xC6162566, 0x4F21DDB6, 
-                                                                 0xA180ACD4, 0xD5719217, 0xF88309A3, 0x8F0737FC, 
-                                                                 0xF5E0D246, 0xC7996F55, 0xE738B331, 0x0DE140A5};
-   static const shtype_tWord brainpoolP384R1_a[12]      = {0x7C338021, 0xA2E8C0D1, 0x400A8FDF, 0x42B00C60, 
-                                                                 0xE7FFE9E5, 0x35529374, 0x936771B9, 0xD7F10DB4, 
-                                                                 0x75D7F3FE, 0xF157B07B, 0xDB26B895, 0x466C3C99};
+   static const shtype_tWord brainpoolP384R1_Gx[]     = {HEX4_TO_WORDSIZE(85,00,75,33), HEX4_TO_WORDSIZE(88,F5,3F,C1),
+                                                               HEX4_TO_WORDSIZE(9C,DD,0D,CF), HEX4_TO_WORDSIZE(BA,CD,00,99),
+                                                               HEX4_TO_WORDSIZE(06,8B,26,4E), HEX4_TO_WORDSIZE(F9,5C,21,64),
+                                                               HEX4_TO_WORDSIZE(94,C3,78,E9), HEX4_TO_WORDSIZE(9D,20,2F,23),
+                                                               HEX4_TO_WORDSIZE(66,FC,80,E8), HEX4_TO_WORDSIZE(D5,A8,86,BF),
+                                                               HEX4_TO_WORDSIZE(A1,89,DE,EB), HEX4_TO_WORDSIZE(D4,38,FB,C1)};
+   static const shtype_tWord brainpoolP384R1_Gy[]     = {HEX4_TO_WORDSIZE(2C,F4,A0,62), HEX4_TO_WORDSIZE(45,89,68,B5),
+                                                               HEX4_TO_WORDSIZE(C6,16,25,66), HEX4_TO_WORDSIZE(4F,21,DD,B6),
+                                                               HEX4_TO_WORDSIZE(A1,80,AC,D4), HEX4_TO_WORDSIZE(D5,71,92,17),
+                                                               HEX4_TO_WORDSIZE(F8,83,09,A3), HEX4_TO_WORDSIZE(8F,07,37,FC),
+                                                               HEX4_TO_WORDSIZE(F5,E0,D2,46), HEX4_TO_WORDSIZE(C7,99,6F,55),
+                                                               HEX4_TO_WORDSIZE(E7,38,B3,31), HEX4_TO_WORDSIZE(0D,E1,40,A5)};
+   static const shtype_tWord brainpoolP384R1_a[]      = {HEX4_TO_WORDSIZE(7C,33,80,21), HEX4_TO_WORDSIZE(A2,E8,C0,D1),
+                                                               HEX4_TO_WORDSIZE(40,0A,8F,DF), HEX4_TO_WORDSIZE(42,B0,0C,60),
+                                                               HEX4_TO_WORDSIZE(E7,FF,E9,E5), HEX4_TO_WORDSIZE(35,52,93,74),
+                                                               HEX4_TO_WORDSIZE(93,67,71,B9), HEX4_TO_WORDSIZE(D7,F1,0D,B4),
+                                                               HEX4_TO_WORDSIZE(75,D7,F3,FE), HEX4_TO_WORDSIZE(F1,57,B0,7B),
+                                                               HEX4_TO_WORDSIZE(DB,26,B8,95), HEX4_TO_WORDSIZE(46,6C,3C,99)};
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP384R1_b[12]      = {0x04A8C7DD, 0x22CE2826, 0x8B39B554, 0x16F0447C, 
-                                                                 0x2FB77DE1, 0x07DCD2A6, 0x2E880EA5, 0x3EEB62D5, 
-                                                                 0x7CB43902, 0x95DBC994, 0x3AB78696, 0xFA504C11};
+   static const shtype_tWord brainpoolP384R1_b[]      = {HEX4_TO_WORDSIZE(04,A8,C7,DD), HEX4_TO_WORDSIZE(22,CE,28,26),
+                                                               HEX4_TO_WORDSIZE(8B,39,B5,54), HEX4_TO_WORDSIZE(16,F0,44,7C),
+                                                               HEX4_TO_WORDSIZE(2F,B7,7D,E1), HEX4_TO_WORDSIZE(07,DC,D2,A6),
+                                                               HEX4_TO_WORDSIZE(2E,88,0E,A5), HEX4_TO_WORDSIZE(3E,EB,62,D5),
+                                                               HEX4_TO_WORDSIZE(7C,B4,39,02), HEX4_TO_WORDSIZE(95,DB,C9,94),
+                                                               HEX4_TO_WORDSIZE(3A,B7,86,96), HEX4_TO_WORDSIZE(FA,50,4C,11)};
    #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord brainpoolP384R1_prime[24]  = {0x8CB9, 0x1E82, 0xA338, 0x6D28, 0x0F5D, 0x6F7E, 0x50E6, 0x41DF, 
-                                                                 0x152F, 0x7109, 0xED54, 0x56B4, 0x12B1, 0xDA19, 0x7FB7, 0x1123, 
-                                                                 0xACD3, 0xA729, 0x901D, 0x1A71, 0x8747, 0x0013, 0x3107, 0xEC53};
-   static const shtype_tWord brainpoolP384R1_order[24]  = {0x8CB9, 0x1E82, 0xA338, 0x6D28, 0x0F5D, 0x6F7E, 0x50E6, 0x41DF, 
-                                                                 0x152F, 0x7109, 0xED54, 0x56B3, 0x1F16, 0x6E6C, 0xAC04, 0x25A7, 
-                                                                 0xCF3A, 0xB6AF, 0x6B7F, 0xC310, 0x3B88, 0x3202, 0xE904, 0x6565};
-   static const shtype_tWord brainpoolP384R1_Gx[24]     = {0x8500, 0x7533, 0x88F5, 0x3FC1, 0x9CDD, 0x0DCF, 0xBACD, 0x0099, 
-                                                                 0x068B, 0x264E, 0xF95C, 0x2164, 0x94C3, 0x78E9, 0x9D20, 0x2F23, 
-                                                                 0x66FC, 0x80E8, 0xD5A8, 0x86BF, 0xA189, 0xDEEB, 0xD438, 0xFBC1};
-   static const shtype_tWord brainpoolP384R1_Gy[24]     = {0x2CF4, 0xA062, 0x4589, 0x68B5, 0xC616, 0x2566, 0x4F21, 0xDDB6, 
-                                                                 0xA180, 0xACD4, 0xD571, 0x9217, 0xF883, 0x09A3, 0x8F07, 0x37FC, 
-                                                                 0xF5E0, 0xD246, 0xC799, 0x6F55, 0xE738, 0xB331, 0x0DE1, 0x40A5};
-   static const shtype_tWord brainpoolP384R1_a[24]      = {0x7C33, 0x8021, 0xA2E8, 0xC0D1, 0x400A, 0x8FDF, 0x42B0, 0x0C60, 
-                                                                 0xE7FF, 0xE9E5, 0x3552, 0x9374, 0x9367, 0x71B9, 0xD7F1, 0x0DB4, 
-                                                                 0x75D7, 0xF3FE, 0xF157, 0xB07B, 0xDB26, 0xB895, 0x466C, 0x3C99};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP384R1_b[24]      = {0x04A8, 0xC7DD, 0x22CE, 0x2826, 0x8B39, 0xB554, 0x16F0, 0x447C, 
-                                                                 0x2FB7, 0x7DE1, 0x07DC, 0xD2A6, 0x2E88, 0x0EA5, 0x3EEB, 0x62D5, 
-                                                                 0x7CB4, 0x3902, 0x95DB, 0xC994, 0x3AB7, 0x8696, 0xFA50, 0x4C11};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)                         
-   static const shtype_tWord brainpoolP384R1_prime[48]  = {0x8C, 0xB9, 0x1E, 0x82, 0xA3, 0x38, 0x6D, 0x28, 
-                                                                 0x0F, 0x5D, 0x6F, 0x7E, 0x50, 0xE6, 0x41, 0xDF, 
-                                                                 0x15, 0x2F, 0x71, 0x09, 0xED, 0x54, 0x56, 0xB4, 
-                                                                 0x12, 0xB1, 0xDA, 0x19, 0x7F, 0xB7, 0x11, 0x23, 
-                                                                 0xAC, 0xD3, 0xA7, 0x29, 0x90, 0x1D, 0x1A, 0x71, 
-                                                                 0x87, 0x47, 0x00, 0x13, 0x31, 0x07, 0xEC, 0x53};
-   static const shtype_tWord brainpoolP384R1_order[48]  = {0x8C, 0xB9, 0x1E, 0x82, 0xA3, 0x38, 0x6D, 0x28, 
-                                                                 0x0F, 0x5D, 0x6F, 0x7E, 0x50, 0xE6, 0x41, 0xDF, 
-                                                                 0x15, 0x2F, 0x71, 0x09, 0xED, 0x54, 0x56, 0xB3, 
-                                                                 0x1F, 0x16, 0x6E, 0x6C, 0xAC, 0x04, 0x25, 0xA7, 
-                                                                 0xCF, 0x3A, 0xB6, 0xAF, 0x6B, 0x7F, 0xC3, 0x10, 
-                                                                 0x3B, 0x88, 0x32, 0x02, 0xE9, 0x04, 0x65, 0x65};
-   static const shtype_tWord brainpoolP384R1_Gx[48]     = {0x85, 0x00, 0x75, 0x33, 0x88, 0xF5, 0x3F, 0xC1, 
-                                                                 0x9C, 0xDD, 0x0D, 0xCF, 0xBA, 0xCD, 0x00, 0x99, 
-                                                                 0x06, 0x8B, 0x26, 0x4E, 0xF9, 0x5C, 0x21, 0x64, 
-                                                                 0x94, 0xC3, 0x78, 0xE9, 0x9D, 0x20, 0x2F, 0x23, 
-                                                                 0x66, 0xFC, 0x80, 0xE8, 0xD5, 0xA8, 0x86, 0xBF, 
-                                                                 0xA1, 0x89, 0xDE, 0xEB, 0xD4, 0x38, 0xFB, 0xC1};
-   static const shtype_tWord brainpoolP384R1_Gy[48]     = {0x2C, 0xF4, 0xA0, 0x62, 0x45, 0x89, 0x68, 0xB5, 
-                                                                 0xC6, 0x16, 0x25, 0x66, 0x4F, 0x21, 0xDD, 0xB6, 
-                                                                 0xA1, 0x80, 0xAC, 0xD4, 0xD5, 0x71, 0x92, 0x17, 
-                                                                 0xF8, 0x83, 0x09, 0xA3, 0x8F, 0x07, 0x37, 0xFC, 
-                                                                 0xF5, 0xE0, 0xD2, 0x46, 0xC7, 0x99, 0x6F, 0x55, 
-                                                                 0xE7, 0x38, 0xB3, 0x31, 0x0D, 0xE1, 0x40, 0xA5};
-   static const shtype_tWord brainpoolP384R1_a[48]      = {0x7C, 0x33, 0x80, 0x21, 0xA2, 0xE8, 0xC0, 0xD1, 
-                                                                 0x40, 0x0A, 0x8F, 0xDF, 0x42, 0xB0, 0x0C, 0x60, 
-                                                                 0xE7, 0xFF, 0xE9, 0xE5, 0x35, 0x52, 0x93, 0x74, 
-                                                                 0x93, 0x67, 0x71, 0xB9, 0xD7, 0xF1, 0x0D, 0xB4, 
-                                                                 0x75, 0xD7, 0xF3, 0xFE, 0xF1, 0x57, 0xB0, 0x7B, 
-                                                                 0xDB, 0x26, 0xB8, 0x95, 0x46, 0x6C, 0x3C, 0x99};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP384R1_b[48]      = {0x04, 0xA8, 0xC7, 0xDD, 0x22, 0xCE, 0x28, 0x26, 
-                                                                 0x8B, 0x39, 0xB5, 0x54, 0x16, 0xF0, 0x44, 0x7C, 
-                                                                 0x2F, 0xB7, 0x7D, 0xE1, 0x07, 0xDC, 0xD2, 0xA6, 
-                                                                 0x2E, 0x88, 0x0E, 0xA5, 0x3E, 0xEB, 0x62, 0xD5, 
-                                                                 0x7C, 0xB4, 0x39, 0x02, 0x95, 0xDB, 0xC9, 0x94, 
-                                                                 0x3A, 0xB7, 0x86, 0x96, 0xFA, 0x50, 0x4C, 0x11};
-   #endif
-   #endif  
    #endif  
 
    #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
    
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
-   static const shtype_tWord brainpoolP512R1_prime[16]  = {0xAADD9DB8, 0xDBE9C48B, 0x3FD4E6AE, 0x33C9FC07, 
-                                                                 0xCB308DB3, 0xB3C9D20E, 0xD6639CCA, 0x70330871, 
-                                                                 0x7D4D9B00, 0x9BC66842, 0xAECDA12A, 0xE6A380E6, 
-                                                                 0x2881FF2F, 0x2D82C685, 0x28AA6056, 0x583A48F3};
-   static const shtype_tWord brainpoolP512R1_order[16]  = {0xAADD9DB8, 0xDBE9C48B, 0x3FD4E6AE, 0x33C9FC07, 
-                                                                 0xCB308DB3, 0xB3C9D20E, 0xD6639CCA, 0x70330870, 
-                                                                 0x553E5C41, 0x4CA92619, 0x41866119, 0x7FAC1047, 
-                                                                 0x1DB1D381, 0x085DDADD, 0xB5879682, 0x9CA90069};
-   static const shtype_tWord brainpoolP512R1_Gx[16]     = {0x5A2BA14C, 0x0994E981, 0x871CB5CA, 0x006D4573, 
-                                                                 0xB2B6EA37, 0xF36D3CF7, 0x2433D76F, 0x905C8737, 
-                                                                 0x85505395, 0x14C01FC8, 0x34AB0414, 0x6DF55E8F, 
-                                                                 0x683E4D64, 0x272C02A4, 0xC4CE9609, 0x5161D9D3};
-   static const shtype_tWord brainpoolP512R1_Gy[16]     = {0x8C50C9D1, 0x2ACB7281, 0x9A5ED7DA, 0x870F3F9B,
-                                                                 0x585D2B77, 0xCD9D3F8C, 0x7C170B88, 0x8FE62FDC,
-                                                                 0x360EC775, 0x598ECC3E, 0xBF845553, 0x4C859490,
-                                                                 0x7518DF6F, 0x4742F325, 0x2F906629, 0x25042A6D};
-   static const shtype_tWord brainpoolP512R1_a[16]      = {0x5EC4F187, 0x227D2A83, 0xB83B84FA, 0xE2D0850C,
-                                                                 0x182D0F59, 0xF41E8778, 0xA5EC30C8, 0x3F80D1C7,
-                                                                 0xCF8F0111, 0x9E6E87FF, 0x40B04B72, 0x4675BBAB,
-                                                                 0x14E4957D, 0xAFA7D283, 0xDA1F8A34, 0xEA10C446};
+   static const shtype_tWord brainpoolP512R1_prime[]  = {HEX4_TO_WORDSIZE(AA,DD,9D,B8), HEX4_TO_WORDSIZE(DB,E9,C4,8B),
+                                                               HEX4_TO_WORDSIZE(3F,D4,E6,AE), HEX4_TO_WORDSIZE(33,C9,FC,07),
+                                                               HEX4_TO_WORDSIZE(CB,30,8D,B3), HEX4_TO_WORDSIZE(B3,C9,D2,0E),
+                                                               HEX4_TO_WORDSIZE(D6,63,9C,CA), HEX4_TO_WORDSIZE(70,33,08,71),
+                                                               HEX4_TO_WORDSIZE(7D,4D,9B,00), HEX4_TO_WORDSIZE(9B,C6,68,42),
+                                                               HEX4_TO_WORDSIZE(AE,CD,A1,2A), HEX4_TO_WORDSIZE(E6,A3,80,E6),
+                                                               HEX4_TO_WORDSIZE(28,81,FF,2F), HEX4_TO_WORDSIZE(2D,82,C6,85),
+                                                               HEX4_TO_WORDSIZE(28,AA,60,56), HEX4_TO_WORDSIZE(58,3A,48,F3)};
+   static const shtype_tWord brainpoolP512R1_order[]  = {HEX4_TO_WORDSIZE(AA,DD,9D,B8), HEX4_TO_WORDSIZE(DB,E9,C4,8B),
+                                                               HEX4_TO_WORDSIZE(3F,D4,E6,AE), HEX4_TO_WORDSIZE(33,C9,FC,07),
+                                                               HEX4_TO_WORDSIZE(CB,30,8D,B3), HEX4_TO_WORDSIZE(B3,C9,D2,0E),
+                                                               HEX4_TO_WORDSIZE(D6,63,9C,CA), HEX4_TO_WORDSIZE(70,33,08,70),
+                                                               HEX4_TO_WORDSIZE(55,3E,5C,41), HEX4_TO_WORDSIZE(4C,A9,26,19),
+                                                               HEX4_TO_WORDSIZE(41,86,61,19), HEX4_TO_WORDSIZE(7F,AC,10,47),
+                                                               HEX4_TO_WORDSIZE(1D,B1,D3,81), HEX4_TO_WORDSIZE(08,5D,DA,DD),
+                                                               HEX4_TO_WORDSIZE(B5,87,96,82), HEX4_TO_WORDSIZE(9C,A9,00,69)};
+   
+   static const shtype_tWord brainpoolP512R1_Gx[]     = {HEX4_TO_WORDSIZE(5A,2B,A1,4C), HEX4_TO_WORDSIZE(09,94,E9,81),
+                                                               HEX4_TO_WORDSIZE(87,1C,B5,CA), HEX4_TO_WORDSIZE(00,6D,45,73),
+                                                               HEX4_TO_WORDSIZE(B2,B6,EA,37), HEX4_TO_WORDSIZE(F3,6D,3C,F7),
+                                                               HEX4_TO_WORDSIZE(24,33,D7,6F), HEX4_TO_WORDSIZE(90,5C,87,37),
+                                                               HEX4_TO_WORDSIZE(85,50,53,95), HEX4_TO_WORDSIZE(14,C0,1F,C8),
+                                                               HEX4_TO_WORDSIZE(34,AB,04,14), HEX4_TO_WORDSIZE(6D,F5,5E,8F),
+                                                               HEX4_TO_WORDSIZE(68,3E,4D,64), HEX4_TO_WORDSIZE(27,2C,02,A4),
+                                                               HEX4_TO_WORDSIZE(C4,CE,96,09), HEX4_TO_WORDSIZE(51,61,D9,D3)};
+   static const shtype_tWord brainpoolP512R1_Gy[]     = {HEX4_TO_WORDSIZE(8C,50,C9,D1), HEX4_TO_WORDSIZE(2A,CB,72,81),
+                                                               HEX4_TO_WORDSIZE(9A,5E,D7,DA), HEX4_TO_WORDSIZE(87,0F,3F,9B),
+                                                               HEX4_TO_WORDSIZE(58,5D,2B,77), HEX4_TO_WORDSIZE(CD,9D,3F,8C),
+                                                               HEX4_TO_WORDSIZE(7C,17,0B,88), HEX4_TO_WORDSIZE(8F,E6,2F,DC),
+                                                               HEX4_TO_WORDSIZE(36,0E,C7,75), HEX4_TO_WORDSIZE(59,8E,CC,3E),
+                                                               HEX4_TO_WORDSIZE(BF,84,55,53), HEX4_TO_WORDSIZE(4C,85,94,90),
+                                                               HEX4_TO_WORDSIZE(75,18,DF,6F), HEX4_TO_WORDSIZE(47,42,F3,25),
+                                                               HEX4_TO_WORDSIZE(2F,90,66,29), HEX4_TO_WORDSIZE(25,04,2A,6D)};
+   static const shtype_tWord brainpoolP512R1_a[]      = {HEX4_TO_WORDSIZE(5E,C4,F1,87), HEX4_TO_WORDSIZE(22,7D,2A,83),
+                                                               HEX4_TO_WORDSIZE(B8,3B,84,FA), HEX4_TO_WORDSIZE(E2,D0,85,0C),
+                                                               HEX4_TO_WORDSIZE(18,2D,0F,59), HEX4_TO_WORDSIZE(F4,1E,87,78),
+                                                               HEX4_TO_WORDSIZE(A5,EC,30,C8), HEX4_TO_WORDSIZE(3F,80,D1,C7),
+                                                               HEX4_TO_WORDSIZE(CF,8F,01,11), HEX4_TO_WORDSIZE(9E,6E,87,FF),
+                                                               HEX4_TO_WORDSIZE(40,B0,4B,72), HEX4_TO_WORDSIZE(46,75,BB,AB),
+                                                               HEX4_TO_WORDSIZE(14,E4,95,7D), HEX4_TO_WORDSIZE(AF,A7,D2,83),
+                                                               HEX4_TO_WORDSIZE(DA,1F,8A,34), HEX4_TO_WORDSIZE(EA,10,C4,46)};
    #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP512R1_b[16]      = {0x3DF91610, 0xA83441CA, 0xEA9863BC, 0x2DED5D5A, 
-                                                                 0xA8253AA1, 0x0A2EF1C9, 0x8B9AC8B5, 0x7F1117A7, 
-                                                                 0x2BF2C7B9, 0xE7C1AC4D, 0x77FC94CA, 0xDC083E67, 
-                                                                 0x984050B7, 0x5EBAE5DD, 0x2809BD63, 0x8016F723};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   static const shtype_tWord brainpoolP512R1_prime[32]  = {0xAADD, 0x9DB8, 0xDBE9, 0xC48B, 0x3FD4, 0xE6AE, 0x33C9, 0xFC07, 
-                                                                 0xCB30, 0x8DB3, 0xB3C9, 0xD20E, 0xD663, 0x9CCA, 0x7033, 0x0871, 
-                                                                 0x7D4D, 0x9B00, 0x9BC6, 0x6842, 0xAECD, 0xA12A, 0xE6A3, 0x80E6, 
-                                                                 0x2881, 0xFF2F, 0x2D82, 0xC685, 0x28AA, 0x6056, 0x583A, 0x48F3};
-   static const shtype_tWord brainpoolP512R1_order[32]  = {0xAADD, 0x9DB8, 0xDBE9, 0xC48B, 0x3FD4, 0xE6AE, 0x33C9, 0xFC07, 
-                                                                 0xCB30, 0x8DB3, 0xB3C9, 0xD20E, 0xD663, 0x9CCA, 0x7033, 0x0870, 
-                                                                 0x553E, 0x5C41, 0x4CA9, 0x2619, 0x4186, 0x6119, 0x7FAC, 0x1047, 
-                                                                 0x1DB1, 0xD381, 0x085D, 0xDADD, 0xB587, 0x9682, 0x9CA9, 0x0069};
-   static const shtype_tWord brainpoolP512R1_Gx[32]     = {0x5A2B, 0xA14C, 0x0994, 0xE981, 0x871C, 0xB5CA, 0x006D, 0x4573, 
-                                                                 0xB2B6, 0xEA37, 0xF36D, 0x3CF7, 0x2433, 0xD76F, 0x905C, 0x8737, 
-                                                                 0x8550, 0x5395, 0x14C0, 0x1FC8, 0x34AB, 0x0414, 0x6DF5, 0x5E8F, 
-                                                                 0x683E, 0x4D64, 0x272C, 0x02A4, 0xC4CE, 0x9609, 0x5161, 0xD9D3};
-   static const shtype_tWord brainpoolP512R1_Gy[32]     = {0x8C50, 0xC9D1, 0x2ACB, 0x7281, 0x9A5E, 0xD7DA, 0x870F, 0x3F9B,
-                                                                 0x585D, 0x2B77, 0xCD9D, 0x3F8C, 0x7C17, 0x0B88, 0x8FE6, 0x2FDC,
-                                                                 0x360E, 0xC775, 0x598E, 0xCC3E, 0xBF84, 0x5553, 0x4C85, 0x9490,
-                                                                 0x7518, 0xDF6F, 0x4742, 0xF325, 0x2F90, 0x6629, 0x2504, 0x2A6D};
-   static const shtype_tWord brainpoolP512R1_a[32]      = {0x5EC4, 0xF187, 0x227D, 0x2A83, 0xB83B, 0x84FA, 0xE2D0, 0x850C,
-                                                                 0x182D, 0x0F59, 0xF41E, 0x8778, 0xA5EC, 0x30C8, 0x3F80, 0xD1C7,
-                                                                 0xCF8F, 0x0111, 0x9E6E, 0x87FF, 0x40B0, 0x4B72, 0x4675, 0xBBAB,
-                                                                 0x14E4, 0x957D, 0xAFA7, 0xD283, 0xDA1F, 0x8A34, 0xEA10, 0xC446};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP512R1_b[32]      = {0x3DF9, 0x1610, 0xA834, 0x41CA, 0xEA98, 0x63BC, 0x2DED, 0x5D5A, 
-                                                                 0xA825, 0x3AA1, 0x0A2E, 0xF1C9, 0x8B9A, 0xC8B5, 0x7F11, 0x17A7, 
-                                                                 0x2BF2, 0xC7B9, 0xE7C1, 0xAC4D, 0x77FC, 0x94CA, 0xDC08, 0x3E67, 
-                                                                 0x9840, 0x50B7, 0x5EBA, 0xE5DD, 0x2809, 0xBD63, 0x8016, 0xF723};
-   #endif
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)                         
-   static const shtype_tWord brainpoolP512R1_prime[64]  = {0xAA, 0xDD, 0x9D, 0xB8, 0xDB, 0xE9, 0xC4, 0x8B, 
-                                                                 0x3F, 0xD4, 0xE6, 0xAE, 0x33, 0xC9, 0xFC, 0x07, 
-                                                                 0xCB, 0x30, 0x8D, 0xB3, 0xB3, 0xC9, 0xD2, 0x0E, 
-                                                                 0xD6, 0x63, 0x9C, 0xCA, 0x70, 0x33, 0x08, 0x71, 
-                                                                 0x7D, 0x4D, 0x9B, 0x00, 0x9B, 0xC6, 0x68, 0x42, 
-                                                                 0xAE, 0xCD, 0xA1, 0x2A, 0xE6, 0xA3, 0x80, 0xE6, 
-                                                                 0x28, 0x81, 0xFF, 0x2F, 0x2D, 0x82, 0xC6, 0x85, 
-                                                                 0x28, 0xAA, 0x60, 0x56, 0x58, 0x3A, 0x48, 0xF3};
-   static const shtype_tWord brainpoolP512R1_order[64]  = {0xAA, 0xDD, 0x9D, 0xB8, 0xDB, 0xE9, 0xC4, 0x8B, 
-                                                                 0x3F, 0xD4, 0xE6, 0xAE, 0x33, 0xC9, 0xFC, 0x07, 
-                                                                 0xCB, 0x30, 0x8D, 0xB3, 0xB3, 0xC9, 0xD2, 0x0E, 
-                                                                 0xD6, 0x63, 0x9C, 0xCA, 0x70, 0x33, 0x08, 0x70, 
-                                                                 0x55, 0x3E, 0x5C, 0x41, 0x4C, 0xA9, 0x26, 0x19, 
-                                                                 0x41, 0x86, 0x61, 0x19, 0x7F, 0xAC, 0x10, 0x47, 
-                                                                 0x1D, 0xB1, 0xD3, 0x81, 0x08, 0x5D, 0xDA, 0xDD, 
-                                                                 0xB5, 0x87, 0x96, 0x82, 0x9C, 0xA9, 0x00, 0x69};
-   static const shtype_tWord brainpoolP512R1_Gx[64]     = {0x5A, 0x2B, 0xA1, 0x4C, 0x09, 0x94, 0xE9, 0x81, 
-                                                                 0x87, 0x1C, 0xB5, 0xCA, 0x00, 0x6D, 0x45, 0x73, 
-                                                                 0xB2, 0xB6, 0xEA, 0x37, 0xF3, 0x6D, 0x3C, 0xF7, 
-                                                                 0x24, 0x33, 0xD7, 0x6F, 0x90, 0x5C, 0x87, 0x37, 
-                                                                 0x85, 0x50, 0x53, 0x95, 0x14, 0xC0, 0x1F, 0xC8, 
-                                                                 0x34, 0xAB, 0x04, 0x14, 0x6D, 0xF5, 0x5E, 0x8F, 
-                                                                 0x68, 0x3E, 0x4D, 0x64, 0x27, 0x2C, 0x02, 0xA4, 
-                                                                 0xC4, 0xCE, 0x96, 0x09, 0x51, 0x61, 0xD9, 0xD3};
-   static const shtype_tWord brainpoolP512R1_Gy[64]     = {0x8C, 0x50, 0xC9, 0xD1, 0x2A, 0xCB, 0x72, 0x81, 
-                                                                 0x9A, 0x5E, 0xD7, 0xDA, 0x87, 0x0F, 0x3F, 0x9B,
-                                                                 0x58, 0x5D, 0x2B, 0x77, 0xCD, 0x9D, 0x3F, 0x8C, 
-                                                                 0x7C, 0x17, 0x0B, 0x88, 0x8F, 0xE6, 0x2F, 0xDC,
-                                                                 0x36, 0x0E, 0xC7, 0x75, 0x59, 0x8E, 0xCC, 0x3E, 
-                                                                 0xBF, 0x84, 0x55, 0x53, 0x4C, 0x85, 0x94, 0x90,
-                                                                 0x75, 0x18, 0xDF, 0x6F, 0x47, 0x42, 0xF3, 0x25, 
-                                                                 0x2F, 0x90, 0x66, 0x29, 0x25, 0x04, 0x2A, 0x6D};
-   static const shtype_tWord brainpoolP512R1_a[64]      = {0x5E, 0xC4, 0xF1, 0x87, 0x22, 0x7D, 0x2A, 0x83, 
-                                                                 0xB8, 0x3B, 0x84, 0xFA, 0xE2, 0xD0, 0x85, 0x0C,
-                                                                 0x18, 0x2D, 0x0F, 0x59, 0xF4, 0x1E, 0x87, 0x78, 
-                                                                 0xA5, 0xEC, 0x30, 0xC8, 0x3F, 0x80, 0xD1, 0xC7,
-                                                                 0xCF, 0x8F, 0x01, 0x11, 0x9E, 0x6E, 0x87, 0xFF, 
-                                                                 0x40, 0xB0, 0x4B, 0x72, 0x46, 0x75, 0xBB, 0xAB,
-                                                                 0x14, 0xE4, 0x95, 0x7D, 0xAF, 0xA7, 0xD2, 0x83, 
-                                                                 0xDA, 0x1F, 0x8A, 0x34, 0xEA, 0x10, 0xC4, 0x46};
-   #if SHARKSSL_ECC_VERIFY_POINT
-   static const shtype_tWord brainpoolP512R1_b[64]      = {0x3D, 0xF9, 0x16, 0x10, 0xA8, 0x34, 0x41, 0xCA, 
-                                                                 0xEA, 0x98, 0x63, 0xBC, 0x2D, 0xED, 0x5D, 0x5A, 
-                                                                 0xA8, 0x25, 0x3A, 0xA1, 0x0A, 0x2E, 0xF1, 0xC9, 
-                                                                 0x8B, 0x9A, 0xC8, 0xB5, 0x7F, 0x11, 0x17, 0xA7, 
-                                                                 0x2B, 0xF2, 0xC7, 0xB9, 0xE7, 0xC1, 0xAC, 0x4D, 
-                                                                 0x77, 0xFC, 0x94, 0xCA, 0xDC, 0x08, 0x3E, 0x67, 
-                                                                 0x98, 0x40, 0x50, 0xB7, 0x5E, 0xBA, 0xE5, 0xDD, 
-                                                                 0x28, 0x09, 0xBD, 0x63, 0x80, 0x16, 0xF7, 0x23};
+   static const shtype_tWord brainpoolP512R1_b[]      = {HEX4_TO_WORDSIZE(3D,F9,16,10), HEX4_TO_WORDSIZE(A8,34,41,CA),
+                                                               HEX4_TO_WORDSIZE(EA,98,63,BC), HEX4_TO_WORDSIZE(2D,ED,5D,5A),
+                                                               HEX4_TO_WORDSIZE(A8,25,3A,A1), HEX4_TO_WORDSIZE(0A,2E,F1,C9),
+                                                               HEX4_TO_WORDSIZE(8B,9A,C8,B5), HEX4_TO_WORDSIZE(7F,11,17,A7),
+                                                               HEX4_TO_WORDSIZE(2B,F2,C7,B9), HEX4_TO_WORDSIZE(E7,C1,AC,4D),
+                                                               HEX4_TO_WORDSIZE(77,FC,94,CA), HEX4_TO_WORDSIZE(DC,08,3E,67),
+                                                               HEX4_TO_WORDSIZE(98,40,50,B7), HEX4_TO_WORDSIZE(5E,BA,E5,DD),
+                                                               HEX4_TO_WORDSIZE(28,09,BD,63), HEX4_TO_WORDSIZE(80,16,F7,23)};
    #endif
    #endif  
+
+   #if SHARKSSL_ECC_USE_CURVE25519
+   
+   static const shtype_tWord curve25519_prime[]  = {HEX4_TO_WORDSIZE(7F,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                          HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                          HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                          HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,ED)};
+   static const shtype_tWord curve25519_order[]  = {HEX4_TO_WORDSIZE(10,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(14,DE,F9,DE), HEX4_TO_WORDSIZE(A2,F7,9C,D6),
+                                                          HEX4_TO_WORDSIZE(58,12,63,1A), HEX4_TO_WORDSIZE(5C,F5,D3,ED)};
+   static const shtype_tWord curve25519_Gx[]     = {HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                          HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,09)};
+   static const shtype_tWord curve25519_Gy[]     = {HEX4_TO_WORDSIZE(20,AE,19,A1), HEX4_TO_WORDSIZE(B8,A0,86,B4),
+                                                          HEX4_TO_WORDSIZE(E0,1E,DD,2C), HEX4_TO_WORDSIZE(77,48,D1,4C),
+                                                          HEX4_TO_WORDSIZE(92,3D,4D,7E), HEX4_TO_WORDSIZE(6D,7C,61,B2),
+                                                          HEX4_TO_WORDSIZE(29,E9,C5,A2), HEX4_TO_WORDSIZE(7E,CE,D3,D9)};
+   
+   static const shtype_tWord curve25519_a[]      = {HEX4_TO_WORDSIZE(00,46,8B,A6)};
+   #if SHARKSSL_ECC_VERIFY_POINT
+   static const shtype_tWord curve25519_b[]      = {(shtype_tWord)0};
+   #endif
+   #endif  
+
+   #if SHARKSSL_ECC_USE_CURVE448
+   
+   static const shtype_tWord curve448_prime[] = {HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FE), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF)};
+   static const shtype_tWord curve448_order[] = {HEX4_TO_WORDSIZE(3F,FF,FF,FF), HEX4_TO_WORDSIZE(FF,FF,FF,FF),
+                                                       HEX4_TO_WORDSIZE(FF,FF,FF,FF), HEX4_TO_WORDSIZE(7C,CA,23,E9),
+                                                       HEX4_TO_WORDSIZE(C4,4E,DB,49), HEX4_TO_WORDSIZE(AE,D6,36,90),
+                                                       HEX4_TO_WORDSIZE(21,6C,C2,72), HEX4_TO_WORDSIZE(8D,C5,8F,55),
+                                                       HEX4_TO_WORDSIZE(23,78,C2,92), HEX4_TO_WORDSIZE(AB,58,44,F3)};
+   static const shtype_tWord curve448_Gx[] =    {HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,05)};
+   static const shtype_tWord curve448_Gy[] =    {HEX4_TO_WORDSIZE(7D,23,5D,12), HEX4_TO_WORDSIZE(95,F5,B1,F6),
+                                                       HEX4_TO_WORDSIZE(6C,98,AB,6E), HEX4_TO_WORDSIZE(58,32,6F,CE),
+                                                       HEX4_TO_WORDSIZE(CB,AE,5D,34), HEX4_TO_WORDSIZE(F5,55,45,D0),
+                                                       HEX4_TO_WORDSIZE(60,F7,5D,C2), HEX4_TO_WORDSIZE(8D,F3,F6,ED),
+                                                       HEX4_TO_WORDSIZE(B8,02,7E,23), HEX4_TO_WORDSIZE(46,43,0D,21),
+                                                       HEX4_TO_WORDSIZE(13,12,C4,B1), HEX4_TO_WORDSIZE(50,67,7A,F7),
+                                                       HEX4_TO_WORDSIZE(6F,D7,22,3D), HEX4_TO_WORDSIZE(45,7B,5B,1A)};
+   
+   static const shtype_tWord curve448_a[] =     {HEX4_TO_WORDSIZE(00,00,98,A9), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,00,00),
+                                                       HEX4_TO_WORDSIZE(00,00,00,00), HEX4_TO_WORDSIZE(00,00,98,A9)};
+   #if SHARKSSL_ECC_VERIFY_POINT
+   static const shtype_tWord curve448_b[] =     {(shtype_tWord)0};
+   #endif
    #endif  
 
    baAssert(o);
-   baAssert((rightsvalid >= SHARKSSL_EC_CURVE_ID_SECP256R1) || (rightsvalid <= SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1));
+   baAssert((rightsvalid >= SHARKSSL_EC_CURVE_ID_SECP256R1) || (rightsvalid <= SHARKSSL_EC_CURVE_ID_CURVE448));
+   #if SHARKSSL_ECC_USE_EDWARDS
+   if (rightsvalid < SHARKSSL_EC_CURVE_ID_CURVE25519)
+   {
+      o->setPoint = SharkSslECCurve_setPoint_NB;
+      o->multiply = SharkSslECCurve_multiply_NB;
+   }
+   else
+   {
+      o->setPoint = SharkSslECCurve_setPoint_ED;
+      o->multiply = SharkSslECCurve_multiply_ED;
+   }
+   #endif
 
    switch (rightsvalid)
    {
@@ -50244,6 +50337,18 @@ void clearerrors(SharkSslECCurve *o, U16 rightsvalid)
          break;
       #endif
 
+      #if SHARKSSL_ECC_USE_CURVE25519
+      case SHARKSSL_EC_CURVE_ID_CURVE25519:
+         SharkSslECCurve_constructor_(o, 256, curve25519);
+         break;
+      #endif
+
+      #if SHARKSSL_ECC_USE_CURVE448
+      case SHARKSSL_EC_CURVE_ID_CURVE448:
+         SharkSslECCurve_constructor_(o, 448, curve448);
+         break;
+      #endif
+
       default:
          memset(o, 0, sizeof(SharkSslECCurve));
    }
@@ -50251,26 +50356,32 @@ void clearerrors(SharkSslECCurve *o, U16 rightsvalid)
    return;
 }
 
+
 typedef void (*func_mulmod)(const shtype_t*, const shtype_t*, shtype_t*, shtype_t*, shtype_tWord*);
 typedef void (*func_fmulmod)(const shtype_t*, const shtype_t*, shtype_t*, shtype_t*, shtype_tWord);
 
 typedef struct
 {
    shtype_t A, B, C, D, E, F;
-   #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
+   #if SHARKSSL_ECC_USE_EDWARDS
+   shtype_t G;
+   #endif
+   #if (SHARKSSL_ECC_USE_NIST && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS))
    func_mulmod mulmod;
    func_fmulmod fmulmod;
    #endif
-   #if SHARKSSL_ECC_USE_BRAINPOOL
+   #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
    shtype_t *factor_a;
    shtype_tWord mu;
    #endif
 } SharkSslEC_temp;
 
 
-#if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
+#if (SHARKSSL_ECC_USE_NIST && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS))
 #define probehandler(x,y,z) brightnesslimit->fmulmod(x, y, z, mod, brightnesslimit->mu);
 #define traceguest(x,y,z)  brightnesslimit->mulmod(x, y, z, mod, &brightnesslimit->D.mem[0]);
+#define temp_fmulmod brightnesslimit.fmulmod
+#define temp_mulmod  brightnesslimit.mulmod
 static void registernotifier(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord *afterhandler)
 {
    hotplugpgtable(o1, o2, deltadevices);
@@ -50295,12 +50406,14 @@ static void softlockupwatchdog(const shtype_t *o1, const shtype_t *o2, shtype_t 
 }
 
 #elif SHARKSSL_ECC_USE_NIST  
-   #define probehandler(x,y,z) hotplugpgtable(x, y, z); availableasids(z, mod)
-   #define traceguest(x,y,z)  hotplugpgtable(x, y, z); availableasids(z, mod)
+#define probehandler(x,y,z) hotplugpgtable(x, y, z); availableasids(z, mod)
+#define traceguest(x,y,z)  hotplugpgtable(x, y, z); availableasids(z, mod)
 
-#elif SHARKSSL_ECC_USE_BRAINPOOL  
-   #define probehandler(x,y,z) writebytes(x, y, z, mod, brightnesslimit->mu)
-   #define traceguest(x,y,z)  hotplugpgtable(x, y, z); envdatamcheck(z, mod, &brightnesslimit->D.mem[0])
+#elif (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)  
+#define probehandler(x,y,z) writebytes(x, y, z, mod, brightnesslimit->mu)
+#define traceguest(x,y,z)  hotplugpgtable(x, y, z); envdatamcheck(z, mod, &brightnesslimit->D.mem[0])
+#define temp_fmulmod(x,y,z,mod,mu)    writebytes(x, y, z, mod, mu)
+#define temp_mulmod(x,y,z,mod,afterhandler) hotplugpgtable(x, y, z); envdatamcheck(z, mod, afterhandler)
 
 #else
    
@@ -50308,12 +50421,12 @@ static void softlockupwatchdog(const shtype_t *o1, const shtype_t *o2, shtype_t 
 #endif
 
 
-#if SHARKSSL_ECC_USE_BRAINPOOL
+#if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
 void SharkSslEC_temp_setmulmod(SharkSslEC_temp *brightnesslimit, SharkSslECCurve *o)
 {
    if (((shtype_tWord)-3) == o->a.beg[0])
    {
-      #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
+      #if (SHARKSSL_ECC_USE_NIST && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS))
       brightnesslimit->mulmod = helpersetup;
       brightnesslimit->fmulmod = softlockupwatchdog;
       #endif
@@ -50322,7 +50435,7 @@ void SharkSslEC_temp_setmulmod(SharkSslEC_temp *brightnesslimit, SharkSslECCurve
    }
    else
    {
-      #if (SHARKSSL_ECC_USE_NIST && SHARKSSL_ECC_USE_BRAINPOOL)
+      #if (SHARKSSL_ECC_USE_NIST && (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS))
       brightnesslimit->mulmod = registernotifier;
       brightnesslimit->fmulmod = branchlikely;
       #endif
@@ -50338,7 +50451,8 @@ void SharkSslEC_temp_setmulmod(SharkSslEC_temp *brightnesslimit, SharkSslECCurve
 #endif
 
 
-int initialdomain(SharkSslECCurve *o, SharkSslECPoint *p)
+
+int SharkSslECCurve_setPoint_NB(SharkSslECCurve *o, SharkSslECPoint *p)
 {
    if ((void*)p != (void*)NULL)
    {
@@ -50395,11 +50509,13 @@ int initialdomain(SharkSslECCurve *o, SharkSslECPoint *p)
          #if SHARKSSL_ECC_USE_BRAINPOOL
          {
             
-            doublefnmul.D.len = 1; 
+            doublefnmul.D.len = 1;
             doublefnmul.D.beg[0] = 1;
             writebytes(&doublefnmul.D, &o->a, &doublefnmul.C, &o->prime, doublefnmul.mu);
             traceguest(&doublefnmul.C, &p->x, &doublefnmul.A);  
             setupsdhci1(&doublefnmul.B, &doublefnmul.A, mod);    
+            
+            o->bits |= SharkSslECCurve_bits_Montgomery_flag;
          }
          #endif
          traceguest(&p->y, &p->y, &doublefnmul.A);  
@@ -50414,6 +50530,14 @@ int initialdomain(SharkSslECCurve *o, SharkSslECPoint *p)
          {
             return 1;  
          }
+         #elif SHARKSSL_ECC_USE_BRAINPOOL
+         #if SHARKSSL_ECC_USE_NIST
+         if (((shtype_tWord)-3) != o->a.beg[0])
+         #endif
+         {
+            
+            o->bits |= SharkSslECCurve_bits_Montgomery_flag;
+         }
          #endif
          o->G.x = p->x;
          o->G.y = p->y;
@@ -50427,6 +50551,30 @@ int initialdomain(SharkSslECCurve *o, SharkSslECPoint *p)
 
    return 0;
 }
+
+
+#if SHARKSSL_ECC_USE_EDWARDS
+
+int SharkSslECCurve_setPoint_ED(SharkSslECCurve *o, SharkSslECPoint *p)
+{
+   if ((void*)p != (void*)NULL)
+   {
+      if (p->x.len <= o->G.x.len)
+      {
+         
+         o->G.x = p->x;
+         o->G.y = p->y;
+      }
+      else
+      {
+         memset(o, 0, sizeof(SharkSslECCurve));
+         return 4;  
+      }
+   }
+
+   return 0;
+}
+#endif
 
 
 typedef struct  
@@ -50595,14 +50743,16 @@ static void panicblink(SharkSslECPointJ *j,
 
 
 #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
-int unregisterskciphers(SharkSslECCurve *o,
-                             shtype_t *k,
-                             SharkSslECPoint *deltadevices)
+int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
+                                shtype_t *k,
+                                SharkSslECPoint *deltadevices)
 {
    SharkSslEC_temp brightnesslimit;
    shtype_tWord *tmp_b, *tmp_buf, bitmask;
    #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 4)
    #error SHARKSSL_ECC_MULT_SLIDING_WINDOW_K must be between 1 and 4
+   #elif ((SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1) && (SHARKSSL_ECC_TIMING_RESISTANT))
+   #error SHARKSSL_ECC_MULT_SLIDING_WINDOW_K must be 0 when SHARKSSL_ECC_TIMING_RESISTANT is enabled
    #endif
    #if (SHARKSSL_ECC_TIMING_RESISTANT)
    shtype_tWord m0;
@@ -50637,7 +50787,7 @@ int unregisterskciphers(SharkSslECCurve *o,
    #endif
    {
       
-      flash1resources += (6 * SHARKSSL__M);  
+      flash1resources += (6 * SHARKSSL__M);
    }
    #endif
 
@@ -50653,6 +50803,27 @@ int unregisterskciphers(SharkSslECCurve *o,
    m0 = 0;
    #endif
 
+   #if SHARKSSL_ECC_USE_BRAINPOOL
+   #if SHARKSSL_ECC_USE_NIST
+   if (brightnesslimit.factor_a != NULL)
+   #endif
+   {
+      
+      if (o->bits & SharkSslECCurve_bits_Montgomery_flag)
+      {
+         o->bits &= ~SharkSslECCurve_bits_Montgomery_flag;
+         brightnesslimit.A.beg = brightnesslimit.A.mem = tmp_buf;
+         brightnesslimit.A.len = o->prime.len + 1;
+         deviceparse(&brightnesslimit.A);
+         brightnesslimit.B.beg = brightnesslimit.B.mem = tmp_buf + brightnesslimit.A.len;
+         brightnesslimit.A.beg[0] = 1;
+         temp_mulmod(&brightnesslimit.A, &o->G.x, &brightnesslimit.B, &o->prime, tmp_buf + (i << 2));
+         unassignedvector(&brightnesslimit.B, &o->G.x);
+         temp_mulmod(&brightnesslimit.A, &o->G.y, &brightnesslimit.B, &o->prime, tmp_buf + (i << 2));
+         unassignedvector(&brightnesslimit.B, &o->G.y);
+      }
+   }
+   #endif
    traceaddress(&point[0].x, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[0].y, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[0].z, i, tmp_buf); tmp_buf += i;
@@ -50670,7 +50841,7 @@ int unregisterskciphers(SharkSslECCurve *o,
    #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
    
    for (flash1resources = 0; flash1resources < (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1)); flash1resources++)
-   {   
+   {
       traceaddress(&countshift[flash1resources].x, i, tmp_buf); tmp_buf += i;
       traceaddress(&countshift[flash1resources].y, i, tmp_buf); tmp_buf += i;
       traceaddress(&countshift[flash1resources].z, i, tmp_buf); tmp_buf += i;
@@ -50691,7 +50862,7 @@ int unregisterskciphers(SharkSslECCurve *o,
       brightnesslimit.A.beg[0] = 1;
       updatepmull(&brightnesslimit.A, &o->prime);
       blastscache(&brightnesslimit.A);
-      unassignedvector(&brightnesslimit.A, &point[0].z);  
+      unassignedvector(&brightnesslimit.A, &point[0].z);
    }
    #endif
    traceaddress(&brightnesslimit.A, i, tmp_buf); tmp_buf += i;
@@ -50762,7 +50933,7 @@ int unregisterskciphers(SharkSslECCurve *o,
             if (sha256export && (i == (k->len - 1)) && (bitmask < (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1))))
             {
                deviceu2ootg(&point[0], &o->G, &o->prime, &brightnesslimit);
-               sha256export = 0;   
+               sha256export = 0;
             }
          }
          else
@@ -50804,7 +50975,7 @@ int unregisterskciphers(SharkSslECCurve *o,
    #endif
    {
       
-      brightnesslimit.A.len = 1; 
+      brightnesslimit.A.len = 1;
       brightnesslimit.A.beg[0] = 1;
       writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
       writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
@@ -50820,10 +50991,229 @@ int unregisterskciphers(SharkSslECCurve *o,
    baFree((void*)tmp_b);
    return 0;
 }
+
+
+#if SHARKSSL_ECC_USE_EDWARDS
+int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
+                                shtype_t *k,
+                                SharkSslECPoint *deltadevices)
+{
+   
+
+   SharkSslEC_temp brightnesslimit;
+   shtype_t x;
+   shtype_tWord *tmp_b, *tmp_buf, bitmask, bit;
+   U16 i, flash1resources, bIndex;
+
+   baAssert(o);
+   baAssert(k);
+   baAssert(deltadevices);
+   i = o->prime.len;
+   baAssert(deltadevices->x.len == i);
+   i <<= 1;
+	i++;  
+   SharkSslEC_temp_setmulmod(&brightnesslimit, o);
+   flash1resources = (i * SHARKSSL__M) * 7 + (o->prime.len * SHARKSSL__M);
+
+   tmp_b = (shtype_tWord*)baMalloc(pcmciapdata(flash1resources));
+   if (tmp_b == NULL)
+   {
+      return 1;
+   }
+   tmp_buf = (shtype_tWord*)selectaudio(tmp_b);
+
+   traceaddress(&brightnesslimit.A, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.B, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.C, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.D, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.E, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.F, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.G, i, tmp_buf); tmp_buf += i;
+   traceaddress(&x, o->prime.len, tmp_buf);
+
+   brightnesslimit.A.len = o->prime.len + 1;
+   deviceparse(&brightnesslimit.A);
+   brightnesslimit.A.beg[0] = 1;
+   
+   unassignedvector(&o->G.x, &brightnesslimit.D);
+   blastscache(&brightnesslimit.D);
+
+   #if SHARKSSL_ECC_USE_CURVE25519
+   if ((brightnesslimit.D.len == 1) && (brightnesslimit.D.beg[0] == 9))
+   {
+      
+      #if (SHARKSSL_BIGINT_WORDSIZE == 8)
+      brightnesslimit.D.len++;
+      *(brightnesslimit.D.beg--) = 0x56;
+      *(brightnesslimit.D.beg)   = 0x01;
+      #else
+      brightnesslimit.D.beg[0] = 0x0156;
+      #endif
+      shtype_t_copyfull(&brightnesslimit.D, &brightnesslimit.B);
+   }
+   else
+   #endif
+   #if SHARKSSL_ECC_USE_CURVE448
+   if ((brightnesslimit.D.len == 1) && (brightnesslimit.D.beg[0] == 5))
+   {
+      
+      brightnesslimit.D.len = (8 * 32 / SHARKSSL_BIGINT_WORDSIZE) + 1 - (32 / SHARKSSL_BIGINT_WORDSIZE);
+      brightnesslimit.D.beg -= brightnesslimit.D.len - 1;
+      brightnesslimit.D.beg[0] = 0x05;
+      shtype_t_copyfull(&brightnesslimit.D, &brightnesslimit.B);
+   }
+   else
+   #endif
+   {
+      
+      temp_mulmod(&brightnesslimit.A, &brightnesslimit.D, &brightnesslimit.B, &o->prime, &brightnesslimit.E.mem[0]);
+   }
+   unassignedvector(&brightnesslimit.B, &x);
+   
+   deviceparse(&brightnesslimit.C);
+   blastscache(&brightnesslimit.C);
+	updatepmull(&brightnesslimit.A, &o->prime);
+   #if SHARKSSL_ECC_USE_CURVE25519
+   #if SHARKSSL_ECC_USE_CURVE448
+   if (o->bits == 256)  
+   #endif
+   {
+      updatepmull(&brightnesslimit.A, &o->prime);
+   }
+   #endif
+   
+   unassignedvector(&brightnesslimit.A, &brightnesslimit.D);
+	blastscache(&brightnesslimit.A);
+	blastscache(&brightnesslimit.D);
+
+   blastscache(k);  
+   bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
+   for (bIndex = (SHARKSSL_BIGINT_WORDSIZE - 1); bitmask > 0; bitmask >>= 1, bIndex--)
+   {
+      if (k->beg[0] & bitmask)
+      {
+         break;
+      }
+   }
+   bit = 0;
+   for (i = 0; i < k->len; i++)
+   {
+      for (; bitmask > 0; bitmask >>= 1, bIndex--)
+      {
+         shtype_tWord kt = (k->beg[i] & bitmask) >> bIndex;
+         bit ^= kt;
+         shtype_t_swapConditional(&brightnesslimit.A, &brightnesslimit.B, (U32)bit);
+         shtype_t_swapConditional(&brightnesslimit.C, &brightnesslimit.D, (U32)bit);
+         bit = kt;
+         shtype_t_copyfull(&brightnesslimit.A, &brightnesslimit.E);
+         setupsdhci1(&brightnesslimit.E, &brightnesslimit.C, &o->prime);
+         keypaddevice(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
+         shtype_t_copyfull(&brightnesslimit.B, &brightnesslimit.C);
+         setupsdhci1(&brightnesslimit.C, &brightnesslimit.D, &o->prime);
+         keypaddevice(&brightnesslimit.B, &brightnesslimit.D, &o->prime);
+         temp_fmulmod(&brightnesslimit.E, &brightnesslimit.E, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&brightnesslimit.A, &brightnesslimit.A, &brightnesslimit.F, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&brightnesslimit.C, &brightnesslimit.A, &brightnesslimit.G, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&brightnesslimit.E, &brightnesslimit.B, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
+         shtype_t_copyfull(&brightnesslimit.G, &brightnesslimit.A);
+         setupsdhci1(&brightnesslimit.G, &brightnesslimit.C, &o->prime);
+         keypaddevice(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
+         temp_fmulmod(&brightnesslimit.A, &brightnesslimit.A, &brightnesslimit.B, &o->prime, brightnesslimit.mu);
+         shtype_t_copyfull(&brightnesslimit.D, &brightnesslimit.C);
+         keypaddevice(&brightnesslimit.C, &brightnesslimit.F, &o->prime);
+         temp_fmulmod(&brightnesslimit.C, brightnesslimit.factor_a, &brightnesslimit.A, &o->prime, brightnesslimit.mu);
+         setupsdhci1(&brightnesslimit.A, &brightnesslimit.D, &o->prime);
+         temp_fmulmod(&brightnesslimit.A, &brightnesslimit.C, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&brightnesslimit.D, &brightnesslimit.F, &brightnesslimit.A, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&x, &brightnesslimit.B, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
+         temp_fmulmod(&brightnesslimit.G, &brightnesslimit.G, &brightnesslimit.B, &o->prime, brightnesslimit.mu);
+         shtype_t_copyfull(&brightnesslimit.E, &brightnesslimit.C);
+      }
+
+      bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
+      bIndex = (SHARKSSL_BIGINT_WORDSIZE - 1);
+   }
+
+   #if 0  
+   #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ECC_USE_CURVE448)
+   if (o->bits == 256)  
+   {
+      i = 253;
+      flash1resources = 4;
+      bIndex = 2;
+   }
+   else  
+   {
+      i = 446;
+      flash1resources = 224;
+      bIndex = 1;
+   }
+   #endif
+   
+   unassignedvector(&brightnesslimit.C, &brightnesslimit.D);
+   #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ECC_USE_CURVE448)
+   for (; i > 0; i--)
+   #elif SHARKSSL_ECC_USE_CURVE25519
+   for (i = 253; i > 0; i--)
+   #elif SHARKSSL_ECC_USE_CURVE448
+   for (i = 446; i > 0; i--)
+   #else
+   #error internal error in SharkSslECCurve_multiply_ED
+   #endif
+   {
+      temp_fmulmod(&brightnesslimit.C, &brightnesslimit.C, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
+      #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ECC_USE_CURVE448)
+      if ((i == flash1resources) || (i == bIndex))
+      #elif SHARKSSL_ECC_USE_CURVE25519
+      if ((i == 4) || (i == 2))
+      #else
+      if ((i == 224) || (i == 1))
+      #endif
+      {
+         #if 0
+         unassignedvector(&brightnesslimit.E, &brightnesslimit.C);
+         #else
+         shtype_t_swapConditional(&brightnesslimit.C, &brightnesslimit.E, 1);
+         #endif
+      }
+      else
+      {
+         temp_fmulmod(&brightnesslimit.E, &brightnesslimit.D, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
+      }
+   }
+   
+   temp_fmulmod(&brightnesslimit.A, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
+	
+	brightnesslimit.A.len = 1;
+	brightnesslimit.A.beg[0] = 1;
+	temp_fmulmod(&brightnesslimit.A, &brightnesslimit.D, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
+   unassignedvector(&brightnesslimit.E, &deltadevices->x);
+
+   #else  
+	
+	brightnesslimit.B.len = 1;
+	brightnesslimit.B.beg[0] = 1;
+	temp_fmulmod(&brightnesslimit.B, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
+	temp_fmulmod(&brightnesslimit.B, &brightnesslimit.A, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
+   
+   iommumapping(&brightnesslimit.D, &o->prime);
+   temp_mulmod(&brightnesslimit.C, &brightnesslimit.D, &brightnesslimit.B, &o->prime, &brightnesslimit.E.mem[0]);
+   unassignedvector(&brightnesslimit.B, &deltadevices->x);
+
+   #endif
+
+   deltadevices->y.mem = NULL;
+   deltadevices->y.beg = NULL;
+   deltadevices->y.len = 0;
+
+   baFree((void*)tmp_b);
+   return 0;
+}
+#endif
 #endif  
 
 
-#if SHARKSSL_ENABLE_ECDSA 
+#if SHARKSSL_ENABLE_ECDSA
 int directalloc(SharkSslECCurve *S,
                               shtype_t *d,
                               SharkSslECCurve *T,
@@ -50840,6 +51230,9 @@ int directalloc(SharkSslECCurve *S,
    U16 i, flash1resources;
 
    i = S->prime.len;
+   #if SHARKSSL_ECC_USE_BRAINPOOL
+   T->bits &= ~SharkSslECCurve_bits_Montgomery_flag;
+   #endif
    if ((i != T->prime.len) || (S->bits != T->bits) || (d->len != e->len))
    {
       return 1;
@@ -50859,7 +51252,7 @@ int directalloc(SharkSslECCurve *S,
       
       flash1resources += (6 * SHARKSSL__M);
       
-      flash1resources += (i * SHARKSSL__M) * 2; 
+      flash1resources += (i * SHARKSSL__M) * 2;
    }
    #endif
 
@@ -50892,7 +51285,7 @@ int directalloc(SharkSslECCurve *S,
       tmp_buf += i;
 
       i++;  
-      brightnesslimit.A.beg = brightnesslimit.A.mem = tmp_buf;  
+      brightnesslimit.A.beg = brightnesslimit.A.mem = tmp_buf;
       brightnesslimit.A.len = T->prime.len + 1;
       deviceparse(&brightnesslimit.A);
       brightnesslimit.A.beg[0] = 1;
@@ -50901,7 +51294,7 @@ int directalloc(SharkSslECCurve *S,
       unassignedvector(&brightnesslimit.A, &point[0].z);  
 
       
-      hotplugpgtable(&T->G.x, &point[0].z, &brightnesslimit.A);  
+      hotplugpgtable(&T->G.x, &point[0].z, &brightnesslimit.A);
       envdatamcheck(&brightnesslimit.A, &T->prime, tmp_buf + i);
       unassignedvector(&brightnesslimit.A, &TG.x);
       hotplugpgtable(&T->G.y, &point[0].z, &brightnesslimit.A);
@@ -50925,7 +51318,7 @@ int directalloc(SharkSslECCurve *S,
       
       deviceu2ootg(&point[0], &TG, &S->prime, &brightnesslimit);
       
-      brightnesslimit.A.len = 1; 
+      brightnesslimit.A.len = 1;
       brightnesslimit.A.beg[0] = 1;
       writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &T->prime, brightnesslimit.mu);
       writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &T->prime, brightnesslimit.mu);
@@ -51062,7 +51455,7 @@ int directalloc(SharkSslECCurve *S,
    #endif
    {
       
-      brightnesslimit.A.len = 1; 
+      brightnesslimit.A.len = 1;
       brightnesslimit.A.beg[0] = 1;
       writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &T->prime, brightnesslimit.mu);
       writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &T->prime, brightnesslimit.mu);

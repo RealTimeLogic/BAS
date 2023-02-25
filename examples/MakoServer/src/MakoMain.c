@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: MakoMain.c 5387 2023-02-20 22:50:13Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -1353,11 +1353,11 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    int onunloadRef;
    SoDisp disp;
    HttpCmdThreadPool pool;
+   static LThreadMgr ltMgr;
    NetIo netIo;
    BaLua_param blp; /* configuration parameters */
    char* cfgfname;
    char* execpath;
-   balua_thread_Shutdown tShutdown;
 #ifdef BA_WIN32
    int sMode;
 #endif
@@ -1557,7 +1557,13 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 #endif
 
    balua_http(L); /* Install optional HTTP client library */
-   tShutdown=balua_thread(L); /* Install optional Lua thread library */
+   LThreadMgr_constructor(&ltMgr,  /* Install optional Lua thread library */
+      &server,
+      ThreadPrioNormal,
+      BA_STACKSZ,
+      3, /* Number of threads */
+      L,
+      TRUE); /* allow creating more threads */
    balua_socket(L);  /* Install optional Lua socket library */
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
@@ -1662,8 +1668,8 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /* Graceful termination of Lua apps. See function above. */
    if(onunloadRef)
       onunload(onunloadRef);
-   tShutdown(L,&mutex); /* Wait for threads to exit, if any */
-   HttpCmdThreadPool_destructor(&pool);
+   LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */
+   HttpCmdThreadPool_destructor(&pool);  /* Wait for threads to exit */
 
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);

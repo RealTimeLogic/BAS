@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: AuthenticatedUser.h 5394 2023-02-21 18:41:44Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -92,7 +92,7 @@ typedef enum {
     \param intf The object pointer, which you must upcast to your class 
     implementation; i.e., MySecurityRealm* o = (MySecurityRealm*)intf;
 
-    \param user. A reference to the authenticated user. The method
+    \param user A reference to the authenticated user. The method
     must return false if user is NULL.
 
     \param httpMethod The HTTP method type: From HttpRequest::getMethodType
@@ -216,7 +216,7 @@ typedef struct AuthUserList
 } AuthUserList;
 #endif
 
-int AuthUserList_createOrCheck(struct AuthInfo* info,
+BA_API int AuthUserList_createOrCheck(struct AuthInfo* info,
                                UserIntf* userDb,
                                void** ptr,
                                size_t size);
@@ -378,6 +378,7 @@ inline AuthenticatedUser* AuthenticatedUser::getAnonymous() {
     AuthenticatorIntf.
 
     \param super a pointer to the super class.
+    \param relPath the URL's relative path
     \param cmd The HttpRequest HttpResponse container.
     \return The AuthenticatedUser if authenticated, otherwise NULL is returned.
  */
@@ -617,6 +618,7 @@ typedef BaBool (*LoginTrackerIntf_Validate)(
 
 /** Prototype for the Login tracker method.
     The Login method is called when a user is authenticated.
+    \param o the object
     \param info The AuthInfo container object.
     \param node may be be NULL if the object was recycled. This object
     is automatically terminated as soon as this callback returns;

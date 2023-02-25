@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: LspAppMgr.c 5397 2023-02-21 21:41:43Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -58,6 +58,17 @@ not defined. See inc/arch/<PLAT>/TargConfig.h for your platform.
 #include <barracuda.h>
 
 
+/* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
+ * pool) is not utilized. Instead, the LThreadMgr is used as the
+ * thread pool. Additionally, the LThreadMgr is configured to prohibit
+ * the creation of additional threads.
+ * Details:
+ *  https://realtimelogic.com/ba/doc/en/C/reference/html/group__ThreadMgr.html
+ */
+#ifdef ESP_PLATFORM
+#define MAXTHREADS 2
+#endif
+
 /* Call this function from the program's main() function or from a
  * dedicated thread.
  */
@@ -68,6 +79,11 @@ void barracuda(void);
  */
 static SoDisp dispatcher;
 
+/* We keep the Thread Manager global so it can be accessed as:
+   extern LThreadMgr ltMgr;
+*/
+LThreadMgr ltMgr;
+
 
 /* 
    io=ezip
@@ -77,12 +93,7 @@ static SoDisp dispatcher;
 extern ZipReader* getLspZipReader(void);
 #endif
 
-#ifdef AUX_LUA_BINDINGS
-AUX_LUA_BINDINGS_DECL;
-#else
-#define AUX_LUA_BINDINGS
-#endif
-extern void luaopen_LED(lua_State* L); /* Example Lua binding: led.c */
+extern void luaopen_AUX(lua_State* L); /* Example Lua binding: led.c */
 
 #if USE_PROTOBUF
 extern int luaopen_pb(lua_State* L);
@@ -186,11 +197,17 @@ static void
 createServer(HttpServer* server)
 {
    HttpServerConfig scfg;
-
+#ifdef MAXTHREADS
+   U16 cmdInstances=MAXTHREADS;
+   if(cmdInstances > 1)
+      cmdInstances-=1;
+#else
+   /* (A) Configure for 2 threads. See HttpCmdThreadPool. */
+   U16 cmdInstances=2;
+#endif
    HttpServerConfig_constructor(&scfg);
 
-   /* (A) Configure for 2 threads. See HttpCmdThreadPool. */
-   HttpServerConfig_setNoOfHttpCommands(&scfg,2);
+   HttpServerConfig_setNoOfHttpCommands(&scfg,cmdInstances);
 
    HttpServerConfig_setNoOfHttpConnections(&scfg,8);
 
@@ -263,7 +280,7 @@ createVmIo()
    FileZipReader_constructor(&fileZipReader, "lsp.zip");
    zipReader = (ZipReader*)&fileZipReader;  /* cast to base class */
 #else
-   /* BAIO_EZIP */
+   /* BAIO_EZIP: for LSP App Manager release build. */
    zipReader = getLspZipReader();
 #endif
    if( ! CspReader_isValid((CspReader*)zipReader) )
@@ -292,22 +309,25 @@ createVmIo()
 void
 barracuda(void)
 {
-   ThreadMutex mutex;
-   HttpServer server;
-   BaTimer timer;
-   HttpCmdThreadPool pool;
-   int ecode;
-   NetIo netIo;
-   lua_State* L; /* pointer to a Lua virtual machine */
-   BaLua_param blp; /* configuration parameters */
-   balua_thread_Shutdown tShutdown;
+   /* static: less stack; we only have one server instance */
+   static ThreadMutex mutex;
+   static HttpServer server;
+   static BaTimer timer;
+#ifndef MAXTHREADS
+   static HttpCmdThreadPool pool;
+#endif
+   static int ecode;
+   static NetIo netIo;
+   static lua_State* L; /* pointer to a Lua virtual machine */
+   static BaLua_param blp; /* configuration parameters */
 #if USE_DBGMON
-   int onunloadRef;
+   static int onunloadRef;
 #endif
 #ifndef NO_BAIO_DISK
    static DiskIo diskIo;
 #endif
 
+/* If restarted by Lua debugger */
 #if USE_DBGMON
   L_restart:
 #endif
@@ -317,8 +337,8 @@ barracuda(void)
 /* Example code for 'platformInitDiskIo declaration' (REF-1).
    This would typically be in another (startup) file for deep embedded systems.
 */
-#if !defined(NO_BAIO_DISK) && \
-   (defined(_WIN32) || \
+#if !defined(NO_BAIO_DISK) &&                   \
+   (defined(_WIN32) ||                          \
     defined(BA_POSIX))
    platformInitDiskIo=initDiskIo;
 #endif
@@ -329,7 +349,7 @@ barracuda(void)
    SoDisp_constructor(&dispatcher, &mutex);
    createServer(&server);
 
-   /* For embedded systems without a file system */
+   /* For embedded systems when developing */
    NetIo_constructor(&netIo, &dispatcher);
 
    /* The optional timer is useful in LSP code */
@@ -346,15 +366,30 @@ barracuda(void)
    /* Install optional IO interfaces */
    balua_iointf(L, "net",  (IoIntf*)&netIo);
    balua_http(L); /* Install optional HTTP client library */
-   tShutdown=balua_thread(L); /* Install optional Lua thread library */
+   LThreadMgr_constructor(&ltMgr,
+                          &server,
+                          ThreadPrioNormal,
+                          BA_STACKSZ,
+#ifdef MAXTHREADS
+                          MAXTHREADS,
+#else
+                          3, /* Number of threads */
+#endif
+                          L,
+#ifdef MAXTHREADS
+                          FALSE /* do not allow creating more threads */
+#else
+                          TRUE /* allow creating more threads */
+#endif
+      );
+                          
    balua_socket(L);  /* Install optional Lua socket library */
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L); /* Install optional trace logger library */
-   luaopen_LED(L); /* Example Lua binding: led.c */
-   AUX_LUA_BINDINGS; /* Expands to nothing if not set */
+   luaopen_AUX(L); /* Example Lua binding: led.c */
 
-/* ezip is for release of the LSP app. mgr.
+/* 
    Some embedded devices may not have a DiskIo.
    The following macro makes it possible to disable the DiskIo.
    Command line: make ..... nodisk=1
@@ -384,7 +419,7 @@ barracuda(void)
 
    /* Lua debugger hook.
       Use the debugger monitor or the basic trace lib (lHook).
-    */
+   */
 #if USE_DBGMON
    ba_ldbgmon(L, dbgExitRequest, 0);
 #elif defined(ENABLE_LUA_TRACE)
@@ -430,7 +465,11 @@ barracuda(void)
 #endif
 
    /* See (A) above */
+#ifdef MAXTHREADS
+   LThreadMgr_enableHttpPool(&ltMgr, &server);
+#else
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
+#endif
 
    /*
      The dispatcher object waits for incoming HTTP requests. These
@@ -451,8 +490,10 @@ barracuda(void)
    ThreadMutex_set(&mutex);
    /* Graceful termination of Lua apps. See function above. */
    onunload(L, onunloadRef);
-   tShutdown(L,&mutex); /* Wait for threads to exit, if any */
-   HttpCmdThreadPool_destructor(&pool);
+   LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */
+#ifndef MAXTHREADS
+   HttpCmdThreadPool_destructor(&pool);  /* Wait for threads to exit */
+#endif
 
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);
@@ -472,7 +513,5 @@ barracuda(void)
    HttpTrace_printf(0,"\n\nRestarting LspAppMgr.\n\n");
    HttpTrace_flush();
    goto L_restart;
-#else
-   (void)tShutdown;
 #endif
 }

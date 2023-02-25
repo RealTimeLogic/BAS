@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpCmdThreadPoolIntf.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpCmdThreadPoolIntf.h 5385 2023-02-17 19:38:01Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2005-2012
  *
@@ -37,27 +37,23 @@
 #ifndef _HttpCmdThreadPoolIntf_h
 #define _HttpCmdThreadPoolIntf_h
 
-/* Provides late binding between HttpServer and HttpCmdThreadPool
+/* This API provides late bindings between HttpServer and HttpCmdThreadPool.
  */
  
 #include <HttpServer.h>
 
 struct HttpCmdThreadPoolIntf;
 
-typedef int(*HttpCmdThreadPoolIntf_DoPage)(
-   struct HttpCmdThreadPoolIntf* o, HttpCommand* cmd,HttpPage* page);
 typedef int(*HttpCmdThreadPoolIntf_DoDir)(
    struct HttpCmdThreadPoolIntf* o,HttpCommand* cmd,
    HttpDir* dir);
 
 typedef struct HttpCmdThreadPoolIntf
 {
-      HttpCmdThreadPoolIntf_DoPage doPage;
-      HttpCmdThreadPoolIntf_DoDir doDir;
+   HttpCmdThreadPoolIntf_DoDir doDir;
 }  HttpCmdThreadPoolIntf;
 
 #define HttpCmdThreadPoolIntf_doDir(o, cmd, dir) \
    (o)->doDir(o, cmd, dir)
-#define HttpCmdThreadPoolIntf_doPage(o, cmd, page) (o)->doPage(o, cmd, page)
 
 #endif

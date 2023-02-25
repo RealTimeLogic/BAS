@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: NetIo.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: NetIo.h 5392 2023-02-21 15:56:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2020
  *               http://www.realtimelogic.com

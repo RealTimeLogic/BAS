@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5361 2022-12-08 21:32:28Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5399 2023-02-24 07:09:26Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -54,14 +54,14 @@
 #define SHARKSSL_TLS_1_3                                 1
 #endif
 
- /** TLS 1.2 stack 
-  *  Disable by setting SHARKSSL_TLS_1_2=0
-  */
+/** TLS 1.2 stack 
+ *  Disable by setting SHARKSSL_TLS_1_2=0
+ */
 #ifndef SHARKSSL_TLS_1_2
 #define SHARKSSL_TLS_1_2                                 1
 #endif
 
-  /** Enable/disable AES 256
+/** Enable/disable AES 256
  */
 #ifndef SHARKSSL_USE_AES_256
 #define SHARKSSL_USE_AES_256                             1
@@ -107,8 +107,8 @@
 #endif
 
 /** Enable/disable CHACHA20 support and also include
-    CHACHA20-POLY1305 ciphersuites when TLS1.2 and POLY1305 are enabled
-    (#SHARKSSL_USE_POLY1305)
+ *  CHACHA20-POLY1305 ciphersuites when TLS1.2 and POLY1305 are enabled
+ *  (#SHARKSSL_USE_POLY1305)
  */
 #ifndef SHARKSSL_USE_CHACHA20
 #define SHARKSSL_USE_CHACHA20                            1
@@ -121,23 +121,23 @@
 */
 
 /** Enable/disable SHA256 support for certificate signatures (SHA256
-    ciphersuites are not included).
-    SHA256 must be included (mandatory) for TLS 1.2 and TLS 1.3
+ *  ciphersuites are not included).
+ *  SHA256 must be included (mandatory) for TLS 1.2 and TLS 1.3
  */
 #ifndef SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
 #endif
 
 /** Enable/disable SHA384 support and also include
-    SHA384 ciphersuites
-*/
+ *  SHA384 ciphersuites
+ */
 #ifndef SHARKSSL_USE_SHA_384
 #define SHARKSSL_USE_SHA_384                             1
 #endif
 
 /** Enable/disable SHA512 support;
-    Note SHA512 is not required by SSL/TLS.
-*/
+ *  Note SHA512 is not required by SSL/TLS.
+ */
 #ifndef SHARKSSL_USE_SHA_512
 #define SHARKSSL_USE_SHA_512                             0
 #endif
@@ -158,8 +158,8 @@
 #endif
 
 /** Enable/disable POLY1305 support and also include
-    CHACHA20-POLY1305 ciphersuites when TLS1.2 and CHACHA20 are enabled
-    (#SHARKSSL_USE_CHACHA20)
+ *  CHACHA20-POLY1305 ciphersuites when TLS1.2 and CHACHA20 are enabled
+ *  (#SHARKSSL_USE_CHACHA20)
  */
 #ifndef SHARKSSL_USE_POLY1305
 #define SHARKSSL_USE_POLY1305                            1
@@ -168,97 +168,86 @@
 /** @} */ /* end group SharkSslCfgHash */
 
 
-/**
- * select 1 to enable SERVER side TLS
+/** Select 1 to enable SERVER side TLS
  */
 #ifndef SHARKSSL_SSL_SERVER_CODE
 #define SHARKSSL_SSL_SERVER_CODE                         1
 #endif
 
 
-/**
- * select 1 to enable client authentication from server
+/** Select 1 to enable client authentication from server
  */
 #ifndef SHARKSSL_ENABLE_CLIENT_AUTH
 #define SHARKSSL_ENABLE_CLIENT_AUTH                      1
 #endif
 
 
-/**
- * select 1 to enable CLIENT side TLS
+/** Select 1 to enable CLIENT side TLS
  */
 #ifndef SHARKSSL_SSL_CLIENT_CODE
 #define SHARKSSL_SSL_CLIENT_CODE                         1
 #endif
 
 
-/**
- * select 1 to randomize the order of extensions in ClientHello  
+/** Select 1 to randomize the order of extensions in ClientHello  
  */
 #ifndef SHARKSSL_RANDOMIZE_EXTENSIONS
 #define SHARKSSL_RANDOMIZE_EXTENSIONS                    1
 #endif
 
 
-/**
- * select 1 to enable support for Server Name Indication
+/** Select 1 to enable support for Server Name Indication
  */
 #ifndef SHARKSSL_ENABLE_SNI
 #define SHARKSSL_ENABLE_SNI                              1
 #endif
 
 
- /**
- * select 1 to enable support for Certificate Authorities extension
- * (RFC 8446 section 4.2.4)
- * note: #SHARKSSL_TLS_1_3 must be enabled
+/** Select 1 to enable support for Certificate Authorities extension
+ *  (RFC 8446 section 4.2.4)
+ *  Note: #SHARKSSL_TLS_1_3 must be enabled
  */
 #ifndef SHARKSSL_ENABLE_CA_EXTENSION
 #define SHARKSSL_ENABLE_CA_EXTENSION                     1
 #endif
 
 
-/**
- * select 0 to disable RSA ciphersuites
+/** Select 0 to disable RSA ciphersuites
  */
 #ifndef SHARKSSL_ENABLE_RSA
 #define SHARKSSL_ENABLE_RSA                              1
 #endif
 
 
-/**
- * select 1 to enable session caching
+/** Select 1 to enable session caching
  */
 #ifndef SHARKSSL_ENABLE_SESSION_CACHE
 #define SHARKSSL_ENABLE_SESSION_CACHE                    1
 #endif
 
 
-/**
- * select 1 to enable renegotiation
- * only secure renegotiation (RFC 5746) is supported
- * note: with the default define below, it is enabled
- * whenever TLS 1.2 is
- * NOTE: IMPLEMENTED ONLY ON THE SERVER SIDE
+/** Select 1 to enable renegotiation
+ *  Only secure renegotiation (RFC 5746) is supported
+ *  Note: with the default define below, it is enabled
+ *  whenever TLS 1.2 is
+ *  NOTE: IMPLEMENTED ONLY ON THE SERVER SIDE
  */
 #ifndef SHARKSSL_ENABLE_SECURE_RENEGOTIATION
 #define SHARKSSL_ENABLE_SECURE_RENEGOTIATION             SHARKSSL_TLS_1_2
 #endif
 
 
-/**
- * select 1 to enable DHE_RSA ciphersuites
- * note: with the default define below, it is enabled
- * whenever TLS 1.2 is
+/** Select 1 to enable DHE_RSA ciphersuites
+ *  Note: with the default define below, it is enabled
+ *  whenever TLS 1.2 is
  */
 #ifndef SHARKSSL_ENABLE_DHE_RSA
 #define SHARKSSL_ENABLE_DHE_RSA                          SHARKSSL_TLS_1_2
 #endif
 
 
- /*
-  * TLS 1.2/1.3 require SHA-256, do not modify the following settings
-  * DES and ClientHello v2.0 are deprecated in TLS 1.2 - RFC5246
+ /** TLS 1.2/1.3 require SHA-256, do not modify the following settings
+  *  DES and ClientHello v2.0 are deprecated in TLS 1.2 - RFC5246
   */
 #undef  SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
@@ -272,8 +261,8 @@
 
 
 /** Determine the number of ciphersuites that can be selected, in
-    decreasing order of preference; this value is only in effect if the
-    #SHARKSSL_ENABLE_SELECT_CIPHERSUITE is selected.
+ *  decreasing order of preference; this value is only in effect if the
+ *  #SHARKSSL_ENABLE_SELECT_CIPHERSUITE is selected.
  */
 #ifndef SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH
 #define SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH           8
@@ -341,12 +330,11 @@
 #endif
 
 
-/**
- * select 1 to enable PEM certs/keys decoding
- * if RSA_API is enabled, then also the functions
- * sharkssl_PEM_to_RSAKey and SharkSslRSAKey_free are available
- * if ECDSA_API is enabled, then also the functions
- * sharkssl_PEM_to_ECCKey and SharkSslECCKey_free are available
+/** Select 1 to enable PEM certs/keys decoding
+ *  If RSA_API is enabled, then also the functions
+ *  sharkssl_PEM_to_RSAKey and SharkSslRSAKey_free are available
+ *  If ECDSA_API is enabled, then also the functions
+ *  sharkssl_PEM_to_ECCKey and SharkSslECCKey_free are available
  */
 #ifndef SHARKSSL_ENABLE_PEM_API
 #define SHARKSSL_ENABLE_PEM_API                          1
@@ -355,7 +343,7 @@
 
 /** Enable/disable support for encrypted PKCS#8 certificates
  *  in sharkssl_PEM function
- * (requires SHARKSSL_ENABLE_AES_CBC)
+ *  (requires SHARKSSL_ENABLE_AES_CBC)
  */
 #ifndef SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
 #define SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT          0
@@ -369,33 +357,29 @@
 #endif
 
 
-/**
- * select 1 to enable certificate chain support
+/** Select 1 to enable certificate chain support
  */
 #ifndef SHARKSSL_ENABLE_CERT_CHAIN
 #define SHARKSSL_ENABLE_CERT_CHAIN                       1
 #endif
 
 
-/**
- * select 1 to enable CA check
- * (client or server with client auth)
+/** Select 1 to enable CA check
+ *  (client or server with client auth)
  */
 #ifndef SHARKSSL_ENABLE_CA_LIST
 #define SHARKSSL_ENABLE_CA_LIST                          1
 #endif
 
 
-/**
- * select 1 to enable certificate storage
+/** Select 1 to enable certificate storage
  */
 #ifndef SHARKSSL_ENABLE_CERTSTORE_API
 #define SHARKSSL_ENABLE_CERTSTORE_API                    1
 #endif
 
 
-/**
- * automatic certificate cloning - always enabled
+/** Automatic certificate cloning - always enabled
  */
 #ifdef SHARKSSL_ENABLE_CLONE_CERTINFO
 #if   !SHARKSSL_ENABLE_CLONE_CERTINFO
@@ -404,21 +388,19 @@
 #endif
 
 
-/**
- * select 1 to enable parsing KeyUsage and ExtendedKeyUsage
- * in the certificates
+/** Select 1 to enable parsing KeyUsage and ExtendedKeyUsage
+ *  in the certificates
  */
 #ifndef SHARKSSL_ENABLE_CERT_KEYUSAGE
 #define SHARKSSL_ENABLE_CERT_KEYUSAGE                    0
 #endif
 
 
-/**
- * select 1 (small ROM footprint, slow) or 0 (large, fast)
+/** Select 1 (small ROM footprint, slow) or 0 (large, fast)
  *
- * SHA 384 is only available in small footprint version,
- * being the fast version only 20% faster at the expense
- * of an 8x code size (benchmarked on ARM Cortex M3)
+ *  SHA 384 is only available in small footprint version,
+ *  being the fast version only 20% faster at the expense
+ *  of an 8x code size (benchmarked on ARM Cortex M3)
  */
 #ifndef SHARKSSL_MD5_SMALL_FOOTPRINT
 #define SHARKSSL_MD5_SMALL_FOOTPRINT                     0
@@ -435,41 +417,36 @@
 #endif
 
 
-/**
- * select a window size between 1 (slower, less RAM) and 5
+/** Select a window size between 1 (slower, less RAM) and 5
  */
 #ifndef SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K
 #define SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K             4
 #endif
 
 
-/**
- * select 0 (slower, less ROM) or 1 (20% faster, more ROM)
+/** Select 0 (slower, less ROM) or 1 (20% faster, more ROM)
  */
 #ifndef SHARKSSL_BIGINT_MULT_LOOP_UNROLL
 #define SHARKSSL_BIGINT_MULT_LOOP_UNROLL                 1
 #endif
 
 
-/**
- * select 1 to include AES CTR mode (USE_AES_xxx must be enabled)
+/** Select 1 to include AES CTR mode (USE_AES_xxx must be enabled)
  */
 #ifndef SHARKSSL_ENABLE_AES_CTR_MODE
 #define SHARKSSL_ENABLE_AES_CTR_MODE                     1
 #endif
 
 
-/**
- * select 0 (35% less ROM) or 1 (10-15% faster)
+/** Select 0 (35% less ROM) or 1 (10-15% faster)
  */
 #ifndef SHARKSSL_AES_CIPHER_LOOP_UNROLL
 #define SHARKSSL_AES_CIPHER_LOOP_UNROLL                  1
 #endif
 
 
-/**
- * select 1 if your architecture supports unaligned memory
- * access (x86, ARM-Cortex-M3, ColdFire)
+/** Select 1 if your architecture supports unaligned memory
+ *  access (x86, ARM-Cortex-M3, ColdFire)
  */
 #ifndef SHARKSSL_UNALIGNED_ACCESS
 #ifdef UNALIGNED_ACCESS
@@ -480,47 +457,53 @@
 #endif
 
 
-/**
- * select 8, 16 or 32 according to your architecture
+/** Select 8, 16 or 32 according to your architecture
  */
 #ifndef SHARKSSL_BIGINT_WORDSIZE
 #define SHARKSSL_BIGINT_WORDSIZE                         32
 #endif
 
 
-/**
- * Elliptic Curve Cryptography
+/** Elliptic Curve Cryptography
  */
 #ifndef SHARKSSL_USE_ECC
 #define SHARKSSL_USE_ECC                                 1
 #endif
 
 
-/**
- * select 1 to enable generation and verification of
- * elliptic curve digital signatures
+/** Select 1 to enable generation and verification of
+ *  elliptic curve digital signatures
  */
 #ifndef SHARKSSL_ENABLE_ECDSA
 #define SHARKSSL_ENABLE_ECDSA                            1
 #endif
 
 
-/**
- * select 1 to verify that a point lies on a curve
- * verification in function SharkSslECNISTCurve_setPoint
- * -larger ROM (parameter B for each curve stored, more code)
- * -slightly slower execution
+/** Select 1 to verify that a point lies on a curve
+ *  verification in function SharkSslECNISTCurve_setPoint
+ *  -larger ROM (parameter B for each curve stored, more code)
+ *  -slightly slower execution
  */
 #ifndef SHARKSSL_ECC_VERIFY_POINT
 #define SHARKSSL_ECC_VERIFY_POINT                        1
 #endif
 
 
-/** Enable timing resistant
+/** Enable timing resistant ECC algorithms
+ *  DISABLE AT YOUR OWN RISK!
  */
 #ifndef SHARKSSL_ECC_TIMING_RESISTANT
-#define SHARKSSL_ECC_TIMING_RESISTANT                    0
+#define SHARKSSL_ECC_TIMING_RESISTANT                    1
 #endif
+
+/** Enable timing resistant big integer functions
+ *  Enabled by default when the above is enabled
+ *  DISABLE AT YOUR OWN RISK!
+ */
+#ifndef SHARKSSL_BIGINT_TIMING_RESISTANT
+#define SHARKSSL_BIGINT_TIMING_RESISTANT                 1
+#endif
+
 
 /** Enable/disable the SECP256R1 curve
  */
@@ -560,20 +543,32 @@
 #endif
 
 
-/**
- * select 1 to enable ECDHE_RSA ciphersuites (RFC 4492)
- * Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
- * RSA (#SHARKSSL_ENABLE_RSA) must be enabled
+/** Enable/disable the Curve25519 curve (RFC 7748)
+ */
+#ifndef SHARKSSL_ECC_USE_CURVE25519
+#define SHARKSSL_ECC_USE_CURVE25519                      1
+#endif
+
+
+/** Enable/disable the Curve448 curve (RFC 7748)
+ */
+#ifndef SHARKSSL_ECC_USE_CURVE448
+#define SHARKSSL_ECC_USE_CURVE448                        0
+#endif
+
+
+/** Select 1 to enable ECDHE_RSA ciphersuites (RFC 4492)
+ *  Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
+ *  RSA (#SHARKSSL_ENABLE_RSA) must be enabled
  */
 #ifndef SHARKSSL_ENABLE_ECDHE_RSA
 #define SHARKSSL_ENABLE_ECDHE_RSA                        1
 #endif
 
 
-/**
- * select 1 to enable ECDHE_ECDSA ciphersuites (RFC 4492)
- * Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
- * SHARKSSL_ENABLE_ECDSA must be set
+/** Select 1 to enable ECDHE_ECDSA ciphersuites (RFC 4492)
+ *  Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
+ *  SHARKSSL_ENABLE_ECDSA must be set
  */
 #ifndef SHARKSSL_ENABLE_ECDHE_ECDSA
 #define SHARKSSL_ENABLE_ECDHE_ECDSA                      1
@@ -630,7 +625,9 @@
 #define SHARKSSL_RNG_MULTITHREADED                       1
 #endif
 
-/** Do not pack option */
+
+/** Do not pack option 
+ */
 #ifndef SHARKSSL_NOPACK
 #define SHARKSSL_NOPACK                                  0
 #endif
@@ -641,32 +638,41 @@
     This setting requires baGetUnixTime() returning the correct time.
 */
 #ifdef __DOXYGEN__
-#define SHARKSSL_CHECK_DATE                               0
+#define SHARKSSL_CHECK_DATE                              0
 #endif
 #ifndef SHARKSSL_CHECK_DATE
 #ifdef SHARKSSL_BA /* if SharkSSL embedded in BAS */
-#define SHARKSSL_CHECK_DATE                               1
+#define SHARKSSL_CHECK_DATE                              1
 #else
-#define SHARKSSL_CHECK_DATE                               0
+#define SHARKSSL_CHECK_DATE                              0
 #endif
 #endif
 
 
 /** @} */ /* end group SharkSslCfg */
 
+/** sanity #defines --- do not edit below this line!
+ */ 
+#if SHARKSSL_ECC_TIMING_RESISTANT
+#undef  SHARKSSL_BIGINT_TIMING_RESISTANT 
+#define SHARKSSL_BIGINT_TIMING_RESISTANT                 1
+#endif
 
-/** TLS 1.3 sanity #defines --- do not edit below this line!
+/** TLS 1.3 sanity #defines
  */
 #if SHARKSSL_TLS_1_3
 #if !SHARKSSL_TLS_1_2
 #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
 #undef SHARKSSL_ENABLE_SECURE_RENEGOTIATION
-#define SHARKSSL_ENABLE_SECURE_RENEGOTIATION              0
+#define SHARKSSL_ENABLE_SECURE_RENEGOTIATION             0
 #endif
 #if SHARKSSL_ENABLE_DHE_RSA
 #undef SHARKSSL_ENABLE_DHE_RSA
-#define SHARKSSL_ENABLE_DHE_RSA                           0
+#define SHARKSSL_ENABLE_DHE_RSA                          0
 #endif
+#endif
+#if (0 == SHARKSSL_ECC_USE_SECP256R1)
+#error TLS 1.3 requires NIST curve secp256r1
 #endif
 #if (0 == SHARKSSL_USE_AES_128)
 #error TLS 1.3 requires AES 128

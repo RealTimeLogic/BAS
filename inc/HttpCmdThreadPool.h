@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpCmdThreadPool.h 4466 2019-11-08 20:11:49Z wini $
+ *   $Id: HttpCmdThreadPool.h 5385 2023-02-17 19:38:01Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2012
  *
@@ -118,9 +118,6 @@ typedef struct HttpCmdThreadPool
       SoDisp* dispatcher;
       HttpServer* server;
       HttpCmdThread* pool;
-#ifdef BA_SELECT_DISP
-      ThreadSemaphore sem;
-#endif
 } HttpCmdThreadPool;
 
 

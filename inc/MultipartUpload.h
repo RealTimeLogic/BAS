@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: MultipartUpload.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: MultipartUpload.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2008
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -84,11 +84,9 @@ typedef void (*MultipartUpload_EndOfReq)(
     The browser bundles all data into the multipart stream sent to the
     server. The MultipartUpload servlet calls the formData callback
     function when it detects form data.
-
+    \param o the object
     \param name the name as specified in the HTML "input" type.
-
     \param value the text entered by the user.
-
     \return This function must return 0 on success. Any other value
     signals an error condition to the MultiPartUpload class.  This
     method must call the MultipartUpload destructor or call
@@ -101,6 +99,7 @@ typedef int (*MultipartUpload_FormData)(
 
 /** Executed by MultipartUpload when a file is found in the multipart data
     stream.
+    \param o the object
     \param name the name as specified in the HTML "input" type.
     \param fileName is the name and possible path of the file entered by the
     user. The path separator is platform dependent.
@@ -125,6 +124,7 @@ typedef int (*MultipartUpload_FileBegin)(
     first calls MultipartUpload_FileBegin and thereafter calls this
     method repeatedly until all data is received. End of file is signalled
     by setting the two input parameters to 0.
+    \param o the object
     \param data a pointer to the received data.
     \param len length of the data chunk.
     \return This function must return 0 on success. Any other value
@@ -140,6 +140,7 @@ typedef int (*MultipartUpload_FileData)(
 /** Executed by MultipartUpload if any errors are detected during
     parsing of the multipart data stream. This method must call the
     MultipartUpload destructor or call MultipartUpload::getCon.
+    \param o the object
     \param e is the error code.
  */
 typedef void (*MultipartUpload_Error)(

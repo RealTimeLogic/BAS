@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjson.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ubjson.h 5392 2023-02-21 15:56:50Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2014
+ *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -323,6 +323,7 @@ struct UBJEBuf;
 /** UBJSON Encoder buffer callback can be used for flushing the
     buffer or for expanding the buffer. The callback must set the
     cursor position to zero if the buffer is flushed.
+    \param o UBJEBuf
     \param sizeRequired is the extra size required by the buffer (if
     expanding the buffer).
  */

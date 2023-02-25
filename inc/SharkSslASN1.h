@@ -166,6 +166,7 @@ extern const U8 sharkssl_oid_secp521r1[5];
 extern const U8 sharkssl_oid_brainpoolP256r1[9];
 extern const U8 sharkssl_oid_brainpoolP384r1[9];
 extern const U8 sharkssl_oid_brainpoolP512r1[9];
+extern const U8 sharkssl_oid_curve25519[9];
 extern const U8 sharkssl_oid_rsaEncryption[9];          
 extern const U8 sharkssl_oid_md2withRSAEncryption[9];
 extern const U8 sharkssl_oid_md5withRSAEncryption[9];

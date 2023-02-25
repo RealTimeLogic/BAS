@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5394 2023-02-21 18:41:44Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2023
  *
@@ -154,6 +154,8 @@
 
 #ifdef BA_DLLBUILD
 #if defined(BA_LIB)
+#define LUA_BUILD_AS_DLL
+#define LUA_LIB
 #define BA_API __declspec(dllexport)
 #else
 #define BA_API __declspec(dllimport)

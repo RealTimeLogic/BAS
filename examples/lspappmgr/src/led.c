@@ -52,7 +52,7 @@ static int LED_getLed(lua_State* L)
 /*
   The function below is called by the LspAppMgr startup code.
 */
-void luaopen_LED(lua_State* L)
+void luaopen_AUX(lua_State* L)
 {
    static const luaL_Reg reg[] = {
       {"setLed", LED_setLed},

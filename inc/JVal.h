@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JVal.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: JVal.h 5380 2023-02-16 15:40:23Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2014
  *
@@ -388,25 +388,25 @@ inline JVal* JVal::manageJ(JErr* e){
 inline S32 JVal::getLength(JErr* e){
    return JVal_getLength(this, e); }
 
-inline void JVal::setInt(JErr* e,S32 v) {
-  JVal_setInt(this, e, v); }
-inline void JVal::setLong(JErr* e,S64 v) {
-  JVal_setLong(this, e, v); }
-inline void JVal::setDouble(JErr* e,double v) {
-  JVal_setDouble(this, e, v); }
-inline void JVal::setBoolean(JErr* e,BaBool v) {
-  JVal_setBoolean(this, e, v); }
+inline void JVal::setInt(JErr* e,S32 val) {
+  JVal_setInt(this, e, val); }
+inline void JVal::setLong(JErr* e,S64 val) {
+  JVal_setLong(this, e, val); }
+inline void JVal::setDouble(JErr* e,double val) {
+  JVal_setDouble(this, e, val); }
+inline void JVal::setBoolean(JErr* e,BaBool val) {
+  JVal_setBoolean(this, e, val); }
 inline void JVal::setNull(JErr* e) {
   JVal_setNull(this, e); }
-inline void JVal::setString(JErr* e, char* v) {
-  JVal_setString(this, e, v); }
+inline void JVal::setString(JErr* e, char* val) {
+  JVal_setString(this, e, val); }
 inline bool JVal::isObjectMember(){
    return JVal_isObjectMember(this) ? true : false; }
 inline int JVal::unlink(JVal* child){
    return JVal_unlink(this, child); }
-inline int JVal::addMember(JErr* e, const char* memberName,
+inline int JVal::addMember(JErr* e, const char* name,
                            JVal* child, AllocatorIntf* dAlloc) {
-   return JVal_addMember(this, e, memberName, child, dAlloc); }
+   return JVal_addMember(this, e, name, child, dAlloc); }
 inline int JVal::add(JErr* e, JVal* child) {
    return JVal_add(this, e, child); }
 inline void JVal::terminate(AllocatorIntf* vAlloc, AllocatorIntf* dAlloc){

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5204 2022-07-06 06:54:33Z wini $
+ *   $Id: lxrc.h 5396 2023-02-21 21:23:52Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022
+ *   COPYRIGHT:  Real Time Logic, 2023
  *               https://realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -38,17 +38,165 @@
 extern "C" {
 #endif
 
+/** @defgroup AuxLSP Auxiliary API
+    @ingroup LSP
+    The optional Lua code in xrc/lua, header file xrc/lua/lxrc.h 
+    @{
+*/
+
+
+/** Install the [forkpty Lua bindings](../../../lua/auxlua.html#forkptylib).
+ */
 void balua_forkpty(lua_State* L);
+
+/** Install the [httpc Lua bindings](../../../lua/auxlua.html#l#httpc).
+ */
 void balua_http(lua_State* L);
+
+/** Install the [LuaIo Lua bindings](../../../lua/auxlua.html#luaio).
+ */
 void balua_luaio(lua_State *L);
+
+/** Install the [SharkSSL Lua bindings](../../../lua/auxlua.html#sharkssl).
+ */
 void balua_sharkssl(lua_State *L);
+
+/** Install the [socket Lua bindings](../../../lua/auxlua.html#socket).
+ */
 void balua_socket(lua_State* L);
+
+/** When the socket Lua bindings are installed and the server
+ * application implements a gracefully system exit, C code can call
+ * this function.
+ */
 void balua_relsocket(lua_State* L);
+
+/** Install the [crypto Lua bindings](../../../lua/auxlua.html#crypto).
+ */
 void balua_crypto(lua_State *L);
+
+/** Install the [TraceLogger Lua bindings](../../../lua/auxlua.html#tracelogger).
+ */
 void balua_tracelogger(lua_State *L);
 
-typedef void (*balua_thread_Shutdown)(lua_State* L, ThreadMutex* dispMutex);
-balua_thread_Shutdown balua_thread(lua_State* L);
+struct ThreadJob;
+struct LThreadMgr;
+
+/** @defgroup ThreadMgr The Lua Thread Library
+    @ingroup AuxLSP
+    @{
+*/
+
+
+/** Generic ThreadJob callback
+    \param tj the job passed into function LThreadMgr_run
+    \param mgr the manager associated with the global or dynamically
+    created instance via
+    [ba.thread.create](../../../lua/auxlua.html#thread_create)
+ */
+typedef void (*ThreadJob_Run)(struct ThreadJob* tj, struct LThreadMgr* mgr);
+
+/** ThreadJob callback designed for calling Lua code using pcall
+    \param tj the job passed into function LThreadMgr_run
+    \param msgh the index position to the BAS error handler function
+    \param mgr the manager associated with the global or dynamically
+    created instance via
+    [ba.thread.create](../../../lua/auxlua.html#thread_create)
+ */
+typedef void (*ThreadJob_LRun)(
+   struct ThreadJob* tj, int msgh, struct LThreadMgr* mgr);
+
+/** The global instance created by C code or a dynamic instance
+ * created by
+ * [ba.thread.create](../../../lua/auxlua.html#thread_create)
+ */
+typedef struct LThreadMgr
+{
+   HttpCmdThreadPoolIntf super; /* Inherits from HttpCmdThreadPoolIntf */
+   DoubleList idleThreadList; 
+   DoubleList runningThreadList;
+   DoubleList pendingJobList; /* ThreadJob */
+   HttpServer* server; /**< The server object */
+   lua_State* Lg; /**< Global state */
+   int runningThreads; /**< Threads currently running */
+   int pendingJobs; /**< Jobs queued */
+   int isDynamic; /**< if created via ba.thread.create() */
+   ThreadPriority priority;
+   int stackSize;
+   int threads; /**< number of threads */
+} LThreadMgr;
+
+
+/** A thread job created by #ThreadJob_create or #ThreadJob_lcreate
+ */
+typedef struct ThreadJob
+{
+   DoubleLink super;  /* Inherits from DoubleLink */
+   ThreadJob_Run run;
+   ThreadJob_LRun lrun;
+   lua_State* Lt; /**< Thread state */
+} ThreadJob;
+
+/** This function returns true if at least one thread is currently
+ * idle and there is no need to queue the job when calling
+ * #LThreadMgr_run.
+ * \param o the LThreadMgr instance 
+ */
+#define LThreadMgr_canRun(o) ! DoubleList_isEmpty(&(o)->idleThreadList)
+
+/** LThreadMgr can be used as a
+ * [Thread Pool](../../../lua/lua.html#threadscoroutines)
+ * and is often utilized in real-time operating system (RTOS) devices
+ * with limited resources as a substitute for HttpCmdThreadPool.
+ * \param o the LThreadMgr instance 
+ * \param server the HttpServer instance 
+ */
+#define LThreadMgr_enableHttpPool(o, server)                            \
+   HttpServer_setThreadPoolIntf(server, (HttpCmdThreadPoolIntf*)o)
+
+/** This function terminates the Thread Pool and waits for all threads
+ * to become idle before returning.
+ */
+BA_API void LThreadMgr_destructor(LThreadMgr* o);
+
+/** Initialize the Thread Pool.
+ * \param o
+ * \param server
+ * \param  priority typically set to ThreadPrioNormal
+ * \param stackSize typically set to BA_STACKSZ
+ * \param threads Specify the initial number of threads to create
+ * \param L the Lua state returned by balua_create
+ * \param allowCreate set to TRUE to enable the two APIs
+ * ba.thread.create and ba.thread.configure
+ */
+BA_API void LThreadMgr_constructor(LThreadMgr* o, HttpServer* server,
+   ThreadPriority priority, int stackSize,
+   int threads, lua_State* L, int allowCreate);
+
+/** Create a generic thread job.
+ * \param size at least sizeof(ThreadJob)
+ * \param run Your callback function will execute in the context of a
+ * thread within the Thread Manager
+ */
+BA_API ThreadJob* ThreadJob_create(size_t size, ThreadJob_Run run);
+
+/** Create a thread job designed to execute Lua code.
+ * \param size at least sizeof(ThreadJob)
+ * \param lrun Your callback function will execute in the context of a
+ * thread within the Thread Manager
+ */
+BA_API ThreadJob* ThreadJob_lcreate(size_t size, ThreadJob_LRun lrun);
+
+/** This function sends a thread job to an available idle thread, or
+ *  queues the job if no threads are currently available. Before
+ *  calling this method from outside of the server environment, you
+ *  must have ownership of the #SoDisp #ThreadMutex.
+ */
+BA_API int LThreadMgr_run(LThreadMgr* o, ThreadJob* tj);
+
+/** @} */ /* end of ThreadMgr */  
+
+/** @} */ /* end of AuxLSP */  
 
 #ifdef __cplusplus
 }
@@ -78,6 +226,7 @@ struct HttpClient;
 /* tocs: To SharkSslCertStore -- Certificate Authority
  */
 #define toCertStore(L,ix) (SharkSslCertStore*)luaL_checkudata(L,ix,BACERTSTORE) 
+
 
 
 #endif

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 5079 2022-02-11 20:41:10Z wini $
+ *   $Id: WebSocketServer.h 5392 2023-02-21 15:56:50Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -61,7 +61,7 @@
 
     The Barracuda App Server SDK includes one example using this
      WebSocket library and a copy of the example
-    [is available on GitHub](https://github.com/RealTimeLogic/BAS/blob/main/examples/C-WebSockets/README.md)
+    [is available on GitHub](https://github.com/RealTimeLogic/BAS/tree/main/examples/C-WebSockets)
 
     SDK example dir: examples/WebSocket-Chat/
 
@@ -100,7 +100,7 @@ typedef void (*WSSCB_Ping)(struct WSSCB* o,struct WSS* wss,void* data,int len);
     connection closed unexpectedly.
     \param o the WSSCB interface instance.
     \param wss the WebSocket server instance.
-    \param status. A positive value means that the client sent a
+    \param status A positive value means that the client sent a
     graceful close message to the server. The value 1000 and 1001
     indicates normal closure. Any other value sent by the client
     indicates an error condition. See RFC6455:7.4.1 for details. A

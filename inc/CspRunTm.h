@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: CspRunTm.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: CspRunTm.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2004
+ *   COPYRIGHT:  Real Time Logic, 2006 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -95,6 +95,7 @@ struct CspReader;
 
 /** Prototype for the CspReader callback function.
     @ingroup CSP
+\param o CspReader
 \param data a pointer to the data area where the data read should be
 copied.
 \param offset the offset position into the "dat" file.

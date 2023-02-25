@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: balua.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -55,9 +55,11 @@ extern "C" {
 
 #include "AuthenticatedUser.h"
 #include "ThreadLib.h"
+#include "DoubleList.h"
+#include "HttpCmdThreadPoolIntf.h"
 
-/** @defgroup LSP The Lua Server Pages (LSP) Plugin.
-    @ingroup Plugins
+
+/** @defgroup LSP Lua C API
 
    balua.h is header file that provides the *public* symbols for creating,
    destroying and configuring an LSP VM.
@@ -175,9 +177,13 @@ BA_API lua_State* _balua_create(const BaLua_param* p, int version);
 BA_API void balua_close(lua_State* L);
 
 /** 
-    Install Lua bindings for the default login tracker. See one of the two following C code examples for how to use this function: MakoMain.c or LspAppMgr.c
+    Install Lua bindings for the default login tracker. See one of the
+    two following C code examples for how to use this function:
+    MakoMain.c or LspAppMgr.c
+    \param L the state
     \param noOfLoginTrackerNodes tracker size
-    \param maxNumberOfLogins how many login attempts before user (IP address) is banned
+    \param maxNumberOfLogins how many login attempts before user (IP
+    address) is banned
     \param banTime how long in seconds to ban an IP address
     \sa #LoginTracker #LoginTrackerIntf
 */
@@ -309,14 +315,15 @@ enum BaUserDataTypes {
 };
 
 
-/*
-
+/** LHttpDir is the HttpDir instance used by Lua bindings and can be used by advanced Lua bindings creating new HttpDir type Lua interfaces. 
+<pre>
 LHttpDir and Lua userdata memory layout:
 +-----------+
 | LHttpDir  |
 +-----------+
 | HttpDir   | <- Any type that inherits from HttpDir
 +-----------+
+</pre>
 */
 typedef struct LHttpDir
 {
@@ -339,6 +346,7 @@ BA_API void ba_ldbgmon(
    lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData);
 BA_API void balua_revcon(lua_State* L);
 BA_API void balua_mallinfo(lua_State* L);
+
 
 #ifdef __cplusplus
 }

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JParser.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: JParser.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2018
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -50,8 +50,8 @@ struct JParserIntf;
 struct JParserVal;
 
 /** The parser callback function.
-    \param o, the interface object
-    \param v, the parsed value
+    \param o the interface object
+    \param v the parsed value
     \param recLevel goes from 0 to N and represents object nesting level
  */
 typedef int (*JParserIntf_Service)(
@@ -214,8 +214,8 @@ inline int JErr::setTooFewParams() {
    return JErr_setTooFewParams(this);}
 inline int JErr::setTypeErr(JVType expT, JVType recT) {
    return JErr_setTypeErr(this, expT, recT);}
-inline int JErr::setError(JErrT err,const char* msg) {
-   return JErr_setError(this,err,msg);}
+inline int JErr::setError(JErrT e,const char* message) {
+   return JErr_setError(this,e, message);}
 #endif
 
 

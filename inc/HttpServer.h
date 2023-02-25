@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: HttpServer.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5375
+#define BASLIB_VER_NO 5399
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5375)
+#define BASLIB_VER BASLIB_VER_M(5399)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -127,16 +127,6 @@ typedef struct
 } NonBlockingSendBuf;
 
 
-/** @defgroup Plugins Barracuda plugins
-
-A plugin is normally a resource such as HttpPage or a collection of
-resources such as a HttpDir. Thus, most plugins extend the
-functionality in one of HttpPage and/or HttpDir.
-
-\sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>
- */
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -166,7 +156,6 @@ typedef void (*UserDefinedErrHandler)(BaFatalErrorCodes ecode1,
 
 
 /** @defgroup CSP C Server Pages
-    @ingroup Plugins
 
     C Server Pages make it possible to insert C or C++ code into HTML
     template files by using special tags. The technology is similar to
@@ -2542,13 +2531,6 @@ typedef struct HttpDir
       /** Set the optional authenticator and/or the optional AuthorizerIntf.
           \param authenticator is one of the authenticator implementations.
           \param authorizer the authorizer.
-          \returns true if the authenticator was activated and false
-          otherwise. The authenticator is not activated if the HttpDir
-          service function is not the default service
-          function. HttpResMgr, WebDAV, etc have their own
-          setAuthenticator functions. The internal service function
-          calls authenticateAndAuthorize if the authenticator is
-          activated.
       */
       void setAuthenticator(
          struct AuthenticatorIntf* authenticator,
@@ -3013,7 +2995,6 @@ address}/start.html <b>(*)</b></td></tr>
           friendly 404 page.
          \param page404 is a URL to your user friendly 404 page.
          Example "/myUserFriendly404Page.html"
-         \return the old 404 page, if any.
       */
       void set404Page(const char* page404);
 

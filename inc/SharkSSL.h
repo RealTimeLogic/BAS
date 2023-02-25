@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5359 2022-11-19 07:05:27Z wini $
+ *   $Id: SharkSSL.h 5399 2023-02-24 07:09:26Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -2133,13 +2133,16 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_decrypt(
  * NamedCurve, use as curveID parameter
  * SECPxxxR1       - RFC 4492 section 5.1.1
  * BRAINPOOLPxxxR1 - RFC 7027 section 2
+ * CURVE25519,448  - RFC 8446 section 4.2.7
  */
-#define SHARKSSL_EC_CURVE_ID_SECP256R1       23
-#define SHARKSSL_EC_CURVE_ID_SECP384R1       24
-#define SHARKSSL_EC_CURVE_ID_SECP521R1       25
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1 26
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1 27
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 28
+#define SHARKSSL_EC_CURVE_ID_SECP256R1        23
+#define SHARKSSL_EC_CURVE_ID_SECP384R1        24
+#define SHARKSSL_EC_CURVE_ID_SECP521R1        25
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1  26
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1  27
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1  28
+#define SHARKSSL_EC_CURVE_ID_CURVE25519       29
+#define SHARKSSL_EC_CURVE_ID_CURVE448         30
 
 
 /** 
@@ -2217,6 +2220,8 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
     - SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1
     - SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1
     - SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1
+    - SHARKSSL_EC_CURVE_ID_CURVE25519
+    - SHARKSSL_EC_CURVE_ID_CURVE448
 
 
   \return the number of allocated bytes if the key creation was

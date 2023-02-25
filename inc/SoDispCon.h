@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 5186 2022-06-08 21:13:22Z wini $
+ *   $Id: SoDispCon.h 5387 2023-02-20 22:50:13Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -121,7 +121,9 @@ typedef struct SoDispCon
           \param port the port number or service.
           \param bindIntfName the interface to bind this socket to.
           \param dgram defaults to false (TCP).
-          \param useIp6 defaults to false.
+          \param bindPort optionally bind to specific port
+          \param timeout in milliseconds
+          \param ipv6 defaults to false.
           \param errinfo may be set to platform error.
 
           \returns 0 on success and < 0 on error: sock error code.
