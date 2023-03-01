@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: balua.h 5401 2023-03-01 02:56:28Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
  *
@@ -81,19 +81,21 @@ extern "C" {
 extern "C" {
 #endif
 
-#define BALUA_VERSION 20
+#ifdef BASLIB_VER_NO
+#define BALUA_VERSION BASLIB_VER_NO
+#else
+#define BALUA_VERSION 1
+#endif
 #define BA_ENV_IX lua_upvalueindex(1)
-#define BA_TABLE "_BA_"
-#define BA_WKTABLE "_BAWK"
+#define BA_TABLE "_BA"
 /** Creates the Barracuda Lua VM */
 #define balua_create(p) _balua_create(p, BALUA_VERSION)
 
-#define balua_optboolean(L,narg,def) luaL_opt(L, balua_checkboolean, narg, def)
 #define baluaENV_getmetatable(L,mtId) lua_rawgeti(L, BA_ENV_IX, mtId)
 #define baluaENV_checkudata(L,ud,mtid) _baluaENV_isudtype(L,ud,mtid,TRUE)
 #define baluaENV_isudtype(L,ud,mtid) _baluaENV_isudtype(L,ud,mtid,FALSE)
 #define balua_pushbatab(L) lua_getfield(L,LUA_REGISTRYINDEX,BA_TABLE)
-#define balua_pushwktab(L) lua_getfield(L,LUA_REGISTRYINDEX,BA_WKTABLE)
+/* Similar to luaL_newlibtable, but sets batab as upvalue */
 #define balua_newlib(L,l) \
   (luaL_newlibtable(L,l), balua_pushbatab(L), luaL_setfuncs(L,l,1))
 #define baluaENV_getmutex(L) baluaENV_getparam(L)->mutex
@@ -191,9 +193,9 @@ BA_API int balua_usertracker_create(
    lua_State* L, U32 noOfLoginTrackerNodes, U32 maxNumberOfLogins,
    BaTime banTime);
 
-
 BA_API lua_State* balua_getmainthread(lua_State* L);
 BA_API int balua_typeerror(lua_State *L, int narg, const char *tname);
+#define balua_optboolean(L,narg,def) luaL_opt(L, balua_checkboolean, narg, def)
 BA_API int balua_checkboolean(lua_State *L, int narg);
 BA_API int baluaENV_newmetatable(lua_State *L, int mtid, int inheritmtid);
 BA_API void baluaENV_register(
@@ -210,6 +212,41 @@ BA_API void balua_resumeerr(lua_State* L,const char* ewhere);
 BA_API int balua_loadfile(
 	lua_State *L, const char *filename, struct IoIntf* io, int envix);
 
+/** @defgroup WeakT Weak Table reference
+    @ingroup LSP
+
+    Functions designed to be similar to using luaL_ref(L,
+    LUA_REGISTRYINDEX), lua_rawgeti(L, LUA_REGISTRYINDEX, ix), and
+    luaL_unref(L, LUA_REGISTRYINDEX, ix), but with weak
+    references. Weak references allow the Lua garbage collector to
+    collect values even if they are still referenced in the weak table.
+   @{
+*/
+
+/** Creates and returns a reference in the weak table, for the object
+    on the top of the stack (and pops the object).
+    \param L the state
+ */
+BA_API int balua_wkRef(lua_State* L);
+
+BA_API int balua_wkRefIx(lua_State* L, int index);
+
+/** Pushes the value associated with the key 'index' on top of the
+    stack. Pushes null if reference is not found.
+    \param L the state
+    \param reference the reference returned by balua_wkRef
+ */
+BA_API void balua_wkPush(lua_State* L, int reference);
+
+/** Releases the reference ref from the weak table.
+    \param L the state
+    \param reference the reference returned by balua_wkRef
+ */
+BA_API void balua_wkUnref(lua_State* L, int reference);
+/** @} */ /* Weak */
+
+
+
 #ifdef _DOXYGEN
 /** Load a Lua script and run the script at startup. You may call this
     function multiple times during startup.
@@ -221,7 +258,8 @@ BA_API int balua_loadfile(
 BA_API int balua_loadconfig(
    lua_State* L, struct IoIntf* io, const char* filename);
 #else
-#define balua_loadconfig(L, io, filename) balua_loadconfigExt(L, io, filename, 0)
+#define balua_loadconfig(L, io, filename)       \
+   balua_loadconfigExt(L, io, filename, 0)
 #endif
 
 /** Load a Lua script and run the script at startup. You may call this
