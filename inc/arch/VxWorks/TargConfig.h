@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5402 2023-03-07 17:20:46Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2023
  *
@@ -141,7 +141,7 @@
 #if defined(__LP64__) && !defined(BA_64BIT)
 #define BA_64BIT
 #ifndef BA_STACKSZ
-#define BA_STACKSZ 20000
+#define BA_STACKSZ 25000
 #endif
 #endif
 

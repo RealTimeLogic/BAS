@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5397 2023-02-21 21:41:43Z wini $
+ *   $Id: LspAppMgr.c 5402 2023-03-07 17:20:46Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -320,9 +320,8 @@ barracuda(void)
    static NetIo netIo;
    static lua_State* L; /* pointer to a Lua virtual machine */
    static BaLua_param blp; /* configuration parameters */
-#if USE_DBGMON
    static int onunloadRef;
-#endif
+   static int startServerRef;
 #ifndef NO_BAIO_DISK
    static DiskIo diskIo;
 #endif
@@ -363,6 +362,17 @@ barracuda(void)
    blp.timer = &timer;       /* Pointer to a BaTimer */
    L = balua_create(&blp);   /* create the Lua state */
 
+   /* Lua debugger hook.
+      Use the debugger monitor or the basic trace lib (lHook).
+      Must be first.
+   */
+#if USE_DBGMON
+   ba_ldbgmon(L, dbgExitRequest, 0);
+#elif defined(ENABLE_LUA_TRACE)
+   lua_sethook(L, lHook, LUA_MASKLINE, 0);
+#endif
+
+
    /* Install optional IO interfaces */
    balua_iointf(L, "net",  (IoIntf*)&netIo);
    balua_http(L); /* Install optional HTTP client library */
@@ -387,7 +397,6 @@ barracuda(void)
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L); /* Install optional trace logger library */
-   luaopen_AUX(L); /* Example Lua binding: led.c */
 
 /* 
    Some embedded devices may not have a DiskIo.
@@ -417,15 +426,6 @@ barracuda(void)
       4, /* Max number of login attempts. */
       10*60); /* 10 minutes ban time if more than 4 login attempts in a row. */
 
-   /* Lua debugger hook.
-      Use the debugger monitor or the basic trace lib (lHook).
-   */
-#if USE_DBGMON
-   ba_ldbgmon(L, dbgExitRequest, 0);
-#elif defined(ENABLE_LUA_TRACE)
-   lua_sethook(L, lHook, LUA_MASKLINE, 0);
-#endif
-
    balua_tokengen(L); /* See  the "SharkTrustX" comment above */
 #if USE_REVCON
    /* Add reverse server connection. This requires SharkTrustX.
@@ -441,28 +441,26 @@ barracuda(void)
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
 
-   /* Dispatcher mutex must be locked when running the .config script
+   /* Dispatcher mutex must be locked until the dispatcher starts
     */
    ThreadMutex_set(&mutex);
-   ecode=balua_loadconfigExt(L, blp.vmio, 0, 1); /* Load and run .config  */
-   ThreadMutex_release(&mutex);
+   ecode=balua_loadconfigExt(L, blp.vmio, 0, 2); /* Load and run .config  */
    if(ecode)
    {
       HttpTrace_printf(0,".config error: %s.\n", lua_tostring(L,-1)); 
       baFatalE(FE_USER_ERROR_2, 0);
    }
-#if USE_DBGMON
-   /* .config must return a function */
-   if(!lua_isfunction(L, -1))
+   /* .config must return two functions, one for starting server, and
+    * one onunload handler
+    */
+   if(!lua_isfunction(L, -1) || !lua_isfunction(L, -2))
    {
-      HttpTrace_printf(0,".config error: no onunload\n");
+      HttpTrace_printf(0,".config error: no start server or onunload\n");
       baFatalE(FE_USER_ERROR_3, 0);
    }
    /* Keep a reference to function returned by .config */
    onunloadRef=luaL_ref(L,LUA_REGISTRYINDEX);
-#else
-   lua_pop(L, 1); /* Returned function not used */
-#endif
+   startServerRef=luaL_ref(L,LUA_REGISTRYINDEX);
 
    /* See (A) above */
 #ifdef MAXTHREADS
@@ -470,6 +468,18 @@ barracuda(void)
 #else
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 #endif
+
+   /* Example Lua bindings, compile with AsynchLua.c or led.c */
+   luaopen_AUX(L);
+
+   lua_rawgeti(L, LUA_REGISTRYINDEX, startServerRef);
+   baAssert(lua_isfunction(L, -1));
+   if(lua_pcall(L, 0, 1, 0))
+   {
+      HttpTrace_printf(0,"Error in 'startServer': %s\n",
+                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
+   }
+   luaL_unref(L, LUA_REGISTRYINDEX, startServerRef);
 
    /*
      The dispatcher object waits for incoming HTTP requests. These
@@ -481,6 +491,7 @@ barracuda(void)
 
      Arg -1: Never returns, unless SoDisp_setExit() is called
    */
+   ThreadMutex_release(&mutex);
    SoDisp_run(&dispatcher, -1);
 
    /* Enable gracefull shutdown if debug monitor is included.
@@ -513,5 +524,7 @@ barracuda(void)
    HttpTrace_printf(0,"\n\nRestarting LspAppMgr.\n\n");
    HttpTrace_flush();
    goto L_restart;
+#else /*  USE_DBGMON */
+   (void)onunloadRef;
 #endif
 }

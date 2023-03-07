@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: MakoMain.c 5402 2023-03-07 17:20:46Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -805,6 +805,7 @@ onunload(int onunloadRef)
    balua_relsocket(L); /* Gracefully close all cosockets, if any */
 }
 
+
 static int
 loadConfigData(lua_State* L)
 {
@@ -1534,7 +1535,10 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    blp.server = &server;           /* pointer to a HttpServer */
    blp.timer = &timer;             /* Pointer to a BaTimer */
    L = balua_create(&blp);        /* create the Lua state */
-
+#if USE_DBGMON
+   /* Add Lua debugger */
+    ba_ldbgmon(L, dbgExitRequest, 0);
+#endif
    lua_gc(L, LUA_GCSTOP, 0);  /* stop collector during initialization */
    createLuaGlobals(argc,argv,envp,cfgfname,execpath);
    lua_gc(L, LUA_GCRESTART, 0);
@@ -1591,10 +1595,6 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
-#if USE_DBGMON
-   /* Add Lua debugger */
-   ba_ldbgmon(L, dbgExitRequest, 0);
-#endif
 
    balua_tokengen(L); /* See  the "SharkTrustEx" comment above */
 #if USE_REVCON
@@ -1607,7 +1607,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    luaopen_opcua_ns0_static(L);
 #endif
 
-   /* Dispatcher mutex must be locked when running the .openports script
+   /* Dispatcher mutex must be locked until the dispatcher starts
     */
    ThreadMutex_set(&mutex);
 
@@ -1619,7 +1619,6 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    */
    ecode=balua_loadconfig(L, blp.vmio, ".openports");
 
-   ThreadMutex_release(&mutex);
    if(ecode)
       errQuit(".openports error: %s.\n", lua_tostring(L,-1)); 
 
@@ -1627,27 +1626,12 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       When run as: sudo mako -u `whoami`
    */
    setUser(argc,argv);
-
-   /* Dispatcher mutex must be locked when running the .config script
-    */
-   ThreadMutex_set(&mutex);
    ecode=balua_loadconfigExt(L, blp.vmio, 0, 1); /* Load and run .config  */
-   ThreadMutex_release(&mutex);
-
-#if USE_DBGMON
-   if( ! restart )
-   {
-      if(ecode)
-         errQuit(".config error: %s.\n", lua_tostring(L,-1));
-      if(!lua_isfunction(L, -1))
-         errQuit(".config error: no onunload");
-      onunloadRef=luaL_ref(L,LUA_REGISTRYINDEX);
-   }
-   else
-#endif
-      onunloadRef=0;
-
-   /* See (A) above */
+   if(ecode)
+      errQuit(".config error: %s.\n", lua_tostring(L,-1));
+   if(!lua_isfunction(L, -1))
+      errQuit(".config error: no onunload");
+   onunloadRef=luaL_ref(L,LUA_REGISTRYINDEX);
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 
    /*
@@ -1655,6 +1639,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
      requests are sent to the HttpServer object, where they are delegated to
      a Barracuda resource such as the WebDAV instance.
    */
+   ThreadMutex_release(&mutex);
    if( ! disp.doExit ) /* Can be set by debugger */
    {
       /* Arg -1: Never returns unless CTRL-C handler (or debugger monitor)
@@ -1666,8 +1651,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /*Dispatcher mutex must be locked when terminating the following objects.*/
    ThreadMutex_set(&mutex);
    /* Graceful termination of Lua apps. See function above. */
-   if(onunloadRef)
-      onunload(onunloadRef);
+   onunload(onunloadRef);
    LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */
    HttpCmdThreadPool_destructor(&pool);  /* Wait for threads to exit */
 
@@ -1710,8 +1694,6 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    if(restart)
       goto L_restart;
 #endif
-
-
    return;
 }
 

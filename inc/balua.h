@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5401 2023-03-01 02:56:28Z wini $
+ *   $Id: balua.h 5402 2023-03-07 17:20:46Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
  *
@@ -115,27 +115,27 @@ extern "C" {
 
 
 #define dmpstk1(L,x) \
-   fprintf(stderr,"%d: %s %p\n", __LINE__, lua_typename(L,lua_type(L,(x))), \
-           lua_topointer(L,x))
-#define dmpstk2(L,x) {                          \
-   int ix=lua_absindex(L,x);                                         \
-   fprintf(stderr,"%4d: %2d %s\n", __LINE__, ix, luaL_tolstring(L,x,0)); \
-   lua_pop(L,1);                                                        \
-}while(0)
-#define dmptop(L) \
-   fprintf(stderr,"%d: top %d\n",__LINE__,lua_gettop(L))
-#define dmpTab(L, ix) do {                                        \
-      fprintf(stderr,"%d: TAB %d %p\n",\
-               __LINE__, lua_absindex(L,ix), lua_topointer(L,ix)); \
-   lua_pushnil(L);                                              \
-   while(lua_next(L, ix < 0 ? ix-1: ix) != 0)                   \
-   {                                                             \
-      fprintf(stderr,"\t%s = %s\n",                                     \
-              luaL_tolstring(L,-3,0),                                   \
-              luaL_tolstring(L,-1,0));                                  \
-      lua_pop(L,3);                                                     \
-   }                                                                    \
-} while(0)
+   HttpTrace_printf(0,"%d: %s %p\n", __LINE__,lua_typename(L,lua_type(L,(x))), \
+                    lua_topointer(L,x))
+#define dmpstk2(L,x) {                                               \
+      int ix=lua_absindex(L,x);                                         \
+      HttpTrace_printf(0,"%4d: %2d %s\n",__LINE__,ix,luaL_tolstring(L,x,0)); \
+      lua_pop(L,1);                                                     \
+   }while(0)
+#define dmptop(L)                                               \
+   HttpTrace_printf(0,"%d: top %d\n",__LINE__,lua_gettop(L))
+#define dmpTab(L, ix) do {                      \
+      HttpTrace_printf(0,"%d: TAB %d %p\n",                        \
+                       __LINE__, lua_absindex(L,ix), lua_topointer(L,ix)); \
+      lua_pushnil(L);                                                   \
+      while(lua_next(L, ix < 0 ? ix-1: ix) != 0)                        \
+      {                                                                 \
+         HttpTrace_printf(0,"\t%s = %s\n",                              \
+                          luaL_tolstring(L,-3,0),                       \
+                          luaL_tolstring(L,-1,0));                      \
+         lua_pop(L,3);                                                  \
+      }                                                                 \
+   } while(0)
 
 
 struct BaTimer;
@@ -211,6 +211,16 @@ BA_API void balua_manageerr(
 BA_API void balua_resumeerr(lua_State* L,const char* ewhere);
 BA_API int balua_loadfile(
 	lua_State *L, const char *filename, struct IoIntf* io, int envix);
+
+/** Pushes onto the stack the first user value associated with the
+ *  full userdata at the given index. This function is similar to
+ *  lua_getiuservalue(), but creates a table at the first user value
+ *  if it does not exist. Note index must be absolute i.e. not < 0.
+ *  A table is pushed on the stack when this function returns.
+ */
+BA_API void
+balua_getuservalue(lua_State* L, int index);
+
 
 /** @defgroup WeakT Weak Table reference
     @ingroup LSP

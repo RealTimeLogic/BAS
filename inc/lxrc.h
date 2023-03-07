@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5396 2023-02-21 21:23:52Z wini $
+ *   $Id: lxrc.h 5402 2023-03-07 17:20:46Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *               https://realtimelogic.com
@@ -83,6 +83,8 @@ struct ThreadJob;
 struct LThreadMgr;
 
 /** @defgroup ThreadMgr The Lua Thread Library
+    See Advanced Lua Bindings, section \ref fullsolution "Calling Lua Code Asynchronously From C Code" for how to use this class.
+
     @ingroup AuxLSP
     @{
 */
