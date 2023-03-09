@@ -50,7 +50,7 @@ static int LED_getLed(lua_State* L)
 }
 
 /*
-  The function below is called by the LspAppMgr startup code.
+  The function below is called by the Xedge startup code.
 */
 void luaopen_AUX(lua_State* L)
 {

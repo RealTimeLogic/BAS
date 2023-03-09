@@ -1,5 +1,4 @@
 /*
-
 The following example is part of the Advanced Lua Bindings tutorial
 and demonstrates how to call Lua code asynchronously from C code. This
 example receives UDP messages on ports 8080 and 8090, forwarding these
@@ -10,11 +9,11 @@ Introduction:
 https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html#AsynchC2Lua
 
 Example 1:
-The example listening on port 8080, referred to as 'ex1' below, expects
-a global Lua function to be defined. If the function is found, the
-example will call this function. To create this function, add the
+The example listening on port 8080, referred to as 'ex1' below,
+expects a global Lua function to be defined. If the function is found,
+the example will call this function. To create this function, add the
 following Lua code to the .preload script of a Lua application using
-the LSP Application Manager:
+Xedge:
 
 function _G.udpmsg(msg)
     trace("Global func received:", msg)
@@ -66,7 +65,7 @@ while True:
 #define PORT_EX2 8090
 #define MAXLINE 1024
 
-/* The LThreadMgr configured in LspAppMgr.c */
+/* The LThreadMgr configured in xedge.c */
 extern LThreadMgr ltMgr;
 /* The Socket Dispatcher (SoDisp) mutex protecting everything. */
 ThreadMutex* soDispMutex;
@@ -237,7 +236,7 @@ static int installUdpCallbackEx2(lua_State* L)
 /* This function installs the Lua binding, enabling Lua code to call
  * UDPTST.install(). The code employs standard Lua syntax, which is
  * included in any literature that explains Lua bindings. The function
- * is called by the LSP Application Manager startup code.
+ * is called by the Xedge startup code.
 */
 void luaopen_AUX(lua_State* L)
 {

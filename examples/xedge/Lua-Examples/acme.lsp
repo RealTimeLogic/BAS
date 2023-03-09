@@ -1,10 +1,10 @@
 <?lsp
 
 --[[
-This example shows how to use the LSP App Manager's integrated Let's
+This example shows how to use Xedge's integrated Let's
 Encrypt plugin in automatic mode.
 
-Simply run this file using the LSP App Manager and follow the
+Simply run this file using Xedge and follow the
 instructions.
 
 The logic for managing the two modules acmebot and acmedns would
@@ -170,7 +170,7 @@ else
       emitNoSecurityModule()
    else
       local op={
-         info="LSP Application Manager's Let's Encrypt example",
+         info="Xedge's Let's Encrypt example",
          acceptterms=true,
          rsa=true,
          --production=false -- Enable staging

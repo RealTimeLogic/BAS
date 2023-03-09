@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: LspAppMgr.c 5402 2023-03-07 17:20:46Z wini $
+ *   $Id: xedge.c 5410 2023-03-08 22:29:02Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -21,10 +21,10 @@
  *   the agreement under which the program has been supplied.
  ****************************************************************************
 
-LSP Application Manager Documentation (lspappmgr):
-http://realtimelogic.com/ba/doc/?url=/examples/lspappmgr/readme.html
+Xedge Documentation (xedge):
+http://realtimelogic.com/ba/doc/?url=/examples/xedge/readme.html
 
-Note: the lspappmgr includes files and resources from the auxiliary
+Note: the xedge includes files and resources from the auxiliary
 API -- i.e. from the xrc directory. The makefile includes these files in the
 build process. The makefile also assembles a number of resource files,
 such as Lua scripts, HTML files, etc, and assembles these files into a
@@ -32,7 +32,7 @@ ZIP file.
 
 The extra optional API's included are documented in the startup code below.
 
-The LspAppMgr's C code shows typical C startup code required for the
+The xedge's C code shows typical C startup code required for the
 Barracuda App Server when used in an RTOS/firmware environment. The C
 code includes graceful shutdown, however, the graceful shutdown code
 is only included if compiled with USE_DBGMON=1 -- i.e. when the debug
@@ -138,7 +138,7 @@ int (*platformInitDiskIo)(DiskIo*);
 #include <stdlib.h>
 static int initDiskIo(DiskIo* dio)
 {
-   static const char appmgr[] = {"lspappmgr"};
+   static const char appmgr[] = {"xedge"};
    int retVal;
    char* buf;
    IoStat st;
@@ -160,7 +160,7 @@ static int initDiskIo(DiskIo* dio)
    buf=baMalloc(strlen(home)+sizeof(appmgr)+1);
    if(!buf) return -1;
    basprintf(buf,"%s/%s",home,appmgr);
-   HttpTrace_printf(0, "Lspappmgr root directory: %s\n", buf);
+   HttpTrace_printf(0, "Xedge root directory: %s\n", buf);
    retVal=DiskIo_setRootDir(dio,buf);
    baFree(buf);
    return retVal;
@@ -265,7 +265,7 @@ createVmIo()
 #elif defined(BAIO_NET)
 #error Cannot use the NetIo: Not implemented.
 /* Disabled Makefile option: make io=net
-   Think about the LSP Application Manager as a tool and the tool's
+   Think about the Xedge as a tool and the tool's
    web and Lua app as firmware. The lua code is required for the
    operation of the tool and should be embedded in the executable. The
    code is designed to be used "as is" as a development tool and you
@@ -280,7 +280,7 @@ createVmIo()
    FileZipReader_constructor(&fileZipReader, "lsp.zip");
    zipReader = (ZipReader*)&fileZipReader;  /* cast to base class */
 #else
-   /* BAIO_EZIP: for LSP App Manager release build. */
+   /* BAIO_EZIP: for Xedge release build. */
    zipReader = getLspZipReader();
 #endif
    if( ! CspReader_isValid((CspReader*)zipReader) )
@@ -295,7 +295,7 @@ createVmIo()
 
 /*
   This is the "main" barracuda function. This function initializes the
-  LspAppMgr, configures a Lua Virtual Machine and enters a forever
+  xedge, configures a Lua Virtual Machine and enters a forever
   loop.
 
   This function is typically called from a thread/task dedicated to
@@ -521,7 +521,7 @@ barracuda(void)
    SoDisp_destructor(&dispatcher);
    ThreadMutex_release(&mutex);   
    ThreadMutex_destructor(&mutex);
-   HttpTrace_printf(0,"\n\nRestarting LspAppMgr.\n\n");
+   HttpTrace_printf(0,"\n\nRestarting xedge.\n\n");
    HttpTrace_flush();
    goto L_restart;
 #else /*  USE_DBGMON */

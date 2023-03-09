@@ -353,75 +353,75 @@ PBKDF2(uint8_t *dk, const char *passphrase, const char *salt,
 #endif
 
 static const uint8_t secData[]={
-	153,
-	0x90,
-	0xA6,
-	0xDC,
-	0xBC,
-	0x20,
-	0x6C,
-	0x90,
-	0x69,
-	0xED,
-	0xB9,
-	0x93,
-	0x04,
-	0x71,
-	0x38,
-	0x87,
-	0xE5,
+	87,
 	0x96,
-	0x37,
-	0x4C,
-	0x67,
-	0xB0,
-	0xAE,
-	0x0F,
-	0xF8,
-	0xEE,
-	0x13,
-	0x87,
-	0xB7,
-	0xF3,
-	0xDE,
-	0x87,
-	0x30,
-	0x23,
-	0x16,
-	0x38,
-	0x0B,
-	0xDB,
-	0x68,
-	0x13,
-	0xAF,
-	0x37,
-	0x2A,
-	0xAD,
-	0xE8,
-	0x7B,
-	0x4B,
-	0x2E,
-	0x57,
-	0xE4,
-	0x0D,
-	0xE9,
-	0x28,
-	0xCA,
-	0x26,
-	0xEC,
-	0x8A,
-	0x7F,
-	0x85,
+	0x80,
+	0x91,
+	0x9C,
+	0x47,
+	0x2F,
+	0x07,
+	0x5E,
+	0x76,
+	0xD7,
+	0xE1,
 	0xC2,
 	0x21,
-	0xE5,
-	0xA2,
+	0xA3,
+	0x5B,
+	0x54,
+	0x49,
+	0x8E,
+	0x5F,
+	0xA4,
+	0x01,
+	0xED,
+	0x1E,
+	0x1D,
+	0xF4,
+	0xCC,
+	0x89,
+	0x42,
+	0xA5,
+	0x7E,
+	0x35,
+	0x18,
+	0xA0,
+	0x31,
+	0xB2,
+	0xDD,
+	0x2A,
+	0xC6,
+	0xD3,
+	0x01,
+	0xE4,
+	0x54,
+	0x8B,
+	0xC8,
+	0xE2,
+	0xBA,
+	0x4D,
+	0x7C,
+	0x87,
 	0x1B,
-	0x37
+	0x17,
+	0x31,
+	0xF4,
+	0x69,
+	0xC4,
+	0xB3,
+	0xA8,
+	0xA0,
+	0x24,
+	0xC2,
+	0x15,
+	0x8A,
+	0x39,
+	0xBC
 };
 
 	static const char zoneKey[] ={
-0xff,0xd9,0x85,0x49,0xaa,0x41,0x22,0xb6,0x74,0x90,0x64,0x83,0x79,0xcf,0x8c,0x57,0x3d,0x07,0x3d,0x96,0x41,0x22,0x94,0xa8,0xa4,0x9a,0x19,0x1f,0x29,0xf3,0xbe,0xe1
+0x05,0x55,0x6f,0xc5,0x7c,0xe3,0x14,0x0d,0xa2,0x27,0x70,0x52,0xfd,0xca,0xe4,0xca,0x77,0x12,0xf1,0x2c,0x80,0xa3,0x8a,0xb9,0xc7,0x61,0xed,0x1f,0x6d,0x61,0x4c,0x68
 };
 static int calculateToken(lua_State *L)
 {
@@ -441,134 +441,134 @@ static int calculateToken(lua_State *L)
 	lua_call(L, 1, 1);
 	rnd32 = (const uint8_t*)lua_tostring(L,3);
 
-	buf[62] = secData[ 9] ^ secData[40];
-	buf[63] = buf[62] << 4;
-	buf[62] = zkASCII[buf[62] >>= 4];
-	buf[63] = zkASCII[buf[63] >> 4];
-	buf[30] = secData[21] ^ secData[42];
-	buf[31] = buf[30] << 4;
-	buf[30] = zkASCII[buf[30] >>= 4];
-	buf[31] = zkASCII[buf[31] >> 4];
-	buf[20] = secData[61] ^ secData[34];
-	buf[21] = buf[20] << 4;
-	buf[20] = zkASCII[buf[20] >>= 4];
-	buf[21] = zkASCII[buf[21] >> 4];
-	buf[12] = secData[ 5] ^ secData[32];
-	buf[13] = buf[12] << 4;
-	buf[12] = zkASCII[buf[12] >>= 4];
-	buf[13] = zkASCII[buf[13] >> 4];
-	buf[10] = secData[29] ^ secData[20];
-	buf[11] = buf[10] << 4;
-	buf[10] = zkASCII[buf[10] >>= 4];
-	buf[11] = zkASCII[buf[11] >> 4];
-	buf[22] = secData[27] ^ secData[38];
-	buf[23] = buf[22] << 4;
-	buf[22] = zkASCII[buf[22] >>= 4];
-	buf[23] = zkASCII[buf[23] >> 4];
-	buf[18] = secData[ 7] ^ secData[60];
-	buf[19] = buf[18] << 4;
-	buf[18] = zkASCII[buf[18] >>= 4];
-	buf[19] = zkASCII[buf[19] >> 4];
-	buf[ 8] = secData[51] ^ secData[28];
-	buf[ 9] = buf[ 8] << 4;
-	buf[ 8] = zkASCII[buf[ 8] >>= 4];
-	buf[ 9] = zkASCII[buf[ 9] >> 4];
-	buf[32] = secData[47] ^ secData[36];
-	buf[33] = buf[32] << 4;
-	buf[32] = zkASCII[buf[32] >>= 4];
-	buf[33] = zkASCII[buf[33] >> 4];
-	buf[58] = secData[15] ^ secData[ 6];
-	buf[59] = buf[58] << 4;
-	buf[58] = zkASCII[buf[58] >>= 4];
-	buf[59] = zkASCII[buf[59] >> 4];
-	buf[ 6] = secData[55] ^ secData[10];
-	buf[ 7] = buf[ 6] << 4;
-	buf[ 6] = zkASCII[buf[ 6] >>= 4];
-	buf[ 7] = zkASCII[buf[ 7] >> 4];
-	buf[ 0] = secData[23] ^ secData[30];
-	buf[ 1] = buf[ 0] << 4;
-	buf[ 0] = zkASCII[buf[ 0] >>= 4];
-	buf[ 1] = zkASCII[buf[ 1] >> 4];
-	buf[56] = secData[ 1] ^ secData[50];
-	buf[57] = buf[56] << 4;
-	buf[56] = zkASCII[buf[56] >>= 4];
-	buf[57] = zkASCII[buf[57] >> 4];
-	buf[54] = secData[57] ^ secData[22];
-	buf[55] = buf[54] << 4;
-	buf[54] = zkASCII[buf[54] >>= 4];
-	buf[55] = zkASCII[buf[55] >> 4];
-	buf[52] = secData[25] ^ secData[64];
-	buf[53] = buf[52] << 4;
-	buf[52] = zkASCII[buf[52] >>= 4];
-	buf[53] = zkASCII[buf[53] >> 4];
-	buf[16] = secData[39] ^ secData[46];
-	buf[17] = buf[16] << 4;
-	buf[16] = zkASCII[buf[16] >>= 4];
-	buf[17] = zkASCII[buf[17] >> 4];
-	buf[ 2] = secData[37] ^ secData[52];
-	buf[ 3] = buf[ 2] << 4;
-	buf[ 2] = zkASCII[buf[ 2] >>= 4];
-	buf[ 3] = zkASCII[buf[ 3] >> 4];
-	buf[50] = secData[31] ^ secData[56];
-	buf[51] = buf[50] << 4;
-	buf[50] = zkASCII[buf[50] >>= 4];
-	buf[51] = zkASCII[buf[51] >> 4];
-	buf[44] = secData[49] ^ secData[44];
-	buf[45] = buf[44] << 4;
-	buf[44] = zkASCII[buf[44] >>= 4];
-	buf[45] = zkASCII[buf[45] >> 4];
-	buf[14] = secData[ 3] ^ secData[16];
-	buf[15] = buf[14] << 4;
-	buf[14] = zkASCII[buf[14] >>= 4];
-	buf[15] = zkASCII[buf[15] >> 4];
-	buf[26] = secData[45] ^ secData[26];
-	buf[27] = buf[26] << 4;
-	buf[26] = zkASCII[buf[26] >>= 4];
-	buf[27] = zkASCII[buf[27] >> 4];
-	buf[28] = secData[35] ^ secData[58];
-	buf[29] = buf[28] << 4;
-	buf[28] = zkASCII[buf[28] >>= 4];
-	buf[29] = zkASCII[buf[29] >> 4];
-	buf[48] = secData[43] ^ secData[ 4];
-	buf[49] = buf[48] << 4;
-	buf[48] = zkASCII[buf[48] >>= 4];
-	buf[49] = zkASCII[buf[49] >> 4];
-	buf[34] = secData[17] ^ secData[14];
-	buf[35] = buf[34] << 4;
-	buf[34] = zkASCII[buf[34] >>= 4];
-	buf[35] = zkASCII[buf[35] >> 4];
-	buf[38] = secData[59] ^ secData[12];
-	buf[39] = buf[38] << 4;
-	buf[38] = zkASCII[buf[38] >>= 4];
-	buf[39] = zkASCII[buf[39] >> 4];
-	buf[42] = secData[33] ^ secData[54];
-	buf[43] = buf[42] << 4;
-	buf[42] = zkASCII[buf[42] >>= 4];
-	buf[43] = zkASCII[buf[43] >> 4];
-	buf[40] = secData[41] ^ secData[ 8];
-	buf[41] = buf[40] << 4;
-	buf[40] = zkASCII[buf[40] >>= 4];
-	buf[41] = zkASCII[buf[41] >> 4];
-	buf[24] = secData[63] ^ secData[48];
-	buf[25] = buf[24] << 4;
-	buf[24] = zkASCII[buf[24] >>= 4];
-	buf[25] = zkASCII[buf[25] >> 4];
-	buf[36] = secData[53] ^ secData[24];
-	buf[37] = buf[36] << 4;
-	buf[36] = zkASCII[buf[36] >>= 4];
-	buf[37] = zkASCII[buf[37] >> 4];
-	buf[60] = secData[13] ^ secData[18];
-	buf[61] = buf[60] << 4;
-	buf[60] = zkASCII[buf[60] >>= 4];
-	buf[61] = zkASCII[buf[61] >> 4];
-	buf[ 4] = secData[11] ^ secData[ 2];
+	buf[ 4] = secData[29] ^ secData[ 2];
 	buf[ 5] = buf[ 4] << 4;
 	buf[ 4] = zkASCII[buf[ 4] >>= 4];
 	buf[ 5] = zkASCII[buf[ 5] >> 4];
-	buf[46] = secData[19] ^ secData[62];
+	buf[ 0] = secData[55] ^ secData[32];
+	buf[ 1] = buf[ 0] << 4;
+	buf[ 0] = zkASCII[buf[ 0] >>= 4];
+	buf[ 1] = zkASCII[buf[ 1] >> 4];
+	buf[48] = secData[35] ^ secData[50];
+	buf[49] = buf[48] << 4;
+	buf[48] = zkASCII[buf[48] >>= 4];
+	buf[49] = zkASCII[buf[49] >> 4];
+	buf[ 2] = secData[19] ^ secData[28];
+	buf[ 3] = buf[ 2] << 4;
+	buf[ 2] = zkASCII[buf[ 2] >>= 4];
+	buf[ 3] = zkASCII[buf[ 3] >> 4];
+	buf[62] = secData[37] ^ secData[10];
+	buf[63] = buf[62] << 4;
+	buf[62] = zkASCII[buf[62] >>= 4];
+	buf[63] = zkASCII[buf[63] >> 4];
+	buf[60] = secData[ 9] ^ secData[18];
+	buf[61] = buf[60] << 4;
+	buf[60] = zkASCII[buf[60] >>= 4];
+	buf[61] = zkASCII[buf[61] >> 4];
+	buf[58] = secData[13] ^ secData[60];
+	buf[59] = buf[58] << 4;
+	buf[58] = zkASCII[buf[58] >>= 4];
+	buf[59] = zkASCII[buf[59] >> 4];
+	buf[ 8] = secData[33] ^ secData[64];
+	buf[ 9] = buf[ 8] << 4;
+	buf[ 8] = zkASCII[buf[ 8] >>= 4];
+	buf[ 9] = zkASCII[buf[ 9] >> 4];
+	buf[12] = secData[17] ^ secData[ 6];
+	buf[13] = buf[12] << 4;
+	buf[12] = zkASCII[buf[12] >>= 4];
+	buf[13] = zkASCII[buf[13] >> 4];
+	buf[40] = secData[ 7] ^ secData[58];
+	buf[41] = buf[40] << 4;
+	buf[40] = zkASCII[buf[40] >>= 4];
+	buf[41] = zkASCII[buf[41] >> 4];
+	buf[20] = secData[57] ^ secData[30];
+	buf[21] = buf[20] << 4;
+	buf[20] = zkASCII[buf[20] >>= 4];
+	buf[21] = zkASCII[buf[21] >> 4];
+	buf[28] = secData[27] ^ secData[22];
+	buf[29] = buf[28] << 4;
+	buf[28] = zkASCII[buf[28] >>= 4];
+	buf[29] = zkASCII[buf[29] >> 4];
+	buf[22] = secData[61] ^ secData[24];
+	buf[23] = buf[22] << 4;
+	buf[22] = zkASCII[buf[22] >>= 4];
+	buf[23] = zkASCII[buf[23] >> 4];
+	buf[18] = secData[ 3] ^ secData[40];
+	buf[19] = buf[18] << 4;
+	buf[18] = zkASCII[buf[18] >>= 4];
+	buf[19] = zkASCII[buf[19] >> 4];
+	buf[24] = secData[49] ^ secData[38];
+	buf[25] = buf[24] << 4;
+	buf[24] = zkASCII[buf[24] >>= 4];
+	buf[25] = zkASCII[buf[25] >> 4];
+	buf[56] = secData[ 5] ^ secData[20];
+	buf[57] = buf[56] << 4;
+	buf[56] = zkASCII[buf[56] >>= 4];
+	buf[57] = zkASCII[buf[57] >> 4];
+	buf[ 6] = secData[51] ^ secData[12];
+	buf[ 7] = buf[ 6] << 4;
+	buf[ 6] = zkASCII[buf[ 6] >>= 4];
+	buf[ 7] = zkASCII[buf[ 7] >> 4];
+	buf[52] = secData[25] ^ secData[14];
+	buf[53] = buf[52] << 4;
+	buf[52] = zkASCII[buf[52] >>= 4];
+	buf[53] = zkASCII[buf[53] >> 4];
+	buf[50] = secData[31] ^ secData[36];
+	buf[51] = buf[50] << 4;
+	buf[50] = zkASCII[buf[50] >>= 4];
+	buf[51] = zkASCII[buf[51] >> 4];
+	buf[14] = secData[63] ^ secData[ 4];
+	buf[15] = buf[14] << 4;
+	buf[14] = zkASCII[buf[14] >>= 4];
+	buf[15] = zkASCII[buf[15] >> 4];
+	buf[16] = secData[59] ^ secData[26];
+	buf[17] = buf[16] << 4;
+	buf[16] = zkASCII[buf[16] >>= 4];
+	buf[17] = zkASCII[buf[17] >> 4];
+	buf[10] = secData[15] ^ secData[52];
+	buf[11] = buf[10] << 4;
+	buf[10] = zkASCII[buf[10] >>= 4];
+	buf[11] = zkASCII[buf[11] >> 4];
+	buf[44] = secData[39] ^ secData[54];
+	buf[45] = buf[44] << 4;
+	buf[44] = zkASCII[buf[44] >>= 4];
+	buf[45] = zkASCII[buf[45] >> 4];
+	buf[38] = secData[43] ^ secData[56];
+	buf[39] = buf[38] << 4;
+	buf[38] = zkASCII[buf[38] >>= 4];
+	buf[39] = zkASCII[buf[39] >> 4];
+	buf[36] = secData[45] ^ secData[46];
+	buf[37] = buf[36] << 4;
+	buf[36] = zkASCII[buf[36] >>= 4];
+	buf[37] = zkASCII[buf[37] >> 4];
+	buf[42] = secData[23] ^ secData[34];
+	buf[43] = buf[42] << 4;
+	buf[42] = zkASCII[buf[42] >>= 4];
+	buf[43] = zkASCII[buf[43] >> 4];
+	buf[32] = secData[11] ^ secData[44];
+	buf[33] = buf[32] << 4;
+	buf[32] = zkASCII[buf[32] >>= 4];
+	buf[33] = zkASCII[buf[33] >> 4];
+	buf[46] = secData[ 1] ^ secData[16];
 	buf[47] = buf[46] << 4;
 	buf[46] = zkASCII[buf[46] >>= 4];
 	buf[47] = zkASCII[buf[47] >> 4];
+	buf[30] = secData[53] ^ secData[62];
+	buf[31] = buf[30] << 4;
+	buf[30] = zkASCII[buf[30] >>= 4];
+	buf[31] = zkASCII[buf[31] >> 4];
+	buf[34] = secData[47] ^ secData[42];
+	buf[35] = buf[34] << 4;
+	buf[34] = zkASCII[buf[34] >>= 4];
+	buf[35] = zkASCII[buf[35] >> 4];
+	buf[54] = secData[41] ^ secData[ 8];
+	buf[55] = buf[54] << 4;
+	buf[54] = zkASCII[buf[54] >>= 4];
+	buf[55] = zkASCII[buf[55] >> 4];
+	buf[26] = secData[21] ^ secData[48];
+	buf[27] = buf[26] << 4;
+	buf[26] = zkASCII[buf[26] >>= 4];
+	buf[27] = zkASCII[buf[27] >> 4];
 	buf[64]=0;
 	PBKDF2(dk, (char*)buf, zoneKey, sizeof(zoneKey), 1000, 32);
 	SHA256_constructor(&sha256Ctx);
@@ -586,7 +586,7 @@ static int zoneInfo(lua_State *L)
 {
 
 	static const char zoneName[] ={
-'l','s','p','a','p','p','m','g','r','.','r','e','a','l','t','i','m','e','l','o','g','i','c','.','c','o','m'
+'x','.','r','e','a','l','t','i','m','e','l','o','g','i','c','.','c','o','m'
 };
    lua_pushlstring(L, zoneName, sizeof(zoneName));
    lua_pushlstring(L, zoneKey, sizeof(zoneKey));

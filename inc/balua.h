@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5402 2023-03-07 17:20:46Z wini $
+ *   $Id: balua.h 5410 2023-03-08 22:29:02Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
  *
@@ -70,8 +70,8 @@ extern "C" {
    See the C startup source code for the two following examples for
    more information on how to initialize the LSP plugin:
 
-   \li <a href="../../../../../examples/lspappmgr/readme.html">
-   LSP Application Manager</a>
+   \li <a href="../../../../../examples/xedge/readme.html">
+   Xedge</a>
    \li <a href="../../../../../examples/wfs/readme.html">
    Web File Server</a>
    @{
@@ -181,7 +181,7 @@ BA_API void balua_close(lua_State* L);
 /** 
     Install Lua bindings for the default login tracker. See one of the
     two following C code examples for how to use this function:
-    MakoMain.c or LspAppMgr.c
+    MakoMain.c or xedge.c
     \param L the state
     \param noOfLoginTrackerNodes tracker size
     \param maxNumberOfLogins how many login attempts before user (IP
