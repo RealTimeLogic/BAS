@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5402 2023-03-07 17:20:46Z wini $
+ *   $Id: HttpServer.h 5412 2023-03-17 01:49:04Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2023
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5411
+#define BASLIB_VER_NO 5412
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5411)
+#define BASLIB_VER BASLIB_VER_M(5412)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -88,7 +88,7 @@ from HttpPage or HttpDir.
 
 /* Used by examples */
 #ifndef BA_STACKSZ
-#define BA_STACKSZ 20000
+#define BA_STACKSZ 24000
 #endif
 
 

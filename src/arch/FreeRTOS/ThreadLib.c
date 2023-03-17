@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      SOURCE
  *
- *   $Id: ThreadLib.c 5276 2022-10-01 06:26:17Z wini $
+ *   $Id: ThreadLib.c 5412 2023-03-17 01:49:04Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *               http://www.realtimelogic.com
@@ -179,7 +179,7 @@ Thread_constructor(
              "BAS",
 #endif
 #ifdef ESP_PLATFORM
-             stackSize+4000, /*  In bytes + ESP APIs need more mem */
+             stackSize,  /*  In bytes */
 #else
              stackSize / 4,  /* Assume it's on 32 bit arch */
 #endif
