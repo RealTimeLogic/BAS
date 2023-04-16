@@ -6487,9 +6487,9 @@ static int lMallinfo(lua_State *L)
 {
    struct bamallinfo info = dlmallinfo();
    lua_newtable(L);
-   lmPushKV(L,"arena",info.arena);
+   lmPushKV(L,"size",dmalloc_heapend - dmalloc_heapstart);
+   /* lmPushKV(L,"arena",info.arena); */
    lmPushKV(L,"ordblks",info.ordblks);
-   lmPushKV(L,"hblkhd",info.hblkhd);
    lmPushKV(L,"usmblks",info.usmblks);
    lmPushKV(L,"uordblks",info.uordblks);
    lmPushKV(L,"fordblks",info.fordblks);

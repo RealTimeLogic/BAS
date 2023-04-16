@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5410 2023-03-08 22:29:02Z wini $
+ *   $Id: xedge.c 5425 2023-04-16 20:58:03Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -57,6 +57,10 @@ not defined. See inc/arch/<PLAT>/TargConfig.h for your platform.
 */
 #include <barracuda.h>
 
+/* Special case when working on Xedge Lua code on a host computer */
+#if defined(NO_BAIO_DISK) && defined(BAIO_DISK)
+#include <BaDiskIo.h>
+#endif
 
 /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
  * pool) is not utilized. Instead, the LThreadMgr is used as the
@@ -97,6 +101,10 @@ extern void luaopen_AUX(lua_State* L); /* Example Lua binding: led.c */
 
 #if USE_PROTOBUF
 extern int luaopen_pb(lua_State* L);
+#endif
+
+#if USE_OPCUA
+#include <opcua_module.h>
 #endif
 
 #if USE_DBGMON
@@ -397,6 +405,7 @@ barracuda(void)
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L); /* Install optional trace logger library */
+   balua_luaio(L); /* xrc/lua/lio.c */
 
 /* 
    Some embedded devices may not have a DiskIo.
@@ -439,6 +448,9 @@ barracuda(void)
    /* Google's protobuf for Lua: https://github.com/starwing/lua-protobuf */
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
+#endif
+#if USE_OPCUA
+   luaopen_opcua_ns0_static(L);
 #endif
 
    /* Dispatcher mutex must be locked until the dispatcher starts

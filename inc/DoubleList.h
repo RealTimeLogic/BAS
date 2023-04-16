@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: DoubleList.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: DoubleList.h 5421 2023-04-11 19:13:35Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2020
  *
@@ -183,13 +183,14 @@ extern "C" {
 
 BA_API DoubleLink* DoubleList_removeFirst(DoubleList* o);
 
-/* Returns true if the node is in any list. You cannot
- * use this function for testing if the node is in a particular list, that
- * is your problem. The function performs some additional tests if
- * NDEBUG is not defined and asserts that if the node is in a list, it should
- * be in this list.
+/* Returns true if the node is in any list. You cannot use this
+ * function for testing if the node is in a particular list, that is
+ * your problem. The function performs some additional tests if NDEBUG
+ * is not defined and asserts that if the node is in a list, it should
+ * be in this list. The ESP32 compiler does not create correct code
+ * for function DoubleList_isInListF
  */
-#ifdef NDEBUG
+#if defined(NDEBUG) || defined(ESP_PLATFORM)
 #define DoubleList_isInList(o, node) (((DoubleLink*)node)->prev ? TRUE : FALSE)
 #else
 #define DoubleList_isInList(o, node) DoubleList_isInListF(o, node, __FILE__, __LINE__)

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5402 2023-03-07 17:20:46Z wini $
+ *   $Id: MakoMain.c 5422 2023-04-11 19:15:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -1577,6 +1577,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /* Install optional SQL bindings */
    luaopen_SQL(L);
 
+   balua_luaio(L); /* xrc/lua/lio.c */
 #if USE_REDIRECTOR
    luaopen_ba_redirector(L); /* a type of reverse proxy */
 #endif

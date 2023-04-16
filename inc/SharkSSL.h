@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5399 2023-02-24 07:09:26Z gianluca $
+ *   $Id: SharkSSL.h 5415 2023-03-27 05:34:56Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -1234,6 +1234,23 @@ U8 *SharkSslCon_getHandshakeData(SharkSslCon *o);
     \sa SharkSslCon_getHandshakeData
  */
 U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o);
+
+
+/** This function is used in conjunction with
+    SharkSslCon_getHandshakeData.
+    See #SharkSslCon_Handshake for example code.
+
+    The function returns the residual length of the handshake data 
+    that must be sent to the peer side, if any. The function returns 
+    zero if no handshake data should be sent.
+
+    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
+    \param length is number of handshake bytes sent to the peer 
+    (usually via TCP/IP).
+
+    \sa SharkSslCon_getHandshakeData
+ */
+U16 SharkSslCon_setHandshakeDataSent(SharkSslCon *o, U16 length);
 
 
 /** This function is used in conjunction with state

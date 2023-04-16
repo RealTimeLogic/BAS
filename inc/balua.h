@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5410 2023-03-08 22:29:02Z wini $
+ *   $Id: balua.h 5421 2023-04-11 19:13:35Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
  *
@@ -389,6 +389,7 @@ typedef struct LHttpDir
 BA_API int LHttpResRdr_loadLsp(
    lua_State* L, IoIntf* io, const char* pathname, IoStat* st);
 BA_API void balua_ubjson(lua_State* L);
+BA_API void balua_luaio(lua_State* L);
 BA_API void luaopen_ba_redirector(lua_State *L);
 BA_API void ba_ldbgmon(
    lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData);

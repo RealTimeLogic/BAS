@@ -5357,6 +5357,7 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define symbolnodebug            0x00800000
 #define ftracehandler               0x01000000
 #define SHARKSSL_FLAG_CA_EXTENSION_REQUEST         0x02000000
+#define SHARKSSL_FLAG_PARTIAL_HS_SEND              0x04000000
 
 
 #define bcm1x80bcm1x55                     0x01
@@ -22099,9 +22100,7 @@ HttpServer_AsynchProcessDir(HttpServer* o,
 static void
 enablenotrace(HttpServer* o, HttpLinkCon* mmcsd0resources)
 {
-#ifndef NDEBUG
-   DoubleList_isInList(&o->connectedList, &mmcsd0resources->link);
-#endif
+   baAssert(DoubleList_isInList(&o->connectedList, &mmcsd0resources->link));
    DoubleLink_unlink(&mmcsd0resources->link);
 }
 
@@ -23104,6 +23103,7 @@ SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 seco
 
 #endif
 #endif
+
 #ifndef NO_HTTP_SESSION
 
 #ifndef BA_LIB
@@ -45467,7 +45467,6 @@ belowstart(SoDispCon* con, ThreadMutex* m, void* buf, int masterclock)
          case SharkSslCon_Handshake:
             if ((nb = SharkSslCon_getHandshakeDataLen(s)) != 0)
             {
-               ThreadMutex* m=0;
                const U8* alloccontroller = SharkSslCon_getHandshakeData(s);
                HttpSocket_send(&con->httpSocket, m, &queueevent, alloccontroller, nb, &sockLen);
                if (nb != sockLen)
@@ -47031,6 +47030,12 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
       return SharkSslCon_Error;
    }
 
+   if (o->flags & SHARKSSL_FLAG_PARTIAL_HS_SEND)
+   {
+      o->flags &= ~SHARKSSL_FLAG_PARTIAL_HS_SEND;
+      return SharkSslCon_Handshake;
+   }
+
    #if SHARKSSL_SSL_CLIENT_CODE
    #if SHARKSSL_SSL_SERVER_CODE
    if (SharkSsl_isClient(o->sharkSsl))
@@ -48381,6 +48386,28 @@ U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o)
 }
 
 
+U16 SharkSslCon_setHandshakeDataSent(SharkSslCon *o, U16 traceleave)
+{
+   baAssert(o);
+   U16 res = 0;
+   if (traceleave <= (o->inBuf.temp))
+   {
+      res = o->inBuf.temp;
+      if (traceleave > 0)
+      {
+         res -= traceleave;
+         if (res > 0)
+         {
+            memmove(func3fixup(&o->inBuf), func3fixup(&o->inBuf) + traceleave, res);
+            o->flags |= SHARKSSL_FLAG_PARTIAL_HS_SEND;
+         }
+         o->inBuf.temp = res;
+      }
+   }
+   return res;
+}
+
+
 U8 *SharkSslCon_getHandshakeData(SharkSslCon *o)
 {
    if (SharkSslCon_getHandshakeDataLen(o))
@@ -48404,23 +48431,26 @@ U8 *SharkSslCon_getHandshakeData(SharkSslCon *o)
 U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o)
 {
    baAssert(o);
-   if ((o->state == loongson3notifier)
-      #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
-       && (!(o->flags & skciphersetkey))
-      #endif
-      )
+   if (!(o->flags & SHARKSSL_FLAG_PARTIAL_HS_SEND))
    {
-      #if SHARKSSL_TLS_1_3
-      if (SharkSsl_isClient(o->sharkSsl) && (o->inBuf.dataLen) 
-         #if SHARKSSL_TLS_1_2
-         && (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) 
-         #endif
+      if ((o->state == loongson3notifier)
+          #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
+          && (!(o->flags & skciphersetkey))
+          #endif
          )
       {
-         return 2;
+         #if SHARKSSL_TLS_1_3
+         if (SharkSsl_isClient(o->sharkSsl) && (o->inBuf.dataLen) 
+            #if SHARKSSL_TLS_1_2
+            && (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) 
+            #endif
+            )
+         {
+            return 2;
+         }
+         #endif
+         return 1;
       }
-      #endif
-      return 1;
    }
 
    return 0;
