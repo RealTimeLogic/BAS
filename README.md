@@ -142,9 +142,11 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 ### LSP Application Manager (RTOS)
 
-The LSP Application Manager turns the Barracuda App Server into an interactive development tool. See the [Online LSP Application Manager Documentation](https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html) for details.
+**Note:** The LSP Application Manager has been renamed to Xedge and now provides a new UI; however, this GitHub repo has not been updated and includes the original code.
 
-![LSP Application Manager](https://realtimelogic.com/ba/doc/en/examples/lspappmgr/figure3.png)
+The LSP Application Manager turns the Barracuda App Server into an interactive development tool. See the [Online LSP Application Manager Documentation](https://realtimelogic.com/ba/doc/?url=xedge/readme.html) for details.
+
+![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)
 
 The LSP Application Manager is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
 
