@@ -1,0 +1,24 @@
+--[[
+This example creates a timer coroutine that controls the LED via the
+Lua bindings in led.c. The timer object is free-floating since we are
+not referencing (anchoring) the object. The created timer(s) will
+eventually be collected by the Lua garbage collector. You can speed
+up the collecting by calling the Lua function: collectgarbage()
+
+Timer documentation:
+https://realtimelogic.com/ba/doc/?url=lua.html#ba_timer
+--]]
+
+local function blink()
+   while true do
+      trace"blink"
+      LED.setLed(true)
+      coroutine.yield(true) -- Sleep
+      LED.setLed(false)
+      coroutine.yield(true) -- Sleep
+   end
+end
+
+timer=ba.timer(blink)
+timer:set(1000)
+

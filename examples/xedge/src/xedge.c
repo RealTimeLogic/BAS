@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5425 2023-04-16 20:58:03Z wini $
+ *   $Id: xedge.c 5432 2023-05-02 01:10:25Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -177,6 +177,29 @@ static int initDiskIo(DiskIo* dio)
 /* End file system init code */
 
 #endif /* NO_BAIO_DISK */
+
+
+/* ba.encryptionkey()
+   Change key in EncryptionKey.h before compiling.
+*/
+#include "EncryptionKey.h"
+static int
+lEncryptionKey(lua_State *L)
+{
+   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
+   return 1;
+}
+
+/* Install ba.encryptionkey() */
+static void
+luaopen_encryptionkey(lua_State *L) 
+{
+   lua_getglobal(L, "ba");
+   lua_pushcfunction(L, lEncryptionKey);
+   lua_setfield(L,-2,"encryptionkey"); 
+   lua_pop(L,1); /* ba */
+}
+
 
 
 /* SharkTrustX
@@ -404,7 +427,7 @@ barracuda(void)
    balua_socket(L);  /* Install optional Lua socket library */
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
-   balua_tracelogger(L); /* Install optional trace logger library */
+   balua_tracelogger(L,&ltMgr); /* Install optional trace logger library */
    balua_luaio(L); /* xrc/lua/lio.c */
 
 /* 
@@ -452,7 +475,7 @@ barracuda(void)
 #if USE_OPCUA
    luaopen_opcua_ns0_static(L);
 #endif
-
+   luaopen_encryptionkey(L); /* code above in this file */
    /* Dispatcher mutex must be locked until the dispatcher starts
     */
    ThreadMutex_set(&mutex);
@@ -481,7 +504,9 @@ barracuda(void)
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 #endif
 
-   /* Example Lua bindings, compile with AsynchLua.c or led.c */
+   /* Example Lua bindings, compile with AsynchLua.c or led.c.
+      This code opens ESP32 bindings when compiled for ESP32.
+    */
    luaopen_AUX(L);
 
    lua_rawgeti(L, LUA_REGISTRYINDEX, startServerRef);

@@ -10690,10 +10690,10 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             goto regionfixed;
          }
          
-         now_ccLen = (U32)(*registeredevent++) << 8;
-         now_ccLen += *registeredevent++;
+         paramnamed = (U16)(*registeredevent++) << 8;
+         paramnamed += *registeredevent++;
          hsDataLen -= 2;
-         if (hsDataLen != (U16)now_ccLen)
+         if (hsDataLen != paramnamed)
          {
             SHARKDBG_PRINTF("\045\163\072\040\045\144\012", __FILE__, __LINE__);
             goto regionfixed;
@@ -10717,6 +10717,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             }
 
             
+            now_ccLen = paramnamed;  
             while (now_ccLen >= 2)
             {
                
@@ -45352,9 +45353,9 @@ tsx09parse(SoDispCon* con, int handlersetup)
          ThreadMutex* m=0;
          
 #ifdef HTTP_TRACE
-         gpio6resources(9, con);
+         gpio6resources(12, con);
          HttpTrace_printf(
-            8,
+            11,
             "\040\123\150\141\162\153\123\123\114\040\072\040\123\145\156\164\040\141\154\145\162\164\040\155\145\163\163\141\147\145\054\040\154\145\166\145\154\040\045\144\054\040\144\145\163\143\162\151\160\164\151\157\156\040\045\144\012",
             SharkSslCon_getAlertLevel(s),
             SharkSslCon_getAlertDescription(s));
@@ -45376,9 +45377,9 @@ tsx09parse(SoDispCon* con, int handlersetup)
             return E_TLS_CLOSE_NOTIFY;
          
 #ifdef HTTP_TRACE
-         gpio6resources(9, con);
+         gpio6resources(12, con);
          HttpTrace_printf(
-            8,
+            11,
             "\040\123\150\141\162\153\123\123\114\040\072\040\122\145\143\145\151\166\145\144\040\141\154\145\162\164\054\040\154\145\166\145\154\040\045\144\054\040\144\145\163\143\162\151\160\164\151\157\156\040\045\144\012",
             x,
             desc);
@@ -45387,9 +45388,9 @@ tsx09parse(SoDispCon* con, int handlersetup)
 
       case SharkSslCon_Error:
 #ifdef HTTP_TRACE
-         gpio6resources(9, con);
+         gpio6resources(12, con);
          HttpTrace_printf(
-            8,"\040\123\150\141\162\153\123\123\114\072\040\103\162\171\160\164\157\040\146\141\151\154\165\162\145\040\144\165\162\151\156\147\040\145\156\143\162\171\160\164\057\144\145\143\162\171\160\164\040\157\160\145\162\141\164\151\157\156\040"
+            11,"\040\123\150\141\162\153\123\123\114\072\040\103\162\171\160\164\157\040\146\141\151\154\165\162\145\040\144\165\162\151\156\147\040\145\156\143\162\171\160\164\057\144\145\143\162\171\160\164\040\157\160\145\162\141\164\151\157\156\040"
             "\050\045\144\051\012", debugdestroy(s));
 #endif
          return E_TLS_CRYPTOERR;

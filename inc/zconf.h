@@ -3,11 +3,12 @@
  * For conditions of distribution and use, see copyright notice in zlib.h 
  */
 
-/* @(#) $Id: zconf.h 5364 2022-12-23 17:20:13Z wini $ */
+/* @(#) $Id: zconf.h 5432 2023-05-02 01:10:25Z wini $ */
 
 #ifndef _ZCONF_H
 #define _ZCONF_H
 
+#ifndef USE_Z_NAMES
 #  define deflateInit_	zba_deflateInit_
 #  define deflate	zba_deflate
 #  define deflateEnd	zba_deflateEnd
@@ -29,6 +30,7 @@
 #  define uncompress	zba_uncompress
 #  define adler32	zba_adler32
 #  define get_crc_table zba_get_crc_table
+#endif
 
 #if 0
 #  define Byte		z_Byte
