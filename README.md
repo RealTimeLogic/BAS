@@ -45,9 +45,9 @@ BAS Amalgamated is very easy to compile and several command line compilation exa
 
 ## BAS Amalgamated Examples
 
-BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mako-server-hlos), the [LSP Application Manager](#lsp-application-manager-rtos), and the [C++ WebSocket Server Example](examples/C-WebSockets/README.md).
+BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mako-server-hlos), [Xedge](#xedge-rtos), and the [C++ WebSocket Server Example](examples/C-WebSockets/README.md).
 
-* The Mako Server is designed for HLOS, and the LSP Application Manager is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
+* The Mako Server is designed for HLOS, and Xedge is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
 * The C++ WebSocket Server Example shows how to implement everything using C code (no Lua). With this example, you are effectively using the [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) component.
 
 ### Mako Server (HLOS)
@@ -87,7 +87,7 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
     -lpthread -lm -ldl
 ```
 
-The above command works for any HLOS with a GCC compiler (and derivatives), including cross compiling for embedded Linux, compiling for QNX, and compiling for VxWorks 7. Simply replace 'gcc' with the applicable compiler. Note that VxWorks is a cross between HLOS and RTOS; thus, you may consider using the LSP Application Manager instead (details below). BAS supports VxWorks 5 and up.
+The above command works for any HLOS with a GCC compiler (and derivatives), including cross compiling for embedded Linux, compiling for QNX, and compiling for VxWorks 7. Simply replace 'gcc' with the applicable compiler. Note that VxWorks is a cross between HLOS and RTOS; thus, you may consider using Xedge instead (details below). BAS supports VxWorks 5 and up.
 
 See the [Mako Server's Build Documentation](https://realtimelogic.com/ba/doc/?url=MakoServer/readme.html) for details on macros and other important information, but note that the amalgamated version in the standard SDK works differently.
 
@@ -140,50 +140,48 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
     -lpthread -lm -ldl
 ```
 
-### LSP Application Manager (RTOS)
+### Xedge (RTOS)
 
-**Note:** The LSP Application Manager has been renamed to Xedge and now provides a new UI; however, this GitHub repo has not been updated and includes the original code.
-
-The LSP Application Manager turns the Barracuda App Server into an interactive development tool. See the [Online LSP Application Manager Documentation](https://realtimelogic.com/ba/doc/?url=xedge/readme.html) for details.
+The Xedge turns the Barracuda App Server into an interactive development tool. See the [Online Xedge Documentation](https://realtimelogic.com/ba/doc/?url=xedge/readme.html) for details.
 
 ![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)
 
-The LSP Application Manager is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
+The Xedge is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
 
 
-The LSP Application Manager is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
+The Xedge is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
 
 ```
 echo "extern void barracuda(void); int main() {barracuda(); return 0;}" > main.c
 ```
 
-The following example shows how to compile the LSP Application Manager for HLOS and include file system support.
+The following example shows how to compile Xedge for HLOS and include file system support.
 
 ```
-gcc -o examples/lspappmgr/lspappmgr -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
+gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    main.c examples/lspappmgr/src/LspAppMgr.c examples/lspappmgr/src/led.c\
-    examples/lspappmgr/obj/LspZip.c -lpthread -lm
+    main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
+    examples/xedge/obj/LspZip.c -lpthread -lm
 ```
 
-The file LspZip.c is the LSP Application Manager's resources converted to a C file. You find the resources in the same directory in lsp.zip. The tutorial [Rapid Firmware Development](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server) shows how to initially use the provided LSP Application Manager to develop your own application and how to replace LspZip.c with your own application when it is ready for deployment. The tools directory includes the bin2c tool used for converting ZIP files to C files. Embedding the resources in the firmware is convenient, but not required.
+The file LspZip.c is Xedge's resources converted to a C file. You find the resources in the same directory in lsp.zip. The tutorial [Rapid Firmware Development](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server) shows how to initially use the provided Xedge to develop your own application and how to replace LspZip.c with your own application when it is ready for deployment. The tools directory includes the bin2c tool used for converting ZIP files to C files. Embedding the resources in the firmware is convenient, but not required.
 
 If you run the server after compiling it, you will see no printouts. The server tries to open port 80 and if that fails, it tries to open port 9357. Embedded systems with a console can enable the [trace library](https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpTrace.html) by providing a callback for the data being printed. You can also view the trace in a browser by navigating to http://ip-addr/rtl/tracelogger/. See the [TraceLogger Documentation](https://realtimelogic.com/ba/doc/?url=auxlua.html#tracelogger) for details and our online tutorial server for a demo: [https://tutorial.realtimelogic.com/rtl/tracelogger/](https://tutorial.realtimelogic.com/rtl/tracelogger/)
 
-The LSP Application Manager does not require a file system, and the following example shows how to compile the LSP Application Manager without including BaFile.c
+The Xedge does not require a file system, and the following example shows how to compile Xedge without including BaFile.c
 
 ```
-gcc -o examples/lspappmgr/lspappmgr -DNO_BAIO_DISK -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
+gcc -o examples/xedge/xedge -DNO_BAIO_DISK -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c
-    main.c examples/lspappmgr/src/LspAppMgr.c examples/lspappmgr/src/led.c\
-    examples/lspappmgr/obj/LspZip.c -lpthread -lm
+    main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
+    examples/xedge/obj/LspZip.c -lpthread -lm
 ```
 
-The macro NO_BAIO_DISK is used by the LSP Application Manager's C startup code LspAppMgr.c.
+The macro NO_BAIO_DISK is used by Xedge's C startup code xedge.c.
 
-**Cross Compiling the LSP Application Manager for Embedded Systems**
+**Cross Compiling Xedge for Embedded Systems**
 
 Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included. See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.
 
@@ -194,7 +192,7 @@ A recommendation is to initially try the server on an [ESP32 using FreeRTOS and 
 BAS Amalgamated (BAS.c) includes features that are by default not compiled. These features can be enabled by the following macros. The macros can be enabled on any platform, including RTOS, unless stated otherwise.
 
 * USE_DBGMON=1: Include [Lua Debugger Support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
-* USE_REVCON=1: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both the LSP Application Manager and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/?url=Mako.html#acmebot).
+* USE_REVCON=1: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both Xedge and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/?url=Mako.html#acmebot).
 * USE_OPCUA=1: The OPC-UA stack is implemented in Lua and can be found in mako.zip/.lua/opcua. The OPC-UA stack requires a C module. Enable this flag when compiling BAS if you plan on using OPC-UA.
 * USE_FORKPTY=1: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib), which is available for Linux and QNX. This API is required if you plan on using the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) or the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
 * USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy)
@@ -251,7 +249,7 @@ The generic directory 'inc' must also be in the include path.
 
 ## VxWorks
 
-The following example shows how to compile Mako Server for VxWorks 7. Use the [LSP Application Manager](#lsp-application-manager-rtos) example if you are using an older VxWorks version.
+The following example shows how to compile Mako Server for VxWorks 7. Use [Xedge](#xedge-rtos) if you are using an older VxWorks version.
 
 ```
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
@@ -284,12 +282,9 @@ Using the above compilation settings, you would also need to include src/arch/Th
 #### i.MX RT1020
 [Download](https://realtimelogic.com/downloads/bas/?target=RT1020) a ready to compile and run project for [i.MX RT1020](https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt1020-evaluation-kit:MIMXRT1020-EVK).
 
-#### IoT ESP32 Educational Kit
+#### ESP32
 
-Check out the [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) if you are interested in testing the Barracuda App Server on a FreeRTOS powered ESP32. The ESP32 is great for educational purposes.
-
-![SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/LspAppMgrWFSLink.png)
-
+[Xedge32](https://realtimelogic.com/ba/ESP32/) is an Xedge version for the ESP32 and ESP32-S3 microcontrollers.
 
 # Barracuda App Server Tutorials
 
