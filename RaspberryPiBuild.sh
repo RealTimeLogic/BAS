@@ -5,22 +5,32 @@
 # This script automates: https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design
 
 function abort() {
+    echo $1
     echo "See the following tutorial for how to manually build the code:"
     echo "https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design"
     read -p "Press ENTER to exit script"
     exit 1;
 }
 
+function install() {
+    abort "Run the following prior to running this script:\nsudo apt-get install git zip unzip gcc make"
+}
+
+executables="git zip unzip gcc make"
+for i in $executables; do
+    if ! command -v $i &> /dev/null; then
+        install
+        exit 1
+    fi
+done
+
+
 export NOCOMPILE=true
 wget --no-check-certificate -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort"LinuxBuild.sh failed"
-cd BAS/src || abort
 
-if ! [ -f "lpeg/lpcode.c" ]; then
-    echo "Downloading Lua lpeg"
-    wget http://www.inf.puc-rio.br/~roberto/lpeg/lpeg-1.0.2.tar.gz
-    tar xzf lpeg-1.0.2.tar.gz
-    rm lpeg-1.0.2.tar.gz
-    mv lpeg-1.0.2 lpeg || abort
+if ! [ -f "LPeg/lpcode.c" ]; then
+    echo "Downloading LPeg"
+    git clone https://github.com/roberto-ieru/LPeg.git 
 fi
 
 if ! [ -f "lua-protobuf/pb.c" ]; then
@@ -28,7 +38,7 @@ if ! [ -f "lua-protobuf/pb.c" ]; then
     git clone https://github.com/starwing/lua-protobuf
 fi
 
-cd ..
+cd BAS || abort
 
 echo "Compiling Mako Server"
 export EPOLL=true
