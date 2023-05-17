@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5402 2023-03-07 17:20:46Z wini $
+ *   $Id: lxrc.h 5428 2023-04-24 23:46:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *               https://realtimelogic.com
@@ -75,12 +75,14 @@ void balua_relsocket(lua_State* L);
  */
 void balua_crypto(lua_State *L);
 
-/** Install the [TraceLogger Lua bindings](../../../lua/auxlua.html#tracelogger).
- */
-void balua_tracelogger(lua_State *L);
-
 struct ThreadJob;
 struct LThreadMgr;
+
+/** Install the [TraceLogger Lua bindings](../../../lua/auxlua.html#tracelogger).
+    \param L the state
+    \param the optional LThreadMgr must be set if you plan on using trlogger:onclient(cb)
+ */
+void balua_tracelogger(lua_State *L, struct LThreadMgr* tmgr);
 
 /** @defgroup ThreadMgr The Lua Thread Library
     See Advanced Lua Bindings, section \ref fullsolution "Calling Lua Code Asynchronously From C Code" for how to use this class.

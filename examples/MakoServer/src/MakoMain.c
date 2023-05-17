@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5422 2023-04-11 19:15:19Z wini $
+ *   $Id: MakoMain.c 5426 2023-04-21 21:47:40Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -1571,7 +1571,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    balua_socket(L);  /* Install optional Lua socket library */
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
-   balua_tracelogger(L); /* Install optional trace logger  */
+   balua_tracelogger(L,&ltMgr); /* Install optional trace logger  */
    myCustomBindings(L);
 
    /* Install optional SQL bindings */

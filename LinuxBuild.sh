@@ -11,8 +11,18 @@ function abort() {
 }
 
 function install() {
-    abort "Run the following prior to running this script:\nsudo apt-get install git unzip gcc make"
+    abort "Run the following prior to running this script:\nsudo apt-get install git zip unzip gcc make"
 }
+
+executables="git zip unzip gcc make"
+
+for i in $executables; do
+    if ! command -v $i &> /dev/null; then
+        install
+        exit 1
+    fi
+done
+
 
 unameOut="$(uname -s)"
 case "${unameOut}" in
@@ -29,9 +39,6 @@ if [  -z ${CC+x} ]; then
     echo "Setting default compiler"
 fi
 echo "Using compiler $CC"
-command -v git >/dev/null 2>&1 || install
-command -v unzip >/dev/null 2>&1 || install
-command -v make >/dev/null 2>&1 || install
 
 if [ -f src/BAS.c ]; then
     abort "Incorrect use! This script should not be run in the BAS directory.\nDetails: https://github.com/RealTimeLogic/BAS"
@@ -40,6 +47,11 @@ fi
 if ! [ -d "BAS" ]; then
     git clone https://github.com/RealTimeLogic/BAS.git || abort "Cloning BAS failed"
 fi
+
+if ! [ -d "BAS-Resources" ]; then
+    git clone https://github.com/RealTimeLogic/BAS-Resources.git || abort "Cloning BAS-Resources failed"
+fi
+
 
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
@@ -59,6 +71,12 @@ if ! [ -f "src/sqlite3.c" ]; then
     popd
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
 fi
+
+pushd ../BAS-Resources/build || abort $LINENO
+echo "Building mako.zip"
+./mako.sh || abort $LINENO
+cp mako.zip ../../ || abort $LINENO
+popd
 
 if [ -n "${NOCOMPILE+set}" ]; then
     exit 0

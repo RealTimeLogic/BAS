@@ -3,7 +3,7 @@
 ** Author: Tiago Dionizio, Eduardo Quintao
 ** See Copyright Notice in license.html
 
-** $Id: ls_sqlite3.c 4914 2021-12-01 18:24:30Z wini $
+** $Id: ls_sqlite3.c 5434 2023-05-03 01:35:55Z wini $
 */
 
 #ifdef _WIN32
@@ -517,8 +517,7 @@ static int conn_close(lua_State *L)
       lua_pushboolean(L, 0);
       return 1;
    }
-
-   lua_getuservalue(L, -1); /* env of the userdata */
+   lua_getuservalue(L, 1); /* env of the userdata */
    envix = lua_gettop(L);
    lua_pushvalue(L,BA_ENV_IX);
    lua_pushvalue(L,SQL_ENV_IX);

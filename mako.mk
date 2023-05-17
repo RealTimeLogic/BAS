@@ -16,6 +16,17 @@ ifdef CROSS_COMPILE
 CC = $(CROSS_COMPILE)gcc
 endif
 
+#Required
+ifeq (,$(wildcard ../BAS-Resources/build/mako.sh))
+$(error ../BAS-Resources not found. Repository https://github.com/RealTimeLogic/BAS-Resources required!)
+endif
+
+
+#Optional
+export LPEGDIR=../LPeg
+export PROTOBUFDIR=../lua-protobuf
+
+
 CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 
 # Add required macros and enable large-file support
@@ -53,22 +64,23 @@ CFLAGS += -DUSE_SQL=0
 endif
 
 #Do we have LPEG?
-ifneq (,$(wildcard src/lpeg/lpcode.c))
+#git clone https://github.com/roberto-ieru/LPeg.git
+ifneq (,$(wildcard $(LPEGDIR)/lpcode.c))
 $(info Including LPEG)
 CFLAGS += -DUSE_LPEG=1
-SOURCE += $(notdir $(wildcard src/lpeg/*.c))
-VPATH += src/lpeg
+SOURCE += $(notdir $(wildcard $(LPEGDIR)/*.c))
+VPATH := $(VPATH):$(LPEGDIR)
 else
 $(info Excluding LPEG)
 endif
 
 #Do we have Lua Protobuf?
 #https://github.com/starwing/lua-protobuf
-ifneq (,$(wildcard src/lua-protobuf/pb.c))
+ifneq (,$(wildcard $(PROTOBUFDIR)/pb.c))
 $(info Including Lua Protobuf)
 CFLAGS += -DUSE_PROTOBUF=1
-SOURCE += src/lua-protobuf/pb.c
-VPATH += src/lua-protobuf
+SOURCE += pb.c
+VPATH := $(VPATH):$(PROTOBUFDIR)
 else
 $(info Excluding Lua Protobuf)
 endif
@@ -88,8 +100,9 @@ mako: $(OBJS) mako.zip
 	$(CC) -o mako $(OBJS) -lpthread -lm -ldl
 
 # Must be in the same directory as the mako executable
-mako.zip: examples/MakoServer/mako.zip
-	cp $< .
+mako.zip:
+	cd ../BAS-Resources/build&&./mako.sh
+	cp ../BAS-Resources/build/mako.zip .
 
 MyCustomBindings_wrap.c : MyCustomBindings.i
 	swig -lua MyCustomBindings.i
