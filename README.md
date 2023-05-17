@@ -29,8 +29,7 @@ BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however,
 
 ## Before Downloading the Source Code
 
-The Barracuda App Server is a complex product with many options. Before downloading the source code, consider downloading one of the [pre-compiled binaries with included Lua tutorials](https://realtimelogic.com/downloads/bas/). For FreeRTOS users, check out the super easy to use [ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/?bas=) designed for educational purposes.
-
+The Barracuda App Server is a feature-rich product. To ease into its diverse options, you might find it helpful to start by downloading one of the [pre-compiled binaries with included Lua tutorials](https://realtimelogic.com/downloads/bas/), which are complemented with handy Lua tutorials, prior to accessing the source code.
 
 ## How To Compile
 
@@ -91,7 +90,7 @@ The above command works for any HLOS with a GCC compiler (and derivatives), incl
 
 See the [Mako Server's Build Documentation](https://realtimelogic.com/ba/doc/?url=MakoServer/readme.html) for details on macros and other important information, but note that the amalgamated version in the standard SDK works differently.
 
-After running the above compilation command, start the server as follows:
+After running the above compilation command and after [building mako.zip using the mako script](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build), start the server as follows:
 ```
 $examples/MakoServer/mako
 
@@ -146,10 +145,10 @@ The Xedge turns the Barracuda App Server into an interactive development tool. S
 
 ![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)
 
-The Xedge is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
+Xedge is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
 
 
-The Xedge is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
+Xedge is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
 
 ```
 echo "extern void barracuda(void); int main() {barracuda(); return 0;}" > main.c
@@ -162,10 +161,10 @@ gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
     main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
-    examples/xedge/obj/LspZip.c -lpthread -lm
+    examples/xedge/obj/XedgeZip.c -lpthread -lm
 ```
 
-The file LspZip.c is Xedge's resources converted to a C file. You find the resources in the same directory in lsp.zip. The tutorial [Rapid Firmware Development](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server) shows how to initially use the provided Xedge to develop your own application and how to replace LspZip.c with your own application when it is ready for deployment. The tools directory includes the bin2c tool used for converting ZIP files to C files. Embedding the resources in the firmware is convenient, but not required.
+The file **XedgeZip.c** embodies Xedge's resources, transformed into a C file. You can uncover this file's resources and detailed build instructions in the [BAS-Resources Repository](https://github.com/RealTimeLogic/BAS-Resources).
 
 If you run the server after compiling it, you will see no printouts. The server tries to open port 80 and if that fails, it tries to open port 9357. Embedded systems with a console can enable the [trace library](https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpTrace.html) by providing a callback for the data being printed. You can also view the trace in a browser by navigating to http://ip-addr/rtl/tracelogger/. See the [TraceLogger Documentation](https://realtimelogic.com/ba/doc/?url=auxlua.html#tracelogger) for details and our online tutorial server for a demo: [https://tutorial.realtimelogic.com/rtl/tracelogger/](https://tutorial.realtimelogic.com/rtl/tracelogger/)
 
@@ -176,8 +175,10 @@ gcc -o examples/xedge/xedge -DNO_BAIO_DISK -Iinc -Iinc/arch/Posix -Iinc/arch/NET
     src/BAS.c
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c
     main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
-    examples/xedge/obj/LspZip.c -lpthread -lm
+    examples/xedge/obj/XedgeZip.c -lpthread -lm
 ```
+
+**Note:** You must build XedgeZip.c using the [Xedge build scripts](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build) and copy the file to the above shown directory prior to running the above command.
 
 The macro NO_BAIO_DISK is used by Xedge's C startup code xedge.c.
 
@@ -185,7 +186,7 @@ The macro NO_BAIO_DISK is used by Xedge's C startup code xedge.c.
 
 Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included. See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.
 
-A recommendation is to initially try the server on an [ESP32 using FreeRTOS and lwIP](https://realtimelogic.com/downloads/bas/ESP32/) even if you plan on using another RTOS and/or device. The ESP32 is very easy to set up and is an excellent RTOS learning platform.
+A recommendation is to initially try the server on an [ESP32 using FreeRTOS and lwIP](https://realtimelogic.com/ba/ESP32/source/GettingStarted.html) even if you plan on using another RTOS and/or device. The ESP32 is very easy to set up and is an excellent RTOS learning platform.
 
 ## Enabling Additional Features
 
