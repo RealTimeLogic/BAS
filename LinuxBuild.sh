@@ -50,6 +50,7 @@ fi
 
 if ! [ -d "BAS-Resources" ]; then
     git clone https://github.com/RealTimeLogic/BAS-Resources.git || abort "Cloning BAS-Resources failed"
+    chmod +x BAS-Resources/build/*.sh
 fi
 
 
