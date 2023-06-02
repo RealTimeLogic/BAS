@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5432 2023-05-02 01:10:25Z wini $
+ *   $Id: xedge.c 5453 2023-06-02 13:04:40Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -280,6 +280,14 @@ static void lHook(lua_State *L, lua_Debug *ar)
    disk   |    net   |    zip   |   ezip
    BAIO_DISK | BAIO_NET | BAIO_ZIP | BAIO_EZIP
 */
+#ifdef BAIO_DISK_PATH
+#define BAIO_DISK
+#define PATH_AUX(x) #x
+#define PATH_STRINGIFY(x) PATH_AUX(x)
+#define BAIO_DISK_PATH_STR PATH_STRINGIFY(BAIO_DISK_PATH)
+#else
+#define BAIO_DISK_PATH_STR "../XedgeResources"
+#endif
 static IoIntf*
 createVmIo()
 {
@@ -287,9 +295,9 @@ createVmIo()
    static DiskIo vmIo;
    int ecode;
    DiskIo_constructor(&vmIo);
-   if( (ecode=DiskIo_setRootDir(&vmIo, "../LspZip")) != 0 )
+   if( (ecode=DiskIo_setRootDir(&vmIo, BAIO_DISK_PATH_STR)) != 0 )
    {
-      HttpTrace_printf(0, "Cannot set DiskIo ../LspZip directory: %s\n",
+      HttpTrace_printf(0, "Cannot set DiskIo " BAIO_DISK_PATH_STR " directory: % s\n",
                        baErr2Str(ecode));
       baFatalE(FE_USER_ERROR_1, 0);
    }
