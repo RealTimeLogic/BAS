@@ -35,6 +35,9 @@
  *
  *
  */
+
+#include <stdio.h>
+
 #include <barracuda.h>
 
 #define APPNAME "mako"
