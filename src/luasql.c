@@ -4,6 +4,7 @@
 */
 
 #include <string.h>
+#include <stdio.h>
 
 #ifndef BA_LIB
 #define BA_LIB
