@@ -240,9 +240,7 @@ Thread_constructor(
 
 BA_API void Thread_start(Thread* o)
 {
-   pthread_t tid = o->tid;
    ThreadSemaphore_signal(&o->startSem);
-   pthread_detach(tid);
 }
 
 
