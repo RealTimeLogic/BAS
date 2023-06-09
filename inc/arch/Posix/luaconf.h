@@ -5,10 +5,12 @@
 
 /* Redirect sprintf functions to the more stack friendly BA versions */
 #ifndef NO_BA_SERVER
+#ifdef sprintf
 #undef snprintf
 #undef sprintf
 #define snprintf nonosnprintf
 #define sprintf nonosprintf
+#endif
 #include <stdio.h>
 #undef snprintf
 #undef sprintf

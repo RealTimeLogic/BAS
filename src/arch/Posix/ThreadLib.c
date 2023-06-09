@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 5370 2023-01-02 23:34:32Z wini $
+ *   $Id: ThreadLib.c 5454 2023-06-09 06:48:36Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2002 - 2023
  *
@@ -227,7 +227,7 @@ Thread_constructor(
     */
    pthread_attr_setdetachstate(&o->attr, PTHREAD_CREATE_DETACHED);
 
-   /* Add another 200K bytes, which is needed when calling general
+   /* Add another 200K bytes, which is required when calling general
     * (Linux) libs. General Linux libs eat memory!!!
     */
    stackSize+=(1024*200);
@@ -240,9 +240,7 @@ Thread_constructor(
 
 BA_API void Thread_start(Thread* o)
 {
-   pthread_t tid = o->tid;
    ThreadSemaphore_signal(&o->startSem);
-   pthread_detach(tid);
 }
 
 
