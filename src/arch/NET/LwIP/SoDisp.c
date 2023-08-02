@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5295 2022-10-14 17:16:12Z wini $
+ *   $Id: SoDisp.c 5460 2023-07-05 14:16:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *
@@ -538,7 +538,9 @@ HttpSocket_close(HttpSocket* o)
    }
    if(o->nbuf)
    {
-      o->isDgram ? netbuf_delete((struct netbuf*)o->nbuf) :
+      if(o->isDgram)
+        netbuf_delete((struct netbuf*)o->nbuf);
+      else
          pbuf_free((struct pbuf*)o->nbuf);
       o->nbuf=0;
    }
@@ -886,7 +888,10 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
       }
       if(sock->pbOffs >= pb->tot_len)
       {
-         isTcp ? pbuf_free(pb) : netbuf_delete((struct netbuf*)sock->nbuf);
+         if(isTcp)
+           pbuf_free(pb);
+         else
+           netbuf_delete((struct netbuf*)sock->nbuf);
          sock->nbuf=0;
          if(sock->recEvent)
          {

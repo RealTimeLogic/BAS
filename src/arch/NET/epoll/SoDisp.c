@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5160 2022-05-19 18:02:52Z wini $
+ *   $Id: SoDisp.c 5468 2023-08-02 13:57:49Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2017
  *
@@ -77,7 +77,7 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
       recursiveCall=1;
       HttpTrace_printf(0,"Fatal error detected in Barracuda.\n"
                        "E1 = %d, E2=%d\n"
-                       "%s, line %d",
+                       "%s, line %d\n",
                        ecode1, ecode2,
                        file, line);
       HttpTrace_flush();
