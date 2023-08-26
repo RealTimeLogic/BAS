@@ -7810,22 +7810,11 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      tb = tp;
                      tp += 4;
                      configvdcdc2.XY = NULL;
+                     
                      #if SHARKSSL_ECC_USE_CURVE448
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE448;
                      i = configvdcdc2.xLen = SHARKSSL_CURVE448_POINTLEN;
                      configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE448;
-                     *tp++ = (U8)(configvdcdc2.curveType >> 8);
-                     *tp++ = (U8)(configvdcdc2.curveType & 0xFF);
-                     *tp++ = (U8)(i >> 8);
-                     *tp++ = (U8)(i & 0xFF);
-                     
-                     SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
-                     tp += i;
-                     #endif
-                     #if SHARKSSL_ECC_USE_CURVE25519
-                     configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
-                     i = configvdcdc2.xLen = SHARKSSL_CURVE25519_POINTLEN;
-                     configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE25519;
                      *tp++ = (U8)(configvdcdc2.curveType >> 8);
                      *tp++ = (U8)(configvdcdc2.curveType & 0xFF);
                      *tp++ = (U8)(i >> 8);
@@ -7845,6 +7834,18 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      *tp++ = (U8)(i & 0xFF);
                      *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
                      i--;
+                     
+                     SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
+                     tp += i;
+                     #endif
+                     #if SHARKSSL_ECC_USE_CURVE25519
+                     configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
+                     i = configvdcdc2.xLen = SHARKSSL_CURVE25519_POINTLEN;
+                     configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE25519;
+                     *tp++ = (U8)(configvdcdc2.curveType >> 8);
+                     *tp++ = (U8)(configvdcdc2.curveType & 0xFF);
+                     *tp++ = (U8)(i >> 8);
+                     *tp++ = (U8)(i & 0xFF);
                      
                      SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp);
                      tp += i;
@@ -51042,7 +51043,7 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    i = o->prime.len;
    baAssert(deltadevices->x.len == i);
    i <<= 1;
-	i++;  
+   i++;  
    SharkSslEC_temp_setmulmod(&brightnesslimit, o);
    flash1resources = (i * SHARKSSL__M) * 7 + (o->prime.len * SHARKSSL__M);
 
@@ -51103,7 +51104,7 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    
    deviceparse(&brightnesslimit.C);
    blastscache(&brightnesslimit.C);
-	updatepmull(&brightnesslimit.A, &o->prime);
+   updatepmull(&brightnesslimit.A, &o->prime);
    #if SHARKSSL_ECC_USE_CURVE25519
    #if SHARKSSL_ECC_USE_CURVE448
    if (o->bits == 256)  
@@ -51114,8 +51115,8 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    #endif
    
    unassignedvector(&brightnesslimit.A, &brightnesslimit.D);
-	blastscache(&brightnesslimit.A);
-	blastscache(&brightnesslimit.D);
+   blastscache(&brightnesslimit.A);
+   blastscache(&brightnesslimit.D);
 
    blastscache(k);  
    bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
@@ -51214,18 +51215,18 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    }
    
    temp_fmulmod(&brightnesslimit.A, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
-	
-	brightnesslimit.A.len = 1;
-	brightnesslimit.A.beg[0] = 1;
-	temp_fmulmod(&brightnesslimit.A, &brightnesslimit.D, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
+   
+   brightnesslimit.A.len = 1;
+   brightnesslimit.A.beg[0] = 1;
+   temp_fmulmod(&brightnesslimit.A, &brightnesslimit.D, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
    unassignedvector(&brightnesslimit.E, &deltadevices->x);
 
    #else  
-	
-	brightnesslimit.B.len = 1;
-	brightnesslimit.B.beg[0] = 1;
-	temp_fmulmod(&brightnesslimit.B, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
-	temp_fmulmod(&brightnesslimit.B, &brightnesslimit.A, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
+   
+   brightnesslimit.B.len = 1;
+   brightnesslimit.B.beg[0] = 1;
+   temp_fmulmod(&brightnesslimit.B, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
+   temp_fmulmod(&brightnesslimit.B, &brightnesslimit.A, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
    
    iommumapping(&brightnesslimit.D, &o->prime);
    temp_mulmod(&brightnesslimit.C, &brightnesslimit.D, &brightnesslimit.B, &o->prime, &brightnesslimit.E.mem[0]);
