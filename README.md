@@ -285,7 +285,10 @@ Using the above compilation settings, you would also need to include src/arch/Th
 
 #### ESP32
 
-[Xedge32](https://realtimelogic.com/ba/ESP32/) is an Xedge version for the ESP32 and ESP32-S3 microcontrollers.
+![Xedge32](https://realtimelogic.com/images/xedge/finger-icon.png)
+
+[Xedge32](https://realtimelogic.com/downloads/bas/ESP32/) is an Xedge version for the ESP32 and ESP32-S3 microcontrollers.
+
 
 # Barracuda App Server Tutorials
 
