@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5483 2023-10-29 19:23:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *
@@ -119,6 +119,9 @@ unsigned int baMsTime2TxTicks(BaTime msec);
 
 #ifdef ESP_PLATFORM
 #define DL_INLINE 0
+#if CONFIG_OPCUA_ENABLED
+#define USE_OPCUA 1
+#endif
 #endif
 
 #if defined(SHARKSSL_LIB)

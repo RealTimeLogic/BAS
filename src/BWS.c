@@ -43401,19 +43401,14 @@ void shtype_t_swapConditional(shtype_t *o1, shtype_t *o2, U32 swapFlag)
 #endif
 
 
+
 #if SHARKSSL_OPTIMIZED_BIGINT_ASM
 #if (SHARKSSL_BIGINT_WORDSIZE != 32)
 #error SharkSSL optimized big int library requires SHARKSSL_BIGINT_WORDSIZE = 32
 #endif
-
-extern
-#endif
-
+#else
 shtype_tWord updatepmull(shtype_t *o1,
                                       const shtype_t *o2)
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-;
-#else
 {
    shtype_tWord *p1, *p2;
    shtype_tDoubleWordS d;
@@ -43441,15 +43436,10 @@ shtype_tWord updatepmull(shtype_t *o1,
 #endif
 
 
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-extern
-#endif
 
+#if (!SHARKSSL_OPTIMIZED_BIGINT_ASM)
 shtype_tWord resolverelocs(shtype_t *o1,       
                                       const shtype_t *o2)
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-;
-#else
 {
    shtype_tWord *p1, *p2;
    shtype_tDoubleWord d;
@@ -44243,13 +44233,8 @@ int chunkmutex(const shtype_t *validconfig,
 
 
 #if ((SHARKSSL_USE_ECC) || (SHARKSSL_ENABLE_RSAKEY_CREATE && SHARKSSL_ENABLE_RSA))
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-extern
-#endif
+#if (!SHARKSSL_OPTIMIZED_BIGINT_ASM)
 void backlightpdata(shtype_t *o)
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-;
-#else
 {
    shtype_tWord *p, *q;
 
@@ -44276,7 +44261,7 @@ void backlightpdata(shtype_t *o)
       q--;
    }
 }
-#endif  
+#endif
 
 
 void ioswabwdefault(shtype_t *u,   
@@ -44347,7 +44332,7 @@ static void ic0r1dispatch(shtype_t *o)
 {
    
    backlightpdata(o);
-   o->beg[0] |= ((o->beg[0] << 1) & (1 << (SHARKSSL_BIGINT_WORDSIZE - 1)));
+   o->beg[0] |= ((o->beg[0] << 1) & (shtype_tWord)(1 << (SHARKSSL_BIGINT_WORDSIZE - 1)));
 }
 
 
@@ -44726,14 +44711,14 @@ int aemifdevice(shtype_t *o)
    shtype_t_genPrime_1:
    o->beg = o->mem;
    sharkssl_rng((U8*)o->beg, o->len * SHARKSSL__M);
-   o->beg[0] |= (1 << (SHARKSSL_BIGINT_WORDSIZE - 1));  
+   o->beg[0] |= (shtype_tWord)(1 << (SHARKSSL_BIGINT_WORDSIZE - 1));  
    o->beg[o->len - 1] |= 1;  
    onenandpartitions(&TWO, SHARKSSL_BIGINT_WORDSIZE, &two);
 
    while (mcaspresources(o))
    {
       resolverelocs(o, &TWO);
-      if (0 == (o->beg[0] & (1 << (SHARKSSL_BIGINT_WORDSIZE - 1))))    
+      if (0 == (o->beg[0] & (shtype_tWord)(1 << (SHARKSSL_BIGINT_WORDSIZE - 1))))    
       {
          goto shtype_t_genPrime_1;
       }
