@@ -7130,6 +7130,13 @@ static int SharkSslHSParam_setCert(SharkSslHSParam *s, SharkSslCertParsed **cert
             s->certParsed = certPtr[2];
             return 0;
          }
+         #if SHARKSSL_ENABLE_RSA
+         else if (certPtr[1])  
+         {
+            s->certParsed = certPtr[1];
+            return 0;
+         }
+         #endif
          break;
       #endif
 
@@ -8491,6 +8498,17 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      *(SharkSslCertParsed**)(afterhandler + 2 * sizeof(SharkSslCertParsed**)) = &(((SharkSslCertList*)link)->certP);
                   }
                }
+               #if SHARKSSL_ENABLE_RSA
+               
+               else if (((SharkSslCertList *)link)->certP.signatureAlgo == entryearly)
+               {
+                  if ((*(SHARKSSL_WEIGHT*)tp) && (*(SHARKSSL_WEIGHT*)tp > *(SHARKSSL_WEIGHT*)(afterhandler + 4 * sizeof(SharkSslCertParsed**) + 1 * sizeof(SHARKSSL_WEIGHT))))
+                  {
+                     *(SHARKSSL_WEIGHT*)(afterhandler + 4 * sizeof(SharkSslCertParsed**) + 1 * sizeof(SHARKSSL_WEIGHT)) = *(SHARKSSL_WEIGHT*)tp;
+                     *(SharkSslCertParsed**)(afterhandler + 1 * sizeof(SharkSslCertParsed**)) = &(((SharkSslCertList*)link)->certP);
+                  }
+               }
+               #endif
             }
             #endif
          }
