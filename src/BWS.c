@@ -51248,6 +51248,13 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
 #endif  
 
 
+#if SHARKSSL_ENABLE_EDDSA
+#if SHARKSSL_ECC_USE_CURVE25519
+
+#endif
+#endif
+
+
 #if SHARKSSL_ENABLE_ECDSA
 int directalloc(SharkSslECCurve *S,
                               shtype_t *d,
@@ -51512,7 +51519,7 @@ int directalloc(SharkSslECCurve *S,
 #if SHARKSSL_ENABLE_ECCKEY_CREATE
 extern U8 controllerregister(U16 defaultsdhci1);
 
-SHARKSSL_API int SharkSslECCKey_create(SharkSslECCKey *mcbspplatform, U16 defaultsdhci1)
+SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defaultsdhci1, void* iospacestart, sharkssl_rngfunc smartflush)
 {
    static const shtype_tWord w_one = 0x1;
    SharkSslECCurve nandflashpartition;
@@ -51535,10 +51542,10 @@ SHARKSSL_API int SharkSslECCKey_create(SharkSslECCKey *mcbspplatform, U16 defaul
    {
       return -1;  
    }
-   if (sharkssl_rng(buf, allockuser + 8))
+   if (smartflush ? smartflush(iospacestart, buf, allockuser + 8) : sharkssl_rng(buf, allockuser + 8))
    {
       baFree(buf);
-      return -1;  
+      return -2;  
    }
 
    onenandpartitions(&one, sizeof(shtype_tWord) * 8, &w_one);

@@ -1,7 +1,7 @@
 
-/* Change before compiling. See ba.encryptionkey() in:
-   https://realtimelogic.com/ba/doc/?url=xedge/readme.html
-   The key can be any length.
+/* Change before compiling. The key can be any length.
+   Details:
+   https://realtimelogic.com/ba/doc/?url=xedge/readme.html#stpm
 */
 
 static const U8 ENCRYPTIONKEY[]={

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5415 2023-03-27 05:34:56Z gianluca $
+ *   $Id: SharkSSL.h 5491 2023-11-09 01:25:21Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -2269,7 +2269,11 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
    }
    \endcode
  */
-SHARKSSL_API int SharkSslECCKey_create(SharkSslECCKey *privKey, U16 curveID);
+
+typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
+#define SharkSslECCKey_create(a, b) SharkSslECCKey_createEx((a), (b), 0, 0)
+
+SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey* privKey, U16 curveID, void* rngHandle, sharkssl_rngfunc rngFunc);
 #endif
 
 

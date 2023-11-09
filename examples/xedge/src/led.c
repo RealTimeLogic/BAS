@@ -14,7 +14,7 @@
 */
 
 
-#include <barracuda.h>
+#include "xedge.h"
 
 /********* Simulated HW **********/
 static int ledState=0;
@@ -52,7 +52,7 @@ static int LED_getLed(lua_State* L)
 /*
   The function below is called by the Xedge startup code.
 */
-void luaopen_AUX(lua_State* L)
+int xedgeOpenAUX(XedgeOpenAUX* aux)
 {
    static const luaL_Reg reg[] = {
       {"setLed", LED_setLed},
@@ -60,6 +60,7 @@ void luaopen_AUX(lua_State* L)
       {NULL, NULL}
    };
 
-   luaL_newlib(L, reg);
-   lua_setglobal(L, "LED");
+   luaL_newlib(aux->L, reg);
+   lua_setglobal(aux->L, "LED");
+   return 0;
 }

@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5453 2023-06-02 13:04:40Z wini $
+ *   $Id: xedge.c 5492 2023-11-09 17:45:32Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -51,16 +51,25 @@ Note: some platforms automatically set USE_DBGMON=1 if the macro is
 not defined. See inc/arch/<PLAT>/TargConfig.h for your platform.
 */
 
-
-/*
-  Include all I/O related header files
-*/
-#include <barracuda.h>
+#include "xedge.h"
 
 /* Special case when working on Xedge Lua code on a host computer */
 #if defined(NO_BAIO_DISK) && defined(BAIO_DISK)
 #include <BaDiskIo.h>
 #endif
+
+
+/* A secret key used by the Xedge Lua code
+   See EncryptionKey.h.
+ */
+#ifndef NO_ENCRYPTIONKEY
+#ifdef NewEncryptionKey
+#include <NewEncryptionKey.h>
+#else
+#include "EncryptionKey.h"
+#endif
+#endif
+
 
 /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
  * pool) is not utilized. Instead, the LThreadMgr is used as the
@@ -96,8 +105,6 @@ LThreadMgr ltMgr;
 /* Default is: BAIO_EZIP */
 extern ZipReader* getLspZipReader(void);
 #endif
-
-extern void luaopen_AUX(lua_State* L); /* Example Lua binding: led.c */
 
 #if USE_PROTOBUF
 extern int luaopen_pb(lua_State* L);
@@ -139,12 +146,10 @@ onunload(lua_State* L, int onunloadRef)
  */
 #ifndef NO_BAIO_DISK
 
-int (*platformInitDiskIo)(DiskIo*);
-
 /* File system init code for HLOS */
 #if defined _WIN32 || defined(BA_POSIX)
 #include <stdlib.h>
-static int initDiskIo(DiskIo* dio)
+static int xedgeInitDiskIo(DiskIo* dio)
 {
    static const char appmgr[] = {"xedge"};
    int retVal;
@@ -177,29 +182,6 @@ static int initDiskIo(DiskIo* dio)
 /* End file system init code */
 
 #endif /* NO_BAIO_DISK */
-
-
-/* ba.encryptionkey()
-   Change key in EncryptionKey.h before compiling.
-*/
-#include "EncryptionKey.h"
-static int
-lEncryptionKey(lua_State *L)
-{
-   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
-   return 1;
-}
-
-/* Install ba.encryptionkey() */
-static void
-luaopen_encryptionkey(lua_State *L) 
-{
-   lua_getglobal(L, "ba");
-   lua_pushcfunction(L, lEncryptionKey);
-   lua_setfield(L,-2,"encryptionkey"); 
-   lua_pop(L,1); /* ba */
-}
-
 
 
 /* SharkTrustX
@@ -299,7 +281,7 @@ createVmIo()
    {
       HttpTrace_printf(0, "Cannot set DiskIo " BAIO_DISK_PATH_STR " directory: % s\n",
                        baErr2Str(ecode));
-      baFatalE(FE_USER_ERROR_1, 0);
+      baFatalE(FE_USER_ERROR_1, __LINE__);
    }
 #elif defined(BAIO_NET)
 #error Cannot use the NetIo: Not implemented.
@@ -323,13 +305,70 @@ createVmIo()
    zipReader = getLspZipReader();
 #endif
    if( ! CspReader_isValid((CspReader*)zipReader) )
-      baFatalE(FE_USER_ERROR_2, 0);
+      baFatalE(FE_USER_ERROR_1, __LINE__);
    ZipIo_constructor(&vmIo, zipReader, 2048, 0);
    if(ZipIo_getECode(&vmIo) !=  ZipErr_NoError)
-      baFatalE(FE_USER_ERROR_3, 0);
+      baFatalE(FE_USER_ERROR_1, __LINE__);
 #endif
    return (IoIntf*)(&vmIo);
 }
+
+
+/* This function simplifies calling the Lua function returned after
+   .config has been executed (see balua_loadconfigExt() below). One Lua
+   value must be pushed on the Lua stack when this function is
+   called. This value is sent as an argument to the Lua function. The
+   Lua function accepts the following arguments: nil, string, boolean
+   (true). When called with nil, the Lua code immediately starts the
+   server. If called with string values (binary), the Lua function
+   collects the passed-in string values as long as the function is
+   called. When the function is finally called with the argument
+   'true', it calculates a pre-master key based on the passed-in
+   string values and starts the server.
+
+   The function in xedge.lua also calculates an AES key based only on
+   the first argument passed in. This AES key is used for
+   encrypting/decrypting components of xedge.conf. The first argument
+   passed in should be the same for all devices to make it possible to
+   copy xedge.conf between devices. The first argument passed in the
+   current setup is the ENCRYPTIONKEY, which is embedded in the
+   firmware.
+*/
+static int
+initXedge(lua_State* L, int initXedgeFuncRef)
+{
+   lua_rawgeti(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
+   baAssert(lua_isfunction(L, -1));
+   lua_rotate(L, -2, 1);
+   if(lua_pcall(L, 1, 1, 0))
+   {
+      HttpTrace_printf(0,"Error in 'startServer': %s\n",
+                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
+      return -1;
+   }
+   return 0;
+}
+
+
+/* Wrapper for calling function xedgeOpenAUX. Note that we pass in a callback to
+ */
+#ifdef NO_XEDGE_AUX
+#define callXedgeOpenAUX(L,ref,io) 0
+#else
+static int
+callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
+{
+   XedgeOpenAUX aux = {
+      L,
+      dio,
+#ifndef NO_ENCRYPTIONKEY
+      initXedge,
+      initXedgeFuncRef
+#endif
+   };
+   return xedgeOpenAUX(&aux);
+}
+#endif
 
 
 /*
@@ -360,7 +399,7 @@ barracuda(void)
    static lua_State* L; /* pointer to a Lua virtual machine */
    static BaLua_param blp; /* configuration parameters */
    static int onunloadRef;
-   static int startServerRef;
+   static int initXedgeFuncRef;
 #ifndef NO_BAIO_DISK
    static DiskIo diskIo;
 #endif
@@ -371,15 +410,6 @@ barracuda(void)
 #endif
 
    HttpTrace_setPrio(7); /* block level 8 and 9 */
-
-/* Example code for 'platformInitDiskIo declaration' (REF-1).
-   This would typically be in another (startup) file for deep embedded systems.
-*/
-#if !defined(NO_BAIO_DISK) &&                   \
-   (defined(_WIN32) ||                          \
-    defined(BA_POSIX))
-   platformInitDiskIo=initDiskIo;
-#endif
 
    /* Create the Socket dispatcher (SoDisp), the SoDisp mutex, and the server.
     */
@@ -448,7 +478,7 @@ barracuda(void)
 #else
    DiskIo_constructor(&diskIo);
    /* REF-1 */
-   if( platformInitDiskIo && (*platformInitDiskIo)(&diskIo) == 0)
+   if( xedgeInitDiskIo(&diskIo) == 0)
    {
       /* Add optional IO interfaces */
       balua_iointf(L, "disk",  (IoIntf*)&diskIo);
@@ -483,7 +513,6 @@ barracuda(void)
 #if USE_OPCUA
    luaopen_opcua_ns0_static(L);
 #endif
-   luaopen_encryptionkey(L); /* code above in this file */
    /* Dispatcher mutex must be locked until the dispatcher starts
     */
    ThreadMutex_set(&mutex);
@@ -491,7 +520,7 @@ barracuda(void)
    if(ecode)
    {
       HttpTrace_printf(0,".config error: %s.\n", lua_tostring(L,-1)); 
-      baFatalE(FE_USER_ERROR_2, 0);
+      baFatalE(FE_USER_ERROR_1, __LINE__);
    }
    /* .config must return two functions, one for starting server, and
     * one onunload handler
@@ -499,11 +528,11 @@ barracuda(void)
    if(!lua_isfunction(L, -1) || !lua_isfunction(L, -2))
    {
       HttpTrace_printf(0,".config error: no start server or onunload\n");
-      baFatalE(FE_USER_ERROR_3, 0);
+      baFatalE(FE_USER_ERROR_1, __LINE__);
    }
-   /* Keep a reference to function returned by .config */
+   /* Keep a reference to the two functions returned by .config */
    onunloadRef=luaL_ref(L,LUA_REGISTRYINDEX);
-   startServerRef=luaL_ref(L,LUA_REGISTRYINDEX);
+   initXedgeFuncRef=luaL_ref(L,LUA_REGISTRYINDEX);
 
    /* See (A) above */
 #ifdef MAXTHREADS
@@ -512,19 +541,28 @@ barracuda(void)
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 #endif
 
+   /* ENCRYPTIONKEY from (New)EncryptionKey.h */
+#ifndef NO_ENCRYPTIONKEY
+   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
+   if(initXedge(L, initXedgeFuncRef))
+      baFatalE(FE_USER_ERROR_1, __LINE__);
+#endif
+
    /* Example Lua bindings, compile with AsynchLua.c or led.c.
       This code opens ESP32 bindings when compiled for ESP32.
     */
-   luaopen_AUX(L);
+   if(callXedgeOpenAUX(L, initXedgeFuncRef,(IoIntfPtr)&diskIo))
+      baFatalE(FE_USER_ERROR_1, __LINE__);
 
-   lua_rawgeti(L, LUA_REGISTRYINDEX, startServerRef);
-   baAssert(lua_isfunction(L, -1));
-   if(lua_pcall(L, 0, 1, 0))
-   {
-      HttpTrace_printf(0,"Error in 'startServer': %s\n",
-                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
-   }
-   luaL_unref(L, LUA_REGISTRYINDEX, startServerRef);
+   /* Signal done, now start server */
+#ifdef NO_ENCRYPTIONKEY
+   lua_pushnil(L);
+#else
+   lua_pushboolean(L, TRUE);
+#endif
+   if(initXedge(L, initXedgeFuncRef))
+      baFatalE(FE_USER_ERROR_1, __LINE__);
+   luaL_unref(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
 
    /*
      The dispatcher object waits for incoming HTTP requests. These

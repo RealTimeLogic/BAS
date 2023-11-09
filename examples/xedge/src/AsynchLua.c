@@ -58,7 +58,7 @@ while True:
     time.sleep(1)
 */
 
-#include <barracuda.h>
+#include "xedge.h"
 #include <stdlib.h>
 
 #define PORT_EX1 8080 /* UDP listen port number for Example 1 */
@@ -209,7 +209,7 @@ static void initSocketServer()
    openServerSock(PORT_EX2, asyncDispRecEvEx2);
 }
 
-/* This Lua binding is registered by the luaopen_AUX() function below
+/* This Lua binding is registered by the xedgeOpenAUX() function below
  * and is invoked when Lua code calls UDPTST.install(). The binding
  * saves a reference to the specified function (argument 1) in the
  * luaFuncRefEx2 variable, which is used by the runLuaEx2() function
@@ -238,7 +238,7 @@ static int installUdpCallbackEx2(lua_State* L)
  * included in any literature that explains Lua bindings. The function
  * is called by the Xedge startup code.
 */
-void luaopen_AUX(lua_State* L)
+int xedgeOpenAUX(XedgeOpenAUX* aux)
 {
    soDispMutex = HttpServer_getMutex(ltMgr.server);
    initSocketServer();
@@ -247,6 +247,7 @@ void luaopen_AUX(lua_State* L)
       {NULL, NULL}
    };
 
-   luaL_newlib(L, reg);
-   lua_setglobal(L, "UDPTST");
+   luaL_newlib(aux->L, reg);
+   lua_setglobal(aux->L, "UDPTST");
+   return 0;
 }
