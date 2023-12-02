@@ -188,7 +188,7 @@ Include the files as instructed above in your IDE or Makefile. Most embedded sys
 
 A recommendation is to initially try the server on an [ESP32 using FreeRTOS and lwIP](https://realtimelogic.com/ba/ESP32/source/GettingStarted.html) even if you plan on using another RTOS and/or device. The ESP32 is very easy to set up and is an excellent RTOS learning platform.
 
-## Enabling Additional Features
+## Enabling and Disabling Features
 
 BAS Amalgamated (BAS.c) includes features that are by default not compiled. These features can be enabled by the following macros. The macros can be enabled on any platform, including RTOS, unless stated otherwise.
 
@@ -210,16 +210,28 @@ The following macros are required if you plan on using the Let's Encrypt plugin.
 The following Mako Server specific macro enables loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When not using a pre-built Mako Server and when using the source code you can instead choose to integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly with your build.
 
 * USE_LUAINTF
-
-All porting layers, except POSIX and Windows, have the following pre-set:
+    * All porting layers, except POSIX and Windows, have the following pre-set:
 
 * LUA_NUMBER_INTEGER=1
-
-The above construction makes Lua use integer only and excludes floating point numbers. To re-enable floating point, compile the code with:
+    * Makes Lua use integer only and excludes floating point numbers. To re-enable floating point, compile the code with:
 
 * LUA_NUMBER_INTEGER=0
+  * See inc/arch/XXX/luaconf.h for details.
 
-See inc/arch/XXX/luaconf.h for details.
+* NO_LDEBUG
+  * Exclude the Lua "debug" module
+
+* Mako Server Specifics:
+  * NO_SHARKTRUST
+    * Do no include tokengen.c; disable built-in SharkTrustX key
+
+* Xedge Specifics:
+  * NO_SHARKTRUST
+  * NO_ENCRYPTIONKEY
+    * Do not include NewEncryptionKey.h; disable soft TPM
+  * NO_XEDGE_AUX
+    * Do not call xedgeOpenAUX() (your own Lua bindings)
+
 
 # Porting Layers
 

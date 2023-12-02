@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5412 2023-03-17 01:49:04Z wini $
+ *   $Id: TargConfig.h 5496 2023-11-23 18:51:15Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2023
  *
@@ -119,24 +119,7 @@
 
 #define NO_IPV6_MEMBERSHIP
 
-/* Enable the following extra APIs */
-#if 1
-#ifndef SHARKSSL_ENABLE_ASN1_KEY_CREATION
-#define SHARKSSL_ENABLE_ASN1_KEY_CREATION                1
-#endif
-#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
-#define SHARKSSL_ENABLE_RSAKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_ECCKEY_CREATE
-#define SHARKSSL_ENABLE_ECCKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_CREATION
-#define SHARKSSL_ENABLE_CSR_CREATION                     1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_SIGNING
-#define SHARKSSL_ENABLE_CSR_SIGNING                      1
-#endif
-#endif
+#include <BaSharkSslOpt.h>
 
 #if defined(__LP64__) && !defined(BA_64BIT)
 #define BA_64BIT

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5496 2023-11-23 18:51:15Z wini $
  *
  *   COPYRIGHT:  2020 - 2023
  *
@@ -116,35 +116,12 @@
 #define BALUA_API BA_API
 #endif
 
-#ifndef SHARKSSL_USE_SHA_512
-#define SHARKSSL_USE_SHA_512 1
-#endif
-
-#if 1
-#ifndef SHARKSSL_ENABLE_ASN1_KEY_CREATION
-#define SHARKSSL_ENABLE_ASN1_KEY_CREATION                1
-#endif
-#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
-#define SHARKSSL_ENABLE_RSAKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_ECCKEY_CREATE
-#define SHARKSSL_ENABLE_ECCKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_CREATION
-#define SHARKSSL_ENABLE_CSR_CREATION                     1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_SIGNING
-#define SHARKSSL_ENABLE_CSR_SIGNING                      1
-#endif
-#endif
-
-
-
 /* For SharkSSL */
 #ifdef BA_64BIT
 #define SHARKSSL_64BIT
 #endif 
 
+#include <BaSharkSslOpt.h>
 
 #include <BaErrorCodes.h>
 #ifndef baAssert

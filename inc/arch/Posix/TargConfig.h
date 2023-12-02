@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5496 2023-11-23 18:51:15Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2023
  *
@@ -144,48 +144,7 @@
 #define BALUA_API BA_API
 #endif
 
-#ifndef SHARKSSL_USE_SHA_512
-#define SHARKSSL_USE_SHA_512 1
-#endif
-
-#if 1
-#ifndef SHARKSSL_ENABLE_ASN1_KEY_CREATION
-#define SHARKSSL_ENABLE_ASN1_KEY_CREATION                1
-#endif
-#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
-#define SHARKSSL_ENABLE_RSAKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_ECCKEY_CREATE
-#define SHARKSSL_ENABLE_ECCKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_CREATION
-#define SHARKSSL_ENABLE_CSR_CREATION                     1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_SIGNING
-#define SHARKSSL_ENABLE_CSR_SIGNING                      1
-#endif
-#endif
-
-
-#ifndef SHARKSSL_ECC_USE_SECP256R1
-#define SHARKSSL_ECC_USE_SECP256R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_SECP384R1
-#define SHARKSSL_ECC_USE_SECP384R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_SECP521R1
-#define SHARKSSL_ECC_USE_SECP521R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP256R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP256R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP384R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP384R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP512R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP512R1 1
-#endif
-
+#include <BaSharkSslOpt.h>
 
 /* For SharkSSL */
 #if defined(__LP64__) && !defined(BA_64BIT)

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      SOURCE
  *
- *   $Id: ThreadLib.c 5412 2023-03-17 01:49:04Z wini $
+ *   $Id: ThreadLib.c 5504 2023-12-02 02:02:23Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2022
  *               http://www.realtimelogic.com
@@ -35,7 +35,19 @@
 #error configUSE_TIMERS must be enabled
 #endif
 
-#ifndef ESP_PLATFORM
+#ifdef ESP_PLATFORM
+
+void
+_baClckGettime(BaTimeEx* spec)
+{
+   struct timespec t;
+   clock_gettime(CLOCK_REALTIME, &t);
+   spec->sec=t.tv_sec;
+   spec->nsec=t.tv_nsec;
+   spec->offset=0;
+}
+
+#else /* not ESP */
 
 static U32 unixTime;
 

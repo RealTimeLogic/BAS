@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5489 2023-11-08 02:44:12Z wini $
+ *   $Id: TargConfig.h 5504 2023-12-02 02:02:23Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *
@@ -83,6 +83,8 @@ extern "C" {
 void baSetUnixTime(BaTime time);
 #ifdef ESP_PLATFORM
 #define baGetUnixTime() ((BaTime)time(0))
+void _baClckGettime(BaTimeEx* spec);
+#define baClckGettime _baClckGettime
 #else
 BaTime baGetUnixTime(void);
 #endif
@@ -122,42 +124,6 @@ unsigned int baMsTime2TxTicks(BaTime msec);
 #if CONFIG_OPCUA_ENABLED
 #define USE_OPCUA 1
 #endif
-#ifndef SHARKSSL_USE_SHA_512
-#define SHARKSSL_USE_SHA_512 1
-#endif
-#ifndef SHARKSSL_ENABLE_ASN1_KEY_CREATION
-#define SHARKSSL_ENABLE_ASN1_KEY_CREATION                1
-#endif
-#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
-#define SHARKSSL_ENABLE_RSAKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_ECCKEY_CREATE
-#define SHARKSSL_ENABLE_ECCKEY_CREATE                    1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_CREATION
-#define SHARKSSL_ENABLE_CSR_CREATION                     1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_SIGNING
-#define SHARKSSL_ENABLE_CSR_SIGNING                      1
-#endif
-#ifndef SHARKSSL_ECC_USE_SECP256R1
-#define SHARKSSL_ECC_USE_SECP256R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_SECP384R1
-#define SHARKSSL_ECC_USE_SECP384R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_SECP521R1
-#define SHARKSSL_ECC_USE_SECP521R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP256R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP256R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP384R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP384R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP512R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP512R1 1
-#endif
  
 
 #endif /* ESP_PLATFORM */
@@ -173,6 +139,9 @@ unsigned int baMsTime2TxTicks(BaTime msec);
 #define BA_LIB BALUA_LIB
 #endif
 #endif
+
+#include <BaSharkSslOpt.h>
+
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.

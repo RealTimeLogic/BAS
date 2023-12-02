@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5491 2023-11-09 01:25:21Z wini $
+ *   $Id: SharkSSL.h 5494 2023-11-22 20:08:21Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -2047,13 +2047,10 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(
 
 
 #if SHARKSSL_ENABLE_RSA_OAEP
-#if (!SHARKSSL_USE_SHA1)
-#error SHARKSSL_USE_SHA1 must be selected when SHARKSSL_ENABLE_RSA_OAEP is enabled
-#endif
 /** Decrypt ciphertext using the private key, padding is OAEP per RFC 8017.
 
    \param len is the length/size of parameter 'in'. This length must be
-   exactly #SharkSslRSAKey_size (key).
+   exactly #SharkSslRSAKey_size(privkey).
 
    \param in the ciphertext (must be in RAM)
 
@@ -2075,7 +2072,36 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(
    \return the size of the decrypted ciphertext, or <0 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey privkey, U8 hashID, char *label, U16 labelLen);
+   U16 len, U8 *in, U8 *out, SharkSslRSAKey privkey, U8 hashID, const char *label, U16 labelLen);
+
+
+/** Decrypt ciphertext using the private key, padding is OAEP per RFC 8017.
+
+   \param len is the length/size of parameter 'in'. This length must be
+   not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
+
+   \param in the cleartext (not required to be in RAM)
+
+   \param out the encrypted cleartext is copied to this buffer. The
+   size of this buffer must be #SharkSslRSAKey_size(pubkey)
+
+   \param pubkey is the public key in SharkSslRSAKey format. The matching 
+   private key can be provided, too.
+
+   \param hashID an identifier for the digest function used 
+    Allowed values are:
+        SHARKSSL_HASHID_SHA1
+
+   \param label is an optional label per RFC 8017 sec. 7.1.1. Use 
+    null string when empty.
+
+   \param labelLen is the length of the label. Specify 0 when label
+    is empty
+
+   \return the size of the encrypted ciphertext, or <0 if any error occurs
+ */
+SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(
+   U16 len, const U8 *in, U8 *out, SharkSslRSAKey pubkey, U8 hashID, const char *label, U16 labelLen);
 #endif
 
 

@@ -42652,60 +42652,74 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(U16 len, U8 *in, U
 }
 
 
-#if (SHARKSSL_ENABLE_RSA_OAEP && SHARKSSL_USE_SHA1)
-void sharkssl_MGF1(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite)
+#if SHARKSSL_ENABLE_RSA_OAEP
+static void ZZTSTsharkssl_MGFX(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
 {
-   SharkSslSha1Ctx sha1Ctx;
-   U8 chargerplatform[SHARKSSL_SHA1_HASH_LEN];
-   U8 ctr[4], ftraceupdate, i;
-
-   hsotgpdata(0, ctr, 0);
-   ftraceupdate = SHARKSSL_SHA1_HASH_LEN;
-
-   while (allocskcipher > 0)
+   U8 *ptr, *dptr, *buf;
+   U16 ftraceupdate, i;
+   
+   ftraceupdate = sharkssl_getHashLen(configwrite);
+   buf = baMalloc(ftraceupdate + consolewrite + 4);
+   if (buf)
    {
-      if (allocskcipher < ftraceupdate)
+      dptr = buf + ftraceupdate;
+      memcpy(dptr, src, consolewrite);
+      ptr = dptr + consolewrite;
+      hsotgpdata(0, ptr, 0);
+      consolewrite += 4;
+      while (allocskcipher > 0)
       {
-         ftraceupdate = (U8)allocskcipher;
+         if (allocskcipher < ftraceupdate)
+         {
+            ftraceupdate = (U8)allocskcipher;
+         }
+         sharkssl_hash(buf, dptr, consolewrite, configwrite);
+         for (i = 0; i < ftraceupdate; i++)
+         {
+            *pciercxcfg448++ ^= buf[i];
+         }
+         
+         if (0 == ++ptr[3])
+         {
+            if (0 == ++ptr[2])
+            {
+               if (0 == ++ptr[1])
+               {
+                  ptr[0]++;
+               }
+            }
+         }
+         allocskcipher -= ftraceupdate;
       }
-      SharkSslSha1Ctx_constructor(&sha1Ctx);
-      SharkSslSha1Ctx_append(&sha1Ctx, src, consolewrite);
-      SharkSslSha1Ctx_append(&sha1Ctx, ctr, SHARKSSL_DIM_ARR(ctr));
-      SharkSslSha1Ctx_finish(&sha1Ctx, chargerplatform);
-      for (i = 0; i < ftraceupdate; i++)
-      {
-         *pciercxcfg448++ ^= chargerplatform[i];
-      }
-      ctr[3]++;
-      allocskcipher -= ftraceupdate;
+      memset(buf, 0, ftraceupdate + consolewrite);
+      baFree(buf);
    }
-
-   memset(&sha1Ctx, 0, sizeof sha1Ctx);
-   memset(chargerplatform, 0, SHARKSSL_DIM_ARR(chargerplatform));
 }
 
 
-SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *in, U8 *out, SharkSslRSAKey resumeenabler, U8 configwrite, char *clkdmoperations, U16 auxdatalookup)
+SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *in, U8 *out, SharkSslRSAKey resumeenabler, U8 configwrite, const char *clkdmoperations, U16 auxdatalookup)
 {
-   
    int ret;
-   U8 i, ftraceupdate;
+   U16 ftraceupdate, i;
 
-   baAssert(configwrite == SHARKSSL_HASHID_SHA1);
-   ftraceupdate = SHARKSSL_SHA1_HASH_LEN;
+   ftraceupdate = sharkssl_getHashLen(configwrite);
    ret = (int)switchcompletion(writemessage, resumeenabler, len, in, in, SHARKSSL_RSA_NO_PADDING);
-   if (ret < (2 * ftraceupdate + 2))
+   if (ftraceupdate == 0)
+   {
+      ret = SHARKSSL_RSA_WRONG_PARAMETERS;  
+   }
+   else if (ret < (2 * ftraceupdate + 2))
    {
       ret = SHARKSSL_RSA_WRONG_KEY_LENGTH;
    }
    else
    {
       int PSLen, buttonsbuffalo;
-      U8 logicstate[SHARKSSL_SHA1_HASH_LEN], *ptr, sum, flg;
+      U8 logicstate[SHARKSSL_MAX_HASH_LEN], *ptr, sum, flg;
 
-      sharkssl_MGF1(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1);
-      sharkssl_MGF1(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate);
-      sharkssl_sha1((U8*)clkdmoperations, auxdatalookup, logicstate);
+      ZZTSTsharkssl_MGFX(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      ZZTSTsharkssl_MGFX(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
+      sharkssl_hash(logicstate, (U8*)clkdmoperations, auxdatalookup, configwrite);
 
       
       ptr = in;
@@ -42727,6 +42741,10 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *
          flg |= *in++;
          PSLen += (~flg) & 0x01;  
       }
+      if (PSLen >= ret)
+      {
+         return SHARKSSL_RSA_PKCS1_PADDING_ERROR;
+      }
       ret -= PSLen;
       ptr += PSLen;
       sum |= *ptr++ ^ 0x01;
@@ -42737,6 +42755,54 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *
       ret--;
       memcpy(out, ptr, ret);
       memset(logicstate, 0, SHARKSSL_DIM_ARR(logicstate));
+   }
+
+   return (sharkssl_RSA_RetVal)ret;
+}
+
+
+SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(U16 len, const U8 *in, U8 *out, SharkSslRSAKey setupreset, U8 configwrite, const char *clkdmoperations, U16 auxdatalookup)
+{
+   int ret;
+   U16 ftraceupdate, h2Len;
+
+   ftraceupdate = sharkssl_getHashLen(configwrite);
+   h2Len = (ftraceupdate * 2) + 2;
+   ret = SharkSslRSAKey_size(setupreset);
+   if (ftraceupdate == 0)
+   {
+      ret = SHARKSSL_RSA_WRONG_PARAMETERS;  
+   }
+   else if (ret == 0)
+   {
+      ret = SHARKSSL_RSA_WRONG_KEY_FORMAT;
+   }
+   else if (ret < h2Len)
+   {
+      ret = SHARKSSL_RSA_WRONG_KEY_LENGTH;
+   }
+   else if (len > (ret - h2Len))
+   {
+      ret = SHARKSSL_RSA_INPUT_DATA_LENGTH_TOO_BIG;
+   }
+   else
+   {
+      U8 *ptr;
+
+      ptr = out;
+      *ptr++ = 0x00;
+      sharkssl_rng(ptr, ftraceupdate);
+      ptr += ftraceupdate;
+      sharkssl_hash(ptr, (U8*)clkdmoperations, auxdatalookup, configwrite);
+      ptr += ftraceupdate;
+      h2Len = (U16)ret - h2Len - len;
+      memset(ptr, 0, h2Len);
+      ptr += h2Len;
+      *ptr++ = 0x01;
+      memcpy(ptr, in, len);
+      ZZTSTsharkssl_MGFX(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
+      ZZTSTsharkssl_MGFX(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      ret = (int)switchcompletion(omap3430common, setupreset, (U16)ret, out, out, SHARKSSL_RSA_NO_PADDING);
    }
 
    return (sharkssl_RSA_RetVal)ret;
