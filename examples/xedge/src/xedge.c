@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5492 2023-11-09 17:45:32Z wini $
+ *   $Id: xedge.c 5506 2023-12-08 21:57:10Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -409,7 +409,7 @@ barracuda(void)
   L_restart:
 #endif
 
-   HttpTrace_setPrio(7); /* block level 8 and 9 */
+   HttpTrace_setPrio(9); /* block > 9 */
 
    /* Create the Socket dispatcher (SoDisp), the SoDisp mutex, and the server.
     */

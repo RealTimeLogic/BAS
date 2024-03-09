@@ -4574,7 +4574,7 @@ SharkSslCert removerecursive(SharkSslCertEnum *o);
 
 #if (SHARKSSL_ENABLE_CA_LIST  || SHARKSSL_ENABLE_CERTSTORE_API)
 #define SHARKSSL_CA_LIST_NAME_SIZE                 8
-#define nativeiosapic              (SHARKSSL_CA_LIST_NAME_SIZE + 4)
+#define SHARKSSL_CA_LIST_ELEMENT_SIZE              (SHARKSSL_CA_LIST_NAME_SIZE + 4)
 #define SHARKSSL_CA_LIST_INDEX_TYPE                0x00
 
 #if (SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CERTSTORE_API)
@@ -4798,7 +4798,9 @@ typedef S64 shtype_tDoubleWordS;
 
 
 
-#if (((shtype_tDoubleWordS)-1LL >> SHARKSSL_BIGINT_WORDSIZE) & (1LL << SHARKSSL_BIGINT_WORDSIZE))  
+#if _MSC_VER == 1200  
+#define anatopdisconnect(a) (a >>= SHARKSSL_BIGINT_WORDSIZE);  
+#elif (((shtype_tDoubleWordS)-1LL >> SHARKSSL_BIGINT_WORDSIZE) & (1LL << SHARKSSL_BIGINT_WORDSIZE))  
 #define anatopdisconnect(a) (a >>= SHARKSSL_BIGINT_WORDSIZE);  
 #else
 #define anatopdisconnect(a) do {                                                                            \
@@ -6120,7 +6122,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
       {
          #if SHARKSSL_ENABLE_CERTSTORE_API
          baAssert(SHARKSSL_CA_LIST_PTR_SIZE == claimresource(SHARKSSL_CA_LIST_PTR_SIZE));
-         paramnamed = nativeiosapic;
+         paramnamed = SHARKSSL_CA_LIST_ELEMENT_SIZE;
          if (displaysetup[0] == SHARKSSL_CA_LIST_PTR_TYPE)
          {
             paramnamed = SHARKSSL_CA_LIST_NAME_SIZE + SHARKSSL_CA_LIST_PTR_SIZE;
@@ -6143,7 +6145,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
          #if SHARKSSL_ENABLE_CERTSTORE_API
          uart2hwmod *= paramnamed;
          #else
-         uart2hwmod *= nativeiosapic;
+         uart2hwmod *= SHARKSSL_CA_LIST_ELEMENT_SIZE;
          #endif
 
          
@@ -6179,8 +6181,8 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
             tp -= paramnamed;
             uart2hwmod -= paramnamed;
             #else
-            tp -= nativeiosapic;
-            uart2hwmod -= nativeiosapic;
+            tp -= SHARKSSL_CA_LIST_ELEMENT_SIZE;
+            uart2hwmod -= SHARKSSL_CA_LIST_ELEMENT_SIZE;
             #endif
          }
 
@@ -6258,8 +6260,8 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
             tp -= paramnamed;
             uart2hwmod -= paramnamed;
             #else
-            tp -= nativeiosapic;
-            uart2hwmod -= nativeiosapic;
+            tp -= SHARKSSL_CA_LIST_ELEMENT_SIZE;
+            uart2hwmod -= SHARKSSL_CA_LIST_ELEMENT_SIZE;
             #endif
          }
       }
@@ -7776,7 +7778,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                                  crLen += (U16)cp[SHARKSSL_CA_LIST_NAME_SIZE+2] << 8;
                                  crLen +=      cp[SHARKSSL_CA_LIST_NAME_SIZE+3];
                                  pCert  = (SharkSslCert)&(o->caListCertReq[crLen]);
-                                 cp    += nativeiosapic;  
+                                 cp    += SHARKSSL_CA_LIST_ELEMENT_SIZE;  
                               }
                               
                               ret = spromregister(0, (U8*)pCert, (U32)-2, (U8*)&installidmap);
@@ -9090,7 +9092,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                         crLen += (U16)cp[SHARKSSL_CA_LIST_NAME_SIZE+2] << 8;
                         crLen +=      cp[SHARKSSL_CA_LIST_NAME_SIZE+3];
                         pCert  = (SharkSslCert)&(o->caListCertReq[crLen]);
-                        cp    += nativeiosapic;  
+                        cp    += SHARKSSL_CA_LIST_ELEMENT_SIZE;  
                      }
                      
                      ret = spromregister(0, (U8*)pCert, (U32)-2, (U8*)&installidmap);
@@ -17731,8 +17733,11 @@ driverprobe(HttpInData* o)
       enabledisable = HttpInData_2Ptr(o, 0);
       httpEatWhiteSpace(enabledisable);
       patchimm60 = HttpInData_extractLine(o, enabledisable);
+#if 0
+      
       if(!patchimm60)
          return -1; 
+#endif
 
       
       if( !(ref = (char*)baGetToken((const char**)&enabledisable, "\040\011\012\015")) )
@@ -17877,7 +17882,9 @@ driverprobe(HttpInData* o)
       }
 
       
-      if(req->methodType == HttpMethod_Post)
+      if(req->methodType == HttpMethod_Post ||
+         req->methodType == HttpMethod_Patch ||
+         req->methodType == HttpMethod_Delete)
       { 
          BaBool savedstate;
          cachabledefault = HttpStdHeaders_getContentType(stdH);
@@ -27926,6 +27933,497 @@ ZipIo_destructor(ZipIo* o)
    if(o->password)
       AllocatorIntf_free(o->alloc, o->password);
 }
+
+
+#ifndef BA_LIB
+#define BA_LIB 1
+#endif
+
+#include <CspRunTm.h>
+#include <BaServerLib.h>
+#include <ZipFileIterator.h>
+
+#ifdef NO_ZLIB
+
+static const char noZipSupport[] = {
+   "\074\150\061\076\074\141\040\150\162\145\146\075\042\150\164\164\160\072\057\057\167\167\167\056\162\145\141\154\164\151\155\145\154\157\147\151\143\056\143\157\155\057\116\157\132\151\160\056\150\164\155\154\042\076\116\157\040\132\111\120\074\057\141\076\074\057\150\061\076"
+};
+
+
+#else
+#include <zlib.h>
+
+static U32
+wakeupnolock(CspReader* alloccontroller, U32 idmapstart, HttpResponse* doublefsqrt)
+{
+   U8* buf = (U8*)HttpResponse_getBuf(doublefsqrt);
+   U32 len =  HttpResponse_getBufSize(doublefsqrt);
+   if(len > 200)
+      len = 200;
+   for(;;)
+   {
+      U8* ptr = buf;
+      if(CspReader_read(alloccontroller, buf, idmapstart, len, FALSE))
+         return 0;
+      while(*ptr != 0 && len !=0) { len--; ptr++; idmapstart++; }
+      if(*ptr == 0) return idmapstart+1;
+   }
+}
+
+
+static U32
+bootmemremove(CspReader* alloccontroller, HttpResponse* doublefsqrt, U32 idmapstart)
+{
+   GzipHeader stage2adjust;
+   U16 removememory;
+
+   baAssert(sizeof(GzipHeader) == 10);
+
+   if(CspReader_read(alloccontroller, &stage2adjust, idmapstart, sizeof(GzipHeader), TRUE))
+      return 0;
+   idmapstart += sizeof(GzipHeader);
+
+   if(stage2adjust.id1 != 39 && stage2adjust.id2 != 139)
+   {
+      HttpResponse_printf(doublefsqrt, "\116\157\164\040\141\040\147\172\151\160\040\146\151\154\145");
+      return 0;
+   }
+   if(stage2adjust.compressionMethod != 8) 
+   {
+      HttpResponse_printf(doublefsqrt, "\125\156\153\156\157\167\156\040\143\157\155\160\162\145\163\163\151\157\156\040\155\145\164\150\157\144");
+      return 0;
+   }
+   if(stage2adjust.flags & FLG_FEXTRA)
+   {
+      if(CspReader_read(alloccontroller, &removememory, idmapstart, sizeof(removememory), FALSE))
+         return 0;
+#ifdef B_BIG_ENDIAN
+      removememory =
+         ((((removememory) << 8) & 0xff00) | (((removememory) >> 8) & 0x00ff));
+#endif
+      idmapstart += (removememory + 2);
+   }
+   if(stage2adjust.flags & FLG_FNAME)
+   {
+      if((idmapstart = wakeupnolock(alloccontroller, idmapstart, doublefsqrt)) == 0)
+         return 0;
+   }
+   if(stage2adjust.flags & FLG_FCOMMENT)
+   {
+      if((idmapstart = wakeupnolock(alloccontroller, idmapstart, doublefsqrt)) == 0)
+         return 0;
+   }
+   if(stage2adjust.flags & FLG_FHCRC)
+      idmapstart += 2;
+   return idmapstart;
+}
+
+
+static int
+cmdlinesetup(z_streamp z, HttpResponse* doublefsqrt)
+{
+   int serial8250device;
+   while(z->avail_in != 0)
+   {
+      serial8250device = inflate(z, Z_NO_FLUSH);
+      if(serial8250device != Z_OK || z->avail_out < 50)
+      {
+         U32 notifierretry;
+         if(serial8250device != Z_OK && serial8250device != Z_STREAM_END)
+            return -6;
+         notifierretry = HttpResponse_getRemBufSize(doublefsqrt) - z->avail_out;
+         if(HttpResponse_dataAdded(doublefsqrt, notifierretry))
+            return -1;
+         if(HttpResponse_getRemBufSize(doublefsqrt) < 50)
+         {
+            if(HttpResponse_flush(doublefsqrt))
+               return -1;
+         }
+         z->next_out = (U8*)HttpResponse_getBufOffs(doublefsqrt);
+         z->avail_out = HttpResponse_getRemBufSize(doublefsqrt);
+         if(serial8250device == Z_STREAM_END)
+            return 0;
+      }
+   }
+   return Z_OK;
+}
+
+
+static int
+setuphrtimer(
+   CspReader* alloccontroller, HttpResponse* doublefsqrt,U32 idmapstart, U32 icachealiases)
+{
+   z_stream z;
+   int serial8250device;
+   U8* pcimthwint;
+   const U32 enableinterrupts = 500;
+
+   if(HttpResponse_flush(doublefsqrt))
+      return -1;
+
+   pcimthwint = baMalloc(enableinterrupts+1);
+   if(!pcimthwint)
+      serial8250device = 1;
+   else
+   {
+      
+      z.next_in = 0;
+      z.avail_in = 0;
+
+      if(HttpResponse_getRemBufSize(doublefsqrt) < 50)
+         HttpResponse_flush(doublefsqrt);
+      z.next_out = (U8*)HttpResponse_getBufOffs(doublefsqrt);
+      z.avail_out = HttpResponse_getRemBufSize(doublefsqrt);
+
+
+      z.zalloc = (alloc_func)0;
+      z.zfree = (free_func)0;
+      z.opaque = (voidpf)0;
+      
+      serial8250device = inflateInit2(&z, -MAX_WBITS);
+      if(serial8250device == Z_OK)
+      {
+         while(icachealiases != 0)
+         {
+            U32 notifierretry = icachealiases > enableinterrupts ? enableinterrupts : icachealiases;
+            if(CspReader_read(alloccontroller, pcimthwint, idmapstart, notifierretry, FALSE))
+            {
+               serial8250device = 2;
+               break;
+            }
+            icachealiases -= notifierretry;
+            idmapstart += notifierretry;
+            z.next_in = pcimthwint;
+            
+            z.avail_in = icachealiases != 0 ? notifierretry : notifierretry+1;
+            if(cmdlinesetup(&z, doublefsqrt) != Z_OK)
+            {
+               serial8250device = 3;
+               break;
+            }
+         }
+         if(inflateEnd(&z) != Z_OK && serial8250device == Z_OK)
+            serial8250device = 4;
+      }
+      else
+         serial8250device = 5;
+      baFree(pcimthwint);
+   }
+   if(serial8250device)
+   {
+      if(!HttpResponse_flush(doublefsqrt))
+      {
+         static const char mcbsppdata[] = {"\105\122\122\117\122\040\167\162\151\164\151\156\147\040\132\111\120\040\144\141\164\141\072\040"};
+         static const char* lswc2format[5] = {
+            "\116\157\040\155\145\155\157\162\171",
+            "\132\111\120\040\162\145\141\144\145\162\040\146\141\151\154\145\144",
+            "\111\156\146\154\141\164\145\040\146\141\151\154\145\144",
+            "\111\156\146\154\141\164\145\040\105\116\104\040\146\141\151\154\145\144",
+            "\111\156\146\154\141\164\145\040\102\105\107\111\116\040\146\141\151\154\145\144"};
+         if(--serial8250device < 5)
+         {
+            HttpResponse_send(doublefsqrt,mcbsppdata,iStrlen(mcbsppdata));
+            HttpResponse_send(doublefsqrt,lswc2format[serial8250device],iStrlen(lswc2format[serial8250device]));
+         }
+      }
+      return -1;
+   }
+   return 0;
+}
+
+#endif 
+
+static void
+misalignederror(HttpResponse* doublefsqrt)
+{
+   if(!HttpResponse_flush(doublefsqrt))
+   {
+      static const char mcbsppdata[] = {"\105\122\122\117\122\040\167\162\151\164\151\156\147\040\103\123\120\040\144\141\164\141\072\040"
+                                  "\103\163\160\122\145\141\144\145\162\040\146\141\151\154\145\144"};
+      HttpResponse_send(doublefsqrt,mcbsppdata,iStrlen(mcbsppdata));
+   }
+}
+
+
+
+int
+httpWriteSection(CspReader* alloccontroller, HttpResponse* doublefsqrt, U32 idmapstart, U32 icachealiases)
+{
+   U32 devicehwmon = 1;
+   while(icachealiases)
+   {
+      char* ptr;
+      U32 notifierretry = HttpResponse_getRemBufSize(doublefsqrt);
+      if(notifierretry < 1)
+      {
+         if(HttpResponse_flush(doublefsqrt))
+            return -1;
+         notifierretry = HttpResponse_getRemBufSize(doublefsqrt);
+         baAssert(notifierretry);
+      }
+      if(notifierretry > icachealiases)
+         notifierretry = icachealiases;
+      ptr = HttpResponse_getBufOffs(doublefsqrt);
+      if(CspReader_read(alloccontroller, ptr, idmapstart, notifierretry, devicehwmon))
+      {
+         misalignederror(doublefsqrt);
+         return -1;
+      }
+      if(HttpResponse_dataAdded(doublefsqrt, notifierretry))
+         return -1;
+      devicehwmon=0;
+      idmapstart += notifierretry;
+      icachealiases -= notifierretry;
+   }
+   return 0;
+}
+
+
+int
+httpUnzipAndWrite(CspReader* alloccontroller,
+                  HttpResponse* doublefsqrt,
+                  U32 idmapstart,
+                  U32 icachealiases,
+                  GzipHeader* stage2adjust)
+{
+
+   if(stage2adjust) 
+   {
+#ifdef NO_ZLIB
+      HttpResponse_write(doublefsqrt, noZipSupport, -1, TRUE);
+#else
+      if( !doublefsqrt->printAndWriteInitialized )
+         if(HttpResponse_printAndWriteInit(doublefsqrt))
+            return -1; 
+      if(stage2adjust->id1 != 31)
+      {
+         idmapstart = bootmemremove(alloccontroller, doublefsqrt, idmapstart);
+         if(idmapstart == 0)
+         {
+            HttpResponse_printf(doublefsqrt, "\105\162\162\157\162\040\151\156\040\107\132\111\120\040\150\145\141\144\145\162");
+            return -1;
+         }
+      }
+      if(setuphrtimer(alloccontroller, doublefsqrt, idmapstart, icachealiases))
+         return -1;
+#endif
+   }
+   else
+   {
+      if(httpWriteSection(alloccontroller, doublefsqrt, idmapstart, icachealiases))
+         return -1;
+   }
+   return 0;
+}
+
+void
+httpRawWrite(CspReader* alloccontroller,
+             HttpRequest* configuredevice,
+             HttpResponse* doublefsqrt,
+             U32 widgetactive,
+             U32 idmapstart,
+             U32 icachealiases,
+             GzipHeader* stage2adjust,
+             GzipTrailer* staticsuspend)
+{
+   U32 notifierretry;
+   U32 devicehwmon;
+   U32 lsdc2format;
+   void* dbdmasyscore;
+
+   HttpResponse_setDateHeader(doublefsqrt, "\114\141\163\164\055\115\157\144\151\146\151\145\144", widgetactive);
+
+   if(HttpRequest_getMethodType(configuredevice) == HttpMethod_Head)
+   {
+      HttpResponse_setContentLength(doublefsqrt, icachealiases);
+      if(stage2adjust)  
+         HttpResponse_setHeader(doublefsqrt, "\103\157\156\164\145\156\164\055\105\156\143\157\144\151\156\147", "\147\172\151\160",TRUE);
+      return;
+   }
+
+   if(stage2adjust) 
+   {
+      const char* assertdevice;
+      const char* ae =
+         HttpRequest_getHeaderValue(configuredevice, "\101\143\143\145\160\164\055\105\156\143\157\144\151\156\147");
+      if(ae == 0)
+         ae = HttpRequest_getHeaderValue(configuredevice, "\124\105");
+      if(ae == 0 || (bStrstr(ae, "\147\172\151\160")==0 && bStrstr(ae, "\052")==0) )
+      {  
+#ifdef NO_ZLIB
+         
+         HttpResponse_sendError2(doublefsqrt, 406, noZipSupport);
+         return;
+#else
+         
+         httpUnzipAndWrite(alloccontroller, doublefsqrt, idmapstart, icachealiases, stage2adjust);
+         return;
+#endif
+      }
+
+      
+#ifndef NO_ZLIB
+      assertdevice = HttpRequest_getHeaderValue(configuredevice, "\125\163\145\162\055\101\147\145\156\164");
+      if(assertdevice && strstr(assertdevice, "\107\145\143\153\157"))
+      {
+         httpUnzipAndWrite(alloccontroller, doublefsqrt, idmapstart, icachealiases, stage2adjust);
+         return;
+      }
+#endif
+
+      HttpResponse_setHeader(doublefsqrt, "\103\157\156\164\145\156\164\055\105\156\143\157\144\151\156\147", "\147\172\151\160",TRUE);
+      
+      HttpResponse_setHeader(doublefsqrt, "\126\141\162\171", "\101\143\143\145\160\164\055\105\156\143\157\144\151\156\147",TRUE);
+      if(stage2adjust->id1 == 31)
+      {
+         
+         baAssert(sizeof(GzipHeader) == 10);
+         baAssert(sizeof(GzipTrailer) == 8);
+         HttpResponse_setContentLength(doublefsqrt, icachealiases+(10+8));
+         if(HttpResponse_flush(doublefsqrt)) return;
+         HttpResponse_send(doublefsqrt, stage2adjust, sizeof(GzipHeader));
+      }
+      else
+         HttpResponse_setContentLength(doublefsqrt, icachealiases);
+   }
+   else
+      HttpResponse_setContentLength(doublefsqrt, icachealiases);
+
+   if(HttpResponse_flush(doublefsqrt))
+      return;
+
+   
+   devicehwmon = 1;
+   lsdc2format = HttpResponse_getBufSize(doublefsqrt);
+   dbdmasyscore = HttpResponse_getBuf(doublefsqrt);
+   do
+   {
+      notifierretry = icachealiases > lsdc2format ? lsdc2format : icachealiases;
+      if(CspReader_read(alloccontroller,dbdmasyscore,idmapstart,
+                       notifierretry,devicehwmon))
+      {
+         misalignederror(doublefsqrt);
+         break; 
+      }
+      if(HttpResponse_send(doublefsqrt, dbdmasyscore, notifierretry))
+         break; 
+      icachealiases -= notifierretry;
+      idmapstart += notifierretry;
+      devicehwmon = 0;
+   } while(notifierretry == lsdc2format);
+   if(stage2adjust && stage2adjust->id1 == 31)
+   {
+      baAssert(staticsuspend);
+      HttpResponse_send(doublefsqrt, staticsuspend, sizeof(GzipTrailer));
+   }
+}
+
+
+
+int
+cspCheckCondition(HttpRequest* configuredevice, HttpResponse* doublefsqrt)
+{
+   if(HttpResponse_isInclude(doublefsqrt))
+      return 0;
+   if(HttpRequest_checkMethods(configuredevice,
+                               doublefsqrt,
+                               HttpMethod_Get | HttpMethod_Post,
+                               TRUE))
+   {
+      return 1;
+   }
+
+   return HttpResponse_setDefaultHeaders(doublefsqrt);
+}
+
+
+static void
+compatnames(struct HttpPage* bootmemunlock,
+                          HttpRequest* configuredevice,
+                          HttpResponse* doublefsqrt)
+{
+   GzipHeader stage2adjust;
+   HttpStaticMemPage* o = (HttpStaticMemPage*)bootmemunlock;
+   stage2adjust.id1=0; 
+
+   if( !configuredevice )
+   {
+      HttpPage_destructor(bootmemunlock);
+      return;
+   }
+
+   if(HttpResponse_isInclude(doublefsqrt))
+   {
+      httpUnzipAndWrite(o->data,
+                        doublefsqrt,
+                        o->payloadBlock.offset,
+                        o->payloadBlock.size,
+                        o->isCompressed ? &stage2adjust : 0);
+   }
+   else 
+   {
+      if(o->mimeBlock.size == 1)
+      { 
+         HttpResponse_sendError1(doublefsqrt, 404);
+      }
+      else
+      {
+         if( ! HttpRequest_checkTime(configuredevice, doublefsqrt, o->time) )
+         {
+            char buf[50];
+            if(CspReader_read(o->data, buf, o->mimeBlock.offset,
+                             o->mimeBlock.size, TRUE))
+            {
+               misalignederror(doublefsqrt);
+               return; 
+            }
+            HttpResponse_checkContentType(doublefsqrt, buf);
+            httpRawWrite(o->data,
+                         configuredevice,
+                         doublefsqrt,
+                         o->time,
+                         o->payloadBlock.offset,
+                         o->payloadBlock.size,
+                         o->isCompressed ? &stage2adjust : 0, 0);
+         }
+      }
+   }
+}
+
+void
+HttpStaticMemPage_loadAndInit(HttpStaticMemPage* o,
+                              CspReader* alloccontroller, U32 widgetactive,
+                              U32 uart2resource, U32 enablepseudo,
+                              U32 ads7846pendown, U32 doublefcmpe,
+                              U32 prepareenable, U32 calculateclock,
+                              char emulateloregs, HttpDir* checkstack)
+{
+   o->data = alloccontroller;
+   if(CspReader_read(o->data, o+1, uart2resource, enablepseudo, TRUE))
+      baFatalE(FE_CANNOT_READ, uart2resource);
+   HttpPage_constructor(&o->page, compatnames, (char*)(o+1));
+   baAssert(o->page.name[enablepseudo-1] == 0);
+   o->time = widgetactive;
+   o->mimeBlock.offset = ads7846pendown;
+   o->mimeBlock.size = doublefcmpe;
+   o->payloadBlock.offset = prepareenable;
+   o->payloadBlock.size = calculateclock;
+   o->isCompressed = emulateloregs;
+   HttpDir_insertPage(checkstack, &o->page);
+}
+
+
+void
+HttpDynamicMemPage_loadAndInit(HttpPage* o, CspReader* alloccontroller, U32 icachealiases,
+                               HttpPage_Service kexecnonboot,
+                               U32 uart2resource, U32 enablepseudo)
+{
+   if(CspReader_read(alloccontroller, ((char*)o)+icachealiases, uart2resource, enablepseudo, TRUE))
+      baFatalE(FE_CANNOT_READ, uart2resource);
+   HttpPage_constructor(o, kexecnonboot, ((char*)o)+icachealiases);
+   baAssert(o->name[enablepseudo-1] == 0);
+}
+
 
 
 #ifndef BA_LIB
@@ -42653,7 +43151,7 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(U16 len, U8 *in, U
 
 
 #if SHARKSSL_ENABLE_RSA_OAEP
-static void ZZTSTsharkssl_MGFX(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
+static void bv1(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
 {
    U8 *ptr, *dptr, *buf;
    U16 ftraceupdate, i;
@@ -42717,8 +43215,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *
       int PSLen, buttonsbuffalo;
       U8 logicstate[SHARKSSL_MAX_HASH_LEN], *ptr, sum, flg;
 
-      ZZTSTsharkssl_MGFX(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
-      ZZTSTsharkssl_MGFX(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
+      bv1(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      bv1(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
       sharkssl_hash(logicstate, (U8*)clkdmoperations, auxdatalookup, configwrite);
 
       
@@ -42800,8 +43298,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(U16 len, const
       ptr += h2Len;
       *ptr++ = 0x01;
       memcpy(ptr, in, len);
-      ZZTSTsharkssl_MGFX(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
-      ZZTSTsharkssl_MGFX(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      bv1(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
+      bv1(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
       ret = (int)switchcompletion(omap3430common, setupreset, (U16)ret, out, out, SHARKSSL_RSA_NO_PADDING);
    }
 
@@ -48459,8 +48957,8 @@ U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o)
 
 U16 SharkSslCon_setHandshakeDataSent(SharkSslCon *o, U16 traceleave)
 {
-   baAssert(o);
    U16 res = 0;
+   baAssert(o);
    if (traceleave <= (o->inBuf.temp))
    {
       res = o->inBuf.temp;

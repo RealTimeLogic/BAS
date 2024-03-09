@@ -1,6 +1,6 @@
 #ifndef __dlmalloc_h
 #define __dlmalloc_h
-
+#include <stddef.h>
 void dlmalloc_setExhaustedCB(void (*cb)(void));
 void init_dlmalloc(char* heapstart, char* heapend);
 void* dlmalloc(size_t bytes);

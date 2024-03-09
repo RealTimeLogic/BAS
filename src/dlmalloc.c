@@ -50,7 +50,7 @@
 /* Use the Barracuda ThreadMutex class */
 #define USE_BA_LOCKS 1
 
-#define ABORT baFatalE(FE_MALLOC, 0)
+#define ABORT baFatalE(FE_MALLOC, __LINE__)
 #define ABORT_ON_ASSERT_FAILURE 0
 
 /* errno not supported */
@@ -6451,8 +6451,6 @@ baSbrk(ptrdiff_t incr)
   {
      if(exhaustedCB)
         exhaustedCB();
-     else
-        HttpTrace_printf(0, "baSbrk exhausted!\n");
      return MFAIL;
   }
 
