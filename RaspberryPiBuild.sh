@@ -26,7 +26,7 @@ done
 
 
 export NOCOMPILE=true
-wget --no-check-certificate -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort"LinuxBuild.sh failed"
+wget --no-check-certificate -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort "LinuxBuild.sh failed"
 
 if ! [ -f "LPeg/lpcode.c" ]; then
     echo "Downloading LPeg"
@@ -47,8 +47,8 @@ cd ..
 
 if ! [ -f "MakoModuleExample/README.txt" ]; then
     echo "Downloading the Mako Server's Lua C Code Module Library"
-    wget --no-check-certificate https://makoserver.net/download/MakoModuleExample.zip || abort"Cannot download MakoModuleExample.zip"
-    unzip MakoModuleExample.zip || abort"Unzip failed"
+    wget --no-check-certificate https://makoserver.net/download/MakoModuleExample.zip || abort "Cannot download MakoModuleExample.zip"
+    unzip MakoModuleExample.zip || abort "Unzip failed"
     rm  MakoModuleExample.zip
 fi
 
