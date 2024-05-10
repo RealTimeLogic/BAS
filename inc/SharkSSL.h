@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5494 2023-11-22 20:08:21Z gianluca $
+ *   $Id: SharkSSL.h 5536 2024-05-07 19:02:22Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -40,7 +40,7 @@
 #include "TargConfig.h"      /* platform dependencies  */
 
 #ifndef SHARKDBG_PRINTF
-#define SHARKDBG_PRINTF(a,b,c)
+#define SHARKDBG_PRINTF(x)
 #endif
 
 #ifndef SHARKSSL_API

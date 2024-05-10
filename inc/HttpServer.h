@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5522
+#define BASLIB_VER_NO 5537
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5522)
+#define BASLIB_VER BASLIB_VER_M(5537)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 

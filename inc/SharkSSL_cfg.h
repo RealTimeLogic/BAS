@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5463 2023-07-10 21:29:12Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5532 2024-04-20 08:12:12Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -489,12 +489,21 @@
 #endif
 
 
+/** Select 1 to enable generation and verification of
+ *  Edwards elliptic curve digital signatures (RFC 8032)
+ */
+#ifndef SHARKSSL_ENABLE_EDDSA
+#define SHARKSSL_ENABLE_EDDSA                            1
+#endif
+
+
 /** Enable timing resistant ECC algorithms
  *  DISABLE AT YOUR OWN RISK!
  */
 #ifndef SHARKSSL_ECC_TIMING_RESISTANT
 #define SHARKSSL_ECC_TIMING_RESISTANT                    1
 #endif
+
 
 /** Enable timing resistant big integer functions
  *  Enabled by default when the above is enabled
