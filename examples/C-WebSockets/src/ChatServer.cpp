@@ -42,7 +42,8 @@ The Barracuda Server library is implemented in C code, but provides
 wrappers for C++. This example shows how to use the C++
 interface. Details:
 
-https://realtimelogic.com/ba/doc/?url=C/introduction.html#refman_cpp
+ANSI C and Object Oriented Programming:
+https://realtimelogic.com/ba/doc/en/C/introduction.html#refman_cpp
 */
 
 #include "../../HostInit/OpenSocketCon.h"
@@ -59,8 +60,9 @@ https://realtimelogic.com/ba/doc/?url=C/introduction.html#refman_cpp
 #define BAIO_DISK
 #endif
 
+// Compile with -DBAIO_DISK if you want to load pages from file system
 #if !defined(BAIO_DISK)
-// Read resources from embedded ZIP file html.zip.c
+// Else: read resources from embedded ZIP file html.zip.c
 extern "C" ZipReader * getZipReader(void);
 #endif 
 
@@ -291,30 +293,44 @@ ChatPage::ChatPage(const char *pageName, SoDisp* disp) :
  * insert the resource reader into the virtual file system, create a
  * ChatPage instance and insert the page as an HttpPage in the resource
  * reader (HttpResRdr with base class HttpDir).
+ * 
+ * Note that the virtual file system is not the operating system's
+ * file system. See the following link for an introduction to
+ * assembling a virtual file system, and consider the Lua code
+ * examples as a pseudo-code.
+ * https://realtimelogic.com/ba/doc/en/GettingStarted.html#VFS
  */
 void
 installVirtualDir(HttpServer* server)
 {
+// If using the file system for accessing web resources.
 #if defined(BAIO_DISK)
    int status;
+   // https://realtimelogic.com/ba/doc/en/C/reference/html/structDiskIo.html
    static DiskIo io;
-   static HttpResRdr readDir(&io, 0);
-   status=io.setRootDir("../../html");
+   // In an embedded device, the file system root may be something like:
+   // /mount-point/www
+   status=io.setRootDir("../../html"); // host: executing from ./obj/release
    if(status)
-      status=io.setRootDir("../html");
+      status=io.setRootDir("../html"); // host: executing from ./obj
+   if(status)
+      status=io.setRootDir("html"); // host: executing from ./
    if(status)
    {
       HttpTrace::printf(0, "Cannot set DiskIo ../../html directory: %s\n",
                        baErr2Str(status));
       baFatalE(FE_USER_ERROR_1, 0);
    }
-#else // Assume BAIO_EZIP
+#else // Using embedded ZIP file; all web resources are packaged in a zip file
+   // https://realtimelogic.com/ba/doc/en/C/reference/html/structZipReader.html
    ZipReader* zipReader = getZipReader();
    if (!zipReader->isValid())
       baFatalE(FE_USER_ERROR_2, 0);
+   // https://realtimelogic.com/ba/doc/en/C/reference/html/structZipIo.html
    static ZipIo io(zipReader);
-   static HttpResRdr readDir(&io, 0);
 #endif
+   // https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpResRdr.html
+   static HttpResRdr readDir(&io, 0);
    server->insertDir(0,&readDir);
    static ChatPage wsp("my-web-socket-service", server->getDispatcher());
    readDir.insertPage(&wsp);
@@ -325,6 +341,8 @@ installVirtualDir(HttpServer* server)
 /* This function creates one HttpServer, one SoDisp and one
    HttpServCon object from static memory. This function should
    therefore be called one time only.
+   https://realtimelogic.com/ba/doc/en/C/reference/html/structSoDisp.html
+   https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpServer.html
  */
 static HttpServer*
 createServer(void)
