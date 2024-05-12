@@ -41,6 +41,12 @@ to the server, which is then distributed to all connected clients
 where the image is shown. The images dropped into the browser window
 must be JPEG, and the image sizes must be less than 65,535 bytes.
 
+The example is designed for embedded use, but we recommend testing it
+on your host computer initially. You can use the ready-to-use makefile
+or the Visual Studio Project file if you are on Windows.
+
+![Host Build](HostBuild.gif)
+
 ## How to compile the C code
 
 The chat example is designed with ease-of-use in mind. On Linux, testing is made super easy with the included makefile. We also include RTOS build instructions. Simply follow the steps, and you'll be ready to go in no time.
