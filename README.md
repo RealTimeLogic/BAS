@@ -1,27 +1,55 @@
-# BAS Amalgamated
-### Barracuda App Server Amalgamated
+# BWS and BAS Amalgamated
+## Embedded Web Server and IoT Toolkit C Code Libraries
+- **BWS:** Barracuda Web Server C library
+- **BAS:** Barracuda App Server C library
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
-The Barracuda App Server is an embeddable C code library with support for the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
+The BWS and BAS C code libraries are C89 compatible and support the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
 
-Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
+Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK; **Amalgamated** indicates that we have combined all separate C files into one file, simplifying the compilation and integration process into your build. The products run on anything from tiny FPGA's to online cloud servers.
+
+Both products are considered Application Servers. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
+
+
+## BWS
+
+The Barracuda Embedded Web Server is a small embedded HTTP(S) and WebSocket C source code library pre-integrated with the SharkSSL TLS stack. The source code is optimized for compact, deeply embedded devices.
+
+![Barracuda Embedded Web Server](https://realtimelogic.com/GZ/images/BarracudaWebServer.svg)
+
+- [Barracuda Embedded Web Server Product Page](https://realtimelogic.com/products/barracuda-web-server/)
+
+
+
+## BAS
+
+The Barracuda App Server, powered by BWS, is a powerful IoT toolkit that equips engineers with the necessary tools to create secure and efficient web and IoT products. While you can develop applications using C/C++ on BAS, it also features the powerful Lua engine. This engine is designed for ease of use, enabling developers to construct up to 80% of their embedded applications in Lua without compromising on efficiency.
 
 ![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)
 
-The Barracuda App Server (BAS) runs on anything from tiny FPGA's to online cloud servers. Refer to the [Barracuda App Server's Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
+When learning a new framework, it's not mastering the language that's time-consuming - it's understanding the API. The Lua IoT and Web APIs are considerably simpler and more intuitive than their lower-level C counterparts. For this reason, opting for Lua can significantly reduce your development time. Using Lua instead of C for network-enabled applications offers several compelling advantages:
 
-[Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/) (LSP for short) is a [Lua](https://www.lua.org/about.html) API that includes a compact and efficient Lua web framework, non-blocking asynchronous sockets, and many (I)IoT protocols.
+- **Ease of Use:** Lua is renowned for its simplicity and elegance, significantly reducing the learning curve for new developers and speeding up the development process.
+- **Flexibility:** Lua's lightweight and flexible nature makes it ideal for scripting customizable behaviors in network applications without the complexity often associated with C.
+- **Rapid Prototyping:** Lua enables faster prototyping and iteration, which is crucial in IoT development.
+- **Enhanced Security:** Lua provides a higher-level approach that abstracts many low-level operations, reducing the risk of security flaws that are more prevalent in direct system-level coding with C.
+- **Efficiency:** Although Lua is an interpreted language, it runs efficiently on embedded systems, thanks to its well-optimized engine and the ability to offload performance-critical tasks back to C modules if necessary.
+- [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/) (LSP for short) is a [Lua](https://www.lua.org/about.html) API that includes a compact and efficient Lua web framework, non-blocking asynchronous sockets, and many (I)IoT protocols.
 
-## Components
+See the [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
-BAS Amalgamated is a compact version of BAS, extracted from the BAS SDK. BAS Amalgamated includes all APIs found in the BAS SDK, but with a limited set of examples and tools. BAS Amalgamated includes the following source code components.  
 
-* BAS.c: Platform independent code (amalgamation of many files)
+## C Code Components
+
+Include the following in your build:
+
+* Amalgamated C code library (amalgamation of many files); one of:
+  - BWS.c: The Barracuda Web Server
+  - BAS.c: The Barracuda App Server
 * ThreadLib.c: Kernel porting layer
 * SoDisp.c: TCP/IP porting layer (the socket dispatcher)
 * BaFile.c: File system porting layer (optional)
-* BWS.c: The [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) is also included and the [C++ WebSocket example project](examples/C-WebSockets/README.md) is configured to link with BWS.c. The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes BWS and the WebSocket example.
 
 ## Who Can Use BAS Amalgamated
 
@@ -42,16 +70,19 @@ BAS is extremely flexible and can, for example, be used as follows:
 
 BAS Amalgamated is very easy to compile and several command line compilation examples are shown below. You can add the code to any IDE and Makefile system.
 
-## BAS Amalgamated Examples
+## Examples
 
-BAS Amalgamated includes three examples from the BAS SDK: the [Mako Server](#mako-server-hlos), [Xedge](#xedge-rtos), and the [C++ WebSocket Server Example](examples/C-WebSockets/README.md).
+This repo includes three examples from the full SDK:
+- The [Mako Server](#mako-server-hlos)
+- The [Xedge](#xedge-rtos)
+- The [C++ WebSocket Server Example](examples/C-WebSockets/README.md)
 
-* The Mako Server is designed for HLOS, and Xedge is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
-* The C++ WebSocket Server Example shows how to implement everything using C code (no Lua). With this example, you are effectively using the [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) component.
+* **BAS Examples:** The Mako Server is designed for HLOS, and Xedge is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
+* **BWS Example:** The C++ WebSocket Server Example shows how to implement everything using C code.
 
 ### Mako Server (HLOS)
 
-The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can be compiled for Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
+The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can be compiled for High Level Operating Systems such as Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
 
 #### Windows:
 
@@ -141,52 +172,59 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 ### Xedge (RTOS)
 
-The Xedge turns the Barracuda App Server into an interactive development tool. See the [Online Xedge Documentation](https://realtimelogic.com/ba/doc/?url=xedge/readme.html) for details.
+The Xedge is designed as a Lua foundation and an interactive development environment that enables the development of Lua code directly on an embedded device. When you are done with the development, the code enables several options for producing a release (final product). In the following instructions, we cover how to build the tool. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for details on how to use this tool.
 
 ![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)
 
-Xedge is designed for RTOS devices, but can also be compiled for non embedded as is shown in the following compile examples.
+The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting server-side code. These resources are crucial and must be included in the build. Begin by fetching the resource files and building the resource ZIP file.
 
-
-Xedge is typically run from a dedicated RTOS thread, but for HLOS we can create a startup file as follows:
 
 ```
-echo "extern void barracuda(void); int main() {barracuda(); return 0;}" > main.c
+# Fetch the resources
+git clone https://github.com/RealTimeLogic/BAS-Resources.git
+# Go to the build directory
+cd BAS-Resources/build/
+# Run the build script. If on Windows, use Xedge.cmd
+# When prompted, initially select n for OPC-UA, s for small cacert.shark,
+# and n for compressing the files
+. Xedge.sh
+# The ZIP file is converted to a C array by the build script;
+# copy this to the Xedge directory
+cp XedgeZip.c ../../BAS/examples/xedge/
+cd ../../BAS
 ```
 
-The following example shows how to compile Xedge for HLOS and include file system support.
+The file **XedgeZip.c** embodies Xedge's resources, transformed into a C file. You can uncover this file's resources and detailed build instructions in the [BAS-Resources Repository](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build).
+
+To compile Xedge, include BAS.c as previously explained. In the following example, we use Linux as an example and compile the server into a standalone product. For an embedded device, include the files in your build.
 
 ```
 gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
+    examples/HostInit/Main.c examples/HostInit/HostInit.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
-    examples/xedge/obj/XedgeZip.c -lpthread -lm
+    examples/xedge/src/xedge.c examples/xedge/src/led.c\
+    examples/xedge/XedgeZip.c -lpthread -lm
 ```
 
-The file **XedgeZip.c** embodies Xedge's resources, transformed into a C file. You can uncover this file's resources and detailed build instructions in the [BAS-Resources Repository](https://github.com/RealTimeLogic/BAS-Resources).
+- The above produces a warning when compiled on Linux. You can remove the warning by specifying a POSIX environment by adding -DLUA_USE_POSIX.
 
-If you run the server after compiling it, you will see no printouts. The server tries to open port 80 and if that fails, it tries to open port 9357. Embedded systems with a console can enable the [trace library](https://realtimelogic.com/ba/doc/en/C/reference/html/structHttpTrace.html) by providing a callback for the data being printed. You can also view the trace in a browser by navigating to http://ip-addr/rtl/tracelogger/. See the [TraceLogger Documentation](https://realtimelogic.com/ba/doc/?url=auxlua.html#tracelogger) for details and our online tutorial server for a demo: [https://tutorial.realtimelogic.com/rtl/tracelogger/](https://tutorial.realtimelogic.com/rtl/tracelogger/)
+- The files Main.c and HostInit.c are designed for a non-embedded host build. You need to study those two files and set up similar code for your RTOS environment. At a minimum, you need a dedicated thread to run the function barracuda(void), which does not return, with stack size BA_STACKSZ.
 
-The Xedge does not require a file system, and the following example shows how to compile Xedge without including BaFile.c
+- The file xedge.c is the Xedge's C startup code.
 
-```
-gcc -o examples/xedge/xedge -DNO_BAIO_DISK -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
-    src/BAS.c
-    src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c
-    main.c examples/xedge/src/xedge.c examples/xedge/src/led.c\
-    examples/xedge/obj/XedgeZip.c -lpthread -lm
-```
+- The file led.c includes example [Lua bindings](https://realtimelogic.com/ba/doc/?url=GettingStarted.html#UsingLSP). You can remove this from your build by defining -DNO_XEDGE_AUX or simply removing the function call in xedge.c
 
-**Note:** You must build XedgeZip.c using the [Xedge build scripts](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build) and copy the file to the above shown directory prior to running the above command.
+- For embedded, a recommendation is to initially tests the server without file system support. Remove the file BaFile.c from your build and compile with -DNO_BAIO_DISK, a macro used by xedge.c
 
-The macro NO_BAIO_DISK is used by Xedge's C startup code xedge.c.
+- If you get a link error that includes dlmalloc, include src/dlmalloc.c in your build and initialize the allocator as shown in the file examples/HostInit/Main.c.
 
 **Cross Compiling Xedge for Embedded Systems**
 
 Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included. See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.
 
-A recommendation is to initially try the server on an [ESP32 using FreeRTOS and lwIP](https://realtimelogic.com/ba/ESP32/source/GettingStarted.html) even if you plan on using another RTOS and/or device. The ESP32 is very easy to set up and is an excellent RTOS learning platform.
+**Pre-compiled binaries:** Try running the server on an ESP32 using FreeRTOS and lwIP, even if you plan to use a different RTOS or device. The ESP32 is user-friendly and great for learning about RTOS. Use the [pre-compiled ESP32 Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/) for this purpose.
+
 
 ## Enabling and Disabling Features
 

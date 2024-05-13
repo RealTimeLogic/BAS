@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5506 2023-12-08 21:57:10Z wini $
+ *   $Id: xedge.c 5538 2024-05-13 08:43:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2023
  *               http://www.realtimelogic.com
@@ -149,7 +149,7 @@ onunload(lua_State* L, int onunloadRef)
 /* File system init code for HLOS */
 #if defined _WIN32 || defined(BA_POSIX)
 #include <stdlib.h>
-static int xedgeInitDiskIo(DiskIo* dio)
+int xedgeInitDiskIo(DiskIo* dio)
 {
    static const char appmgr[] = {"xedge"};
    int retVal;
