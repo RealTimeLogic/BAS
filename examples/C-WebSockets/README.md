@@ -85,11 +85,11 @@ gcc -o ChatServer -I../../inc -I../../inc/arch/Posix -I../../inc/arch/NET/Posix\
      -lpthread -lm -lstdc++
 ```
 
-**Note:** The [Xedge instructions](../../readme.md#xedge-rtos) provide guidance on how to replace HostInit.c and Main.c with customized code for your embedded device.
+**Note:** The [Xedge instructions](https://github.com/RealTimeLogic/BAS/#xedge-rtos) provide guidance on how to replace HostInit.c and Main.c with customized code for your embedded device.
 
 **Build Instructions:**
 
-Add the following files to your build; (xxx) is the [porting layer](../../readme.md#porting-layers):
+Add the following files to your build; (xxx) is the [porting layer](https://github.com/RealTimeLogic/BAS/#porting-layers):
 
 - BAS/src/BWS.c                  -- Amalgamated [Barracuda Embedded Web Server library](https://realtimelogic.com/products/barracuda-web-server/)
 - BAS/src/arch/XXX/ThreadLib.c   -- RTOS porting layer
@@ -117,7 +117,7 @@ The bin2c source code can be found in BAS/tools. You must compile this tool befo
 
 #### All porting layers, directories to include, and compiler flags:
 
-See [Porting Layers](../../readme.md#porting-layers)
+See [Porting Layers](https://github.com/RealTimeLogic/BAS/#porting-layers)
 
 ### Ready to run RTOS build
 
