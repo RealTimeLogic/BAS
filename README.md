@@ -39,6 +39,11 @@ When learning a new framework, it's not mastering the language that's time-consu
 
 See the [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
+### Are you already using Lua? Not a problem!
+
+The Lua source code is included in BAS.c, but you can exclude this code by compiling with -DUSE_BA_LUA=0. You can compile and link BAS.c with your Lua version by excluding our version.
+
+
 
 ## C Code Components
 
