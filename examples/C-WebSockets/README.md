@@ -66,6 +66,29 @@ Open the project file in BAS\examples\C-WebSockets\VcMake
 
 ### RTOS
 
+**Before you begin:**
+
+We recommend initially embedding the resources in the HTML directory by zipping the HTML directory and converting this zip file to a C array. This method works seamlessly, even if your setup includes a file system. You can use the provided C code "as is" when embedding the resources. However, when incorporating a file system along with a [DiskIo](https://realtimelogic.com/ba/doc/en/C/reference/html/structDiskIo.html), you'll need to tweak the code in ChatServer.cpp. Specifically, adjust the settings where the root of the DiskIo is configured. You can find this configuration in the installVirtualDir function within src/ChatServer.cpp.
+
+The following Linux commands exemplify the required steps:
+
+``` shell
+# Create obj/release/html.zip.
+. BuildZip.sh
+# Compile all using the C compiler, except ChatServer.cpp, which is compiled using g++
+gcc -o ChatServer -I../../inc -I../../inc/arch/Posix -I../../inc/arch/NET/Posix\
+    ../../src/BAS.c\
+    ../../src/arch/Posix/ThreadLib.c ../../src/arch/NET/generic/SoDisp.c\
+    ../HostInit/HostInit.c ../HostInit/Main.c\
+    src/ChatServer.cpp\
+    obj/release/html.zip.c\
+     -lpthread -lm -lstdc++
+```
+
+**Note:** The [Xedge instructions](../../readme.md#xedge-rtos) provide guidance on how to replace HostInit.c and Main.c with customized code for your embedded device.
+
+**Build Instructions:**
+
 Add the following files to your build; (xxx) is the [porting layer](../../readme.md#porting-layers):
 
 - BAS/src/BWS.c                  -- Amalgamated [Barracuda Embedded Web Server library](https://realtimelogic.com/products/barracuda-web-server/)

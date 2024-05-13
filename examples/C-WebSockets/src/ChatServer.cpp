@@ -44,7 +44,56 @@ interface. Details:
 
 ANSI C and Object Oriented Programming:
 https://realtimelogic.com/ba/doc/en/C/introduction.html#refman_cpp
+
+ChatServer Pseudo Code:
+
+    The following working Lua code illustrates how the C code
+    works. You can run this code as follows:
+    1: Copy the code below
+    2: Create the file html/.preload
+    3: Paste the code into this file and save it
+    4: Download and start the Mako server in the C-WebSockets directory as follows:
+       mako -l::html
+    5: Navigate to http://localhost:portno
+    
+    Mako Server: https://makoserver.net/download/overview/
+    doc: https://realtimelogic.com/ba/doc/en/lua/SockLib.html#cosocket
+    Note: You can also run this code using Xedge:
+          https://realtimelogic.com/ba/doc/en/Xedge.html
+
+-- Lua example (this is a Lua comment):
+local sockets={}
+
+local function websocket(sock)
+   trace("New:",sock)
+   sockets[sock]=true
+   while true do
+      local data=sock:read()
+      if not data then break end
+      trace(data)
+      for sock in pairs(sockets) do
+         sock:write(data,true)
+      end
+   end
+   sockets[sock]=nil
+   trace("Close:",sock)
+end
+
+local function wsRequest(_ENV,path)
+   if "my-web-socket-service" == path and request:header"Sec-WebSocket-Key" then
+      local sock = ba.socket.req2sock(request)
+      if sock then
+         sock:event(websocket,"s")
+         return true
+      end
+   end
+   return false
+end
+
+dir:setfunc(wsRequest)
 */
+
+
 
 #include "../../HostInit/OpenSocketCon.h"
 #include <WebSocketServer.h>
@@ -297,7 +346,7 @@ ChatPage::ChatPage(const char *pageName, SoDisp* disp) :
  * Note that the virtual file system is not the operating system's
  * file system. See the following link for an introduction to
  * assembling a virtual file system, and consider the Lua code
- * examples as a pseudo-code.
+ * examples as pseudo-code.
  * https://realtimelogic.com/ba/doc/en/GettingStarted.html#VFS
  */
 void
