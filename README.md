@@ -9,7 +9,7 @@ The BWS and BAS C code libraries are C89 compatible and support the following pl
 
 Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK; **Amalgamated** indicates that we have combined all separate C files into one file, simplifying the compilation and integration process into your build. The products run on anything from tiny FPGA's to online cloud servers.
 
-Both products are considered Application Servers. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
+Both BWS and BAS are application servers that share the same porting layer modules, making their integration process almost identical. BAS includes all the C APIs available in BWS, but it goes a step further by focusing on the Lua language. This makes BAS handy for rapid development and offers an easier entry point for secure web and IoT app development. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
 
 ## BWS
@@ -20,13 +20,13 @@ The Barracuda Embedded Web Server is a small embedded HTTP(S) and WebSocket C so
 
 - [Barracuda Embedded Web Server Product Page](https://realtimelogic.com/products/barracuda-web-server/)
 
-
-
 ## BAS
 
 The Barracuda App Server, powered by BWS, is a powerful IoT toolkit that equips engineers with the necessary tools to create secure and efficient web and IoT products. While you can develop applications using C/C++ on BAS, it also features the powerful Lua engine. This engine is designed for ease of use, enabling developers to construct up to 80% of their embedded applications in Lua without compromising on efficiency.
 
 ![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)
+
+- [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/)
 
 When learning a new framework, it's not mastering the language that's time-consuming - it's understanding the API. The Lua IoT and Web APIs are considerably simpler and more intuitive than their lower-level C counterparts. For this reason, opting for Lua can significantly reduce your development time. Using Lua instead of C for network-enabled applications offers several compelling advantages:
 
@@ -36,8 +36,6 @@ When learning a new framework, it's not mastering the language that's time-consu
 - **Enhanced Security:** Lua provides a higher-level approach that abstracts many low-level operations, reducing the risk of security flaws that are more prevalent in direct system-level coding with C.
 - **Efficiency:** Although Lua is an interpreted language, it runs efficiently on embedded systems, thanks to its well-optimized engine and the ability to offload performance-critical tasks back to C modules if necessary.
 - [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/) (LSP for short) is a [Lua](https://www.lua.org/about.html) API that includes a compact and efficient Lua web framework, non-blocking asynchronous sockets, and many (I)IoT protocols.
-
-See the [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/) for details.
 
 ### Are you already using Lua? Not a problem!
 
@@ -277,6 +275,8 @@ The following Mako Server specific macro enables loading [external Lua modules](
 
 
 # Porting Layers
+
+[Contact Real Time Logic](https://realtimelogic.com/contactus/) should you have a problem with the porting layer when used with your version of the target APIs.
 
 | OS+TCP | include | source |
 | ----------- | ----------- | ----------- |
