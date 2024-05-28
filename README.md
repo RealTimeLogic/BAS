@@ -363,3 +363,23 @@ Using the above compilation settings, you would also need to include src/arch/Th
 * [Have We Forgotten the Ancient Lessons About Building Defense Systems?](https://dzone.com/articles/have-we-forgotten-the-ancient-lessons)
 * [Exploiting MQTT Using Lua](https://dzone.com/articles/exploiting-mqtt-using-lua)
 * [An Arduino ESP8266 Christmas Light Controller](https://dzone.com/articles/arduino-esp8266-iot-light-controller)
+
+## License
+
+BAS Amalgamated is either licensed for use under the GPLv2 or a standard
+commercial license. For our users who cannot use BAS Amalgamated under
+GPLv2, a commercial license to BAS Amalgamated is available (details below).
+
+A free commercial license for small companies is available.
+See the startup license page for details:
+https://realtimelogic.com/startuplic/
+
+GPLv2 details:
+
+The following clarification is for users that choose to use GPLv2 and
+to distribute derivative work. The GPLv2 license applies to all BAS APIs
+including, but not limited to the BAS C APIs, BAS Lua APIs, and web
+content hosted by a BAS derivative product. Web content hosted by the
+server is considered part of the application as a whole.
+
+GPLv2: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
