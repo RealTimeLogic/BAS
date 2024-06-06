@@ -1,4 +1,5 @@
-#pragma once
+#ifndef OPCUA_MODULE_H
+#define OPCUA_MODULE_H
 
 #include <lauxlib.h>
 #include <lualib.h>
@@ -13,3 +14,7 @@ LUALIB_API int luaopen_opcua_ns0(lua_State* l);
    calls luaL_requiref to register opcuac module
 */
 void luaopen_opcua_ns0_static(lua_State* l);
+
+#endif // OPCUA_MODULE_H
+
+

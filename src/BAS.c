@@ -31477,32 +31477,6 @@ const struct UA_Node* ns0_getNodeIdx(unsigned idx);
 
 #if USE_OPCUA == 1
 
-#ifndef OPCUA_MODULE_H
-#define OPCUA_MODULE_H
-
-#include <lauxlib.h>
-#include <lualib.h>
-
-/*
-   an entry point for lua dynamically linked module
-*/
-LUALIB_API int luaopen_opcua_ns0(lua_State* l);
-
-/*
-   an entry point for statically linked module
-   calls luaL_requiref to register opcuac module
-*/
-void luaopen_opcua_ns0_static(lua_State* l);
-
-#endif // OPCUA_MODULE_H
-
-
-
-#endif
-
-
-#if USE_OPCUA == 1
-
 #ifndef OPCUA_GET_NODE_H
 #include "opcua_get_node.h"
 #endif
@@ -31513,38 +31487,25 @@ extern const struct UA_Nodeset nodeset;
 
 const struct UA_Node* ns0_getNode(const char* id)
 {
-   // uint32_t i = 1;
-   // uint32_t j = nodeset.size;
-   for (uint32_t i = 0; i < nodeset.size; ++i)
-   {
-      const struct UA_Node* node = &nodeset.nodes[i];
-      if (node->attrsSize == 0)
-         continue;
+   uint32_t i = 1;
+   uint32_t j = nodeset.size;
 
+   while (i <= j)
+   {
+      const uint32_t mIx = (i + j) / 2;
+      const struct UA_Node* node = &nodeset.nodes[mIx - 1];
       const struct UA_Attribute* attr = node->attrs;
       if (attr->id != UA_AttributeId_NodeId)
-         continue;
+         return 0;
 
-      if (strcmp(id, attr->data.str) == 0)
+      const int result = strcmp(id, attr->data.str);
+      if (result == 0)
          return node;
+      else if (result > 0)
+         i = mIx + 1;
+      else
+         j = mIx - 1;
    }
-
-   // while (i <= j)
-   // {
-   //    const uint32_t mIx = (i + j) / 2;
-   //    const struct UA_Node* node = &nodeset.nodes[mIx - 1];
-   //    const struct UA_Attribute* attr = node->attrs;
-   //    if (attr->id != UA_AttributeId_NodeId)
-   //       return 0;
-
-   //    const int result = strcmp(id, attr->data.str);
-   //    if (result == 0)
-   //       return node;
-   //    else if (result < 0)
-   //       i = mIx + 1;
-   //    else
-   //       j = mIx - 1;
-   // }
 
    return 0;
 }
@@ -81175,10 +81136,10 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
    while (len)
    {
       
-      U32 bv1;
-      read64uint32(bv1, remapiospace, 12);
-      bv1++;
-      inputlevel(bv1, remapiospace, 12);
+      U32 requestflags;
+      read64uint32(requestflags, remapiospace, 12);
+      requestflags++;
+      inputlevel(requestflags, remapiospace, 12);
 
       
       SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
@@ -81349,10 +81310,10 @@ static int modifyparam(SharkSslAesCcmCtx *registermcasp,
    while (len)
    {
       
-      U32 bv1;
-      read64uint32(bv1, remapiospace, 12);
-      bv1++;
-      inputlevel(bv1, remapiospace, 12);
+      U32 requestflags;
+      read64uint32(requestflags, remapiospace, 12);
+      requestflags++;
+      inputlevel(requestflags, remapiospace, 12);
 
       
       SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
@@ -86060,7 +86021,7 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(U16 len, U8 *in, U
 
 
 #if SHARKSSL_ENABLE_RSA_OAEP
-static void ZZTSTsharkssl_MGFX(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
+static void aliasstart(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
 {
    if (allocskcipher)
    {
@@ -86090,10 +86051,10 @@ static void ZZTSTsharkssl_MGFX(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U1
             allocskcipher -= ftraceupdate;
             if (allocskcipher)
             {
-               U32 bv1;
-               read64uint32(bv1, ptr, 0);
-               bv1++;
-               inputlevel(bv1, ptr, 0);
+               U32 requestflags;
+               read64uint32(requestflags, ptr, 0);
+               requestflags++;
+               inputlevel(requestflags, ptr, 0);
             }
             else
             {
@@ -86127,8 +86088,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *
       int PSLen, buttonsbuffalo;
       U8 logicstate[SHARKSSL_MAX_HASH_LEN], *ptr, sum, flg;
 
-      ZZTSTsharkssl_MGFX(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
-      ZZTSTsharkssl_MGFX(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
+      aliasstart(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      aliasstart(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
       sharkssl_hash(logicstate, (U8*)clkdmoperations, auxdatalookup, configwrite);
 
       
@@ -86208,8 +86169,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(U16 len, const
       ptr += h2Len;
       *ptr++ = 0x01;
       memcpy(ptr, in, len);
-      ZZTSTsharkssl_MGFX(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
-      ZZTSTsharkssl_MGFX(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      aliasstart(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
+      aliasstart(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
       ret = (int)switchcompletion(omap3430common, setupreset, (U16)ret, out, out, SHARKSSL_RSA_NO_PADDING);
    }
 
@@ -100294,6 +100255,7 @@ removegeneric(void* t)
    int hugepageadjust;
    LTimer* lt = (LTimer*)t;
    BaBool rechedinterrupt=FALSE; 
+   size_t tid = lt->tid;
    if( ! lt->coroutineMode )
    {
       
@@ -100326,7 +100288,7 @@ removegeneric(void* t)
       }
       lua_settop(lt->L, 1);
    }
-   if(!rechedinterrupt)
+   if(!rechedinterrupt && tid == lt->tid) 
    {
       registerkeypad(lt);
    }
@@ -113387,28 +113349,28 @@ doublefcmpez(lua_State *L, int uart2hwmod, SignVerifyOptions* op)
       lua_pop(L, 1); 
 
       op->hashName=balua_getStringField(L, uart2hwmod, "\150\141\163\150", "\163\150\141\061");
-      const char* bv2 =
+      const char* bridgeplatform =
          balua_getStringField(L, uart2hwmod, "\160\141\144\144\151\156\147", "\160\153\143\163\061");
       
-      if('\157' == bv2[0] && '\141' == bv2[1] &&
-          '\145' == bv2[2] && '\160' == bv2[3] && bv2[4] == 0)
+      if('\157' == bridgeplatform[0] && '\141' == bridgeplatform[1] &&
+          '\145' == bridgeplatform[2] && '\160' == bridgeplatform[3] && bridgeplatform[4] == 0)
       {
          op->padding = RSA_PADDING_OAEP;
          op->hashID = signaltrampoline(L,op->hashName);
       }
       
-      else if('\160' == bv2[0] && '\153' == bv2[1] &&
-               '\143' == bv2[2] && '\163' == bv2[3] &&
-               bv2[4] == '\061' && bv2[5] == 0)
+      else if('\160' == bridgeplatform[0] && '\153' == bridgeplatform[1] &&
+               '\143' == bridgeplatform[2] && '\163' == bridgeplatform[3] &&
+               bridgeplatform[4] == '\061' && bridgeplatform[5] == 0)
       {
          op->padding = RSA_PADDING_PKCS1;
          if(strcmp(op->hashName, "\163\150\141\061") != 0)
             return reportpanic(L, "\165\156\163\165\160\160\157\162\164\145\144\040\120\113\103\123\061\040\150\141\163\150");
       }
       
-      else if('\156' == bv2[0] && '\157' == bv2[1] &&
-               '\156' == bv2[2] && '\145' == bv2[3] &&
-               bv2[4] == 0)
+      else if('\156' == bridgeplatform[0] && '\157' == bridgeplatform[1] &&
+               '\156' == bridgeplatform[2] && '\145' == bridgeplatform[3] &&
+               bridgeplatform[4] == 0)
       {
          op->padding = RSA_PADDING_NONE;
       }

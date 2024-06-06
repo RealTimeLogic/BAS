@@ -39215,10 +39215,10 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
    while (len)
    {
       
-      U32 ZZTSTcntr;
-      read64uint32(ZZTSTcntr, remapiospace, 12);
-      ZZTSTcntr++;
-      inputlevel(ZZTSTcntr, remapiospace, 12);
+      U32 requestflags;
+      read64uint32(requestflags, remapiospace, 12);
+      requestflags++;
+      inputlevel(requestflags, remapiospace, 12);
 
       
       SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
@@ -39389,10 +39389,10 @@ static int modifyparam(SharkSslAesCcmCtx *registermcasp,
    while (len)
    {
       
-      U32 ZZTSTcntr;
-      read64uint32(ZZTSTcntr, remapiospace, 12);
-      ZZTSTcntr++;
-      inputlevel(ZZTSTcntr, remapiospace, 12);
+      U32 requestflags;
+      read64uint32(requestflags, remapiospace, 12);
+      requestflags++;
+      inputlevel(requestflags, remapiospace, 12);
 
       
       SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
@@ -43140,7 +43140,7 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(U16 len, U8 *in, U
 
 
 #if SHARKSSL_ENABLE_RSA_OAEP
-static void bv1(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
+static void aliasstart(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite, U8 configwrite)
 {
    if (allocskcipher)
    {
@@ -43170,10 +43170,10 @@ static void bv1(U8 *pciercxcfg448, U16 allocskcipher, U8 *src, U16 consolewrite,
             allocskcipher -= ftraceupdate;
             if (allocskcipher)
             {
-               U32 ZZTSTcntr;
-               read64uint32(ZZTSTcntr, ptr, 0);
-               ZZTSTcntr++;
-               inputlevel(ZZTSTcntr, ptr, 0);
+               U32 requestflags;
+               read64uint32(requestflags, ptr, 0);
+               requestflags++;
+               inputlevel(requestflags, ptr, 0);
             }
             else
             {
@@ -43207,8 +43207,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(U16 len, U8 *
       int PSLen, buttonsbuffalo;
       U8 logicstate[SHARKSSL_MAX_HASH_LEN], *ptr, sum, flg;
 
-      bv1(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
-      bv1(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
+      aliasstart(&in[1], ftraceupdate, &in[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      aliasstart(&in[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &in[1], ftraceupdate, configwrite);
       sharkssl_hash(logicstate, (U8*)clkdmoperations, auxdatalookup, configwrite);
 
       
@@ -43288,8 +43288,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(U16 len, const
       ptr += h2Len;
       *ptr++ = 0x01;
       memcpy(ptr, in, len);
-      bv1(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
-      bv1(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
+      aliasstart(&out[ftraceupdate + 1], (U16)ret - ftraceupdate - 1, &out[1], ftraceupdate, configwrite);
+      aliasstart(&out[1], ftraceupdate, &out[1 + ftraceupdate], (U16)ret - ftraceupdate - 1, configwrite);
       ret = (int)switchcompletion(omap3430common, setupreset, (U16)ret, out, out, SHARKSSL_RSA_NO_PADDING);
    }
 
