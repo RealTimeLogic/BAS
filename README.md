@@ -185,7 +185,13 @@ The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting 
 
 ![Xedge](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
 
-Begin by fetching the resource files and building the resource ZIP file.
+Fetch the this repo:
+
+```
+git clone https://github.com/RealTimeLogic/BAS.git
+```
+
+Fetch the resource files and build the resource ZIP file:
 
 ```
 # Fetch the resources
