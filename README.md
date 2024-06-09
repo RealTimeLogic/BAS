@@ -177,10 +177,15 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 The Xedge is designed as a Lua foundation and an interactive development environment that enables the development of Lua code directly on an embedded device. When you are done with the development, the code enables several options for producing a release (final product). In the following instructions, we cover how to build the tool. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for details on how to use this tool.
 
-![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)
+[![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)](https://simplemq.com/videos/Xedge-IDE-intro.mp4)
 
-The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting server-side code. These resources are crucial and must be included in the build. Begin by fetching the resource files and building the resource ZIP file.
+#### Compiling and Integrating Xedge
 
+The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting server-side code. These resources are crucial and must be included in the build.
+
+![Xedge](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
+
+Begin by fetching the resource files and building the resource ZIP file.
 
 ```
 # Fetch the resources
