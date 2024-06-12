@@ -11,12 +11,13 @@ Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK;
 
 Both BWS and BAS are application servers that share the same porting layer modules, making their integration process almost identical. BAS includes all the C APIs available in BWS, but it goes a step further by focusing on the Lua language. This makes BAS handy for rapid development and offers an easier entry point for secure web and IoT app development. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
+* [Video tutorial: How to compile BAS and the Xedge IDE](https://youtu.be/41qaFX0_QSI)
 
 ## BWS
 
 The Barracuda Embedded Web Server is a small embedded HTTP(S) and WebSocket C source code library pre-integrated with the SharkSSL TLS stack. The source code is optimized for compact, deeply embedded devices.
 
-![Barracuda Embedded Web Server](https://realtimelogic.com/GZ/images/BarracudaWebServer.svg)
+[![Barracuda Embedded Web Server](https://realtimelogic.com/GZ/images/BarracudaWebServer.svg)](https://realtimelogic.com/products/barracuda-web-server/)
 
 - [Barracuda Embedded Web Server Product Page](https://realtimelogic.com/products/barracuda-web-server/)
 
@@ -24,7 +25,7 @@ The Barracuda Embedded Web Server is a small embedded HTTP(S) and WebSocket C so
 
 The Barracuda App Server, powered by BWS, is a powerful IoT toolkit that equips engineers with the necessary tools to create secure and efficient web and IoT products. While you can develop applications using C/C++ on BAS, it also features the powerful Lua engine. This engine is designed for ease of use, enabling developers to construct up to 80% of their embedded applications in Lua without compromising on efficiency.
 
-![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)
+[![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)](https://youtu.be/41qaFX0_QSI)
 
 - [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/)
 
@@ -56,7 +57,7 @@ Include the following in your build:
 
 ## Who Can Use BAS Amalgamated
 
-BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section in the [Porting Barracuda to an Embedded System](https://realtimelogic.com/ba/doc/?url=introduction.html#porting) for details.
+BAS Amalgamated runs efficiently on a Cortex M4 running @100Mhz and up; however, most microcontrollers will need external memory. See the Memory section in the [Porting Barracuda to an Embedded System](https://realtimelogic.com/ba/doc/en/introduction.html#porting) for details.
 
 ## Before Downloading the Source Code
 
@@ -85,7 +86,7 @@ This repo includes three examples from the full SDK:
 
 ### Mako Server (HLOS)
 
-The [Mako Server Example](https://realtimelogic.com/ba/doc/?url=Mako.html) can be compiled for High Level Operating Systems such as Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
+The [Mako Server Example](https://realtimelogic.com/ba/doc/en/Mako.html) can be compiled for High Level Operating Systems such as Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
 
 #### Windows:
 
@@ -122,7 +123,7 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 The above command works for any HLOS with a GCC compiler (and derivatives), including cross compiling for embedded Linux, compiling for QNX, and compiling for VxWorks 7. Simply replace 'gcc' with the applicable compiler. Note that VxWorks is a cross between HLOS and RTOS; thus, you may consider using Xedge instead (details below). BAS supports VxWorks 5 and up.
 
-See the [Mako Server's Build Documentation](https://realtimelogic.com/ba/doc/?url=MakoServer/readme.html) for details on macros and other important information, but note that the amalgamated version in the standard SDK works differently.
+See the [Mako Server's Build Documentation](https://realtimelogic.com/ba/examples/MakoServer/readme.html) for details on macros and other important information, but note that the amalgamated version in the standard SDK works differently.
 
 After running the above compilation command and after [building mako.zip using the mako script](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build), start the server as follows:
 ```
@@ -160,7 +161,7 @@ The above command requires setting up the [command line for 64 bit compilation](
 
 **Including SQLite in the Build**
 
-The Mako Server can optionally be linked with the SQLite database engine. The following command shows how to include SQLite and activate the [Lua SQLite bindings](https://realtimelogic.com/ba/doc/?url=lua/luasql.html). However, before running the compilation command, [download SQLite](https://www.sqlite.org/download.html) and copy sqlite3.c and sqlite3.h to the BAS/src directory.
+The Mako Server can optionally be linked with the SQLite database engine. The following command shows how to include SQLite and activate the [Lua SQLite bindings](https://realtimelogic.com/ba/doc/en/lua/luasql.html). However, before running the compilation command, [download SQLite](https://www.sqlite.org/download.html) and copy sqlite3.c and sqlite3.h to the BAS/src directory.
 
 ```
 gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
@@ -227,7 +228,7 @@ gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
 
 - The file xedge.c is the Xedge's C startup code.
 
-- The file led.c includes example [Lua bindings](https://realtimelogic.com/ba/doc/?url=GettingStarted.html#UsingLSP). You can remove this from your build by defining -DNO_XEDGE_AUX or simply removing the function call in xedge.c
+- The file led.c includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP). You can remove this from your build by defining -DNO_XEDGE_AUX or simply removing the function call in xedge.c
 
 - For embedded, a recommendation is to initially tests the server without file system support. Remove the file BaFile.c from your build and compile with -DNO_BAIO_DISK, a macro used by xedge.c
 
@@ -245,11 +246,11 @@ Include the files as instructed above in your IDE or Makefile. Most embedded sys
 BAS Amalgamated (BAS.c) includes features that are by default not compiled. These features can be enabled by the following macros. The macros can be enabled on any platform, including RTOS, unless stated otherwise.
 
 * USE_DBGMON=1: Include [Lua Debugger Support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
-* USE_REVCON=1: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both Xedge and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/?url=Mako.html#acmebot).
+* USE_REVCON=1: Enable the reverse connection if you plan on using the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Note that both Xedge and the Mako Server include the [Let's Encrypt plugins acmebot and acmedns](https://realtimelogic.com/ba/doc/en/Mako.html#acmebot).
 * USE_OPCUA=1: The OPC-UA stack is implemented in Lua and can be found in mako.zip/.lua/opcua. The OPC-UA stack requires a C module. Enable this flag when compiling BAS if you plan on using OPC-UA.
-* USE_FORKPTY=1: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib), which is available for Linux and QNX. This API is required if you plan on using the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) or the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
-* USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy)
-* USE_UBJSON=1: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/?url=auxlua.html#ubjson)
+* USE_FORKPTY=1: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), which is available for Linux and QNX. This API is required if you plan on using the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) or the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
+* USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy)
+* USE_UBJSON=1: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson)
 
 The following macros are required if you plan on using the Let's Encrypt plugin. The macros are pre-set for the following ports: POSIX (Linux/QNX), Windows, VxWorks, and INtime.
 
