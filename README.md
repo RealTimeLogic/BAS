@@ -1,7 +1,7 @@
 # BWS and BAS Amalgamated
 ## Embedded Web Server and IoT Toolkit C Code Libraries
-- **BWS:** Barracuda Web Server C library
-- **BAS:** Barracuda App Server C library
+- **BWS:** [Barracuda Embedded Web Server C library](https://realtimelogic.com/products/barracuda-web-server/)
+- **BAS:** [Barracuda Embedded App Server C library](https://realtimelogic.com/products/barracuda-application-server/)
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
