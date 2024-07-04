@@ -186,7 +186,7 @@ The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting 
 
 ![Xedge](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
 
-Fetch the this repo:
+Fetch the repo:
 
 ```
 git clone https://github.com/RealTimeLogic/BAS.git
@@ -367,15 +367,6 @@ Using the above compilation settings, you would also need to include src/arch/Th
 * [A Large List of Mako/BAS Tutorials](https://makoserver.net/tutorials/)
 * [Ready To Run Examples (GitHub)](https://github.com/RealTimeLogic/LSP-Examples)
  
-### DZone BAS and Mako Server Tutorials
-* [AWS IoT MQTT Tutorial Using Lua](https://dzone.com/articles/aws-iot-mqtt-tutorial-using-lua)
-* [Easy IoT and Device Management for Non-C Coders](https://dzone.com/articles/easy-iot-amp-device-management-for-non-c-coders)
-* [IoT as an Alternative to VPN for Secure Remote Device Access](https://dzone.com/articles/iot-as-an-alternative-to-vpn-for-secure-remote-dev)
-* [Cheaper Alternatives to IoT Cloud Services](https://dzone.com/articles/cheaper-alternatives-to-iot-cloud-services)
-* [Have We Forgotten the Ancient Lessons About Building Defense Systems?](https://dzone.com/articles/have-we-forgotten-the-ancient-lessons)
-* [Exploiting MQTT Using Lua](https://dzone.com/articles/exploiting-mqtt-using-lua)
-* [An Arduino ESP8266 Christmas Light Controller](https://dzone.com/articles/arduino-esp8266-iot-light-controller)
-
 ## License
 
 BAS Amalgamated is either licensed for use under the GPLv2 or a standard
