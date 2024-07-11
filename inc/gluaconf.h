@@ -280,6 +280,15 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 
 #endif
 
+
+/*
+** LUA_IGMARK is a mark to ignore all after it when building the
+** module name (e.g., used to build the luaopen_ function name).
+** Typically, the suffix after the mark is the module version,
+** as in "mod-v1.2.so".
+*/
+#define LUA_IGMARK		"-"
+
 /* }================================================================== */
 
 
