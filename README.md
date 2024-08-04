@@ -1,5 +1,6 @@
 # BWS and BAS Amalgamated
 ## Embedded Web Server and IoT Toolkit C Code Libraries
+- **[BAS and BWS License](#license)**
 - **BWS:** [Barracuda Embedded Web Server C library](https://realtimelogic.com/products/barracuda-web-server/)
 - **BAS:** [Barracuda Embedded App Server C library](https://realtimelogic.com/products/barracuda-application-server/)
 
@@ -369,8 +370,8 @@ Using the above compilation settings, you would also need to include src/arch/Th
  
 ## License
 
-BAS Amalgamated is either licensed for use under the GPLv2 or a standard
-commercial license. For our users who cannot use BAS Amalgamated under
+BAS Amalgamated is either licensed for use under the GPLv2 or a [standard
+commercial license](https://realtimelogic.com/contactus/license/). For our users who cannot use BAS Amalgamated under
 GPLv2, a commercial license to BAS Amalgamated is available (details below).
 
 A free commercial license for small companies is available.
