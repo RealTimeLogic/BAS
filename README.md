@@ -370,20 +370,20 @@ Using the above compilation settings, you would also need to include src/arch/Th
  
 ## License
 
-BAS Amalgamated is either licensed for use under the GPLv2 or a [standard
-commercial license](https://realtimelogic.com/contactus/license/). For our users who cannot use BAS Amalgamated under
-GPLv2, a commercial license to BAS Amalgamated is available (details below).
-
-A free commercial license for small companies is available.
-See the startup license page for details:
+BAS and BWS Amalgamated are licensed for use under the GPLv2 or a
+standard commercial license.  For our users who cannot use BAS and BWS
+Amalgamated under GPLv2,
+[a commercial license is available](https://realtimelogic.com/contactus/license/).
+A free commercial license for small companies is available.  See the
+startup license page for details:
 https://realtimelogic.com/startuplic/
 
 GPLv2 details:
 
 The following clarification is for users that choose to use GPLv2 and
-to distribute derivative work. The GPLv2 license applies to all BAS APIs
-including, but not limited to the BAS C APIs, BAS Lua APIs, and web
-content hosted by a BAS derivative product. Web content hosted by the
+to distribute derivative work. The GPLv2 license applies to all BAS and BWS APIs
+including, but not limited to the BAS and BWS C APIs, BAS Lua APIs, and web
+content hosted by a BAS and BWS derivative product. Web content hosted by the
 server is considered part of the application as a whole.
 
 GPLv2: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
