@@ -380,7 +380,7 @@ https://realtimelogic.com/startuplic/
 
 GPLv2 details:
 
-The following clarification is for users that choose to use GPLv2 and
+The following clarification is for users who choose to use GPLv2 and
 to distribute derivative work. The GPLv2 license applies to all BAS and BWS APIs
 including, but not limited to the BAS and BWS C APIs, BAS Lua APIs, and web
 content hosted by a BAS and BWS derivative product. Web content hosted by the
