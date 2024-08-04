@@ -12,7 +12,12 @@ Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK;
 
 Both BWS and BAS are application servers that share the same porting layer modules, making their integration process almost identical. BAS includes all the C APIs available in BWS, but it goes a step further by focusing on the Lua language. This makes BAS handy for rapid development and offers an easier entry point for secure web and IoT app development. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
-* [Video tutorial: How to compile BAS and the Xedge IDE](https://youtu.be/41qaFX0_QSI)
+### Web Server vs. App Server
+
+The following video demonstrates two key points: how to test compile the [Xedge RTOS example](#xedge-rtos) for Linux or [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and an explanation of the difference between an Embeddable Application Server library and an Embeddable Web Server library. For additional details, see the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/articles/What-is-an-Embedded-Application-Server).
+
+[![The difference between an Embeddable Application Server library and an Embeddable Web Server library](doc/youtube.jpg)](https://youtu.be/41qaFX0_QSI)
+
 
 ## BWS
 
@@ -26,7 +31,7 @@ The Barracuda Embedded Web Server is a small embedded HTTP(S) and WebSocket C so
 
 The Barracuda App Server, powered by BWS, is a powerful IoT toolkit that equips engineers with the necessary tools to create secure and efficient web and IoT products. While you can develop applications using C/C++ on BAS, it also features the powerful Lua engine. This engine is designed for ease of use, enabling developers to construct up to 80% of their embedded applications in Lua without compromising on efficiency.
 
-[![Barracuda App Server Amalgamated](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)](https://youtu.be/41qaFX0_QSI)
+[![Barracuda App Server Product Page](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)](https://realtimelogic.com/products/barracuda-application-server/)
 
 - [Barracuda App Server Product Page](https://realtimelogic.com/products/barracuda-application-server/)
 
@@ -77,17 +82,21 @@ BAS Amalgamated is very easy to compile and several command line compilation exa
 
 ## Examples
 
-This repo includes three examples from the full SDK:
-- The [Mako Server](#mako-server-hlos)
-- The [Xedge](#xedge-rtos)
-- The [C++ WebSocket Server Example](examples/C-WebSockets/README.md)
+BAS and BWS are versatile C libraries designed for seamless integration into a wide range of devices and programs, from small ASIC-powered gadgets to Windows applications. To help you get started with the libraries, we provide three ready-to-use reference builds:
+
+- The [Mako Server](#mako-server-hlos) (BAS)
+- The [Xedge](#xedge-rtos) (BAS)
+- The [C++ WebSocket Server Example](examples/C-WebSockets/README.md) (BWS)
 
 * **BAS Examples:** The Mako Server is designed for HLOS, and Xedge is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
 * **BWS Example:** The C++ WebSocket Server Example shows how to implement everything using C code.
 
 ### Mako Server (HLOS)
 
-The [Mako Server Example](https://realtimelogic.com/ba/doc/en/Mako.html) can be compiled for High Level Operating Systems such as Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
+The [Mako Server Example](https://realtimelogic.com/ba/doc/en/Mako.html) can be compiled for High Level Operating Systems (HLOS) such as Windows, (embedded) Linux, QNX, and [VxWorks](#vxworks).
+
+![Mako Server Build Process](https://realtimelogic.com/ba/doc/en/examples/MakoServer/Build-Mako-Diagram.svg)
+
 
 #### Windows:
 
@@ -185,7 +194,7 @@ The Xedge is designed as a Lua foundation and an interactive development environ
 
 The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting server-side code. These resources are crucial and must be included in the build.
 
-![Xedge](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
+![Xedge Build Process](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
 
 Fetch the repo:
 
