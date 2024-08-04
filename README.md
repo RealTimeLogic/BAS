@@ -376,7 +376,15 @@ Using the above compilation settings, you would also need to include src/arch/Th
 * [The Ultimate Guide to Embedded Web Server Technology](https://realtimelogic.com/articles/Embedded-Web-Server-Tutorials)
 * [A Large List of Mako/BAS Tutorials](https://makoserver.net/tutorials/)
 * [Ready To Run Examples (GitHub)](https://github.com/RealTimeLogic/LSP-Examples)
- 
+
+
+## Online Documentation
+
+* [Introduction](https://realtimelogic.com/ba/doc/)
+* [Lua APIs](https://realtimelogic.com/ba/doc/en/lua/lua.html)
+* [BAS/BWS C/C++ API](https://realtimelogic.com/ba/doc/en/C/reference/html/index.html)
+* [SharkSSL TLS Stack C/C++ API](https://realtimelogic.com/ba/doc/en/C/shark/index.html)
+
 ## License
 
 BAS and BWS Amalgamated are licensed for use under the GPLv2 or a
