@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: SoDisp.c 5554 2024-08-21 07:06:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2009 - 2021
+ *   COPYRIGHT:  Real Time Logic, 2009 - 2024
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -415,16 +415,26 @@ HttpSocket_nxClose(HttpSocket* o, int hardClose)
    else
    { /* Server sock */
 
-      /* We do not know the state of the socket at this point. The socket
-       * could be in any state. The first thing to do is to check if this
-       * is a listen socket. It can only be a listen socket if the user
-       * terminates an active HttpServCon object.
-       */
+       /* The following must be enabled for NetX versions older than
+        * 6.2.1. In version 6.2.1, function
+        * _nx_tcp_socket_block_cleanup sets nx_tcp_socket_state to
+        * NX_TCP_LISTEN_STATE if the socket type is 'Server'. See also
+        * NetX documentation example to services
+        * nx_tcp_server_socket_listen and
+        * nx_tcp_server_socket_relisten
+        */
+#if 0
       if(nxs->nx_tcp_socket_state ==  NX_TCP_LISTEN_STATE)
       {
+         /* We do not know the state of the socket at this point. The socket
+          * could be in any state. The first thing to do is to check if this
+          * is a listen socket. It can only be a listen socket if the user
+          * terminates an active HttpServCon object.
+          */
          nx_tcp_server_socket_unlisten(ip,nxs->nx_tcp_socket_port);
       }
       else /* Attempt to close the socket */
+#endif
       {
          /* Macro HttpSocket_hardClose sets hardClose to one and
             HttpSocket_close sets hardClose to zero. A hard close should
