@@ -198,16 +198,12 @@ The Xedge IDE tool comprises a Single-Page Web Application (SPA) and supporting 
 
 > Please note that the above compilation process is just an example  - the Barracuda App Server platform is flexible and can support any deployment strategy you require. For a quick overview of compiling Xedge, check out the tutorial [Rapid Firmware Development with the Barracuda App Server](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server). This tutorial also shows how to replace the integrated IDE with a custom IoT application. While it uses an ESP32, the same method applies to any CPU.
 
-Fetch the repo:
+Fetch the repos and build the resource ZIP file:
 
 ```
+# Fetch the Barracuda App Server
 git clone https://github.com/RealTimeLogic/BAS.git
-```
-
-Fetch the resource files and build the resource ZIP file:
-
-```
-# Fetch the resources
+# Fetch the Barracuda App Server's resources
 git clone https://github.com/RealTimeLogic/BAS-Resources.git
 # Go to the build directory
 cd BAS-Resources/build/
