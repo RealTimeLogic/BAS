@@ -41949,7 +41949,6 @@ static sharkssl_PEM_RetVal debugmonitors(const char *pxa270flash, key_enc_type d
 
 
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
-
 SHARKSSL_API int sharkssl_PEM_PBKDF2(U8 *dk, const char *pxa270flash, const char *softresetcomplete, U32 singleftoui, U32 syskeyunlock, U16 registerioapic, U8 configwrite)
 {
    SharkSslHMACCtx registermcasp;

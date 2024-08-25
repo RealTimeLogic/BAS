@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5538 2024-05-13 08:43:19Z wini $
+ *   $Id: xedge.c 5555 2024-08-25 14:44:30Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2023
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -355,18 +355,24 @@ initXedge(lua_State* L, int initXedgeFuncRef)
 #ifdef NO_XEDGE_AUX
 #define callXedgeOpenAUX(L,ref,io) 0
 #else
-static int
+static void
 callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
 {
    XedgeOpenAUX aux = {
       L,
       dio,
-#ifndef NO_ENCRYPTIONKEY
       initXedge,
-      initXedgeFuncRef
-#endif
+      initXedgeFuncRef,
+      0
    };
-   return xedgeOpenAUX(&aux);
+   if(xedgeOpenAUX(&aux))
+      baFatalE(FE_USER_ERROR_1, __LINE__);
+   if (aux.xedgeCfgFile)
+   {
+      lua_pushcfunction(L, aux.xedgeCfgFile);
+      /* Register the open/save cfg file */
+      aux.initXedge(aux.L, aux.initXedgeFuncRef);
+   }
 }
 #endif
 
@@ -551,8 +557,7 @@ barracuda(void)
    /* Example Lua bindings, compile with AsynchLua.c or led.c.
       This code opens ESP32 bindings when compiled for ESP32.
     */
-   if(callXedgeOpenAUX(L, initXedgeFuncRef,(IoIntfPtr)&diskIo))
-      baFatalE(FE_USER_ERROR_1, __LINE__);
+   callXedgeOpenAUX(L, initXedgeFuncRef, (IoIntfPtr)&diskIo);
 
    /* Signal done, now start server */
 #ifdef NO_ENCRYPTIONKEY

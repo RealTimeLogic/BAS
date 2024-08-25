@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5426 2023-04-21 21:47:40Z wini $
+ *   $Id: MakoMain.c 5553 2024-08-17 10:40:04Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
  *
@@ -1125,13 +1125,14 @@ printUsage()
 " -autostart               - Changes the service to automatic start\n"
 " -manual                  - Changes the service to manual start\n"
 " -state                   - Print the service state\n"
-"-minimize                 - Minimize the console window\n"
-"-elevate                  - Request elevated privileges\n"
+" -minimize                 - Minimize the console window\n"
+" -elevate                  - Request elevated privileges\n"
 #else
 " -d                       - Run in daemon mode by detatching from the console\n"
 " -s                       - Run in daemon mode without detatching from the console\n"
 " -u username              - Username to run as\n"
 #endif
+" script                   - Execute the script and exit"
    };
    fprintf(stderr,"%s",usage);
    exit(1);

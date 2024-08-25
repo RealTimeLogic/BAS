@@ -10,9 +10,9 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5536 2024-05-07 19:02:22Z gianluca $
+ *   $Id: SharkSSL.h 5551 2024-08-16 14:41:30Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2024
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -1807,8 +1807,22 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(
    const char *passphrase, SharkSslCert *sharkSslCert);
 
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
-/** sharkssl_PEM_PBKDF2(output, passphrase, salt, salt_len, iterations, dkLen, hashID)
- *  reference: RFC8018 sect. 5.2
+/** sharkssl_PEM_PBKDF2 (output, passphrase, salt, salt_len, iterations, dkLen, hashID)
+    Derives a key from a passphrase using the PBKDF2 algorithm as specified in RFC 8018 section 5.2.
+  
+   This function performs the Password-Based Key Derivation Function 2 (PBKDF2) to derive a key from a given passphrase.
+   The derived key is computed by iterating the specified hash function over the passphrase and salt.
+  
+   \param dk          pointer to the buffer where the derived key will be stored
+   \param passphrase  pointer to the passphrase (null-terminated string) used to derive the key
+   \param salt        pointer to the salt string used in the key derivation process
+   \param saltLen     length of the salt in bytes
+   \param iterations  number of iterations to perform in the key derivation process
+   \param dkLen       desired length of the derived key in bytes.
+   \param hashID      identifier for the digest function to use; allowed values are: 
+                      SHARKSSL_HASHID_SHA512,  SHARKSSL_HASHID_SHA384, SHARKSSL_HASHID_SHA256
+                        
+   \return 0 on success, or a non-zero error code on failure
  */
 SHARKSSL_API int sharkssl_PEM_PBKDF2(
    U8 *dk, const char *passphrase, 
@@ -2245,12 +2259,34 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
 #endif
 #endif
 
-
 #if SHARKSSL_ENABLE_ECCKEY_CREATE
-/** 
-    @ingroup SharkSslCertApi
 
-    ECC key creation.
+typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
+
+
+/** A macro for creating an ECC key using the SharkSSL library.
+  @ingroup SharkSslCertApi
+  @def SharkSslECCKey_create(privKey, curveID)
+ 
+  This macro simplifies the creation of an ECC key by calling the 
+  `SharkSslECCKey_createEx` function with default values for the random 
+  number generator (RNG) handle and function.
+ 
+  @param privKey Pointer to a `SharkSslECCKey` structure that will hold the 
+           generated private key.
+  @param curveID The curve identifier (`curveID`) specifying which elliptic 
+           curve to use.
+ 
+  @note This macro automatically sets `rngHandle` and `rngFunc` to `0`, 
+        which means the default RNG mechanism will be used.
+ 
+  @see SharkSslECCKey_createEx
+ */
+#define SharkSslECCKey_create(privKey, curveID) SharkSslECCKey_createEx((privKey), (curveID), 0, 0)
+
+
+/** Creates an ECC key using the SharkSSL library.
+    @ingroup SharkSslCertApi
 
     \param privKey [output parameter] points to a buffer allocated by
      SharkSslECCKey_create and which contains the generated private
@@ -2266,6 +2302,9 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
     - SHARKSSL_EC_CURVE_ID_CURVE25519
     - SHARKSSL_EC_CURVE_ID_CURVE448
 
+    \param rngHandle optional object handle/instance for rngFunc
+    \param rngFunc You can use your own random generator function for creating the key
+
 
   \return the number of allocated bytes if the key creation was
      successful. A negative value is returned on error --
@@ -2280,7 +2319,7 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
    SharkSslECCKey createAndSaveKey(const char* filename)
    {
       SharkSslECCKey privKey;
-      int len = SharkSslECCKey_create(&privKey, SHARKSSL_EC_CURVE_ID_SECP256R1);
+      int len = SharkSslECCKey_create(&privKey, SHARKSSL_EC_CURVE_ID_SECP256R1,0,0);
       if(len > 0)
       {
          FILE* fp = fopen(filename, "w");
@@ -2295,10 +2334,6 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
    }
    \endcode
  */
-
-typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
-#define SharkSslECCKey_create(a, b) SharkSslECCKey_createEx((a), (b), 0, 0)
-
 SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey* privKey, U16 curveID, void* rngHandle, sharkssl_rngfunc rngFunc);
 #endif
 

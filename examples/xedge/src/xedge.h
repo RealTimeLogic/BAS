@@ -5,14 +5,14 @@
 #include <barracuda.h>
 
 typedef int (*InitXedge)(lua_State* L, int initXedgeFuncRef);
+typedef int (*XedgeCfgFile)(lua_State* L);
 
 typedef struct {
    lua_State* L;
    IoIntfPtr dio;
-#ifndef NO_ENCRYPTIONKEY
    InitXedge initXedge;
    int initXedgeFuncRef;
-#endif
+   XedgeCfgFile xedgeCfgFile;
 } XedgeOpenAUX;
 
 
