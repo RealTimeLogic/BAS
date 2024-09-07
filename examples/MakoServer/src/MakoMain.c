@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5553 2024-08-17 10:40:04Z wini $
+ *   $Id: MakoMain.c 5563 2024-09-06 22:23:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2024
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -117,6 +117,16 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 #else
 #define EMBEDDED_ZONE_KEY
 #include "tokengen.c"
+#endif
+
+#ifndef NO_ENCRYPTIONKEY
+#define STATIC static
+#ifdef NewEncryptionKey
+#include "NewEncryptionKey.h"
+#else
+#include "EncryptionKey.h"
+#endif
+#include "tpm.h"
 #endif
 
 
@@ -498,7 +508,7 @@ findExecPath(const char* argv0)
    char path[2048];
    uint32_t size = sizeof(path);
    (void)argv0;
-   if ( ! _NSGetExecutablePath(path, &size) )
+   if( ! _NSGetExecutablePath(path, &size) )
    {
       char* ptr=strrchr(path,'/');
       if(ptr)
@@ -636,7 +646,7 @@ cfignoreSignal(int sig, const char* signame)
    sa.sa_handler = SIG_IGN;
    sigemptyset(&sa.sa_mask);
    sa.sa_flags = 0;
-   if (sigaction(sig, &sa, NULL) < 0)
+   if(sigaction(sig, &sa, NULL) < 0)
       errQuit("can't ignore %s.\n", signame);
 }
 #define ignoreSignal(x) cfignoreSignal((int)(x), #x)
@@ -647,7 +657,7 @@ cfblockSignal(int sig, const char* signame)
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, sig);
-    if (sigprocmask(SIG_BLOCK, (const sigset_t*) &set, NULL) < 0)
+    if(sigprocmask(SIG_BLOCK, (const sigset_t*) &set, NULL) < 0)
        errQuit("can't block %s - %s.\n", signame,strerror(errno));
 }
 #define blockSignal(x) cfblockSignal((int)(x), #x)
@@ -684,7 +694,7 @@ setLinuxDaemonMode(void)
 
    if((pid = fork()) < 0)
       errQuit("%s: can't fork\n", APPNAME);
-   else if (pid != 0) /* parent */
+   else if(pid != 0) /* parent */
       exit(0);
 
     ignoreSignal(SIGHUP);
@@ -715,7 +725,7 @@ setLinuxDaemonMode(void)
     * Initialize the log file.
     */
    openlog(APPNAME, LOG_CONS|LOG_PID, LOG_DAEMON);
-   if (fd0 != 0 || fd1 != 1 || fd2 != 2)
+   if(fd0 != 0 || fd1 != 1 || fd2 != 2)
    {
       errQuit("unexpected file descriptors %d %d %d\n",fd0, fd1, fd2);
    }
@@ -818,7 +828,7 @@ loadConfigData(lua_State* L)
    int status = luaL_loadfile(L, (const char*)lua_touserdata(L,2));
 #endif
    const char** paramPtr = lua_touserdata(L,3);
-   if (status != 0)
+   if(status != 0)
       lua_error(L);
    else
       lua_call(L,0,0);
@@ -914,7 +924,7 @@ openAndLoadConf(const char* path,  MakoServerConfig* mcfg, int isdir)
             if(lua_pcall(L,3,0,0))
             {
                const char* msg=lua_tostring(L,-1);
-               if (!msg) msg="(error with no message)";
+               if(!msg) msg="(error with no message)";
                if(param)
                {
                   const char* ptr=strchr(msg, '(');
@@ -1347,12 +1357,199 @@ checkEndian()
       errQuit("Panic!!! Wrong endian\n");
 } 
 
+/********************   Trusted Platform Module ***************************
+   Supporting C code for the TPM API integration.
+   Documentation: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
+
+   Compile with NO_ENCRYPTIONKEY to exclude this functionality.
+   When used, make sure to add your key to 'EncryptionKey.h'.
+
+   This code operates as follows:
+
+   The C code loads the Lua-based TPM implementation, which is
+   encapsulated in a script stored within the embedded ZIP file
+   'tpm.h'. This ZIP file stores the 'MakoTPM.lua' script, which can
+   be found in the BAS-Resources GitHub repository.
+
+   The 'installTPM()' C function, defined below, loads and executes
+   'MakoTPM.lua' from the embedded ZIP file. The script returns a Lua
+   function designed to be invoked multiple times by the C code to
+   feed TPM key values used for calculating a pre-master key. To
+   signal the end of key material input, this Lua function is called
+   with the Boolean value 'true'. The script then computes a
+   pre-master key using the provided keying material.
+
+   The primary secret key material is sourced from 'EncryptionKey.h',
+   which contains a binary array. You must edit this array to create a
+   unique key for your project. It's crucial to keep this data
+   confidential. The array is intentionally not stored as a C string,
+   making it extremely difficult to extract from the compiled binary.
+
+   Additional secrets can be provided to the Lua script. The
+   platform-specific function 'pushUniqueKey()' attempts to inject a
+   unique per-device key, further enhancing the security of the TPM by
+   making it more difficult to transfer TPM-generated secrets to
+   another machine.
+
+   Note that all keys must remain persistent across system reboots and
+   any modifications to the operating system.
+*/
+#ifdef NO_ENCRYPTIONKEY
+#define installTPM(L)
+#else
+#ifdef BA_WIN32
+static int pushUniqueKey(lua_State*L)
+{
+   int retVal=-1;
+   HKEY hKey;
+   LONG result;
+   DWORD dwType = REG_SZ;
+   char guid[256];
+   DWORD dwSize = sizeof(guid);
+   result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         "SOFTWARE\\Microsoft\\Cryptography",
+                         0,
+                         KEY_READ | KEY_WOW64_64KEY,
+                         &hKey);
+   if(result == ERROR_SUCCESS)
+   {
+      result = RegQueryValueEx(hKey,
+                               "MachineGuid",
+                               NULL,
+                               &dwType,
+                               (LPBYTE)guid,
+                               &dwSize);
+      if (result == ERROR_SUCCESS)
+      {
+         retVal=0;
+         lua_pushstring(L,guid);
+      }
+      RegCloseKey(hKey);
+   }
+   return retVal;
+}
+#elif defined(_OSX_)
+#include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
+static int pushUniqueKey(lua_State*L)
+{
+   int retVal=-1;
+   io_registry_entry_t ioRegistryRoot = IORegistryEntryFromPath(
+      kIOMainPortDefault, "IOService:/");
+   if(ioRegistryRoot != MACH_PORT_NULL)
+   {
+      CFStringRef uuidString=IORegistryEntryCreateCFProperty(
+         ioRegistryRoot, CFSTR("IOPlatformUUID"), kCFAllocatorDefault, 0);
+      if(uuidString)
+      {
+         CFIndex length = CFStringGetLength(uuidString);
+         CFIndex maxLength = CFStringGetMaximumSizeForEncoding(
+            length, kCFStringEncodingUTF8) + 1;
+         char* binaryData = (char*)malloc(maxLength);
+         if (CFStringGetCString(
+                uuidString,(char*)binaryData,maxLength,kCFStringEncodingUTF8))
+         {
+            retVal=0;
+            /* -1: Exclude the null terminator */
+            lua_pushlstring(L,binaryData,maxLength - 1);
+         }
+         free(binaryData);
+         CFRelease(uuidString);
+      }
+      IOObjectRelease(ioRegistryRoot);
+   }
+   return retVal;
+}
+#else /* Linux */
+static int pushUniqueKey(lua_State*L)
+{
+   int retVal=-1;
+   FILE *file = fopen("/etc/machine-id", "r");
+   if(file)
+   {
+      char guid[64];
+      if(fgets(guid, sizeof(guid), file) != NULL)
+      {
+         retVal=0;
+         lua_pushstring(L,guid);
+      }
+      fclose(file);
+   }
+   return retVal;
+}
+#endif
+
+static void installTPM(lua_State* L)
+{
+   int status;
+   ZipIo io;
+   /* tpmZipDriver from tpm.h */
+   ZipIo_constructor(&io, tpmZipDriver(), 2048, 0);
+   status=balua_loadconfigExt(L, (IoIntf*)&io, 0, 1);
+   if(status)
+   {
+     L_cfgerr:
+#if 0
+      errQuit("TPM error: %s.\n", lua_tostring(L, -1)); // For testing
+#endif
+      exit(1); /* Make sure the Lua code works */
+   }
+   lua_pushvalue(L, -1); /* TPM func */
+
+   /* Push the primary secret key material as a Lua string */
+#if 0
+   /* The naive method, ref:
+      https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
+   */
+   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
+#else
+   /* White-box cryptography (WBC) transforming main secret. For extra
+    * security, change this code and keep the C code secret.
+    */
+   baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
+   {
+      luaL_Buffer b;
+      size_t i;
+      U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
+      for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
+         /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
+         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
+         transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
+      }
+      luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
+      luaL_pushresult(&b);
+   }
+#endif
+
+   if(lua_pcall(L, 1, 0, 0))
+      goto L_cfgerr;
+   lua_pushvalue(L, -1); /* TPM func */
+   if(pushUniqueKey(L)) /* Per device key */
+   {
+      lua_pop(L,1);
+      makoprintf(TRUE,"Warning: no device unique TPM ID\n");
+   }
+   else
+   {
+      if(lua_pcall(L, 1, 0, 0))
+         goto L_cfgerr;
+   }
+   lua_pushboolean(L,TRUE);
+   if(lua_pcall(L, 1, 0, 0))
+      goto L_cfgerr;
+   baAssert(0 == lua_gettop(L));
+   ZipIo_destructor(&io);
+}
+#endif /* NO_ENCRYPTIONKEY */
+/*******************   End Trusted Platform Module ************************/
+
+
 
 void
 runMako(int isWinService, int argc, char* argv[], char* envp[])
 {
    int ecode;
-   int onunloadRef;
+   int luaFuncRef;
    SoDisp disp;
    HttpCmdThreadPool pool;
    static LThreadMgr ltMgr;
@@ -1628,12 +1825,25 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       When run as: sudo mako -u `whoami`
    */
    setUser(argc,argv);
-   ecode=balua_loadconfigExt(L, blp.vmio, 0, 1); /* Load and run .config  */
+   ecode=balua_loadconfigExt(L, blp.vmio, 0, 2); /* Load and run .config  */
    if(ecode)
-      errQuit(".config error: %s.\n", lua_tostring(L,-1));
+   {
+      L_cfgerr:
+      errQuit(".config error: %s.\n", lua_tostring(L, -1));
+   }
+   if(!lua_isfunction(L, -2) || !lua_isnumber(L, -1) || 1 != lua_tonumber(L, -1))
+   {
+      errQuit("mako.zip version err");
+   }
+   lua_pop(L, 1); /* Version */
+   luaFuncRef = luaL_ref(L, LUA_REGISTRYINDEX);
+   installTPM(L);
+   lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef);
+   if(lua_pcall(L, 0, 1, 0))
+      goto L_cfgerr;
    if(!lua_isfunction(L, -1))
       errQuit(".config error: no onunload");
-   onunloadRef=luaL_ref(L,LUA_REGISTRYINDEX);
+   luaFuncRef=luaL_ref(L,LUA_REGISTRYINDEX);
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 
    /*
@@ -1653,7 +1863,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /*Dispatcher mutex must be locked when terminating the following objects.*/
    ThreadMutex_set(&mutex);
    /* Graceful termination of Lua apps. See function above. */
-   onunload(onunloadRef);
+   onunload(luaFuncRef);
    LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */
    HttpCmdThreadPool_destructor(&pool);  /* Wait for threads to exit */
 

@@ -237,6 +237,9 @@ static int installUdpCallbackEx2(lua_State* L)
  * UDPTST.install(). The code employs standard Lua syntax, which is
  * included in any literature that explains Lua bindings. The function
  * is called by the Xedge startup code.
+ *
+ * NOTE: See also led.c: xedgeOpenAUX(), as this code enables additional
+ * Xedge features you may consider using.
 */
 int xedgeOpenAUX(XedgeOpenAUX* aux)
 {
@@ -246,7 +249,6 @@ int xedgeOpenAUX(XedgeOpenAUX* aux)
       {"install", installUdpCallbackEx2},
       {NULL, NULL}
    };
-
    luaL_newlib(aux->L, reg);
    lua_setglobal(aux->L, "UDPTST");
    return 0;

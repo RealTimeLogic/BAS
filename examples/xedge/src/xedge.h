@@ -15,8 +15,9 @@ typedef struct {
    XedgeCfgFile xedgeCfgFile;
 } XedgeOpenAUX;
 
-
+#ifndef NO_BAIO_DISK
 int xedgeInitDiskIo(DiskIo* dio);
+#endif
 int xedgeOpenAUX(XedgeOpenAUX* aux);
 
 

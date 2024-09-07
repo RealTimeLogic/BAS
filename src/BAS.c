@@ -43939,6 +43939,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          case clkdmclear:
             if (paramnamed)  
             {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                paramnamed = (U16)(*registeredevent++) << 8;
                paramnamed += *registeredevent++;
                len -= 2;
@@ -44112,6 +44117,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          case firstversion:
             if (paramnamed)   
             {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                paramnamed  = (U16)(*registeredevent++) << 8;
                paramnamed += *registeredevent++;
                len -= 2;
@@ -44134,7 +44144,7 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
 
             while (paramnamed)
             {
-               if (*registeredevent++)
+               if ((*registeredevent++) || (paramnamed < SHARKSSL_CERT_LENGTH_LEN))
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   return -1;  
@@ -90477,12 +90487,14 @@ JVal_extract(JVal* o,JErr* err,const char** fmt, va_list* breakpointthread)
 {
    for( ; **fmt ; (*fmt)++)
    {
+      if (!o) goto L_params;
       if(JErr_isError(err))
          return 0;
       if(JVal_extractValue(o, err, fmt, breakpointthread))
          break;
       if(!o)
       {
+        L_params:
          JErr_setTooFewParams(err);
          return 0;
       }
@@ -104680,6 +104692,8 @@ boardsetup(AuthorizerIntf* fdc37m81xconfig, AuthenticatedUser* buttonsbelkin,
    const char* gpio1config = AuthenticatedUser_getName(buttonsbelkin);
    if(gpio1config)
    {
+      HttpSession* s;
+      LSession* ls;
       LuaAuthorizer* o = (LuaAuthorizer*)fdc37m81xconfig;
       lua_State* L = lua_newthread(o->LM);
       
@@ -104690,7 +104704,18 @@ boardsetup(AuthorizerIntf* fdc37m81xconfig, AuthenticatedUser* buttonsbelkin,
       lua_pushstring(L,gpio1config);
       lua_pushstring(L,HttpRequest_getMethod2(averagevalue));
       lua_pushstring(L,driverstate);
-      if( ! lua_pcall(L,3,1,-5) )
+
+      
+      s = AuthenticatedUser_getSession(buttonsbelkin);
+      ls = (LSession*)lua_newuserdata(L, sizeof(LSession));
+      ls->id = HttpSession_getId(s);
+      ls->locked=FALSE; 
+      balua_pushbatab(L);
+      lua_rawgeti(L, -1, BA_TSESSION);
+      lua_setmetatable(L, -3);
+      lua_pop(L,1);
+
+      if( ! lua_pcall(L,4,1,-6) )
       {
          cachelsize = (lua_isboolean(L, -1) && lua_toboolean(L, -1))
             ? TRUE : FALSE;

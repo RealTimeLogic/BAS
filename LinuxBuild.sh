@@ -27,7 +27,7 @@ done
 unameOut="$(uname -s)"
 case "${unameOut}" in
     Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;;
-    Darwin*)    XCFLAGS="-D_OSX_ -DLUA_USE_MACOSX";machine=Mac;;
+    Darwin*)    XLIB="-ldl -framework IOKit -framework CoreFoundation;XCFLAGS=-DLUA_USE_LINUX;machine=Linux";XCFLAGS="-D_OSX_ -DLUA_USE_MACOSX";machine=Mac;;
     CYGWIN*)    XLIB=-ldl;XCFLAGS="-DLUA_USE_LINUX -DUSE_FORKPTY=0";machine=Cygwin;;
 #    MINGW*)     machine=MinGw;;
     *)          abort "Unknown machine ${unameOut}"

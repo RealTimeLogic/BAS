@@ -6375,6 +6375,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          case clkdmclear:
             if (paramnamed)  
             {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                paramnamed = (U16)(*registeredevent++) << 8;
                paramnamed += *registeredevent++;
                len -= 2;
@@ -6548,6 +6553,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          case firstversion:
             if (paramnamed)   
             {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                paramnamed  = (U16)(*registeredevent++) << 8;
                paramnamed += *registeredevent++;
                len -= 2;
@@ -6570,7 +6580,7 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
 
             while (paramnamed)
             {
-               if (*registeredevent++)
+               if ((*registeredevent++) || (paramnamed < SHARKSSL_CERT_LENGTH_LEN))
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   return -1;  
@@ -31963,12 +31973,14 @@ JVal_extract(JVal* o,JErr* err,const char** fmt, va_list* breakpointthread)
 {
    for( ; **fmt ; (*fmt)++)
    {
+      if (!o) goto L_params;
       if(JErr_isError(err))
          return 0;
       if(JVal_extractValue(o, err, fmt, breakpointthread))
          break;
       if(!o)
       {
+        L_params:
          JErr_setTooFewParams(err);
          return 0;
       }

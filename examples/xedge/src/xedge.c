@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5555 2024-08-25 14:44:30Z wini $
+ *   $Id: xedge.c 5562 2024-09-06 20:28:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -21,34 +21,47 @@
  *   the agreement under which the program has been supplied.
  ****************************************************************************
 
-Xedge Documentation (xedge):
-http://realtimelogic.com/ba/doc/?url=/examples/xedge/readme.html
+ The Xedge C code demonstrates the typical startup procedures required
+ for the Barracuda App Server when deployed in an RTOS/firmware
+ environment. 
 
-Note: the xedge includes files and resources from the auxiliary
-API -- i.e. from the xrc directory. The makefile includes these files in the
-build process. The makefile also assembles a number of resource files,
-such as Lua scripts, HTML files, etc, and assembles these files into a
-ZIP file.
+ Xedge Documentation:
+   How to use the default IDE:
+      https://realtimelogic.com/ba/doc/en/Xedge.html
+   How to compile Xedge, including custom build info:
+      https://realtimelogic.com/ba/examples/xedge/readme.html
 
-The extra optional API's included are documented in the startup code below.
+ In most production cases, this C code can be used "as is". Your changes
+ if any would be in xedge.zip
+ (see https://github.com/RealTimeLogic/BAS-Resources/tree/main/build).
 
-The xedge's C code shows typical C startup code required for the
-Barracuda App Server when used in an RTOS/firmware environment. The C
-code includes graceful shutdown, however, the graceful shutdown code
-is only included if compiled with USE_DBGMON=1 -- i.e. when the debug
-monitor is enabled. Graceful shutdown is typically not required in a
-firmware environment, but is required for the debug monitor's hot
-restart feature.
+ Your own Lua bindings should go into a file similar to the led.c example file.
 
-The C code below indirectly installs a Lua debugger hook if compiled
-with USE_DBGMON=1 and installs a Lua debugger hook directly if
-compiled with macro ENABLE_LUA_TRACE. The code enabled with
-ENABLE_LUA_TRACE shows how to print each Lua line executed. See
-function lHook below.  See the following link for how to use the
-debugger: https://makoserver.net/articles/Lua-and-LSP-Debugging
+ Note: When using the full Barracuda App Server (BAS) SDK, The Xedge
+ platform integrates files and resources from the auxiliary API (from
+ the xrc directory). The Makefile handles the inclusion of these files
+ during the build process. Additionally, the Makefile assembles
+ various resource files, such as Lua scripts, HTML files, and others,
+ into a ZIP file. The optional BAS aux APIs included are documented in
+ the startup code below.
 
-Note: some platforms automatically set USE_DBGMON=1 if the macro is
-not defined. See inc/arch/<PLAT>/TargConfig.h for your platform.
+ This C code includes support for a graceful shutdown, which is
+ enabled only if the code is compiled with USE_DBGMON=1, indicating
+ that the Lua debug monitor is enabled. While graceful shutdown is
+ usually unnecessary in a firmware environment, it is essential for
+ the Lua debug monitor's hot restart feature.
+
+ The C code below also installs a Lua debugger hook, indirectly when
+ compiled with USE_DBGMON=1, or directly when compiled with the macro
+ ENABLE_LUA_TRACE. When ENABLE_LUA_TRACE is defined, the code
+ demonstrates how to print each Lua line executed. Refer to the lHook
+ function below for details. For instructions on using the debugger,
+ see the following link:
+ https://makoserver.net/articles/Lua-and-LSP-Debugging
+
+ Note: Some platforms automatically define USE_DBGMON=1 if the macro
+ is not explicitly set. Check inc/arch/<PLAT>/TargConfig.h for your
+ specific platform.
 */
 
 #include "xedge.h"
@@ -99,7 +112,7 @@ LThreadMgr ltMgr;
 
 
 /* 
-   io=ezip
+   Makefile option: io=ezip
 */
 #if !defined(BAIO_DISK) && !defined(BAIO_ZIP)
 /* Default is: BAIO_EZIP */
@@ -314,6 +327,39 @@ createVmIo()
 }
 
 
+/*
+  Push the embedded primary secret key material as a Lua string
+*/
+#ifndef NO_ENCRYPTIONKEY
+static void pushPrimarySecret(lua_State* L)
+{
+#if 0
+   /* The naive method, ref:
+      https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
+   */
+   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
+#else
+   /* White-box cryptography (WBC) transforming main secret. For extra
+    * security, change this code and keep the C code secret.
+    */
+   baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
+   {
+      luaL_Buffer b;
+      size_t i;
+      U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
+      for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
+         /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
+         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
+         transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
+      }
+      luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
+      luaL_pushresult(&b);
+   }
+#endif
+}
+#endif /* NO_ENCRYPTIONKEY */
+
+
 /* This function simplifies calling the Lua function returned after
    .config has been executed (see balua_loadconfigExt() below). One Lua
    value must be pushed on the Lua stack when this function is
@@ -350,7 +396,8 @@ initXedge(lua_State* L, int initXedgeFuncRef)
 }
 
 
-/* Wrapper for calling function xedgeOpenAUX. Note that we pass in a callback to
+/* Wrapper for calling function xedgeOpenAUX.
+ * Two xedgeOpenAUX examples: led.c and AsynchLua.c.
  */
 #ifdef NO_XEDGE_AUX
 #define callXedgeOpenAUX(L,ref,io) 0
@@ -367,7 +414,7 @@ callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
    };
    if(xedgeOpenAUX(&aux))
       baFatalE(FE_USER_ERROR_1, __LINE__);
-   if (aux.xedgeCfgFile)
+   if(aux.xedgeCfgFile)
    {
       lua_pushcfunction(L, aux.xedgeCfgFile);
       /* Register the open/save cfg file */
@@ -475,9 +522,9 @@ barracuda(void)
    balua_luaio(L); /* xrc/lua/lio.c */
 
 /* 
-   Some embedded devices may not have a DiskIo.
+   Some embedded devices may not have a DiskIo port or a file system.
    The following macro makes it possible to disable the DiskIo.
-   Command line: make ..... nodisk=1
+   Makefile option: make ..... nodisk=1
 */
 #ifdef NO_BAIO_DISK
    HttpTrace_printf(0, "DiskIo not included. Use NetIo!\n");
@@ -504,7 +551,7 @@ barracuda(void)
 
    balua_tokengen(L); /* See  the "SharkTrustX" comment above */
 #if USE_REVCON
-   /* Add reverse server connection. This requires SharkTrustX.
+   /* Add reverse HTTP server connections. This requires SharkTrustX.
     */
    balua_revcon(L);
 #endif
@@ -547,17 +594,23 @@ barracuda(void)
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 #endif
 
-   /* ENCRYPTIONKEY from (New)EncryptionKey.h */
+   /* ENCRYPTIONKEY from (New)EncryptionKey.h
+      Push the primary secret key material as a Lua string
+   */
 #ifndef NO_ENCRYPTIONKEY
-   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
+   pushPrimarySecret(L);
    if(initXedge(L, initXedgeFuncRef))
       baFatalE(FE_USER_ERROR_1, __LINE__);
 #endif
 
    /* Example Lua bindings, compile with AsynchLua.c or led.c.
-      This code opens ESP32 bindings when compiled for ESP32.
+      This code opens ESP32 bindings when Xedge32 is compiled.
     */
+#ifdef NO_BAIO_DISK
+   callXedgeOpenAUX(L, initXedgeFuncRef, 0);
+#else
    callXedgeOpenAUX(L, initXedgeFuncRef, (IoIntfPtr)&diskIo);
+#endif
 
    /* Signal done, now start server */
 #ifdef NO_ENCRYPTIONKEY
