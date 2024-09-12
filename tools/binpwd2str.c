@@ -30,8 +30,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-unsigned int
-GetTickCount(void)
+static unsigned int GetTickCount(void)
 {
 #ifdef __APPLE__
    struct timeval t;
@@ -55,7 +54,7 @@ GetTickCount(void)
 
 
 // Function to generate a random binary array
-uint8_t* createRandomBinaryArray(int length)
+static uint8_t* createRandomBinaryArray(int length)
 {
    uint8_t* binaryArray = (uint8_t*) malloc(length * sizeof(uint8_t));
    if(binaryArray == NULL)
@@ -78,7 +77,7 @@ uint8_t* createRandomBinaryArray(int length)
 }
 
 
-uint8_t* readFileIntoBuffer(const char *inputFile, size_t *fileSize)
+static uint8_t* readFileIntoBuffer(const char *inputFile, size_t *fileSize)
 {
    struct stat fileStat;
    if(stat(inputFile, &fileStat) != 0)
@@ -113,8 +112,7 @@ uint8_t* readFileIntoBuffer(const char *inputFile, size_t *fileSize)
 }
 
 
-static void
-binpwd2str(uint8_t* binpwd, size_t size)
+static void binpwd2str(uint8_t* binpwd, size_t size)
 {
    uint16_t i;
    uint8_t* p = (uint8_t*)malloc(size);
@@ -140,7 +138,7 @@ binpwd2str(uint8_t* binpwd, size_t size)
 }
 
 
-void printHelp()
+static void printHelp()
 {
    printf("Usage: binpwd2str [input-file]\n");
    printf("If no input-file with a binary password is provided, "
