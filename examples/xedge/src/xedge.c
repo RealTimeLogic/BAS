@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5562 2024-09-06 20:28:22Z wini $
+ *   $Id: xedge.c 5570 2024-09-18 14:12:05Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -83,6 +83,12 @@
 #endif
 #endif
 
+#ifdef USE_ZIPBINPWD
+#ifndef ZIPBINPWD_REQUIRED
+#define ZIPBINPWD_REQUIRED FALSE
+#endif
+#include "zipbinpwd.h"
+#endif
 
 /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
  * pool) is not utilized. Instead, the LThreadMgr is used as the
@@ -212,8 +218,12 @@ int xedgeInitDiskIo(DiskIo* dio)
    6: Download the generated C code, rename to tokengen.h,
       and place generated file in this directory
 */
+#ifdef NO_SHARKTRUST
+#define balua_tokengen(L)
+#else
 #define EMBEDDED_ZONE_KEY
 #include "tokengen.c"
+#endif
 
 
 /* Initialize the HttpServer object by calling HttpServer_constructor.
@@ -482,6 +492,12 @@ barracuda(void)
    blp.vmio = createVmIo();  /* The required IO */
    blp.server = &server;     /* pointer to a HttpServer */
    blp.timer = &timer;       /* Pointer to a BaTimer */
+#ifdef USE_ZIPBINPWD
+   /* Must be set in zipbinpwd.h */
+   blp.zipBinPwd = zipBinPwd;
+   blp.zipBinPwdLen = sizeof(zipBinPwd);
+   blp.pwdRequired = ZIPBINPWD_REQUIRED;
+#endif
    L = balua_create(&blp);   /* create the Lua state */
 
    /* Lua debugger hook.

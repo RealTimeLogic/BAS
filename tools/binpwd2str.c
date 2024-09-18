@@ -1,6 +1,6 @@
 /* COPYRIGHT:  Real Time Logic
  *
- * This program generates a BAS binary password either from a
+ * This program generates a BAS binary ZIP-file password either from a
  * specified input file or randomly if no file is provided. It emits
  * the binary password in a C array format and also converts it to the
  * BAS password string format you use when setting the password on the
@@ -158,7 +158,6 @@ int main(int argc, char *argv[])
    }
    srand(GetTickCount());
    if(2==argc)
-  
    {
       binpwd=readFileIntoBuffer(argv[1], &size);
    }
@@ -167,7 +166,7 @@ int main(int argc, char *argv[])
       size=60 + rand() % 21;
       binpwd=createRandomBinaryArray(size);
    }
-   printf("const uint8_t binpwd[] ={\n");
+   printf("const uint8_t zipBinPwd[] ={\n");
    for(i = 0; i < size; i++)
    {
       if(i % 10 == 0 && i != 0)

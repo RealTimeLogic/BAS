@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5428 2023-04-24 23:46:37Z wini $
+ *   $Id: lxrc.h 5568 2024-09-14 14:51:10Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2023
+ *   COPYRIGHT:  Real Time Logic, 2023 - 2024
  *               https://realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -80,7 +80,7 @@ struct LThreadMgr;
 
 /** Install the [TraceLogger Lua bindings](../../../lua/auxlua.html#tracelogger).
     \param L the state
-    \param the optional LThreadMgr must be set if you plan on using trlogger:onclient(cb)
+    \param tmgr the optional LThreadMgr must be set if you plan on using trlogger:onclient(cb)
  */
 void balua_tracelogger(lua_State *L, struct LThreadMgr* tmgr);
 

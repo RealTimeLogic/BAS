@@ -34,6 +34,7 @@
  * and converted to a C code array by the "BuildInternalZip.sh"
  * script. Note: The Mako Server will abort at startup if this macro
  * is not defined and if it is unable to open the external mako.zip.
+ * Note: this feature is auto disabled when USE_ZIPSIGNATURE is enabled.
  */
 #ifndef USE_EMBEDDED_ZIP
 #define USE_EMBEDDED_ZIP 1
@@ -74,16 +75,6 @@
 #define AUX_LUA_BINDINGS
 */
 
-/* The Lua ZIP file system supports AES encrypted ZIP files. You may
-   password encrypt your deployed Lua applications loaded by the Mako
-   Server. This macro enables the Lua function mako.setzippwd, a
-   function that is used by the application loading mechanism in
-   Mako's .preload script. The .preload script calls mako.setzippwd
-   for all ZIP files if mako.setzippwd is defined. You must implement
-   the template function lSetZipPwd below.
-#define ENABLE_ZIP_PWD
-*/
-
 /* 
    The Mako Server uses a few operating system depended functions for
    Linux,Mac, QNX, and Windows. Defining the following macro makes it
@@ -95,7 +86,6 @@
 
 #define CUSTOM_PLAT
 */
-
 
 
 /* Template function:
@@ -114,23 +104,35 @@ static void myCustomBindings(lua_State* L)
 }
 #endif
 
+/* 
+   Enable signed ZIP file enforcement. Create 'zipPubKey; below using
+   SharkSSLParseKey.exe myPubEccKey.pem
+   Details:
+    https://realtimelogic.com/ba/doc/en/C/reference/html/SignEncZip.html
 
-/* Template function:
-   See 'ENABLE_ZIP_PWD' explanation above for details.
- */
-#ifdef ENABLE_ZIP_PWD
-static int lSetZipPwd(lua_State *L)
+#define USE_ZIPSIGNATURE
+const U8 zipPubKey[72] =
 {
-   /* You must come up with your own solution for password management */
-   char* pass="1234";
-   IoIntf* io = baluaENV_checkIoIntf(L, 1); /* the only argument */
-   int ret = IoIntf_setPassword(io, pass, (U16)strlen(pass));
-   lua_pushboolean(L, ret ? 0 : 1);
-   return 1;
-}
-#endif
+};
+
+*/
 
 
+
+/* Globally apply a password to all loaded ZIP files. This approach
+   allows embedding an obfuscated password that will be automatically
+   applied to all ZIP files. Use binpwd2str to generate the zipBinPwd
+   array content below.
+   Details:
+    https://realtimelogic.com/ba/doc/en/C/reference/html/SignEncZip.html
+
+#define USE_ZIPBINPWD
+#define ZIPBINPWD_REQUIRED FALSE
+
+static const U8 zipBinPwd[] ={
+};
+
+*/
 
 
 /*************************************************************************

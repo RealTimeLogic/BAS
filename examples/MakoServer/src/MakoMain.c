@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5563 2024-09-06 22:23:58Z wini $
+ *   $Id: MakoMain.c 5570 2024-09-18 14:12:05Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2024
  *
@@ -97,7 +97,7 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 
 /* SharkTrustEx
 
-   Create your own tokengen.h header file as follows:
+   Create your own tokengen.c file as follows:
 
    1: Sign up for Real Time Logic's DNS testing service or preferably,
       set up your own DNS service (one of:)
@@ -1043,9 +1043,6 @@ createLuaGlobals(
    char buf[200];
    static const luaL_Reg funcs[] = {
       {"tracefile", lSetTraceFile},
-#ifdef ENABLE_ZIP_PWD
-      {"setzippwd", lSetZipPwd},
-#endif
       {NULL, NULL}
    };
 
@@ -1164,7 +1161,7 @@ checkMakoIo(IoIntf* io, const char* name)
    return 0;
 }
 
-static IoIntf*
+static ZipIo*
 createAndCheckMakoZipIo(ZipReader* zipReader, const char* name)
 {
    if(CspReader_isValid((CspReader*)zipReader))
@@ -1174,7 +1171,7 @@ createAndCheckMakoZipIo(ZipReader* zipReader, const char* name)
       if(ZipIo_getECode(vmIo) ==  ZipErr_NoError)
       {
          if(checkMakoIo((IoIntf*)vmIo,name))
-            return (IoIntf*)vmIo;
+            return vmIo;
       }
       ZipIo_destructor(vmIo);
       baFree(vmIo);
@@ -1184,10 +1181,10 @@ createAndCheckMakoZipIo(ZipReader* zipReader, const char* name)
 
 
 static IoIntf*
-openMakoZip(IoIntf* rootIo, const char* path)
+openMakoZip(const U8* zipPubKey, IoIntf* rootIo, const char* path)
 {
    IoStat st;
-   IoIntf* io=0;
+   ZipIo* io=0;
    int plen=iStrlen(path);
    char* buf=(char*)baMalloc(plen+12);
    basprintf(buf,"%s%smako.zip",
@@ -1215,23 +1212,35 @@ openMakoZip(IoIntf* rootIo, const char* path)
       io=createAndCheckMakoZipIo((ZipReader*)makoZipReader, buf);
       if(!io)
       {
+        L_err:
          IoIntfZipReader_destructor(makoZipReader);
          baFree(makoZipReader);
          makoZipReader=0;
       }
+      else if(zipPubKey &&
+              baCheckZipSignature(zipPubKey, makoZipReader->reader.size, (CspReader*)makoZipReader))
+      {
+         ZipIo_destructor(io);
+         baFree(io);
+         io = 0;
+         goto L_err;
+      }
    }
    baFree(buf);
-   return io;
+   return (IoIntf*)io;
 }
 
 
 
 static IoIntf*
-openVmIo(IoIntf* rootIo,const char* execpath, const char* cfgfname)
+openVmIo(const U8* zipPubKey, IoIntf* rootIo,const char* execpath,
+         const char* cfgfname, BaBool* limitedZip)
 {
-   int status;
    IoIntf* io=0;
-   char* path=getenv("MAKO_ZIP");
+   char* path;
+#ifndef USE_ZIPSIGNATURE
+   int status;
+   path = getenv("MAKO_ZIP");
    if(path)
    {
       const char* nd="non-deployed mako.zip dir";
@@ -1244,12 +1253,13 @@ openVmIo(IoIntf* rootIo,const char* execpath, const char* cfgfname)
             return (IoIntf*)dio;
       }
       else
-         makoprintf(TRUE,"Cannot open %s %s.\n",nd,path);
+         makoprintf(TRUE,"Cannot mount %s %s.\n",nd,path);
       baFree(dio);
    }
+#endif
    if(execpath)
    {
-      io=openMakoZip(rootIo,execpath);
+      io=openMakoZip(zipPubKey,rootIo,execpath);
       if(io)
          return io;
    }
@@ -1260,7 +1270,7 @@ openVmIo(IoIntf* rootIo,const char* execpath, const char* cfgfname)
       ptr=strrchr(path,*LUA_DIRSEP);
       if(ptr) *ptr=0;
       else path=".";
-      io=openMakoZip(rootIo,path);
+      io=openMakoZip(zipPubKey,rootIo,path);
       baFree(path);
       if(io)
          return io;
@@ -1285,16 +1295,17 @@ openVmIo(IoIntf* rootIo,const char* execpath, const char* cfgfname)
                  baErr2Str(ecode));
       }
       io=checkMakoIo((IoIntf*)vmIo, dirname);
-#elif USE_EMBEDDED_ZIP
+#elif USE_EMBEDDED_ZIP && !defined(USE_ZIPSIGNATURE)
       /* Use embedded ZIP file, which is Created by the the BA tool: bin2c */
-      io=createAndCheckMakoZipIo(
+      io=(IoIntf*)createAndCheckMakoZipIo(
          getLspZipReader(),
          "'the limited embedded mako.zip'. "
          "Warning: key features will be missing!");
+      *limitedZip = TRUE;
 #endif
    }
    if(!io)
-      errQuit("Fatal error: cannot find mako.zip.\n");
+      errQuit("Fatal error: cannot mount mako.zip.\n");
    return io;
 }
 
@@ -1479,6 +1490,10 @@ static int pushUniqueKey(lua_State*L)
 }
 #endif
 
+/* This function executes ".config" in the embedded ZIP file in tpm.h,
+   the Lua TPM implementation. The .config script returns a function
+   we use when pushing key material to the Lua TPM implementation.
+ */
 static void installTPM(lua_State* L)
 {
    int status;
@@ -1496,16 +1511,28 @@ static void installTPM(lua_State* L)
    }
    lua_pushvalue(L, -1); /* TPM func */
 
-   /* Push the primary secret key material as a Lua string */
-#if 0
-   /* The naive method, ref:
-      https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
+   /*
+     Push the primary secret key material as a Lua string. 
+
+     A basic approach would be to push the secret key onto the Lua stack directly using:
+     lua_pushlstring(L, (char*)ENCRYPTIONKEY, sizeof(ENCRYPTIONKEY));
+
+     However, this naive approach has significant security risks, as
+     it could potentially expose the key in compiled code, making it
+     feasible to extract, as discussed in detail here:
+     https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
+
+     To mitigate this, we utilize White-box Cryptography (WBC) to
+     obfuscate the secret key material. The Lua TPM (Trusted Platform
+     Module) implementation doesn't require a specific fixed secret
+     key; the only requirement is that a pre-selected, randomly chosen
+     number remains consistent across reboots. This ensures
+     persistence without exposing the actual key.
+
+     The transformation applied below uses an S-box substitution
+     technique to obscure the key's value, adding an extra layer of
+     protection.
    */
-   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
-#else
-   /* White-box cryptography (WBC) transforming main secret. For extra
-    * security, change this code and keep the C code secret.
-    */
    baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
    {
       luaL_Buffer b;
@@ -1513,13 +1540,11 @@ static void installTPM(lua_State* L)
       U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
       for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
          /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
-         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
-         transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
+         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]] ^ ENCRYPTIONKEY[i];
       }
       luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
       luaL_pushresult(&b);
    }
-#endif
 
    if(lua_pcall(L, 1, 0, 0))
       goto L_cfgerr;
@@ -1534,7 +1559,7 @@ static void installTPM(lua_State* L)
       if(lua_pcall(L, 1, 0, 0))
          goto L_cfgerr;
    }
-   lua_pushboolean(L,TRUE);
+   lua_pushboolean(L,TRUE); /* signal end of key material */
    if(lua_pcall(L, 1, 0, 0))
       goto L_cfgerr;
    baAssert(0 == lua_gettop(L));
@@ -1563,6 +1588,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 #ifdef USE_DLMALLOC
    static char poolBuf[4*1024*1024]; /* Set your required size */
 #endif
+   BaBool limitedZip=FALSE;
 
 #if USE_DBGMON
   L_restart:
@@ -1726,10 +1752,20 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       execpath=findExecPath(argc>0?argv[0]:0);
    if(0 != daemonMode)
       openTraceFile(0);
-
+#ifdef USE_ZIPSIGNATURE
+   /* Enabled in MakoExt.ch */
+   blp.zipPubKey = zipPubKey;
+#endif
+#ifdef USE_ZIPBINPWD
+   /* Enabled in MakoExt.ch */
+   blp.zipBinPwd = zipBinPwd;
+   blp.zipBinPwdLen = sizeof(zipBinPwd);
+   blp.pwdRequired = ZIPBINPWD_REQUIRED;
+#endif
    /* Create an LSP virtual machine.
     */
-   blp.vmio = openVmIo((IoIntf*)&diskIo,execpath,cfgfname);
+   blp.vmio = openVmIo(blp.zipPubKey, (IoIntf*)&diskIo, execpath, cfgfname,
+                       &limitedZip);
    blp.server = &server;           /* pointer to a HttpServer */
    blp.timer = &timer;             /* Pointer to a BaTimer */
    L = balua_create(&blp);        /* create the Lua state */
@@ -1836,9 +1872,12 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       errQuit("mako.zip version err");
    }
    lua_pop(L, 1); /* Version */
-   luaFuncRef = luaL_ref(L, LUA_REGISTRYINDEX);
-   installTPM(L);
-   lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef);
+   if( ! limitedZip )
+   {
+      luaFuncRef = luaL_ref(L, LUA_REGISTRYINDEX);
+      installTPM(L);
+      lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef);
+   }
    if(lua_pcall(L, 0, 1, 0))
       goto L_cfgerr;
    if(!lua_isfunction(L, -1))

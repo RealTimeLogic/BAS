@@ -44216,6 +44216,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
             {
                U8 savedsigmask;
 
+               if (paramnamed < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                
                prminstwrite  = (U16)(*registeredevent++) << 8;
                prminstwrite += *registeredevent++;
@@ -44334,6 +44339,11 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          #endif  
 
          default:  
+            if (len < paramnamed)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
             len -= paramnamed;
             registeredevent += paramnamed;
             break;
@@ -44448,6 +44458,11 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
          case clkdmclear:
             if (paramnamed)
             {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                paramnamed = (U16)(*registeredevent++) << 8;
                paramnamed += *registeredevent++;
                len -= 2;
@@ -44576,6 +44591,11 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
             if (SharkSsl_isServer(o->sharkSsl))
             {
                
+               if (len < paramnamed)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
                len -= paramnamed;
                registeredevent += paramnamed;
             }
@@ -44602,6 +44622,11 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
          
          default:  
             
+            if (len < paramnamed)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
             len -= paramnamed;
             registeredevent += paramnamed;
             break;
@@ -72460,8 +72485,7 @@ JConstrCont_setConstraints(JConstrCont* o, JVal* segbitsfault, JErr* err)
       noOfMethods = JVal_getLength(methodsVal, err);  
       mcbsp2sidetone = JVal_getLength(domaincreate, err);
       urlsVal = JVal_getArray(urlsVal, err);  
-      methodsVal = JVal_getArray(methodsVal, err);  
-      domaincreate = JVal_getArray(domaincreate, err);
+      domaincreate = mcbsp2sidetone ? JVal_getArray(domaincreate, err) : 0;
       if(noOfUrls == 0)
       {
          JErr_setTooFewParams(err); 
@@ -72492,14 +72516,22 @@ JConstrCont_setConstraints(JConstrCont* o, JVal* segbitsfault, JErr* err)
          newRes->noOfRoles=(S16)mcbsp2sidetone;
          newRes->methods=(U16*)JUserCont_copyRoles(
             o->userCont,newRes->roles,domaincreate,err);
-         for(i=0,val=methodsVal; val; i++, val=JVal_getNextElem(val))
+         if(noOfMethods)
          {
-            gpio1config = JVal_getString(val, err);
-            if(gpio1config)
+            methodsVal = JVal_getArray(methodsVal, err);  
+            for(i=0,val=methodsVal;
+                val && !JErr_isError(err) ;
+                i++, val=JVal_getNextElem(val))
             {
-               newRes->methods[i]=(U16)HttpMethod_a2m(gpio1config);
+               gpio1config = JVal_getString(val, err);
+               if(gpio1config)
+               {
+                  newRes->methods[i]=(U16)HttpMethod_a2m(gpio1config);
+               }
             }
          }
+         else
+            i=0;
          if(JErr_isError(err))
          {
             AllocatorIntf_free(o->alloc, newRes);
@@ -97830,6 +97862,10 @@ _balua_create(const BaLua_param* p, int dummywrite)
    lua_State *L;
    BaLua_param* pc; 
    pc=(BaLua_param*)baMalloc(sizeof(BaLua_param));
+   pc->zipBinPwd = p->zipBinPwd;
+   pc->zipBinPwdLen = p->zipBinPwdLen;
+   pc->pwdRequired = p->pwdRequired;
+
 #ifdef NO_BA_SERVER
    L=p->L;
    baAssert(L);
@@ -98334,6 +98370,57 @@ void luaopen_ba_aes(lua_State* L) { (void)L; }
 #ifdef NO_BA_SERVER
 const LSharkSSLFuncs* lSharkSSLFuncs=0;
 #endif
+
+int
+baCheckZipSignature(const U8* bv1, U32 bv2, CspReader* guestconfigs)
+{
+   int sffsdrnandflash;
+   char* ptr;
+   U32 bv3 = 0x06054b50;
+   char* buf = baMalloc(512 + SHARKSSL_SHA256_HASH_LEN + 100);
+   if(!buf) return E_MALLOC;
+   if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs, buf, bv2-512, 512, 0)) )
+      goto L_err;
+   sffsdrnandflash = -1;
+   for(ptr = buf ; (ptr - buf) < 450 ; ptr++)
+   {
+      if( ! memcmp(&bv3, ptr, 4) ) 
+      {
+         U32 bv4;
+         U8* secondaryentry=(U8*)buf+512;
+         ptr+=22; 
+         bv4 = 512 - (ptr - buf);
+         if(bv4 < 100)
+         {
+            U32 idmapstart;
+            SharkSslSha256Ctx registermcasp;
+            U8* probeguestctl0=secondaryentry+SHARKSSL_SHA256_HASH_LEN;
+            memcpy(probeguestctl0, ptr, bv4);
+            bv2 -= bv4; 
+            SharkSslSha256Ctx_constructor(&registermcasp);
+            for(idmapstart=0; idmapstart < bv2 ; idmapstart += 512)
+            {
+               U32 devicelcdspi = (bv2 - idmapstart) > 512 ? 512 : bv2 - idmapstart;
+               if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs,buf,idmapstart,devicelcdspi,0)) )
+                  break;
+               SharkSslSha256Ctx_append(&registermcasp, (U8*)buf, devicelcdspi);
+            }
+            SharkSslSha256Ctx_finish(&registermcasp, secondaryentry);
+            if(SHARKSSL_ECDSA_OK != sharkssl_ECDSA_verify_hash(
+                  (SharkSslECCKey)bv1, probeguestctl0, bv4, secondaryentry,
+                  SHARKSSL_SHA256_HASH_LEN))
+            {
+               sffsdrnandflash = -1;
+            }
+         }
+         break;
+      }
+   }
+  L_err:
+   baFree(buf);
+   return sffsdrnandflash ? E_TLS_CRYPTOERR : 0;
+}
+
 
 static int
 cpuidledriver(lua_State *L, int i, const char *domainactivate, const char* err)
@@ -99048,19 +99135,13 @@ static int flashresource(lua_State *L)
    size_t len;
    const char* spinlockunlock = luaL_checklstring(L, 2, &len);
    ret = IoIntf_setPassword(io, spinlockunlock, (U16)len);
+   if(!ret)
+      ret = IoIntf_setPasswordProp(
+         io,balua_optboolean(L, 4, FALSE), balua_optboolean(L, 3, FALSE));
    lua_pushboolean(L, ret ? 0 : 1);
    return 1;
 }
 
-static int watchstyle(lua_State *L)
-{
-   int ret = -1;
-   IoIntf* io = baluaENV_checkIoIntf(L,1);
-   BaBool writeoutput = lua_toboolean (L, 2) ? 1 : 0;
-   ret = IoIntf_setPasswordProp(io, writeoutput, 0);
-   lua_pushboolean(L, ret ? 0 : 1);
-   return 1;
-}
 
 BA_API const char*
 balua_getStringField(lua_State *L, int ix, const char *k, const char *def)
@@ -99357,7 +99438,18 @@ m62332sendbit(LZipIo2Stream* o, lua_State* L)
 
 #endif 
 
-
+static int
+ZZTSTLZipIo_setPwd(IoIntf* zio, BaLua_param* p)
+{
+   int sffsdrnandflash = 0;
+   if(p->zipBinPwd)
+   {
+      sffsdrnandflash = IoIntf_setPassword(zio, (char*)p->zipBinPwd, p->zipBinPwdLen);
+      if(!sffsdrnandflash)
+         sffsdrnandflash = IoIntf_setPasswordProp(zio, p->pwdRequired, TRUE);
+   }
+   return sffsdrnandflash;
+}
 
 
 
@@ -99384,7 +99476,6 @@ static const luaL_Reg baiolib[] = {
    {"\154\157\141\144\146\151\154\145",   setupgpios},
    {"\144\157\146\151\154\145",     regsetaddress},
    {"\163\145\164\160\141\163\163\167\144",  flashresource},
-   {"\162\145\161\160\141\163\163\167\144",  watchstyle},
    {"\156\145\164\143\157\156\146",  topologymatrix},
 
    {NULL, NULL}
@@ -99430,8 +99521,15 @@ flushicache(lua_State *L)
    int sffsdrnandflash=-1;
    IoIntf* parentio=0;
    const char* gpio1config;
+   BaLua_param* p = baluaENV_getparam(L);
+   if(0 == lua_gettop(L))
+   {
+      lua_pushboolean(L, p->zipPubKey ? TRUE : FALSE);
+      lua_pushboolean(L, p->zipBinPwd ? TRUE : FALSE);
+      return 2;
+   }
 #ifdef ZIPIO2STREAM
-   if (baluaENV_isudtype(L, 1, BA_TIOINTF))
+   if(baluaENV_isudtype(L, 1, BA_TIOINTF))
    {
       parentio = baluaENV_checkIoIntf(L, 1);
       gpio1config = luaL_checkstring(L, 2);
@@ -99481,8 +99579,15 @@ flushicache(lua_State *L)
             LZipIo* zio = baLMalloc(L,sizeof(LZipIo));
             if(zio)
             {
-               if( (sffsdrnandflash=featuressetup(zio, parentio, gpio1config)) == 0 )
+               if(0==(sffsdrnandflash=featuressetup(zio, parentio, gpio1config)) &&
+                  0==(sffsdrnandflash=ZZTSTLZipIo_setPwd((IoIntf*)zio,p)) &&
+                  (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
+                      ((ZipReader*)&zio->reader)->size, (CspReader*)&zio->reader
+                   )))
+                  )
+               {
                   io->i = (IoIntf*)zio;
+               }
                else
                   baFree(zio);
             }
@@ -99496,8 +99601,13 @@ flushicache(lua_State *L)
          LZipIo2Stream* zio = baLMalloc(L,sizeof(LZipIo2Stream));
          if(zio)
          {
-            if( (sffsdrnandflash=m62332sendbit(zio, L)) == 0)
+            if( 0 == (sffsdrnandflash=m62332sendbit(zio, L)) &&
+                0 == (sffsdrnandflash=ZZTSTLZipIo_setPwd((IoIntf*)zio, p)) &&
+                (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
+                      zio->reader.size, (CspReader*)&zio->reader))))
+            {
                io->i = (IoIntf*)zio;
+            }
             else
                baFree(zio);
          }

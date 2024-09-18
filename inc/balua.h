@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5421 2023-04-11 19:13:35Z wini $
+ *   $Id: balua.h 5570 2024-09-18 14:12:05Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2024
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -142,18 +142,25 @@ struct BaTimer;
 struct LoginTracker;
 
 /** The startup and runtime parameters for a Barracuda Server Lua VM.
+    For param zipBinPwd and zipBinPwdLen, use
+    [binpwd2str](https://github.com/RealTimeLogic/BAS/blob/main/tools/binpwd2str.c)
+    for generating the password C code. See
+    [Signed and Encrypted ZIP files](@ref SignEncZip) for details.
 */
 typedef struct
 {
-      lua_State* L; /**< The lua universe */
-      HttpServer* server; /**< Pointer to server for this vm */
-      struct BaTimer* timer; /**< Timer bindings activated if not NULL. */
-      IoIntf* vmio; /**< The required VM (Lua) IO */
-      ThreadMutex* mutex; /**<The mutex used by the server's SoDisp */
-      struct LoginTracker* tracker; /**< The optional tracker */
-      int errHndRef; /**< Internal: The ba.seterrh(func) ref */
+   lua_State* L; /**< The lua universe */
+   HttpServer* server; /**< Pointer to server for this vm */
+   struct BaTimer* timer; /**< Timer bindings activated if not NULL. */
+   IoIntf* vmio; /**< The required VM (Lua) IO */
+   ThreadMutex* mutex; /**<The mutex used by the server's SoDisp */
+   struct LoginTracker* tracker; /**< The optional tracker */
+   int errHndRef; /**< Internal: The ba.seterrh(func) ref */
+   const U8* zipPubKey;  /**< Set when zip signature check enabled */
+   const U8* zipBinPwd; /**< Set the binary password for all ZIP files */
+   U16 zipBinPwdLen; /**< Binary password length */
+   BaBool pwdRequired; /**< Set to true to enforce password on all files. */
 } BaLua_param;
-
 
 typedef struct
 {
@@ -395,6 +402,9 @@ BA_API void ba_ldbgmon(
    lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData);
 BA_API void balua_revcon(lua_State* L);
 BA_API void balua_mallinfo(lua_State* L);
+struct CspReader;
+BA_API int baCheckZipSignature(
+   const U8* pubKey, U32 fileSize, struct CspReader* reader);
 
 
 #ifdef __cplusplus
