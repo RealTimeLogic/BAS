@@ -99439,7 +99439,7 @@ m62332sendbit(LZipIo2Stream* o, lua_State* L)
 #endif 
 
 static int
-ZZTSTLZipIo_setPwd(IoIntf* zio, BaLua_param* p)
+handlecorrupted(IoIntf* zio, BaLua_param* p)
 {
    int sffsdrnandflash = 0;
    if(p->zipBinPwd)
@@ -99580,7 +99580,7 @@ flushicache(lua_State *L)
             if(zio)
             {
                if(0==(sffsdrnandflash=featuressetup(zio, parentio, gpio1config)) &&
-                  0==(sffsdrnandflash=ZZTSTLZipIo_setPwd((IoIntf*)zio,p)) &&
+                  0==(sffsdrnandflash=handlecorrupted((IoIntf*)zio,p)) &&
                   (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
                       ((ZipReader*)&zio->reader)->size, (CspReader*)&zio->reader
                    )))
@@ -99602,7 +99602,7 @@ flushicache(lua_State *L)
          if(zio)
          {
             if( 0 == (sffsdrnandflash=m62332sendbit(zio, L)) &&
-                0 == (sffsdrnandflash=ZZTSTLZipIo_setPwd((IoIntf*)zio, p)) &&
+                0 == (sffsdrnandflash=handlecorrupted((IoIntf*)zio, p)) &&
                 (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
                       zio->reader.size, (CspReader*)&zio->reader))))
             {
@@ -115214,7 +115214,7 @@ resourceonenand(lua_State *L)
       nandflashpartition = balua_getStringField(L, 1, "\143\165\162\166\145", nandflashpartition);
       enablekernel = (U16)balua_getIntField(L, 1, "\142\151\164\163", 2048);
       lua_getfield(L, 1, "\162\156\144");
-      rngh.rnd=luaL_optlstring(L, -1, 0, &rngh.len); 
+      rngh.rnd=luaL_optlstring(L, -1, 0, &rngh.len);
    }
    else
       rngh.rnd=0;
