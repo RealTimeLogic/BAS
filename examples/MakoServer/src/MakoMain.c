@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5571 2024-09-21 19:59:33Z wini $
+ *   $Id: MakoMain.c 5577 2024-09-30 22:42:38Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2024
  *
@@ -1139,7 +1139,7 @@ printUsage()
 " -s                       - Run in daemon mode without detatching from the console\n"
 " -u username              - Username to run as\n"
 #endif
-" script                   - Execute the script and exit"
+" script                   - Execute the script and exit\n"
    };
    fprintf(stderr,"%s",usage);
    exit(1);

@@ -72518,8 +72518,8 @@ JConstrCont_setConstraints(JConstrCont* o, JVal* segbitsfault, JErr* err)
             o->userCont,newRes->roles,domaincreate,err);
          if(noOfMethods)
          {
-            methodsVal = JVal_getArray(methodsVal, err);  
-            for(i=0,val=methodsVal;
+            val = JVal_getArray(methodsVal, err);  
+            for(i=0 ;
                 val && !JErr_isError(err) ;
                 i++, val=JVal_getNextElem(val))
             {
@@ -75597,13 +75597,13 @@ resetbluetooth(RecIoIter* fdc37m81xconfig,const char* forcereload,const char* to
                      buf = (char*)AllocatorIntf_malloc(fdc37m81xconfig->alloc, &icachealiases);
                      if(buf)
                      {
-                        BaFileSize fileSize = st->size;
-                        while(fileSize != 0)
+                        BaFileSize interfaceregister = st->size;
+                        while(interfaceregister != 0)
                         {
                            size_t readS;
-                           size_t chunkS = fileSize > 2048 ?
-                              2048 : (size_t)fileSize;
-                           fileSize -= chunkS;
+                           size_t chunkS = interfaceregister > 2048 ?
+                              2048 : (size_t)interfaceregister;
+                           interfaceregister -= chunkS;
                            if( (sffsdrnandflash = in->readFp(in, buf, chunkS, &readS))||
                                chunkS != readS)
                            {
@@ -75611,7 +75611,7 @@ resetbluetooth(RecIoIter* fdc37m81xconfig,const char* forcereload,const char* to
                                  o->cmd, baErr2HttpCode(sffsdrnandflash),
                                  "\106\141\151\154\145\144\040\141\146\164\145\162\040\162\145\141\144\151\156\147\040" BA_FILE_FMT
                                  "\040\142\171\164\145\163\040\146\162\157\155\040\045\163",
-                                 st->size-fileSize, forcereload);
+                                 st->size-interfaceregister, forcereload);
                               break;
                            }
                            if( (sffsdrnandflash = out->writeFp(out, buf, chunkS)) != 0 )
@@ -75620,7 +75620,7 @@ resetbluetooth(RecIoIter* fdc37m81xconfig,const char* forcereload,const char* to
                                  o->cmd,baErr2HttpCode(sffsdrnandflash),
                                  "\106\141\151\154\145\144\040\141\146\164\145\162\040\167\162\151\164\151\156\147\040" BA_FILE_FMT
                                  "\040\142\171\164\145\163\040\164\157\040\045\163",
-                                 st->size-fileSize, to);
+                                 st->size-interfaceregister, to);
                               break;
                            }
                         }
@@ -98372,42 +98372,42 @@ const LSharkSSLFuncs* lSharkSSLFuncs=0;
 #endif
 
 int
-baCheckZipSignature(const U8* bv1, U32 bv2, CspReader* guestconfigs)
+baCheckZipSignature(const U8* deviceassert, U32 interfaceregister, CspReader* guestconfigs)
 {
    int sffsdrnandflash;
    char* ptr;
-   U32 bv3 = 0x06054b50;
+   U32 restorecontext = 0x06054b50;
    char* buf = baMalloc(512 + SHARKSSL_SHA256_HASH_LEN + 100);
    if(!buf) return E_MALLOC;
-   if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs, buf, bv2-512, 512, 0)) )
+   if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs, buf, interfaceregister-512, 512, 0)) )
       goto L_err;
    sffsdrnandflash = -1;
    for(ptr = buf ; (ptr - buf) < 450 ; ptr++)
    {
-      if( ! memcmp(&bv3, ptr, 4) ) 
+      if( ! memcmp(&restorecontext, ptr, 4) ) 
       {
-         U32 bv4;
+         U32 systemstring;
          U8* secondaryentry=(U8*)buf+512;
          ptr+=22; 
-         bv4 = 512 - (ptr - buf);
-         if(bv4 < 100)
+         systemstring = 512 - (ptr - buf);
+         if(systemstring < 100)
          {
             U32 idmapstart;
             SharkSslSha256Ctx registermcasp;
             U8* probeguestctl0=secondaryentry+SHARKSSL_SHA256_HASH_LEN;
-            memcpy(probeguestctl0, ptr, bv4);
-            bv2 -= bv4; 
+            memcpy(probeguestctl0, ptr, systemstring);
+            interfaceregister -= systemstring; 
             SharkSslSha256Ctx_constructor(&registermcasp);
-            for(idmapstart=0; idmapstart < bv2 ; idmapstart += 512)
+            for(idmapstart=0; idmapstart < interfaceregister ; idmapstart += 512)
             {
-               U32 devicelcdspi = (bv2 - idmapstart) > 512 ? 512 : bv2 - idmapstart;
+               U32 devicelcdspi = (interfaceregister - idmapstart) > 512 ? 512 : interfaceregister - idmapstart;
                if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs,buf,idmapstart,devicelcdspi,0)) )
                   break;
                SharkSslSha256Ctx_append(&registermcasp, (U8*)buf, devicelcdspi);
             }
             SharkSslSha256Ctx_finish(&registermcasp, secondaryentry);
             if(SHARKSSL_ECDSA_OK != sharkssl_ECDSA_verify_hash(
-                  (SharkSslECCKey)bv1, probeguestctl0, bv4, secondaryentry,
+                  (SharkSslECCKey)deviceassert, probeguestctl0, systemstring, secondaryentry,
                   SHARKSSL_SHA256_HASH_LEN))
             {
                sffsdrnandflash = -1;
@@ -102560,6 +102560,8 @@ typedef struct
       DoubleList list;
       HttpResponse* resp;
       int type; /* 1:function, 2:compress */
+      int funcRef;
+      int threadRef;
       XrspData* last;
       int nodeSize;
       int totalSize;
@@ -102595,19 +102597,15 @@ inteliommu(BufPrint* fdc37m81xconfig, int stateparam)
    (void)stateparam;
    if(x->type == 1)
    {
-      if(lua_type(L, 1) == LUA_TFUNCTION)
+      int hugepageadjust;
+      lua_rawgeti(L, LUA_REGISTRYINDEX, x->funcRef);
+      lua_pushlstring(L, fdc37m81xconfig->buf, fdc37m81xconfig->cursor);
+      if(lua_resume(L, 0, 1, &hugepageadjust) == 0)
       {
-         int hugepageadjust;
-         lua_pushvalue(L, -1);
-         lua_pushlstring(L, fdc37m81xconfig->buf, fdc37m81xconfig->cursor);
-         if(lua_resume(L, 0, 1, &hugepageadjust) == 0)
-         {
-            if( ! lua_isboolean(L, -1) || lua_toboolean(L, -1) )
-               handlersetup=0;
-         }
-         lua_pop(L, hugepageadjust);
+         if( ! lua_isboolean(L, -1) || lua_toboolean(L, -1) )
+            handlersetup=0;
       }
-      lua_settop (L, 1);
+      lua_settop(L, 0);
    }
    if(handlersetup)
       x->type = 0; 
@@ -102644,7 +102642,7 @@ mmgpioresource(BufPrint* fdc37m81xconfig, int stateparam)
 }
 
 static void
-suspendenable(Xrsp* x)
+suspendenable(lua_State* L, Xrsp* x)
 {
    DoubleLink* d;
    while( (d=DoubleList_removeFirst(&x->list)) != 0 )
@@ -102659,14 +102657,23 @@ suspendenable(Xrsp* x)
       deflateEnd(&x->strm);
       x->type=0;
    }
+   if(x->funcRef)
+   {
+      luaL_unref(L, LUA_REGISTRYINDEX, x->funcRef);
+      x->funcRef=0;  
+   }
+   if(x->threadRef)
+   {
+      luaL_unref(L, LUA_REGISTRYINDEX, x->threadRef);
+      x->threadRef=0;  
+   }
 }
 
 
 static int
 helpererrata(lua_State* L)
 {
-   suspendenable((Xrsp*)baluaENV_checkudata(
-                      L,1,BA_TSETRESPONSE));
+   suspendenable(L, (Xrsp*)baluaENV_checkudata(L,1,BA_TSETRESPONSE));
    return 0;
 }
 
@@ -102740,7 +102747,7 @@ segmentconfig(lua_State* L)
    {
       baAssert(0);
    }
-   suspendenable(x);
+   suspendenable(L,x);
    return 1;
 }
 
@@ -102750,7 +102757,7 @@ wm97xxpdata(lua_State* L)
 {
    Xrsp* x = (Xrsp*)baluaENV_checkudata(L,1,BA_TSETRESPONSE);
    lua_pushboolean(L, HttpResponse_removeResponseBuf(x->resp) ? FALSE : TRUE);
-   suspendenable(x);
+   suspendenable(L,x);
    return 1;
 }
 
@@ -104216,13 +104223,10 @@ singledefault(lua_State* L)
    {
       lua_State* Lt;
       x->type=1; 
-      lua_createtable(L, 1, 0); 
       Lt=lua_newthread(L); 
-      lua_rawseti(L, -2, 1); 
-      lua_setuservalue(L, -2); 
-      
+      x->threadRef=luaL_ref(L, LUA_REGISTRYINDEX);
       lua_pushvalue(L, 2);
-      lua_xmove(L, Lt, 1);
+      x->funcRef=luaL_ref(L, LUA_REGISTRYINDEX);
       BufPrint_constructor((BufPrint*)x, (void*)Lt, inteliommu);
    }
    else
