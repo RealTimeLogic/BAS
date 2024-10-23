@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5570 2024-09-18 14:12:05Z wini $
+ *   $Id: xedge.c 5582 2024-10-22 22:18:16Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -87,7 +87,11 @@
 #ifndef ZIPBINPWD_REQUIRED
 #define ZIPBINPWD_REQUIRED FALSE
 #endif
-#include "zipbinpwd.h"
+#include "ZipBinPwd.h"
+#endif
+
+#ifdef USE_ZIPSIGNATURE
+#include "ZipPublicKey.h"
 #endif
 
 /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
@@ -326,6 +330,10 @@ createVmIo()
 #else
    /* BAIO_EZIP: for Xedge release build. */
    zipReader = getLspZipReader();
+#ifdef USE_ZIPSIGNATURE
+   if(baCheckZipSignature(zipPubKey, zipReader->size, (CspReader*)zipReader))
+      return 0; /* ZIP signature failed */
+#endif
 #endif
    if( ! CspReader_isValid((CspReader*)zipReader) )
       baFatalE(FE_USER_ERROR_1, __LINE__);
@@ -379,16 +387,15 @@ static void pushPrimarySecret(lua_State* L)
    server. If called with string values (binary), the Lua function
    collects the passed-in string values as long as the function is
    called. When the function is finally called with the argument
-   'true', it calculates a pre-master key based on the passed-in
-   string values and starts the server.
+   'true', it calculates a device unique pre-master key based on the
+   passed-in string values and starts the server.
 
-   The function in xedge.lua also calculates an AES key based only on
-   the first argument passed in. This AES key is used for
-   encrypting/decrypting components of xedge.conf. The first argument
-   passed in should be the same for all devices to make it possible to
-   copy xedge.conf between devices. The first argument passed in the
-   current setup is the ENCRYPTIONKEY, which is embedded in the
-   firmware.
+   The function in xedge.lua also calculates a non device specific
+   (global) AES key based on the first argument (the main secret in
+   EncryptionKey.h). This AES key is used for encrypting/decrypting
+   components of xedge.conf. The first argument passed in should be
+   the same for all devices to make it possible to copy xedge.conf
+   between devices.
 */
 static int
 initXedge(lua_State* L, int initXedgeFuncRef)
@@ -406,6 +413,14 @@ initXedge(lua_State* L, int initXedgeFuncRef)
 }
 
 
+/* Add additional secrets for the device's unique TPM master key.
+ */
+static void addSecret(XedgeOpenAUX* aux, const U8* secret, size_t slen)
+{
+   lua_pushlstring(aux->L,(char*)secret,slen);
+   initXedge(aux->L, aux->initXedgeFuncRef);
+}
+
 /* Wrapper for calling function xedgeOpenAUX.
  * Two xedgeOpenAUX examples: led.c and AsynchLua.c.
  */
@@ -418,7 +433,7 @@ callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
    XedgeOpenAUX aux = {
       L,
       dio,
-      initXedge,
+      addSecret,
       initXedgeFuncRef,
       0
    };
@@ -428,7 +443,7 @@ callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
    {
       lua_pushcfunction(L, aux.xedgeCfgFile);
       /* Register the open/save cfg file */
-      aux.initXedge(aux.L, aux.initXedgeFuncRef);
+      initXedge(L, initXedgeFuncRef);
    }
 }
 #endif
@@ -486,10 +501,12 @@ barracuda(void)
    /* The optional timer is useful in LSP code */
    BaTimer_constructor(&timer, &mutex, BA_STACKSZ, 25, ThreadPrioNormal, 0);
    
-   /* Create a LSP virtual machine.
+   /* Create a Lua (LSP) virtual machine.
     */
    memset(&blp, 0, sizeof(blp));
    blp.vmio = createVmIo();  /* The required IO */
+   if (!blp.vmio)
+      return; /* ZIP signature failed */
    blp.server = &server;     /* pointer to a HttpServer */
    blp.timer = &timer;       /* Pointer to a BaTimer */
 #ifdef USE_ZIPBINPWD
@@ -497,6 +514,10 @@ barracuda(void)
    blp.zipBinPwd = zipBinPwd;
    blp.zipBinPwdLen = sizeof(zipBinPwd);
    blp.pwdRequired = ZIPBINPWD_REQUIRED;
+#endif
+#ifdef USE_ZIPSIGNATURE
+   /* Must be set in ZipPublicKey.h */
+   blp.zipPubKey = zipPubKey;
 #endif
    L = balua_create(&blp);   /* create the Lua state */
 
@@ -509,7 +530,6 @@ barracuda(void)
 #elif defined(ENABLE_LUA_TRACE)
    lua_sethook(L, lHook, LUA_MASKLINE, 0);
 #endif
-
 
    /* Install optional IO interfaces */
    balua_iointf(L, "net",  (IoIntf*)&netIo);

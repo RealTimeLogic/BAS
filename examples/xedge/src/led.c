@@ -1,5 +1,20 @@
 /* 
-  This example shows how to create a very simple Lua binding for
+  Example Overview:
+   This code demonstrates how to:
+    1. Create Lua bindings to interface with C code
+    2. Utilize the custom Xedge configuration file API for
+       reading/writing the Xedge configuration file
+    3. Add additional secrets for TPM key generation
+    4. Integrate an embedded, read-only ZIP file system
+*/
+
+#include "xedge.h"
+#include <sys/stat.h>
+
+/*
+  Ex 1. Create Lua bindings to interface with C code.
+
+  The LED_ functions show how to create a very simple Lua binding for
   controlling one LED.
 
    Code below copied from:
@@ -12,10 +27,6 @@
  Auto generation:
     https://realtimelogic.com/swig/
 */
-
-
-#include "xedge.h"
-#include <sys/stat.h>
 
 /********* Simulated HW **********/
 static int ledState=0;
@@ -53,7 +64,9 @@ static int LED_getLed(lua_State* L)
 /**************  END LED API CODE **************************/
 
 
-/* Optional enhancement: Read or write the Xedge configuration file.
+/* 
+   Ex 2. Utilize the custom Xedge configuration file API for
+      reading/writing the Xedge configuration file.
 
    This optional feature can be utilized when the code is compiled
    with NO_BAIO_DISK (no file system API) or to enhance the security
@@ -68,6 +81,7 @@ static int LED_getLed(lua_State* L)
    file on the file system; however, for a firmware release build, we
    recommend using a separate flash partition, ideally within the
    microcontroller's flash memory, to maximize security.
+   Note: this file can be read only.
  */
 static int xedgeCfgFile(lua_State* L)
 {
@@ -110,42 +124,99 @@ static int xedgeCfgFile(lua_State* L)
    return 2;
 }
 
+ZipReader* hello(void); /* Ex 4: See auto generated code below */
 
 /*
   The function below is called by the Xedge startup code.
 */
 int xedgeOpenAUX(XedgeOpenAUX* aux)
 {
-   static const luaL_Reg reg[] = {
+   static const luaL_Reg ledReg[] = {
       {"setLed", LED_setLed},
       {"getLed", LED_getLed},
       {NULL, NULL}
    };
-   /* Install this API as a global variable */
-   luaL_newlib(aux->L, reg);
+   /* Ex1: Install the LED API as a global variable */
+   luaL_newlib(aux->L, ledReg);
    lua_setglobal(aux->L, "LED");
 
-
-   /* Install the optional config file handler. See comments above */
+   /* Ex2: Install the optional config file handler. See function and comments above */
    aux->xedgeCfgFile = xedgeCfgFile;
 
-   /* softTPM settings: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
-    * When using the softTPM, in addition to the main secret you must
-    * set in EncryptionKey.h, additional secrets can be added to the
-    * logic in xedge.lua that calculates the pre-master key. At least
-    * one key should be a fixed ID specific to the device. It could be
-    * the Ethernet MAC address or any other unique ID. In the ESP32
-    * reference port, we use "eFUSE Registers". Note that you cannot
-    * use random generated data, as secret(s) must be persistent.
+   /* Ex 3. Add additional secrets for TPM key generation
+      Config TPM: https://realtimelogic.com/ba/examples/xedge/readme.html#security
+      TPM API: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
+      When using the softTPM, in addition to the main secret you must
+      set in EncryptionKey.h, additional secrets can be added to the
+      logic in xedge.lua that calculates the pre-master key. At least
+      one key should be a fixed ID specific to the device. It could be
+      the Ethernet MAC address or any other unique ID. In the ESP32
+      reference port, we use "eFUSE Registers". Note that you cannot
+      use random generated data, as secret(s) must be persistent.
     */
 #ifndef NO_ENCRYPTIONKEY
    const char secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
-   lua_pushlstring(aux->L,secret,sizeof(secret));
-   aux->initXedge(aux->L, aux->initXedgeFuncRef); /* Send secret to Lua code */
-
-   lua_pushstring(aux->L,"You can add any number of secret values");
-   aux->initXedge(aux->L, aux->initXedgeFuncRef);
+   aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
+   aux->addSecret(aux, "You can add any number of secrets", 33);
 #endif
 
+   /* Ex 4: Add an embedded ZIP file (read only file system)
+      The content of hello.txt (see embedded zip file below) can be
+      printed using Lua as follows:
+      print(ba.mkio"hello-handle":open"hello.txt":read"a")
+   */
+   balua_installZIO(aux->L, "hello-handle", hello());
+
+   return 0; /* OK */
+}
+
+
+/* Ex 4: Add an embedded ZIP file (read only file system)
+   The C code below was generated as follows:
+   echo hello > hello.txt
+   zip hello.zip hello.txt
+   bin2c -z hello hello.zip hello.c
+
+   Ref bin2c: https://realtimelogic.com/downloads/bin2c/
+
+   The content from hello.c can be found below:
+*/
+
+
+/****** The C array below contains data from file: hello.zip *****/
+static const U8 cspPages[] = {
+(U8)0x50,(U8)0x4B,(U8)0x03,(U8)0x04,(U8)0x14,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x00,(U8)0x00,(U8)0x5C,(U8)0x75,(U8)0x50,(U8)0x59,(U8)0x86,(U8)0xA6
+,(U8)0x10,(U8)0x36,(U8)0x05,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x05,(U8)0x00
+,(U8)0x00,(U8)0x00,(U8)0x09,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x68,(U8)0x65
+,(U8)0x6C,(U8)0x6C,(U8)0x6F,(U8)0x2E,(U8)0x74,(U8)0x78,(U8)0x74,(U8)0x68
+,(U8)0x65,(U8)0x6C,(U8)0x6C,(U8)0x6F,(U8)0x50,(U8)0x4B,(U8)0x01,(U8)0x02
+,(U8)0x14,(U8)0x00,(U8)0x14,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x5C,(U8)0x75,(U8)0x50,(U8)0x59,(U8)0x86,(U8)0xA6,(U8)0x10,(U8)0x36
+,(U8)0x05,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x05,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x09,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x00,(U8)0x00,(U8)0x20,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x00,(U8)0x00,(U8)0x68,(U8)0x65,(U8)0x6C,(U8)0x6C,(U8)0x6F,(U8)0x2E
+,(U8)0x74,(U8)0x78,(U8)0x74,(U8)0x50,(U8)0x4B,(U8)0x05,(U8)0x06,(U8)0x00
+,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x01,(U8)0x00,(U8)0x01,(U8)0x00,(U8)0x37
+,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x2C,(U8)0x00,(U8)0x00,(U8)0x00,(U8)0x00
+,(U8)0x00
+};
+
+
+static int
+DataZipReader_diskRead(
+   CspReader* o,void* data,U32 offset,U32 size,int blockStart)
+{
+   (void)o;
+   (void)blockStart;
+   memcpy(data, cspPages+offset, size);
    return 0;
+}
+ZipReader* hello(void)
+{
+   static ZipReader zipReader;
+   ZipReader_constructor(&zipReader,DataZipReader_diskRead,sizeof(cspPages));
+   CspReader_setIsValid(&zipReader);
+   return &zipReader;
 }

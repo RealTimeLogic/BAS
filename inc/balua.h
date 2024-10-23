@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5570 2024-09-18 14:12:05Z wini $
+ *   $Id: balua.h 5581 2024-10-21 23:22:49Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2024
  *
@@ -366,11 +366,14 @@ enum BaUserDataTypes {
    BA_TASYNCRESP,
    BA_TDIR_REDIRECTOR,
    BA_TDIR_TRACELOGGER,
-   BA_DBGMON_NEWIO_CB /* ldbgmon.c */
+   BA_DBGMON_NEWIO_CB, /* ldbgmon.c */
+   BA_IOINTFPTRTAB /* balua_installZIO */
 };
 
 
-/** LHttpDir is the HttpDir instance used by Lua bindings and can be used by advanced Lua bindings creating new HttpDir type Lua interfaces. 
+/** LHttpDir is the HttpDir instance used by Lua bindings and can be
+    used by advanced Lua bindings creating new HttpDir type Lua
+    interfaces.
 <pre>
 LHttpDir and Lua userdata memory layout:
 +-----------+
@@ -395,6 +398,7 @@ typedef struct LHttpDir
 
 BA_API int LHttpResRdr_loadLsp(
    lua_State* L, IoIntf* io, const char* pathname, IoStat* st);
+/** Install the \ref UBJSONRef "UBJSON" lua api */
 BA_API void balua_ubjson(lua_State* L);
 BA_API void balua_luaio(lua_State* L);
 BA_API void luaopen_ba_redirector(lua_State *L);
@@ -403,8 +407,36 @@ BA_API void ba_ldbgmon(
 BA_API void balua_revcon(lua_State* L);
 BA_API void balua_mallinfo(lua_State* L);
 struct CspReader;
+
+/**
+ * @brief Verifies the signature of a ZIP file using a public key.
+ *
+ * This function checks the signature of a ZIP file using the provided public key.
+ * It reads data from the given CspReader and validates the ZIP file's signature.
+ *
+ * @param pubKey Pointer to the public key used for signature verification.
+ * @param fileSize Size of the public key.
+ * @param reader Pointer to the CspReader structure used for reading the ZIP file.
+ * @return Returns 0 on success, or an error code on failure.
+ */
 BA_API int baCheckZipSignature(
    const U8* pubKey, U32 fileSize, struct CspReader* reader);
+struct ZipReader;
+
+/**
+ * @brief Installs a Zip I/O interface into the Lua environment.
+ *
+ * This function registers a ZIP reader with the Lua environment,
+ * making it accessible via the provided name (the handle). It is
+ * typically used to enable the Lua function ba.mkio() to open
+ * embedded ZIP files.
+ *
+ * @param L Pointer to the Lua state.
+ * @param name Name under which the ZIP reader will be installed in
+ * Lua and made available to ba.mkio(name)
+ * @param reader Pointer to the ZipReader structure to be installed.
+ */
+BA_API void balua_installZIO(lua_State* L, const char* name, struct ZipReader* reader);
 
 
 #ifdef __cplusplus

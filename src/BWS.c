@@ -5276,8 +5276,9 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #endif
 #endif
 
-#define SHARKSSL_MAX_DIGEST_PAD_LEN                48   
-#define gpio2enable                       (16384 + 2048) 
+#define SHARKSSL_MAX_DIGEST_PAD_LEN                48     
+#define gpio2enable                       (16348 + 2048) 
+#define SHARKSSL_MAX_DECRYPTED_REC_LEN             16384  
 #define prefetchwrite                   SHARKSSL_MAX_BLOCK_LEN
 
 #define ckctlrecalc                16   
@@ -8112,6 +8113,12 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
    hsDataLen  = (U16)(*registeredevent++) << 8;
    hsDataLen += (*registeredevent++);
    atagsprocfs -= 3;
+
+   if (hsDataLen > SHARKSSL_MAX_DECRYPTED_REC_LEN)
+   {
+      SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+      goto regionfixed;
+   }
 
    if (atagsprocfs < hsDataLen)
    {

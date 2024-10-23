@@ -2,6 +2,9 @@
 /* TPM main secret key embedded in the binary.
    Change before compiling. The key can be any length,
    but must be > 255.
+
+   ref: https://realtimelogic.com/ba/examples/xedge/readme.html#TPM
+
 */
 
 static const U8 ENCRYPTIONKEY[] = {

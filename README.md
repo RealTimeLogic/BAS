@@ -242,6 +242,8 @@ gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
 
 - If you get a link error that includes dlmalloc, include src/dlmalloc.c in your build and initialize the allocator as shown in the file examples/HostInit/Main.c.
 
+- **Note:** The Xedge build instructions provided above are an excerpt from the [Xedge full SDK build guide](https://realtimelogic.com/ba/examples/xedge/readme.html), which includes additional details such as creating a release build. Please note that there are minor differences in file locations between the two.
+
 **Cross Compiling Xedge for Embedded Systems**
 
 Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included. See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.

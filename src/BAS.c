@@ -42840,8 +42840,9 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #endif
 #endif
 
-#define SHARKSSL_MAX_DIGEST_PAD_LEN                48   
-#define gpio2enable                       (16384 + 2048) 
+#define SHARKSSL_MAX_DIGEST_PAD_LEN                48     
+#define gpio2enable                       (16348 + 2048) 
+#define SHARKSSL_MAX_DECRYPTED_REC_LEN             16384  
 #define prefetchwrite                   SHARKSSL_MAX_BLOCK_LEN
 
 #define ckctlrecalc                16   
@@ -45676,6 +45677,12 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
    hsDataLen  = (U16)(*registeredevent++) << 8;
    hsDataLen += (*registeredevent++);
    atagsprocfs -= 3;
+
+   if (hsDataLen > SHARKSSL_MAX_DECRYPTED_REC_LEN)
+   {
+      SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+      goto regionfixed;
+   }
 
    if (atagsprocfs < hsDataLen)
    {
@@ -99518,9 +99525,11 @@ static int
 flushicache(lua_State *L)
 {
    IoStat st;
+   LZipIo* lzio;
    int sffsdrnandflash=-1;
    IoIntf* parentio=0;
-   const char* gpio1config;
+   const char* gpio1config=0;
+   ZipReader* zr=0;
    BaLua_param* p = baluaENV_getparam(L);
    if(0 == lua_gettop(L))
    {
@@ -99528,23 +99537,43 @@ flushicache(lua_State *L)
       lua_pushboolean(L, p->zipBinPwd ? TRUE : FALSE);
       return 2;
    }
+   if(1 == lua_gettop(L))
+   {
+      sffsdrnandflash = 0;
+      if(lua_isstring(L, 1))
+      {
+         gpio1config = lua_tostring(L, 1);
+         sffsdrnandflash=IOINTF_NOTFOUND;
+         balua_pushbatab(L);
+         lua_rawgeti(L, -1, BA_IOINTFPTRTAB);
+         if(LUA_TTABLE == lua_type(L,-1))
+         {
+            lua_pushstring(L,gpio1config);
+            lua_rawget(L, -2);
+            if(lua_islightuserdata(L,-1))
+            {
+               zr=(ZipReader*)lua_touserdata(L,-1);
+               sffsdrnandflash=0;
+            }
+            lua_pop(L,1);
+         }
+         lua_pop(L,2);
+      }
+      else
+      {
 #ifdef ZIPIO2STREAM
-   if(baluaENV_isudtype(L, 1, BA_TIOINTF))
+         luaL_checkudata(L, 1, LUA_FILEHANDLE); 
+#else
+         balua_typeerror(L, 1, lua_typename(L, LUA_TSTRING));
+#endif
+      }
+   }
+   else
    {
       parentio = baluaENV_checkIoIntf(L, 1);
       gpio1config = luaL_checkstring(L, 2);
       sffsdrnandflash = parentio->statFp(parentio, gpio1config, &st);
    }
-   else
-   {
-      luaL_checkudata(L, 1, LUA_FILEHANDLE); 
-      sffsdrnandflash = 0;
-   }
-#else
-   parentio = baluaENV_checkIoIntf(L, 1);
-   gpio1config = luaL_checkstring(L, 2);
-   sffsdrnandflash = parentio->statFp(parentio, gpio1config, &st);
-#endif
    if(!sffsdrnandflash)
    {
       
@@ -99576,24 +99605,44 @@ flushicache(lua_State *L)
          }
          else
          {
-            LZipIo* zio = baLMalloc(L,sizeof(LZipIo));
-            if(zio)
+            lzio = baLMalloc(L,sizeof(LZipIo));
+            if(lzio)
             {
-               if(0==(sffsdrnandflash=featuressetup(zio, parentio, gpio1config)) &&
-                  0==(sffsdrnandflash=handlecorrupted((IoIntf*)zio,p)) &&
+               if(0==(sffsdrnandflash=featuressetup(lzio, parentio, gpio1config)) &&
+                  0==(sffsdrnandflash=handlecorrupted((IoIntf*)lzio,p)) &&
                   (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
-                      ((ZipReader*)&zio->reader)->size, (CspReader*)&zio->reader
+                     ((ZipReader*)&lzio->reader)->size,(CspReader*)&lzio->reader
                    )))
                   )
                {
-                  io->i = (IoIntf*)zio;
+                  io->i = (IoIntf*)lzio;
                }
                else
-                  baFree(zio);
+                  baFree(lzio);
             }
             else
                sffsdrnandflash=IOINTF_MEM;
          }
+      }
+      else if(zr)
+      {
+         lzio = baLMalloc(L,sizeof(LZipIo));
+         if(lzio)
+         {
+            ZipIo* zio = (ZipIo*)lzio;
+            ZipIo_constructor(zio,zr,2048,AllocatorIntf_getDefault());
+            if( ZipErr_NoError == (sffsdrnandflash=ZipIo_getECode(zio)) &&
+                0 == (sffsdrnandflash=handlecorrupted((IoIntf*)zio, p)) &&
+                (!p->zipPubKey || 0 == (sffsdrnandflash=baCheckZipSignature(
+                   p->zipPubKey,zr->size,(CspReader*)zr))) )
+            {
+               io->i = (IoIntf*)lzio;
+            }
+            else
+               baFree(lzio);
+         }
+         else
+            sffsdrnandflash=IOINTF_MEM;
       }
 #ifdef ZIPIO2STREAM
       else
@@ -99810,6 +99859,29 @@ balua_createiointf(lua_State* L)
    lua_pop(L,1); 
    return &baio->i;
 }
+
+
+BA_API void
+balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
+{
+   balua_pushbatab(L);
+   lua_rawgeti(L, -1, BA_IOINTFPTRTAB);
+   if(LUA_TTABLE != lua_type(L,-1))
+   {
+      lua_pop(L,1);
+      lua_newtable(L);
+      lua_pushvalue(L,-1);
+      lua_rawseti(L, -3, BA_IOINTFPTRTAB);
+   }
+   dmpstk1(L, -1);
+   
+   lua_pushstring(L,gpio1config);
+   lua_pushlightuserdata(L,guestconfigs);
+   lua_settable(L, -3);
+
+   lua_pop(L,2);
+}
+
 
 
 #ifndef BA_LIB
