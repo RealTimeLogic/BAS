@@ -107,15 +107,23 @@ Use the Visual Studio project file found in: BAS/examples/MakoServer/VcMake; how
 See the tutorial [Embedded Linux Web Interface Design](https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design) for details; however, the server can be downloaded and compiled for Linux as follows:
 
 ```
-wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
 Download and cross-compile the code for (embedded) Linux as follows:
 
 ```
 export CC=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc
-wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 Change the above CC environment variable to your cross-compiler.
 ```
+
+Download and cross-compile the code, including [Lua GPIO bindings](https://github.com/vsergeev/lua-periphery), for embedded Linux as follows:
+
+```
+export CROSS_COMPILE=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/RaspberryPiBuild.sh)
+```
+
 
 #### Details:
 
