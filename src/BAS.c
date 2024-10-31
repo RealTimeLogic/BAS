@@ -99873,12 +99873,9 @@ balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
       lua_pushvalue(L,-1);
       lua_rawseti(L, -3, BA_IOINTFPTRTAB);
    }
-   dmpstk1(L, -1);
-   
    lua_pushstring(L,gpio1config);
    lua_pushlightuserdata(L,guestconfigs);
    lua_settable(L, -3);
-
    lua_pop(L,2);
 }
 
