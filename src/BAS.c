@@ -45691,7 +45691,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
       {
          
          o->flags |= SHARKSSL_FLAG_FRAGMENTED_HS_RECORD;
-         registeredevent -= 4;  
+         registeredevent -= traceentry;
          if (o->inBuf.data != registeredevent)
          {
             
@@ -92958,16 +92958,22 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
    registeredevent = o->inBuf.data;
    if (o->flags & SHARKSSL_FLAG_FRAGMENTED_HS_RECORD)
    {
-      baAssert(o->inBuf.temp);
-      registeredevent += o->inBuf.temp;
-      
-      backuppdata = ((U16)(*registeredevent++)) << 8;
-      backuppdata += *registeredevent++;
-      o->inBuf.dataLen = backuppdata;
-      
-      backuppdata = ((U16)(* registeredevent++)) << 8;
-      backuppdata += *registeredevent++ - 4;  
-      registeredevent += backuppdata;  
+      if (o->inBuf.temp > 0)  
+      {
+         registeredevent += o->inBuf.temp;
+         
+         backuppdata = ((U16)(*registeredevent++)) << 8;
+         backuppdata += *registeredevent++;
+         o->inBuf.dataLen = backuppdata;
+         
+         backuppdata = ((U16)(*registeredevent++)) << 8;
+         backuppdata += *registeredevent++ - 4;  
+         registeredevent += backuppdata;
+      }
+      else
+      {
+         o->flags &= ~SHARKSSL_FLAG_FRAGMENTED_HS_RECORD;  
+      }
    }
    else if (o->flags & clockgettime32)
    {
@@ -93222,7 +93228,19 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
             { 
                if (!(serial2platform(&o->inBuf)))
                {
-                  binaryheader(&o->inBuf);
+                  
+                  o->inBuf.data -= clkctrlmanaged;
+                  
+                  if (!(serial2platform(&o->inBuf)))
+                  {
+                     
+                     o->inBuf.dataLen += clkctrlmanaged;
+                     binaryheader(&o->inBuf);
+                     
+                     o->inBuf.dataLen -= clkctrlmanaged;
+                  }
+                  
+                  o->inBuf.data += clkctrlmanaged;
                   registeredevent = o->inBuf.data;
                }
                
@@ -93272,9 +93290,16 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
             {
                if (o->flags & SHARKSSL_FLAG_FRAGMENTED_HS_RECORD)
                {
-                  SHARKDBG_PRINTF(("\111\116\124\105\122\116\101\114\040\105\122\122\117\122\040\055\040\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  
+                  o->inBuf.data -= clkctrlmanaged;
+                  o->inBuf.dataLen = o->inBuf.temp + clkctrlmanaged;
+                  o->inBuf.temp = 0;
+                  ret = SharkSslCon_NeedMoreData;
                }
-               registerfixed(&o->inBuf);
+               else
+               {
+                  registerfixed(&o->inBuf);
+               }
             }
 
             #if SHARKSSL_TLS_1_3
