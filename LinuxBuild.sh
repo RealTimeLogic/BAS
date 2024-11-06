@@ -57,7 +57,7 @@ fi
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
     if [  -z ${SQLITEURL+x} ]; then
-	SQLITEURL="https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip"
+	SQLITEURL="https://www.sqlite.org/2024/sqlite-amalgamation-3470000.zip"
     fi
     SQLITE=${SQLITEURL##*/}
     pushd /tmp || abort $LINENO
