@@ -92745,8 +92745,8 @@ static void clusterpowerdown(U8 *commonalloc)
       n--;
    }
    #else  
-   baAssert(8 == SHARKSSL_SEQ_NUM_LEN);
    U32 seq;
+   baAssert(8 == SHARKSSL_SEQ_NUM_LEN);
 
    read64uint32(seq, commonalloc, 4);
    seq++;
@@ -101070,10 +101070,11 @@ ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycalle
       BufPrint_putc(b, '\173');
       lua_pushnil(L);
       while (lua_next(L,modifycaller))
-      {
+      {          
+         int earlyconsole;
          
          if(i++) BufPrint_putc(b, '\054');
-         int earlyconsole = lua_type(L, -2);
+         earlyconsole = lua_type(L, -2);
          if(earlyconsole == LUA_TSTRING)
             BufPrint_jsonString(b, lua_tostring(L,-2));
          else if (earlyconsole == LUA_TNUMBER)
@@ -103898,8 +103899,9 @@ kexeccleanup(lua_State* L)
    HttpRecData* rd = (HttpRecData*)lua_touserdata(L,lua_upvalueindex(2));
    size_t maxz = (int)lua_tointeger(L, lua_upvalueindex(3));
    size_t zleft;
+   char* buf;
    luaL_buffinit(L, &b);
-   char* buf=luaL_prepbuffsize(&b, maxz);
+   buf=luaL_prepbuffsize(&b, maxz);
    for(zleft = maxz ; zleft != 0 ; )
    {
       S32 rec = HttpRecData_read(rd, buf, zleft);
@@ -120552,8 +120554,9 @@ typedef struct {
 static void
 LThread_pcall(struct ThreadJob* tj, int msgh, struct LThreadMgr* mgr)
 {
+   int cpufreqboard;
    (void)mgr;
-   int cpufreqboard = ((LThreadJob*)tj)->fref;
+   cpufreqboard = ((LThreadJob*)tj)->fref;
    lua_rawgeti(tj->Lt, LUA_REGISTRYINDEX, cpufreqboard); 
    baAssert(2 == lua_gettop(tj->Lt));
    lua_pcall(tj->Lt, 0, 0, msgh);
@@ -120573,8 +120576,9 @@ LThread_setErrhAndrunLFunc(ThreadJob* tj, LThreadMgr* mgr)
 static int
 LThreadMgr_PrepLRun(LThreadMgr* o, lua_State* L)
 {
+   LThreadJob* lj;
    luaL_checktype(L, lua_gettop(L), LUA_TFUNCTION);
-   LThreadJob* lj = (LThreadJob*)ThreadJob_lcreate(
+   lj = (LThreadJob*)ThreadJob_lcreate(
       sizeof(LThreadJob), LThread_pcall);
    if( ! lj )
       luaL_error(L,baErr2Str(E_MALLOC));

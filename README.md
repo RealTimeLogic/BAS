@@ -6,7 +6,7 @@
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
-The BWS and BAS C code libraries are C89 compatible and support the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
+The BWS and BAS C code libraries support the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
 
 Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK; **Amalgamated** indicates that we have combined all separate C files into one file, simplifying the compilation and integration process into your build. The products run on anything from tiny FPGA's to online cloud servers.
 
@@ -270,19 +270,6 @@ BAS Amalgamated (BAS.c) includes features that are by default not compiled. Thes
 * USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy)
 * USE_UBJSON=1: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson)
 
-The following macros are required if you plan on using the Let's Encrypt plugin. The macros are pre-set for the following ports: POSIX (Linux/QNX), Windows, VxWorks, and INtime.
-
-* SHARKSSL_ENABLE_ASN1_KEY_CREATION=1
-* SHARKSSL_ENABLE_RSAKEY_CREATE=1
-* SHARKSSL_ENABLE_ECCKEY_CREATE=1
-* SHARKSSL_ENABLE_CSR_CREATION=1
-* SHARKSSL_ENABLE_CSR_SIGNING=1
-
-The following Mako Server specific macro enables loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When not using a pre-built Mako Server and when using the source code you can instead choose to integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly with your build.
-
-* USE_LUAINTF
-    * All porting layers, except POSIX and Windows, have the following pre-set:
-
 * LUA_NUMBER_INTEGER=1
     * Makes Lua use integer only and excludes floating point numbers. To re-enable floating point, compile the code with:
 
@@ -295,6 +282,8 @@ The following Mako Server specific macro enables loading [external Lua modules](
 * Mako Server Specifics:
   * NO_SHARKTRUST
     * Do no include tokengen.c; disable built-in SharkTrustX key
+  * USE_LUAINTF
+    * This macro enables loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When not using a pre-built Mako Server and when using the source code you can instead choose to integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly with your build.
 
 * Xedge Specifics:
   * NO_SHARKTRUST

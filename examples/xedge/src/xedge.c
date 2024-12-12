@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5582 2024-10-22 22:18:16Z wini $
+ *   $Id: xedge.c 5592 2024-11-27 19:35:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -242,8 +242,8 @@ createServer(HttpServer* server)
    if(cmdInstances > 1)
       cmdInstances-=1;
 #else
-   /* (A) Configure for 2 threads. See HttpCmdThreadPool. */
-   U16 cmdInstances=2;
+   /* (A) Configure for 3 threads. See HttpCmdThreadPool. */
+   U16 cmdInstances=3;
 #endif
    HttpServerConfig_constructor(&scfg);
 
@@ -541,7 +541,7 @@ barracuda(void)
 #ifdef MAXTHREADS
                           MAXTHREADS,
 #else
-                          3, /* Number of threads */
+                          2, /* Number of threads */
 #endif
                           L,
 #ifdef MAXTHREADS

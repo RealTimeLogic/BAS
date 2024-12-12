@@ -81,6 +81,8 @@
 #endif
 #endif
 
+#include <BaSharkSslOpt.h>
+
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.
 */
@@ -140,13 +142,6 @@
  *  Barracuda types
  ***********************************************************************/
 
-#define B_OVERLOAD_BASIC_TYPES
-typedef signed char S8;
-typedef unsigned char U8;
-typedef signed short S16;
-typedef unsigned short U16;
-typedef signed long S32;
-typedef unsigned long U32;
 #ifndef _GenPrimT_h
 #include <GenPrimT.h>
 #endif

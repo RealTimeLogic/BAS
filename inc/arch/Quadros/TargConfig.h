@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *
@@ -56,6 +56,8 @@
 #endif
 
 #include <BaErrorCodes.h>
+#include <BaSharkSslOpt.h>
+
 #ifdef NDEBUG
 #define baAssert(exp)
 #else
@@ -73,6 +75,8 @@
 #define BA_LIB BALUA_LIB
 #endif
 #endif
+
+
 
 #include <stddef.h>
 #include <errno.h>

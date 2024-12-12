@@ -3,7 +3,7 @@
 
 /* Use integers, not 'double' for Lua numbers */
 #ifndef LUA_NUMBER_INTEGER
-#define LUA_NUMBER_INTEGER 1
+#define LUA_NUMBER_INTEGER 0
 #endif
 
 /* Only a subset of the os lib is available for embedded systems */

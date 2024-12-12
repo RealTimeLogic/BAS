@@ -81,17 +81,26 @@
 #define baAssert(exp) ( (exp) ? (void)0 : baFatalEf(FE_ASSERT, 0, __FILE__, __LINE__) )
 #endif
 
+#if defined(SHARKSSL_LIB)
+#if !defined(BA_LIB)
+#define BA_LIB SHARKSSL_LIB
+#endif
+#endif
+
+#if defined(BALUA_LIB)
+#if !defined(BA_LIB)
+#define BA_LIB BALUA_LIB
+#endif
+#endif
+
+#include <BaSharkSslOpt.h>
+
+
 /***********************************************************************
  *  embOS types
  ***********************************************************************/
 
 #include <Global.h>
-typedef OS_I16 S16;
-typedef OS_I32 S32;
-typedef OS_I8  S8;
-
-/* U64 will be redefined in GenPrimT.h */
-#define B_OVERLOAD_BASIC_TYPES
 #include <GenPrimT.h>
 
 

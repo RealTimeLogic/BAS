@@ -47541,8 +47541,8 @@ static void clusterpowerdown(U8 *commonalloc)
       n--;
    }
    #else  
-   baAssert(8 == SHARKSSL_SEQ_NUM_LEN);
    U32 seq;
+   baAssert(8 == SHARKSSL_SEQ_NUM_LEN);
 
    read64uint32(seq, commonalloc, 4);
    seq++;

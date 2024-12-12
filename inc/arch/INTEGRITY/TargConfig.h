@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2011 - 2023
  *
@@ -68,16 +68,7 @@
 /***********************************************************************
  *  Barracuda types
  ***********************************************************************/
-
-#define B_OVERLOAD_BASIC_TYPES
-typedef signed char S8;
-typedef unsigned char U8;
-typedef signed short S16;
-typedef unsigned short U16;
-typedef signed long S32;
-typedef unsigned long U32;
-
-
+#define BA_INTEGRITY
 
 #ifndef _GenPrimT_h
 #include <GenPrimT.h>
@@ -152,6 +143,8 @@ U32 baGetMsClock(void);
 #define BA_LIB BALUA_LIB
 #endif
 #endif
+
+#include <BaSharkSslOpt.h>
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.

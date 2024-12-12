@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2023
  *
@@ -170,9 +170,9 @@ U32 baMsTime2TxTicks(U32 msec);
 #define BALUA_API BA_API
 #endif
 
-
-
 #include <BaErrorCodes.h>
+#include <BaSharkSslOpt.h>
+
 #ifdef NDEBUG
 #define baAssert(exp)
 #else

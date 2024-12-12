@@ -136,6 +136,7 @@ BaTime baGetMsClock(void);
 #define BALUA_API BA_API
 #endif
 
+#include <BaSharkSslOpt.h>
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
 #define baAssert(exp)

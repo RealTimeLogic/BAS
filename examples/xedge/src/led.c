@@ -155,7 +155,7 @@ int xedgeOpenAUX(XedgeOpenAUX* aux)
       use random generated data, as secret(s) must be persistent.
     */
 #ifndef NO_ENCRYPTIONKEY
-   const char secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
+   const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
    aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
    aux->addSecret(aux, "You can add any number of secrets", 33);
 #endif

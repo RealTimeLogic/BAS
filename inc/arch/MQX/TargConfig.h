@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2023
  *
@@ -66,6 +66,20 @@
 #define B_LITTLE_ENDIAN
 #endif
 
+#if defined(SHARKSSL_LIB)
+#if !defined(BA_LIB)
+#define BA_LIB SHARKSSL_LIB
+#endif
+#endif
+
+#if defined(BALUA_LIB)
+#if !defined(BA_LIB)
+#define BA_LIB BALUA_LIB
+#endif
+#endif
+
+#include <BaSharkSslOpt.h>
+
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
 #define baAssert(exp)
@@ -78,14 +92,6 @@
  *  Barracuda types
  ***********************************************************************/
 
-typedef int_8 S8;
-typedef uint_8 U8;
-typedef int_16 S16;
-typedef uint_16 U16;
-typedef uint_32 U32;
-typedef int_32 S32;
-
-#define B_OVERLOAD_BASIC_TYPES
 #include <GenPrimT.h>
 
 

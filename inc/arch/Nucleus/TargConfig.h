@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5375 2023-02-02 21:43:05Z wini $
+ *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023
  *
@@ -69,15 +69,6 @@
  *  Barracuda types
  ***********************************************************************/
 
-#define B_OVERLOAD_BASIC_TYPES
-typedef signed char S8;
-typedef unsigned char U8;
-typedef signed short S16;
-typedef unsigned short U16;
-typedef signed int S32;
-typedef unsigned int U32;
-
- 
 #ifndef _GenPrimT_h
 #include <GenPrimT.h>
 #endif
@@ -169,6 +160,7 @@ U32 baMsTime2TxTicks(U32 msec);
 #endif
 
 
+#include <BaSharkSslOpt.h>
 
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
