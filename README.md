@@ -16,8 +16,7 @@ Both BWS and BAS are application servers that share the same porting layer modul
 
 The following video demonstrates two key points: how to test compile the [Xedge RTOS example](#xedge-rtos) for Linux or [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and an explanation of the difference between an Embeddable Application Server library and an Embeddable Web Server library. For additional details, see the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/articles/What-is-an-Embedded-Application-Server).
 
-[![The difference between an Embeddable Application Server library and an Embeddable Web Server library](doc/youtube.jpg)](https://youtu.be/41qaFX0_QSI)
-
+[![The difference between an Embeddable Application Server library and an Embeddable Web Server library](doc/youtube.jpg)](https://youtu.be/41qaFX0_QSI?t=10)
 
 ## BWS
 
