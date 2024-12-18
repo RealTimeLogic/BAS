@@ -321,6 +321,29 @@ The generic directory 'inc' must also be in the include path.
 
 # Additional Build Examples
 
+## INTEGRITY
+
+The following example shows how to compile Xedge for Green Hills INTEGRITY. You can also [download a ready-to-run Xedge GHS Multi IDE project](https://realtimelogic.com/downloads/bas/xedge-ghs-build.zip).
+
+```
+ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
+    -non_shared -DMAXTHREADS=3\
+    -Iinc -Iinc/arch/INTEGRITY -Iinc/arch/NET/Posix\
+    --diag_suppress=111,188,550,549,546,223\
+    src/BAS.c\
+    src/arch/NET/generic/SoDisp.c\
+    src/arch/INTEGRITY/ThreadLib.c\
+    src/DiskIo/posix/BaFile.c\
+    examples/HostInit/Main.c examples/HostInit/HostInit.c\
+    examples/xedge/src/xedge.c\
+    examples/xedge/XedgeZip.c\
+    examples/xedge/src/xedgeInitDiskIo.c\
+    examples/xedge/src/led.c\
+    -lnet -livfs -lsocket\
+```
+
+
+
 ## VxWorks
 
 The following example shows how to compile Mako Server for VxWorks 7. Use [Xedge](#xedge-rtos) if you are using an older VxWorks version.
@@ -360,7 +383,7 @@ Using the above compilation settings, you would also need to include src/arch/Th
 
 ![Xedge32](https://realtimelogic.com/images/xedge/finger-icon.png)
 
-[Xedge32](https://realtimelogic.com/downloads/bas/ESP32/) is an Xedge version for the ESP32 and ESP32-S3 microcontrollers.
+[Xedge32](https://github.com/RealTimeLogic/Xedge32) is an Xedge version for the ESP32 and ESP32-S3 microcontrollers.
 
 
 # Barracuda App Server Tutorials
