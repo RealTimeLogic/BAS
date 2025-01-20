@@ -346,7 +346,7 @@ ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
 
 ## VxWorks
 
-The following example shows how to compile Mako Server for VxWorks 7. Use [Xedge](#xedge-rtos) if you are using an older VxWorks version.
+We recommend [Xedge](#xedge-rtos) for VxWorks; however, The following example shows how to compile the Mako Server for VxWorks. See the [Barracuda App Server VxWorks Build Page](https://realtimelogic.com/downloads/bas/VxWorks/) for details.
 
 ```
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
@@ -358,8 +358,6 @@ wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
     examples/MakoServer/src/MakoMain.c\
     -lnet
 ```
-
-Note that we are not including SQLite support. You can include SQLite by using the SQLite version provided by Wind River.
 
 ## Azure RTOS using IAR
 

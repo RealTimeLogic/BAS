@@ -47022,7 +47022,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
          if (*registeredevent++ != o->major)  
          {
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-            #if !SHARKSSL_TLS_1_2
+            #if (!SHARKSSL_TLS_1_2 || !SHARKSSL_SSL_SERVER_CODE)
             _sharkssl_hs_alert_handshake_failure:
             #endif
             return savedconfig(o, SHARKSSL_ALERT_HANDSHAKE_FAILURE);

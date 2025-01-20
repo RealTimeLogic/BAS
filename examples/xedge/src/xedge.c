@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5592 2024-11-27 19:35:19Z wini $
+ *   $Id: xedge.c 5600 2025-01-20 20:38:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -257,6 +257,8 @@ createServer(HttpServer* server)
     * the web server.
     */
    HttpServerConfig_setResponseData(&scfg,8*1024);
+
+   scfg.maxResponseHeader = 32 * 1024;
 
    /* Create and init the server, by using the above HttpServerConfig.
     */
