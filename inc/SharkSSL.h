@@ -10,9 +10,9 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5551 2024-08-16 14:41:30Z wini $
+ *   $Id: SharkSSL.h 5637 2025-03-02 21:51:18Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2024
+ *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,7 +39,11 @@
 
 #include "TargConfig.h"      /* platform dependencies  */
 
-#ifndef SHARKDBG_PRINTF
+#if SHARKDBG_PRINTF
+#undef SHARKDBG_PRINTF
+#define SHARKDBG_PRINTF(x) printf x
+#else
+#undef SHARKDBG_PRINTF
 #define SHARKDBG_PRINTF(x)
 #endif
 
@@ -1852,7 +1856,8 @@ SHARKSSL_API int sharkssl_PEM_PBKDF2(
 
 /** Return values from functions #sharkssl_RSA_public_encrypt,
     #sharkssl_RSA_private_decrypt, #sharkssl_RSA_public_decrypt,
-    #sharkssl_RSA_private_encrypt
+    #sharkssl_RSA_private_encrypt, #sharkssl_RSA_PKCS1V1_5_sign_hash,
+    #sharkssl_RSA_PKCS1V1_5_verify_hash
  */
 typedef enum
 {
@@ -1881,7 +1886,19 @@ typedef enum
    SHARKSSL_RSA_INPUT_DATA_LENGTH_AND_KEY_LENGTH_MISMATCH,
 
    /** PKCS1_PADDING_ERROR */
-   SHARKSSL_RSA_PKCS1_PADDING_ERROR
+   SHARKSSL_RSA_PKCS1_PADDING_ERROR,
+
+   /** KEY_IS_NOT_PRIVATE */
+   SHARKSSL_RSA_KEY_NOT_PRIVATE,
+
+   /** VERIFICATION FAIL */
+   SHARKSSL_RSA_VERIFICATION_FAIL,
+
+   /** WRONG SIGNATURE */
+   SHARKSSL_RSA_WRONG_SIGNATURE,
+
+   /** WRONG_LABEL_LENGTH */
+   SHARKSSL_RSA_WRONG_LABEL_LENGTH
 } sharkssl_RSA_RetVal;
 #endif
 
@@ -2017,6 +2034,8 @@ SHARKSSL_API U16 SharkSslRSAKey_size(SharkSslRSAKey key);
     includes the public key an can for this reason be used for
     encrypting the data.
 
+    \param pubkey is the public key in SharkSslRSAKey format.
+
     \param in the plaintext
 
     \param len is the length/size of parameter 'in'. This length must be
@@ -2028,28 +2047,26 @@ SHARKSSL_API U16 SharkSslRSAKey_size(SharkSslRSAKey key);
     \param out the encrypted ciphertext is copied to this buffer. The
     size of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-    \param key is the public key in SharkSslRSAKey format.
-
    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
    #SHARKSSL_RSA_NO_PADDING
 
    \return the size of the encrypted ciphertext, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey key, U8 padding);
+    SharkSslRSAKey pubkey, const U8 *in, int len, U8 *out, int padding);
 
 
 /** Decrypt ciphertext using the private key.
 
-    \param len is the length/size of parameter 'in'. This length must be
-    exactly #SharkSslRSAKey_size (key).
+    \param privkey is the private key in SharkSslRSAKey format.
 
     \param in the ciphertext
 
+    \param len is the length/size of parameter 'in'. This length must be
+    exactly #SharkSslRSAKey_size (key).
+
     \param out the decrypted ciphertext is copied to this buffer. The
     size of this buffer must be no less than #SharkSslRSAKey_size (key)
-
-    \param privkey is the private key in SharkSslRSAKey format.
 
    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
    #SHARKSSL_RSA_NO_PADDING
@@ -2057,27 +2074,69 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt(
    \return the size of the decrypted ciphertext, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey privkey, U8 padding);
+   SharkSslRSAKey privkey, const U8 *in, int len, U8 *out, int padding);
+
+
+/**
+ * Sign a hash using a private RSA key.
+ * Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.1.
+ *
+ * \param privkey is the private key in SharkSslRSAKey format.
+ * \param sig     Pointer to the buffer where the signature will be stored.
+ *                The buffer size must be at least #SharkSslRSAKey_size.
+ * \param siglen  Pointer to store the length of the generated signature (output parameter).
+ * \param hash    Pointer to the hash to sign.
+ * \param hashID  Identifier for the digest function used.
+ *                Valid values:
+ *                - SHARKSSL_HASHID_SHA256
+ *                - SHARKSSL_HASHID_SHA384
+ *                - SHARKSSL_HASHID_SHA512
+ * \return 0 upon successful completion, or an error value to be checked
+ *         against #sharkssl_RSA_RetVal.
+ */
+SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_sign_hash(
+   SharkSslRSAKey privkey, U8 *sig, U16 *siglen, const U8 *hash, U8 hashID);
+
+
+/**
+ * Verify a signature hash using a public RSA key.
+ * Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.2.
+ *
+ * \param pubkey The public key in SharkSslRSAKey format.
+ *               A corresponding private key may also be used.
+ * \param sig     Pointer to the signature to verify.
+ * \param siglen  The length of the signature in bytes (input parameter).
+ * \param hash    Pointer to the hash to verify against the signature.
+ * \param hashID Identifier for the digest function used.
+ *              Valid values:
+ *                - SHARKSSL_HASHID_SHA256
+ *                - SHARKSSL_HASHID_SHA384
+ *                - SHARKSSL_HASHID_SHA512
+ * \return 0 upon successful verification, or an error value to be checked
+ *         against #sharkssl_RSA_RetVal.
+ */
+SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_verify_hash(
+   SharkSslRSAKey pubkey, U8 *sig, U16 siglen, const U8 *hash, U8 hashID);
 
 
 #if SHARKSSL_ENABLE_RSA_OAEP
 /** Decrypt ciphertext using the private key, padding is OAEP per RFC 8017.
 
+   \param privkey is the private key in SharkSslRSAKey format.
+
+   \param in the ciphertext (must be in RAM since ITS CONTENT WILL BE MODIFIED)
+
    \param len is the length/size of parameter 'in'. This length must be
    exactly #SharkSslRSAKey_size(privkey).
-
-   \param in the ciphertext (must be in RAM)
-
-   \param out the decrypted ciphertext is copied to this buffer. The
-   size of this buffer must be no less than the expected decrypted text
-
-   \param privkey is the private key in SharkSslRSAKey format.
 
    \param hashID an identifier for the digest function used 
     Allowed values are:
         SHARKSSL_HASHID_SHA1
 
-   \param label is an optional label per RFC 8017 sec. 7.1.1. Use 
+   \param out the decrypted ciphertext is copied to this buffer. The
+   size of this buffer must be no less than the expected decrypted text
+
+   \param label is an optional label per RFC 8017 sec. 7.1.1. Use
     null string when empty.
 
    \param labelLen is the length of the label. Specify 0 when label
@@ -2086,27 +2145,27 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(
    \return the size of the decrypted ciphertext, or <0 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey privkey, U8 hashID, const char *label, U16 labelLen);
+   SharkSslRSAKey privkey, U8 *in, int len, U8 hashID, U8 *out, const char *label, U16 labelLen);
 
 
-/** Decrypt ciphertext using the private key, padding is OAEP per RFC 8017.
+/** Encrypt cleartext using the public key, padding is OAEP per RFC 8017.
 
-   \param len is the length/size of parameter 'in'. This length must be
-   not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
+   \param pubkey is the public key in SharkSslRSAKey format. The matching
+   private key can be provided, too.
 
    \param in the cleartext (not required to be in RAM)
 
-   \param out the encrypted cleartext is copied to this buffer. The
-   size of this buffer must be #SharkSslRSAKey_size(pubkey)
-
-   \param pubkey is the public key in SharkSslRSAKey format. The matching 
-   private key can be provided, too.
+   \param len is the length/size of parameter 'in'. This length must be
+   not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
 
    \param hashID an identifier for the digest function used 
     Allowed values are:
         SHARKSSL_HASHID_SHA1
 
-   \param label is an optional label per RFC 8017 sec. 7.1.1. Use 
+   \param out the encrypted cleartext is copied to this buffer. The
+   size of this buffer must be #SharkSslRSAKey_size(pubkey)
+
+   \param label is an optional label per RFC 8017 sec. 7.1.1. Use
     null string when empty.
 
    \param labelLen is the length of the label. Specify 0 when label
@@ -2115,11 +2174,13 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
    \return the size of the encrypted ciphertext, or <0 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(
-   U16 len, const U8 *in, U8 *out, SharkSslRSAKey pubkey, U8 hashID, const char *label, U16 labelLen);
+   SharkSslRSAKey pubkey, const U8 *in, int len, U8 hashID, U8 *out, const char *label, U16 labelLen);
 #endif
 
 
-/** Sign a message digest using the private key. 
+/** Sign a message digest using the private key. See RFC 8017 sec. 7.1.2
+
+    \param privkey is the private key in SharkSslRSAKey format.
 
     \param in commonly, an algorithm identifier followed by a message digest
 
@@ -2132,20 +2193,20 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(
     \param out the signature is copied to this buffer. The size
     of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-    \param privkey is the private key in SharkSslRSAKey format.
-
    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
    #SHARKSSL_RSA_NO_PADDING
 
    \return the size of the signature, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_encrypt(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey privkey, U8 padding);
+   SharkSslRSAKey privkey, const U8 *in, int len, U8 *out, int padding);
 
 
 /** Bring back a message digest using the public key or private key. 
     The private key includes the public key an can for this reason be used for
     this operation.
+
+    \param pubkey is the public key in SharkSslRSAKey format.
 
     \param in the RSA signature.  Please notice that the RSA signature is
     modified by this function and must for this reason be in RAM.
@@ -2156,15 +2217,13 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_encrypt(
     \param out the message digest is copied to this buffer. The size
     of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-    \param key is the public key in SharkSslRSAKey format.
-
    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
    #SHARKSSL_RSA_NO_PADDING
 
    \return the size of the obtained message digest, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_decrypt(
-   U16 len, U8 *in, U8 *out, SharkSslRSAKey key, U8 padding);
+   SharkSslRSAKey pubkey, const U8 *in, int len, U8 *out, int padding);
 
 #endif
 
@@ -2248,14 +2307,40 @@ SHARKSSL_API SharkSslECCKey sharkssl_PEM_to_ECCKey(
    an array of bytes in the SharkSSL internal proprietary format.
    This function is useful for key comparison or saving.
   */
+
 SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
 #define SharkSslCert_vectSize(c) SharkSslKey_vectSize((const SharkSslCert)c)
+#define SharkSslCert_vectSize_keyInfo(c, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)c, t, p, a, b, x, y)
 #if SHARKSSL_ENABLE_RSA
 #define SharkSslRSAKey_vectSize(k) SharkSslKey_vectSize(k)
+#define SharkSslRSAKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
 #endif
 #if SHARKSSL_ENABLE_ECDSA
 #define SharkSslECCKey_vectSize(k) SharkSslKey_vectSize(k)
+#define SharkSslECCKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
 #endif
+
+/* return values of function SharkSslKey_vectSize_keyInfo for the parameter keyType */
+#define SHARKSSL_KEYTYPE_RSA     0x00 
+#define SHARKSSL_KEYTYPE_EC      0x02
+
+/** 
+   @ingroup SharkSslCertApi
+   Returns the private or public key's "vector size" in bytes.
+   The "vector size" is the size of the key as represented as
+   an array of bytes in the SharkSSL internal proprietary format.
+   Returns 0 if the key is not valid.
+   keyType: return value, either SHARKSSL_KEYTYPE_RSA or SHARKSSL_KEYTYPE_EC
+   isKeyPrivate: 0 if public key, 1 if private key
+   if the keyType is SHARKSSL_KEYTYPE_RSA:
+     d1: pointer to the modulus, a sequence of bytes in big endian format of length d1Len
+     d2: pointer to the exponent, a sequence of bytes in big endian format of length d2Len
+   if the keyType is SHARKSSL_KEYTYPE_EC:
+     d1: pointer to the X coordinate, a sequence of bytes in big endian format of length d1Len
+     d2: pointer to the Y coordinate, a sequence of bytes in big endian format of length d2Len
+   This function is useful to extract info from a key.
+  */
+SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType, U8 *isKeyPrivate, U8 **d1, U16 *d1Len, U8 **d2, U16 *d2Len);
 #endif
 #endif
 
@@ -2448,13 +2533,17 @@ SHARKSSL_API U16 sharkssl_ECDSA_siglen(SharkSslECCKey privkey);
     \param hash the message digest obtained from a hash function
      e.g. SHA256. 
 
-    \param hashlen the length of the message digest (see above).
+    \param hashID  Identifier for the digest function used.
+                   Valid values:
+                   - SHARKSSL_HASHID_SHA256
+                   - SHARKSSL_HASHID_SHA384
+                   - SHARKSSL_HASHID_SHA512
 
     \return SHARKSSL_ECDSA_OK if the signature generation is successful, 
      or one of the #sharkssl_ECDSA_RetVal error codes.
  */
 SHARKSSL_API sharkssl_ECDSA_RetVal sharkssl_ECDSA_sign_hash(
-   SharkSslECCKey privkey, U8 *sig, U16 *siglen, U8 *hash, U8 hashlen);
+   SharkSslECCKey privkey, U8 *sig, U16 *siglen, const U8 *hash, U8 hashID);
 #endif
 
 /** Verify a message using the ECC public key and a hash algorithm. 
@@ -2469,13 +2558,17 @@ SHARKSSL_API sharkssl_ECDSA_RetVal sharkssl_ECDSA_sign_hash(
     \param hash the message digest obtained from a hash function
      e.g. SHA256. 
 
-    \param hashlen the length of the message digest (see above).
+    \param hashID  Identifier for the digest function used.
+                   Valid values:
+                   - SHARKSSL_HASHID_SHA256
+                   - SHARKSSL_HASHID_SHA384
+                   - SHARKSSL_HASHID_SHA512
 
     \return SHARKSSL_ECDSA_OK if the signature verification is successful, 
      or one of the #sharkssl_ECDSA_RetVal error codes.
  */
 SHARKSSL_API sharkssl_ECDSA_RetVal sharkssl_ECDSA_verify_hash(
-   SharkSslECCKey pubkey, U8 *sig, U16 siglen, U8 *hash, U8 hashlen);
+   SharkSslECCKey pubkey, U8 *sig, U16 siglen, const U8 *hash, U8 hashID);
 
 #endif  /* SHARKSSL_ENABLE_ECDSA_API */
 #endif  /* SHARKSSL_ENABLE_ECDSA */

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JParser.h 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: JParser.h 5633 2025-02-24 17:25:34Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -186,8 +186,8 @@ extern "C" {
 #endif
 #define JErr_constructor(o) (o)->err=JErrT_NoErr
 #define JErr_reset(o) (o)->err=JErrT_NoErr, (o)->msg=0
-#define JErr_isError(o) (o)->err!=JErrT_NoErr
-#define JErr_noError(o) (o)->err==JErrT_NoErr
+#define JErr_isError(o) ((o)->err!=JErrT_NoErr)
+#define JErr_noError(o) ((o)->err==JErrT_NoErr)
 #define JErr_getErrT(o) (o)->err
 #define JErr_getExpT(o) (o)->expType
 #define JErr_getRecT(o) (o)->recType

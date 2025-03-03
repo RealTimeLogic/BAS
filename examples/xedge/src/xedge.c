@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5600 2025-01-20 20:38:48Z wini $
+ *   $Id: xedge.c 5636 2025-02-28 17:27:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -129,10 +129,28 @@ LThreadMgr ltMgr;
 extern ZipReader* getLspZipReader(void);
 #endif
 
+#if USE_LPEG
+/* Parsing Expression Grammars For Lua
+   https://www.inf.puc-rio.br/~roberto/lpeg/
+*/
+extern int luaopen_lpeg(lua_State *L);
+#endif
 #if USE_PROTOBUF
+/* Google's protobuf for Lua
+   https://github.com/starwing/lua-protobuf
+*/
 extern int luaopen_pb(lua_State* L);
 #endif
-
+#if USE_CBOR
+/*  The Concise Binary Object Represenation Lua Modules
+    https://github.com/spc476/CBOR
+    CBOR requires lpeg
+*/
+int luaopen_org_conman_cbor_c(lua_State *L);
+#if USE_LPEG != 1
+#error CBOR requires LPeg
+#endif
+#endif
 #if USE_OPCUA
 #include <opcua_module.h>
 #endif
@@ -588,16 +606,21 @@ barracuda(void)
       10*60); /* 10 minutes ban time if more than 4 login attempts in a row. */
 
    balua_tokengen(L); /* See  the "SharkTrustX" comment above */
-#if USE_REVCON
-   /* Add reverse HTTP server connections. This requires SharkTrustX.
-    */
-   balua_revcon(L);
-#endif
 #if USE_DLMALLOC
    balua_mallinfo(L); /* Mem info. See dlmalloc.c */
 #endif
+#if USE_UBJSON
+   balua_ubjson(L);
+#endif
+#if USE_LPEG
+   luaL_requiref(L, "lpeg", luaopen_lpeg, FALSE);
+   lua_pop(L,1); /* Pop lpeg obj: statically loaded, not dynamically. */
+#endif
+#if USE_CBOR
+   luaL_requiref(L, "org.conman.cbor_c", luaopen_org_conman_cbor_c, FALSE);
+   lua_pop(L,1);
+#endif
 #if USE_PROTOBUF
-   /* Google's protobuf for Lua: https://github.com/starwing/lua-protobuf */
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif

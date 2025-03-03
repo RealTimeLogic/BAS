@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 5149 2022-05-14 21:56:07Z gianluca $
+ *   $Id: SharkSslCrypto.h 5612 2025-02-15 09:33:48Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -269,7 +269,7 @@ SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx* ctx, U8 digest[SHARKSSL
 /** md5
     \ingroup RayCryptoMD5
 */
-SHARKSSL_API int   sharkssl_md5(const U8*, U16, U8*);
+SHARKSSL_API int   sharkssl_md5(const U8*, U32, U8*);
 #endif
 
 #if SHARKSSL_USE_SHA1
@@ -293,7 +293,7 @@ SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[SHARKSSL_S
 /** sha1
     \ingroup RayCryptoSHA1
 */
-SHARKSSL_API int   sharkssl_sha1(const U8*, U16, U8*);
+SHARKSSL_API int   sharkssl_sha1(const U8*, U32, U8*);
 #endif
 
 #if SHARKSSL_USE_SHA_256
@@ -317,7 +317,7 @@ SHARKSSL_API void  SharkSslSha256Ctx_finish(SharkSslSha256Ctx*, U8 digest[SHARKS
 /** sha256
     \ingroup RayCryptoSHA256
 */
-SHARKSSL_API int   sharkssl_sha256(const U8*, U16, U8*);
+SHARKSSL_API int   sharkssl_sha256(const U8*, U32, U8*);
 #endif
 
 #if SHARKSSL_USE_SHA_384
@@ -341,7 +341,7 @@ SHARKSSL_API void  SharkSslSha384Ctx_finish(SharkSslSha384Ctx*, U8 digest[SHARKS
 /** sha384
     \ingroup RayCryptoSHA384
 */
-SHARKSSL_API int   sharkssl_sha384(const U8*, U16, U8*);
+SHARKSSL_API int   sharkssl_sha384(const U8*, U32, U8*);
 #endif
 
 #if SHARKSSL_USE_SHA_512
@@ -366,7 +366,7 @@ SHARKSSL_API void  SharkSslSha512Ctx_finish(SharkSslSha512Ctx*, U8 digest[SHARKS
 /** sha512
     \ingroup RayCryptoSHA512
 */
-SHARKSSL_API int   sharkssl_sha512(const U8*, U16, U8*);
+SHARKSSL_API int   sharkssl_sha512(const U8*, U32, U8*);
 #endif
 
 #if (SHARKSSL_USE_SHA_512 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA1 || SHARKSSL_USE_MD5)
@@ -404,11 +404,11 @@ SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx*, U8 *HMAC);
     \param keyLen 'key' length
     \param digest output HMAC
 */
-SHARKSSL_API int sharkssl_HMAC(const U8 hashID, const U8 *data, U16 len, const U8 *key, U16 keyLen, U8 *digest);
+SHARKSSL_API int sharkssl_HMAC(const U8 hashID, const U8 *data, U32 len, const U8 *key, U16 keyLen, U8 *digest);
 #endif
 
 U16 sharkssl_getHashLen(U8 hashID);
-int sharkssl_hash(U8 *digest, U8 *data, U16 len, U8 hashID);
+int sharkssl_hash(U8 *digest, U8 *data, U32 len, U8 hashID);
 
 
 #if SHARKSSL_USE_POLY1305
@@ -435,7 +435,7 @@ SHARKSSL_API void  SharkSslPoly1305Ctx_finish(SharkSslPoly1305Ctx *ctx, U8 diges
 /** poly1305
     \ingroup RayCryptoPOLY1305
 */
-SHARKSSL_API int   sharkssl_poly1305(const U8 *data, U16 len, U8 *digest, const U8 key[32]);
+SHARKSSL_API int   sharkssl_poly1305(const U8 *data, U32 len, U8 *digest, const U8 key[32]);
 #endif
 
 #if SHARKSSL_USE_CHACHA20
@@ -498,13 +498,13 @@ SHARKSSL_API void  SharkSslAesCtx_encrypt(SharkSslAesCtx *ctx, U8 input[16], U8 
     \ingroup RayCryptoAES
 */
 SHARKSSL_API void  SharkSslAesCtx_cbc_encrypt(SharkSslAesCtx *ctx, U8 vect[16],
-                                              const U8 *input, U8 *output, U16 len);
+                                              const U8 *input, U8 *output, U32 len);
 
 /** Decrypt
     \ingroup RayCryptoAES
 */
 SHARKSSL_API void  SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *ctx, U8 vect[16],
-                                              const U8 *input, U8 *output, U16 len);
+                                              const U8 *input, U8 *output, U32 len);
 #endif
 #if SHARKSSL_ENABLE_AES_CTR_MODE
 
@@ -512,7 +512,7 @@ SHARKSSL_API void  SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *ctx, U8 vect[16],
     \ingroup RayCryptoAES
 */
 SHARKSSL_API void  SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
-                                           const U8 *input, U8 *output, U16 len);
+                                           const U8 *input, U8 *output, U32 len);
 #endif
 #if SHARKSSL_ENABLE_AES_GCM
 /** Initialize
@@ -560,7 +560,7 @@ SHARKSSL_API void  SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *ctx,
 SHARKSSL_API int   SharkSslAesGcmCtx_encrypt(SharkSslAesGcmCtx *ctx,
                                              const U8 vect[12], U8 tagout[16],
                                              const U8 *auth, U16 authlen,
-                                             const U8 *input, U8 *output, U16 len);
+                                             const U8 *input, U8 *output, U32 len);
 
 
 /** Decrypt data or a chunk of a large data set.
@@ -580,7 +580,7 @@ SHARKSSL_API int   SharkSslAesGcmCtx_encrypt(SharkSslAesGcmCtx *ctx,
 SHARKSSL_API int   SharkSslAesGcmCtx_decrypt(SharkSslAesGcmCtx *ctx,
                                              const U8 vect[12], U8 tagin[16],
                                              const U8 *auth, U16 authlen,
-                                             U8 *input, U8 *output, U16 len);
+                                             U8 *input, U8 *output, U32 len);
 #endif
 #if SHARKSSL_ENABLE_AES_CCM
 /** Initialize
@@ -602,7 +602,7 @@ SHARKSSL_API void  SharkSslAesCcmCtx_constructor(SharkSslAesCcmCtx *ctx,
 SHARKSSL_API int   SharkSslAesCcmCtx_encrypt(SharkSslAesCcmCtx *ctx,
                                              const U8 vect[12], U8 *tagout,
                                              const U8 *auth, U16 authlen,
-                                             const U8 *input, U8 *output, U16 len);
+                                             const U8 *input, U8 *output, U32 len);
 
 
 /** Decrypt
@@ -611,7 +611,7 @@ SHARKSSL_API int   SharkSslAesCcmCtx_encrypt(SharkSslAesCcmCtx *ctx,
 SHARKSSL_API int   SharkSslAesCcmCtx_decrypt(SharkSslAesCcmCtx *ctx,
                                              const U8 vect[12], U8 *tagin,
                                              const U8 *auth, U16 authlen,
-                                             const U8 *input, U8 *output, U16 len);
+                                             const U8 *input, U8 *output, U32 len);
 #endif
 #endif
 

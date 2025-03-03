@@ -6,7 +6,7 @@
 # The makefile is designed for the "Embedded Linux Web Based Device
 # Management" tutorial and will auto include the generated Lua
 # bindings if found. The makefile will also auto include SQLite, Lua
-# Protobuf, and LPeg if found. LPeg can be installed as follows:
+# Protobuf, CBOR, and LPeg if found. LPeg can be installed as follows:
 # wget http://www.inf.puc-rio.br/~roberto/lpeg/lpeg-1.0.2.tar.gz
 # cd src
 # tar xvzf ../lpeg-1.0.2.tar.gz
@@ -25,6 +25,7 @@ endif
 #Optional
 export LPEGDIR=../LPeg
 export PROTOBUFDIR=../lua-protobuf
+export CBORDIR=../CBOR
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
@@ -89,6 +90,17 @@ SOURCE += pb.c
 VPATH := $(VPATH):$(PROTOBUFDIR)
 else
 $(info Excluding Lua Protobuf)
+endif
+
+#Do we have CBOR?
+#https://github.com/spc476/CBOR
+ifneq (,$(wildcard $(CBORDIR)/cbor_c.c))
+$(info Including CBOR)
+CFLAGS += -DUSE_CBOR=1
+SOURCE += cbor_c.c dnf.c
+VPATH := $(VPATH):$(CBORDIR)
+else
+$(info Excluding Lua CBOR)
 endif
 
 ifneq (,$(wildcard MyCustomBindings.c))

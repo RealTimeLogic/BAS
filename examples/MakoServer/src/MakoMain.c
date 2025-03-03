@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5577 2024-09-30 22:42:38Z wini $
+ *   $Id: MakoMain.c 5636 2025-02-28 17:27:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2024
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -45,7 +45,6 @@
 #include "mako.h"
 
 
-
 /* Either remove the macro definition below or define macro
    BA_FILESIZE64 when compiling the code. You probably want to
    enable 64 bit file system support.
@@ -56,17 +55,12 @@
 #error You should probably compile with -DBA_FILESIZE64
 #endif
 
-
-
-/* If not using: https://realtimelogic.info/amalgamator/ */
-#ifndef USE_AMALGAMATED_BAS
 #include <barracuda.h>
 #include <HttpTrace.h>
 #include <HttpCmdThreadPool.h>
 #include <HttpResRdr.h>
 #include <IoIntfZipReader.h>
 #include <lualib.h>
-#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,10 +147,26 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 #endif
 
 #if USE_LPEG
+/* Parsing Expression Grammars For Lua
+   https://www.inf.puc-rio.br/~roberto/lpeg/
+*/
 extern int luaopen_lpeg(lua_State *L);
 #endif
 #if USE_PROTOBUF
+/* Google's protobuf for Lua
+   https://github.com/starwing/lua-protobuf
+*/
 extern int luaopen_pb(lua_State* L);
+#endif
+#if USE_CBOR
+/*  The Concise Binary Object Represenation Lua Modules
+    https://github.com/spc476/CBOR
+    CBOR requires lpeg
+*/
+int luaopen_org_conman_cbor_c(lua_State *L);
+#if USE_LPEG != 1
+#error CBOR requires LPeg
+#endif
 #endif
 
 #if USE_OPCUA
@@ -1825,12 +1835,14 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    luaL_requiref(L, "lpeg", luaopen_lpeg, FALSE);
    lua_pop(L,1); /* Pop lpeg obj: statically loaded, not dynamically. */
 #endif
+#if USE_CBOR
+   luaL_requiref(L, "org.conman.cbor_c", luaopen_org_conman_cbor_c, FALSE);
+   lua_pop(L,1);
+#endif
 #if USE_PROTOBUF
-   /* Google's protobuf for Lua: https://github.com/starwing/lua-protobuf */
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
-
    balua_tokengen(L); /* See  the "SharkTrustEx" comment above */
 #if USE_REVCON
    /* Add reverse server connection. This requires SharkTrustEx.

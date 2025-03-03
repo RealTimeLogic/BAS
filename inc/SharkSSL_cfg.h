@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5532 2024-04-20 08:12:12Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5617 2025-02-17 16:03:45Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -660,7 +660,7 @@
 
 /** @} */ /* end group SharkSslCfg */
 
-/** sanity #defines --- do not edit below this line!
+/** sanity defines --- do not edit below this line!
  */ 
 #if SHARKSSL_ECC_TIMING_RESISTANT
 #undef  SHARKSSL_BIGINT_TIMING_RESISTANT 
