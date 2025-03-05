@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5636 2025-02-28 17:27:57Z wini $
+ *   $Id: xedge.c 5643 2025-03-05 16:19:32Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -623,6 +623,11 @@ barracuda(void)
 #if USE_PROTOBUF
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
+#endif
+#if USE_REVCON
+   /* Add reverse server connection. This requires SharkTrustX.
+    */
+   balua_revcon(L);
 #endif
 #if USE_OPCUA
    luaopen_opcua_ns0_static(L);

@@ -113998,7 +113998,7 @@ crypto_xyCoordinates2SharkPubKey(lua_State *L, EncrDecrOptions* op)
          sourcerouting[6] = SHARKSSL_SECP256R1_POINTLEN == op->xnLen ?
             SHARKSSL_EC_CURVE_ID_SECP256R1 :
             (SHARKSSL_SECP384R1_POINTLEN == op->xnLen ?
-             SHARKSSL_EC_CURVE_ID_SECP384R1 : SHARKSSL_SECP521R1_POINTLEN);
+             SHARKSSL_EC_CURVE_ID_SECP384R1 : SHARKSSL_EC_CURVE_ID_SECP521R1);
          sourcerouting[7] = (U8)op->xnLen;
          memcpy(sourcerouting+8, op->x, op->xnLen);
          memcpy(sourcerouting+8+op->xnLen, op->y, op->xnLen);
