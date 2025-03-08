@@ -26,8 +26,8 @@ done
 
 unameOut="$(uname -s)"
 case "${unameOut}" in
-    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;;
-    Darwin*)    XLIB="-ldl -framework IOKit -framework CoreFoundation;XCFLAGS=-DLUA_USE_LINUX;machine=Linux";XCFLAGS="-D_OSX_ -DLUA_USE_MACOSX";machine=Mac;;
+    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;export EPOLL=TRUE;;
+    Darwin*)    machine=Mac;;
     CYGWIN*)    XLIB=-ldl;XCFLAGS="-DLUA_USE_LINUX -DUSE_FORKPTY=0";machine=Cygwin;;
 #    MINGW*)     machine=MinGw;;
     *)          abort "Unknown machine ${unameOut}"
@@ -53,11 +53,29 @@ if ! [ -d "BAS-Resources" ]; then
     chmod +x BAS-Resources/build/*.sh
 fi
 
+if ! [ -f "LPeg/lpcode.c" ]; then
+    echo "Downloading LPeg"
+    git clone https://github.com/roberto-ieru/LPeg.git LPeg
+fi
+
+if ! [ -f "lua-protobuf/pb.c" ]; then
+    echo "Downloading Google Protobuf for Lua"
+    git clone https://github.com/starwing/lua-protobuf.git lua-protobuf
+fi
+
+if ! [ -f "CBOR/cbor_c.c" ]; then
+    echo "Downloading CBOR"
+    git clone https://github.com/spc476/CBOR.git CBOR
+fi
+
+
 
 cd BAS || abort $LINENO
 if ! [ -f "src/sqlite3.c" ]; then
+    # if SQLITEURL url not set
     if [  -z ${SQLITEURL+x} ]; then
-	SQLITEURL="https://www.sqlite.org/2024/sqlite-amalgamation-3470000.zip"
+        # There is no 'latest' with SQLite :-(
+	SQLITEURL="https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip"
     fi
     SQLITE=${SQLITEURL##*/}
     pushd /tmp || abort $LINENO
@@ -83,17 +101,18 @@ if [ -n "${NOCOMPILE+set}" ]; then
     exit 0
 fi
 
-echo "Compiling using $CC; this may take some time........"
-$CC -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os -w\
-    $XCFLAGS -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DMAKO\
-    -DUSE_LUAINTF\
-    -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
-    src/BAS.c\
-    src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    examples/MakoServer/src/MakoMain.c\
-    src/ls_sqlite3.c src/luasql.c src/sqlite3.c\
-    -lpthread -lm $XLIB || abort $LINENO
+make -f mako.mk || abort $LINENO
+cp examples/MakoServer/mako* || abort $LINENO
+cd ..
 
-cp examples/MakoServer/mako* ../ || abort $LINENO
+if [[ -z "${CROSS_COMPILE}" ]]; then
+    read -p "Do you want to install the Mako Server in /usr/local/bin (Y/n)?" </dev/tty
+    if [ "$REPLY" != "n" ]; then
+        sudo cp BAS/mako BAS/mako.zip /usr/local/bin/ || abort
+        echo "Installed; you may now run mako"
+        exit 0
+    fi
+fi
+
 echo "Done"
-echo "You may now run ./mako"
+echo "You may now run BAS/mako"

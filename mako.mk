@@ -29,8 +29,8 @@ export CBORDIR=../CBOR
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
-	XLIB=-framework IOKit -framework CoreFoundation;
-	CFLAGS += =-D_OSX_ -DLUA_USE_MACOSX
+	XLIB=-ldl -framework IOKit -framework CoreFoundation;
+	CFLAGS += -D_OSX_ -DLUA_USE_MACOSX
 endif
 
 

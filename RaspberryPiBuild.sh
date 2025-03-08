@@ -28,16 +28,6 @@ done
 export NOCOMPILE=true
 wget --no-check-certificate -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash || abort "LinuxBuild.sh failed"
 
-if ! [ -f "LPeg/lpcode.c" ]; then
-    echo "Downloading LPeg"
-    git clone https://github.com/roberto-ieru/LPeg.git 
-fi
-
-if ! [ -f "lua-protobuf/pb.c" ]; then
-    echo "Downloading Google Protobuf for Lua"
-    git clone https://github.com/starwing/lua-protobuf
-fi
-
 cd BAS || abort
 
 echo "Compiling Mako Server"
@@ -72,6 +62,6 @@ if [[ -z "${CROSS_COMPILE}" ]]; then
         exit 0
     fi
 fi
-cp lua-periphery/periphery.so BAS/
+cp BAS/lua-periphery/periphery.so BAS/
 echo "The produced files mako, mako.zip, and periphery.so can be found in the BAS/ directory"
 
