@@ -112,9 +112,16 @@ else
 $(info Excluding Lua MyCustomBindings example)
 endif
 
+ENCRYPTION_KEY_HEADER = examples/MakoServer/src/NewEncryptionKey.h
+PYTHON := $(shell command -v python3 2>/dev/null)
+ifneq ($(PYTHON),)
+CFLAGS += -DNewEncryptionKey
+endif
+
+
 OBJS = $(SOURCE:%.c=%.o)
 
-mako: $(OBJS) mako.zip
+mako: $(ENCRYPTION_KEY_HEADER) $(OBJS) mako.zip
 	$(CC) -o mako $(OBJS) -lpthread -lm -ldl $(XLIB)
 
 # Must be in the same directory as the mako executable
@@ -128,4 +135,10 @@ MyCustomBindings_wrap.c : MyCustomBindings.i
 clean:
 	rm -f mako *.o
 
-
+$(ENCRYPTION_KEY_HEADER):
+ifneq ($(PYTHON),)
+	@echo "Generating $(ENCRYPTION_KEY_HEADER)..."
+	@python3 examples/MakoServer/GenNewEncryptionKey.py
+else
+	$(warning "Python3 is not installed. NewEncryptionKey.h not generated")
+endif
