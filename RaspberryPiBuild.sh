@@ -62,6 +62,6 @@ if [[ -z "${CROSS_COMPILE}" ]]; then
         exit 0
     fi
 fi
-cp BAS/lua-periphery/periphery.so BAS/
+cp lua-periphery/periphery.so BAS/
 echo "The produced files mako, mako.zip, and periphery.so can be found in the BAS/ directory"
 
