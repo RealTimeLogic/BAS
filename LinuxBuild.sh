@@ -91,24 +91,16 @@ if ! [ -f "src/sqlite3.c" ]; then
     mv /tmp/${SQLITE%.zip}/* src/ || abort $LINENO
 fi
 
-pushd ../BAS-Resources/build || abort $LINENO
-echo "Building mako.zip"
-./mako.sh || abort $LINENO
-cp mako.zip ../../ || abort $LINENO
-popd
-
 if [ -n "${NOCOMPILE+set}" ]; then
     exit 0
 fi
 
 make -f mako.mk || abort $LINENO
-cp examples/MakoServer/mako* || abort $LINENO
-cd ..
 
 if [[ -z "${CROSS_COMPILE}" ]]; then
     read -p "Do you want to install the Mako Server in /usr/local/bin (Y/n)?" </dev/tty
     if [ "$REPLY" != "n" ]; then
-        sudo cp BAS/mako BAS/mako.zip /usr/local/bin/ || abort
+        sudo cp mako mako.zip /usr/local/bin/ || abort
         echo "Installed; you may now run mako"
         exit 0
     fi
