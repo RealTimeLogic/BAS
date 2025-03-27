@@ -8,15 +8,9 @@
 
 The BWS and BAS C code libraries support the following platforms: Embedded Linux, Zephyr, FreeRTOS+TCP or lwIP, VxWorks, QNX, INTEGRITY, Windows & Win CE, Azure RTOS, Nucleus RTOS, embOS, RTXC, SMX, MQX, RTOS-32, Mac, and UNIX/POSIX.
 
-Real Time Logic has crafted the two amalgamated libraries from the full BAS SDK; **Amalgamated** indicates that we have combined all separate C files into one file, simplifying the compilation and integration process into your build. The products run on anything from tiny FPGA's to online cloud servers.
+RTL has crafted the two amalgamated libraries from the full BAS SDK; **Amalgamated** indicates that we have combined all separate C files into one file, simplifying the compilation and integration process into your build. The products run on anything from tiny FPGA's to online cloud servers.
 
 Both BWS and BAS are application servers that share the same porting layer modules, making their integration process almost identical. BAS includes all the C APIs available in BWS, but it goes a step further by focusing on the Lua language. This makes BAS handy for rapid development and offers an easier entry point for secure web and IoT app development. Check out the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
-
-### Web Server vs. App Server
-
-The following video demonstrates two key points: how to test compile the [Xedge RTOS example](#xedge-rtos) for Linux or [Windows Subsystem for Linux](https://learn.microsoft.com/en-us/windows/wsl/install) and an explanation of the difference between an Embeddable Application Server library and an Embeddable Web Server library. For additional details, see the tutorial [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/articles/What-is-an-Embedded-Application-Server).
-
-[![The difference between an Embeddable Application Server library and an Embeddable Web Server library](doc/youtube.jpg)](https://youtu.be/41qaFX0_QSI?t=10)
 
 ## BWS
 
