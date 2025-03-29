@@ -110,6 +110,7 @@ else
     MAKO=BAS/mako
 fi
 
+cd ..
 read -p "Do you want to download and run the Lua tutorials (Y/n)?"
 if [ "$REPLY" != "n" ]; then
     ${MAKO} -l::BAS-Resources/tools/MakoDownloadTutorials
