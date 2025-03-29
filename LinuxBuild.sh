@@ -102,9 +102,15 @@ if [[ -z "${CROSS_COMPILE}" ]]; then
     if [ "$REPLY" != "n" ]; then
         sudo cp mako mako.zip /usr/local/bin/ || abort
         echo "Installed; you may now run mako"
-        exit 0
     fi
+    MAKO=mako
+else
+    echo "Done"
+    echo "You may now run BAS/mako"
+    MAKO=BAS/mako
 fi
 
-echo "Done"
-echo "You may now run BAS/mako"
+read -p "Do you want to download and run the Lua tutorials (Y/n)?"
+if [ "$REPLY" != "n" ]; then
+    ${MAKO} -l::BAS-Resources/tools/MakoDownloadTutorials
+fi
