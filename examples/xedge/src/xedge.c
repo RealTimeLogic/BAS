@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5643 2025-03-05 16:19:32Z wini $
+ *   $Id: xedge.c 5648 2025-03-30 17:51:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2024
  *               http://www.realtimelogic.com
@@ -715,6 +715,7 @@ barracuda(void)
 
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);
+   BaTimer_destructor(&timer);
    /* Destroy all objects, including server listening objects. */
    balua_close(L);
 
@@ -723,7 +724,6 @@ barracuda(void)
    DiskIo_destructor(&diskIo);
 #endif
    NetIo_destructor(&netIo);
-   BaTimer_destructor(&timer);
    HttpServer_destructor(&server);
    SoDisp_destructor(&dispatcher);
    ThreadMutex_release(&mutex);   

@@ -98128,6 +98128,27 @@ BA_API void
 balua_close(lua_State* L)
 {
    BaLua_param* p = balua_getparam(L);
+
+   
+   lua_pushvalue(L, LUA_REGISTRYINDEX);
+   lua_pushnil(L);
+   while (lua_next(L, -2) != 0)
+   {
+      if(LUA_TNUMBER == lua_type(L, -2))
+      {
+         int ix = (int)lua_tointeger(L, -2);
+         switch (lua_type(L, -1))
+         {
+            case LUA_TUSERDATA:
+            case LUA_TTHREAD:
+               luaL_unref(L, LUA_REGISTRYINDEX, ix);
+         }
+      }
+      lua_pop(L, 1);
+   }
+   lua_gc(L, LUA_GCCOLLECT);
+   lua_gc(L, LUA_GCCOLLECT);
+
    lua_close(L);
    baFree(p);
 }

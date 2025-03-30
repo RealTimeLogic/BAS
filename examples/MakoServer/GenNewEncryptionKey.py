@@ -25,9 +25,6 @@ def formatKeyArray(key):
     return f"static const U8 ENCRYPTIONKEY[] = {{\n    {formatted}\n}};"
 
 def generateHeaderFile():
-    if not os.path.exists(outputDir):
-        os.makedirs(outputDir)  # Ensure 'src' directory exists
-    
     key = generateRandomKey(keyLength)
     content = f"""/* TPM main secret key embedded in the binary.
    Change before compiling. The key can be any length,

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5636 2025-02-28 17:27:57Z wini $
+ *   $Id: MakoMain.c 5648 2025-03-30 17:51:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2025
  *
@@ -1920,6 +1920,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 
    /* Must cleanup all sessions before destroying the Lua VM */
    HttpServer_termAllSessions(&server);
+   BaTimer_destructor(&timer);
    /* Destroy all objects, including server listening objects. */
    balua_close(L);
 
@@ -1935,7 +1936,6 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       IoIntfZipReader_destructor(makoZipReader);
       baFree(makoZipReader);
    }
-   BaTimer_destructor(&timer);
 
    HttpServer_destructor(&server);
    SoDisp_destructor(&disp);
