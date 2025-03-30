@@ -37,7 +37,7 @@ endif
 CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 
 # Add required macros and enable large-file support
-CFLAGS += -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
+CFLAGS += -DNDEBUG -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
 
 # Add features
 CFLAGS += -DUSE_LUAINTF=1
