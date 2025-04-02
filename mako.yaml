@@ -21,6 +21,8 @@
 # If tutorials are enabled, open a browser and go to:
 #   - http://localhost         (for local run)
 #   - http://<target-ip>       (for remote run)
+#
+# Detailed documentation: Ansible.md
 
 ---
 - name: Build and optionally install Mako Server

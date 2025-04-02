@@ -102,6 +102,8 @@ See the tutorial [Embedded Linux Web Interface Design](https://makoserver.net/ar
 ```
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
+For a more **robust compilation option**, use the [included Ansible script](Ansible.md).
+
 Download and cross-compile the code for (embedded) Linux as follows:
 
 ```
