@@ -42,7 +42,9 @@ ansible-playbook -i 192.168.1.146, -u debian mako.yaml -e install=true -e tutori
 
 Replace 192.168.1.146 with your target machine's IP address (or hostname/domain name), and debian with the appropriate SSH user.
 
-**Note:** The `ssh-copy-id` command is necesarry if you have not copied your public SSH key to the remote computer. Ansible requires passwordless login via SSH.
+**Note:**
+- The `ssh-copy-id` command is necesarry if you have not copied your public SSH key to the remote computer. Ansible requires passwordless login via SSH.
+- When remote compiling directly on a device, the required build tools consume approximately 250 MB of disk space.
 
 ## Optional Playbook Flags
 
