@@ -2,6 +2,8 @@
 
 This guide walks you through using an Ansible playbook to **compile** and **optionally install** and launch the Lua tutorials for the Mako Server, either on your **local computer** or on a **target computer** such as a **Raspberry Pi** or any Linux target computer where Python is installed.
 
+- **Windows Users:** [Use WSL](https://learn.microsoft.com/en-us/windows/wsl/install)
+
 One of the main benefits of this approach is how easy it makes it to **update and recompile** the binary whenever any of the GitHub repositories are updated. Simply re-run the playbook to rebuild the server with the latest changes.
 
 This is especially **important** if you're using the Mako Server to **generate ECC certificates** or if you're relying on the built-in **softTPM** - whether implicitly or explicitly. In these cases, it's crucial to preserve the auto-generated pre-master secret. This secret is stored in a generated C header file the first time the server is compiled:
@@ -38,9 +40,9 @@ ssh-copy-id debian@192.168.1.146
 ansible-playbook -i 192.168.1.146, -u debian mako.yaml -e install=true -e tutorials=true
 ```
 
-Replace 192.168.1.146 with your target machine's IP address, and debian with the appropriate SSH user.
+Replace 192.168.1.146 with your target machine's IP address (or hostname/domain name), and debian with the appropriate SSH user.
 
-**Note:** The `ssh-copy-id` command is necesarry if you have not copied your public key to the remote computer. Ansible requires passwordless login via SSH.
+**Note:** The `ssh-copy-id` command is necesarry if you have not copied your public SSH key to the remote computer. Ansible requires passwordless login via SSH.
 
 ## Optional Playbook Flags
 
