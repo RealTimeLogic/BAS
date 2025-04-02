@@ -1,0 +1,136 @@
+# Ansible Playbook for Building and Running the Mako Server
+#
+#  Quick Start: Installing Ansible
+# Run this on your development machine (Debian/Ubuntu):
+#   sudo apt update && sudo apt install ansible -y
+#
+#  Local Machine Example:
+# Compile, install, and run tutorials on your own machine:
+#   ansible-playbook -i localhost, -c local mako.yaml -e install=true -e tutorials=true
+#
+#  Remote Target Example:
+# Compile, install, and run tutorials on a remote machine:
+#   ansible-playbook -i 192.168.1.146, -u debian mako.yaml -e install=true -e tutorials=true
+#   (Replace 192.168.1.146 with your target's IP address and debian with your target username)
+#
+#  Optional Flags:
+#   -e install=true     # Install Mako Server to /usr/local/bin
+#   -e tutorials=true   # Run Lua tutorial scripts (requires install)
+#
+#  Accessing the Tutorials:
+# If tutorials are enabled, open a browser and go to:
+#   - http://localhost         (for local run)
+#   - http://<target-ip>       (for remote run)
+
+---
+- name: Build and optionally install Mako Server
+  hosts: all
+  vars:
+    required_packages:
+      - git
+      - zip
+      - unzip
+      - gcc
+      - make
+    sqldir: "2025"
+    sqlver: "3490100"
+    mako_install_path: "/usr/local/bin"
+    builddir: "makobuild"
+    install: false
+    tutorials: false
+
+  tasks:
+    - name: Ensure base directory exists
+      file:
+        path: "{{ builddir }}"
+        state: directory
+
+    - name: Ensure required packages are installed
+      apt:
+        name: "{{ required_packages }}"
+        state: present
+      when: ansible_os_family == 'Debian'
+
+    - name: Clone BAS repository if not present
+      git:
+        repo: https://github.com/RealTimeLogic/BAS.git
+        dest: "{{ builddir }}/BAS"
+        update: yes
+        force: no
+
+    - name: Clone BAS-Resources repository if not present
+      git:
+        repo: https://github.com/RealTimeLogic/BAS-Resources.git
+        dest: "{{ builddir }}/BAS-Resources"
+        update: yes
+        force: yes
+
+    - name: Make build scripts in BAS-Resources executable
+      file:
+        path: "{{ builddir }}/BAS-Resources/build"
+        recurse: yes
+        mode: "u+x"
+      when: ansible_os_family == 'Debian'
+
+    - name: Clone LPeg if not present
+      git:
+        repo: https://github.com/roberto-ieru/LPeg.git
+        dest: "{{ builddir }}/LPeg"
+        update: yes
+
+    - name: Clone lua-protobuf if not present
+      git:
+        repo: https://github.com/starwing/lua-protobuf.git
+        dest: "{{ builddir }}/lua-protobuf"
+        update: yes
+
+    - name: Clone CBOR if not present
+      git:
+        repo: https://github.com/spc476/CBOR.git
+        dest: "{{ builddir }}/CBOR"
+        update: yes
+
+    - name: Check if sqlite3.c exists
+      stat:
+        path: "{{ builddir }}/BAS/src/sqlite3.c"
+      register: sqlite_stat
+
+    - name: Download SQLite amalgamation
+      get_url:
+        url: "https://www.sqlite.org/{{sqldir}}/sqlite-amalgamation-{{sqlver}}.zip"
+        dest: "/tmp/sqlite-amalgamation-{{sqlver}}.zip"
+      when: not sqlite_stat.stat.exists
+
+    - name: Unzip SQLite
+      unarchive:
+        src: "/tmp/sqlite-amalgamation-{{sqlver}}.zip"
+        dest: "/tmp"
+        remote_src: yes
+      when: not sqlite_stat.stat.exists
+
+    - name: Move SQLite files to BAS/src
+      shell: mv /tmp/sqlite-amalgamation-{{sqlver}}/* {{ builddir }}/BAS/src/
+      when: not sqlite_stat.stat.exists
+
+    - name: Compile Mako Server
+      shell: echo "n" | make -f mako.mk
+      args:
+        chdir: "{{ builddir }}/BAS"
+
+    - name: Install Mako Server binary
+      become: yes
+      shell: cp -f {{ builddir }}/BAS/mako {{ mako_install_path }}/mako && chmod 0755 {{ mako_install_path }}/mako
+      when: install
+
+    - name: Install Mako zip file
+      become: yes
+      shell: cp -f {{ builddir }}/BAS/mako.zip {{ mako_install_path }}/mako.zip && chmod 0644 {{ mako_install_path }}/mako.zip
+      when: install
+
+    - name: Run Lua tutorials
+      become: yes
+      shell: |
+        killall mako || true
+        {{ mako_install_path }}/mako -u {{ lookup('env', 'USER') }} -d -l::{{ builddir }}/BAS-Resources/tools/MakoDownloadTutorials
+      ignore_errors: yes
+      when: tutorials
