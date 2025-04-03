@@ -48,6 +48,7 @@
         state: directory
 
     - name: Ensure required packages are installed
+      become: true
       apt:
         name: "{{ required_packages }}"
         state: present
