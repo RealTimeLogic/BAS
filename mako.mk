@@ -29,10 +29,13 @@ export CBORDIR=../CBOR
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
-	XLIB=-ldl -framework IOKit -framework CoreFoundation;
+	XLIB= -lpthread -lm -ldl -framework IOKit -framework CoreFoundation;
 	CFLAGS += -D_OSX_ -DLUA_USE_MACOSX
 endif
 
+ifndef XLIB
+XLIB= -lpthread -lm -ldl 
+endif
 
 CFLAGS += -fmerge-all-constants -O3 -Os -Wall
 
@@ -122,7 +125,7 @@ endif
 OBJS = $(SOURCE:%.c=%.o)
 
 mako: $(ENCRYPTION_KEY_HEADER) $(OBJS) mako.zip
-	$(CC) -o mako $(OBJS) -lpthread -lm -ldl $(XLIB)
+	$(CC) -o mako $(OBJS) $(XLIB)
 
 # Must be in the same directory as the mako executable
 mako.zip:
