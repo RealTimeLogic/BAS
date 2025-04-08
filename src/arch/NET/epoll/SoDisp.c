@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5468 2023-08-02 13:57:49Z wini $
+ *   $Id: SoDisp.c 5649 2025-04-08 21:16:09Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2017
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -303,7 +303,7 @@ SoDisp_constructor(SoDisp* o, ThreadMutex* mutex)
    memset(o, 0, sizeof(SoDisp));
    DoubleList_constructor(&o->termList);
    /* Unlikely that we need more than this for changed states */
-   o->maxevents = 20;
+   o->maxevents = 1024;
    o->epfd = epoll_create(o->maxevents); /* arg ignored by epoll_create */
    o->mutex = mutex;
    o->defaultPollDelay = o->pollDelay = 1000;

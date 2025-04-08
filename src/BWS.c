@@ -21781,6 +21781,14 @@ spillpsprel(HttpServer*o, HttpConnection* con)
 }
 
 
+
+static int
+alignmentldrstr(HttpResponse* rsp)
+{
+   return rsp->bodyPrint->flushCB(
+      rsp->bodyPrint, rsp->bodyPrint == &rsp->defaultBodyPrint ? 0 : -1);
+}
+
 static int
 switchersysfs(HttpServer* o, HttpCommand* cmd)
 {
@@ -21802,7 +21810,7 @@ switchersysfs(HttpServer* o, HttpCommand* cmd)
          if( ! r3000write->headerSent )
          {  
             if(HttpResponse_containsHeader(r3000write, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150") ||
-               (!HttpResponse_flush(r3000write) &&
+               (!alignmentldrstr(r3000write) &&
                 !(handlersetup=HttpResponse_setContentLength(
                      r3000write,r3000write->msgLen))))
             {
@@ -21812,7 +21820,7 @@ switchersysfs(HttpServer* o, HttpCommand* cmd)
       }
       else
       {
-         if(!(handlersetup=HttpResponse_flush(r3000write)))
+         if(!(handlersetup= alignmentldrstr(r3000write)))
          {
             if(r3000write->useChunkTransfer)
                

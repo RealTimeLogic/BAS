@@ -61129,6 +61129,14 @@ spillpsprel(HttpServer*o, HttpConnection* con)
 }
 
 
+
+static int
+alignmentldrstr(HttpResponse* rsp)
+{
+   return rsp->bodyPrint->flushCB(
+      rsp->bodyPrint, rsp->bodyPrint == &rsp->defaultBodyPrint ? 0 : -1);
+}
+
 static int
 switchersysfs(HttpServer* o, HttpCommand* cmd)
 {
@@ -61150,7 +61158,7 @@ switchersysfs(HttpServer* o, HttpCommand* cmd)
          if( ! r3000write->headerSent )
          {  
             if(HttpResponse_containsHeader(r3000write, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150") ||
-               (!HttpResponse_flush(r3000write) &&
+               (!alignmentldrstr(r3000write) &&
                 !(handlersetup=HttpResponse_setContentLength(
                      r3000write,r3000write->msgLen))))
             {
@@ -61160,7 +61168,7 @@ switchersysfs(HttpServer* o, HttpCommand* cmd)
       }
       else
       {
-         if(!(handlersetup=HttpResponse_flush(r3000write)))
+         if(!(handlersetup= alignmentldrstr(r3000write)))
          {
             if(r3000write->useChunkTransfer)
                
@@ -102886,27 +102894,115 @@ xrsp_mknode(Xrsp* x)
 }
 
 
+
+static void
+consolesetup(Xrsp* x, int backlightdevice, lua_State* L)
+{
+   XrspData* d;
+   int ret;
+   int coremaskclear;
+   do
+   {
+      if( ! x->strm.avail_out )
+         if( ! xrsp_mknode(x) )
+            goto L_error;
+      ret = deflate(&x->strm, Z_FINISH);
+      baAssert(ret != Z_STREAM_ERROR);  
+   } while(ret == Z_OK); 
+   coremaskclear = x->last ? x->nodeSize - x->strm.avail_out : 0;
+   deflateEnd(&x->strm);
+   x->type=0; 
+   if(backlightdevice)
+   { 
+      if(HttpResponse_setHeader(x->resp,"\103\157\156\164\145\156\164\055\105\156\143\157\144\151\156\147","\144\145\146\154\141\164\145",0)||
+         HttpResponse_setContentLength(x->resp,x->totalSize+coremaskclear))
+         goto L_error;
+      while( (d=(XrspData*)DoubleList_removeFirst(&x->list)) != 0 )
+      {
+         ret=HttpResponse_send(x->resp, d->data, x->nodeSize);
+         baFree(d);
+         if(ret)
+            goto L_error;
+      }
+      if(coremaskclear)
+         if(HttpResponse_send(x->resp, x->last->data, coremaskclear))
+            goto L_error;
+      if(L)
+         lua_pushboolean(L, 1);
+   }
+   else if(L)
+   { 
+      luaL_Buffer emulatehiregs;
+      luaL_buffinit(L, &emulatehiregs);
+      while( (d=(XrspData*)DoubleList_removeFirst(&x->list)) != 0 )
+      {
+         luaL_addlstring(&emulatehiregs, (const char*)d->data, x->nodeSize);
+         baFree(d);
+      }
+      if(coremaskclear)
+         luaL_addlstring(&emulatehiregs, (const char*)x->last->data, coremaskclear);
+      luaL_pushresult(&emulatehiregs);
+   }
+   else
+   {
+      assert(0); 
+   }
+   return;
+
+  L_error:
+   if(L)
+      lua_pushnil(L);
+}
+
+
 static int
 inteliommu(BufPrint* fdc37m81xconfig, int stateparam)
 {
    Xrsp* x =(Xrsp*)fdc37m81xconfig;
    lua_State* L = fdc37m81xconfig->userData;
    int handlersetup = -1;
-   (void)stateparam;
+   int conditionvalid32 = FALSE;
    if(x->type == 1)
    {
       int hugepageadjust;
-      lua_rawgeti(L, LUA_REGISTRYINDEX, x->funcRef);
-      lua_pushlstring(L, fdc37m81xconfig->buf, fdc37m81xconfig->cursor);
-      if(lua_resume(L, 0, 1, &hugepageadjust) == 0)
+      if(fdc37m81xconfig->cursor)
       {
-         if( ! lua_isboolean(L, -1) || lua_toboolean(L, -1) )
-            handlersetup=0;
+         lua_rawgeti(L, LUA_REGISTRYINDEX, x->funcRef);
+         lua_pushlstring(L, fdc37m81xconfig->buf, fdc37m81xconfig->cursor);
+        L_no_xrsp_finalize:
+         if(lua_resume(L, 0, 1, &hugepageadjust) == 0)
+         {
+            if( ! lua_isboolean(L, -1) || lua_toboolean(L, -1) )
+               handlersetup=0;
+         }
+         else
+         {
+            const char* msg =
+               lua_isnone(L, -1) ? "\165\156\153\156\157\167\156" : lua_tostring (L, -1);
+            HttpTrace_printf(0,"\122\163\160\040\146\151\154\164\145\162\040\146\141\151\154\145\144\072\040\045\163\012", msg);
+         }
+         lua_settop(L, 0);
       }
-      lua_settop(L, 0);
+      else
+         handlersetup=0;
    }
    if(handlersetup)
       x->type = 0; 
+   else if(stateparam < 0) 
+   {
+      stateparam = 0;
+      handlersetup = -1;
+      conditionvalid32 = TRUE;
+      
+      HttpResponse_setResponseBuf(x->resp, (BufPrint*)x, TRUE);
+      lua_rawgeti(L, LUA_REGISTRYINDEX, x->funcRef);
+      lua_pushnil(L);
+      goto L_no_xrsp_finalize;
+   }
+   if(conditionvalid32 && ! x->resp->headerSent )
+   {
+      HttpResponse_flush(x->resp);
+   }
    return handlersetup;
 }
 
@@ -102915,7 +103011,6 @@ static int
 mmgpioresource(BufPrint* fdc37m81xconfig, int stateparam)
 {
    Xrsp* x =(Xrsp*)fdc37m81xconfig;
-   (void)stateparam;
    if(x->type != 2)
       return -1;
    x->strm.next_in = (Bytef*)fdc37m81xconfig->buf;
@@ -102935,6 +103030,12 @@ mmgpioresource(BufPrint* fdc37m81xconfig, int stateparam)
          x->type = 0;
          return -1;
       }
+   }
+   if(stateparam < 0) 
+   {
+      consolesetup(x, TRUE, 0);
+      
+      HttpResponse_setResponseBuf(x->resp, (BufPrint*)x, TRUE);
    }
    return 0;
 }
@@ -102971,7 +103072,13 @@ suspendenable(lua_State* L, Xrsp* x)
 static int
 helpererrata(lua_State* L)
 {
-   suspendenable(L, (Xrsp*)baluaENV_checkudata(L,1,BA_TSETRESPONSE));
+   
+   Xrsp* x = (Xrsp*)baluaENV_checkudata(L,1,BA_TSETRESPONSE);
+   if(x->type == 1)
+      inteliommu((BufPrint*)x, -1);
+   else if(x->type == 2)
+      mmgpioresource((BufPrint*)x, -1);
+   suspendenable(L, x);
    return 0;
 }
 
@@ -102989,62 +103096,15 @@ segmentconfig(lua_State* L)
       }
       else 
       {
-         XrspData* d;
-         int ret;
-         int coremaskclear;
-         do
-         {
-            if( ! x->strm.avail_out )
-               if( ! xrsp_mknode(x) )
-                  goto L_error;
-            ret = deflate(&x->strm, Z_FINISH);
-            baAssert(ret != Z_STREAM_ERROR);  
-         } while(ret == Z_OK); 
-         coremaskclear = x->last ? x->nodeSize - x->strm.avail_out : 0;
-         deflateEnd(&x->strm);
-         x->type=0; 
-         if(lua_gettop(L) > 1 && lua_toboolean(L, 2) == 1)
-         { 
-            if(HttpResponse_setHeader(x->resp,"\103\157\156\164\145\156\164\055\105\156\143\157\144\151\156\147","\144\145\146\154\141\164\145",0)||
-               HttpResponse_setContentLength(x->resp,x->totalSize+coremaskclear))
-               goto L_error;
-            while( (d=(XrspData*)DoubleList_removeFirst(&x->list)) != 0 )
-            {
-               ret=HttpResponse_send(x->resp, d->data, x->nodeSize);
-               baFree(d);
-               if(ret)
-                  goto L_error;
-            }
-            if(coremaskclear)
-               if(HttpResponse_send(x->resp, x->last->data, coremaskclear))
-                  goto L_error;
-            lua_pushboolean(L, 1);
-         }
-         else
-         { 
-            luaL_Buffer emulatehiregs;
-            luaL_buffinit(L, &emulatehiregs);
-            while( (d=(XrspData*)DoubleList_removeFirst(&x->list)) != 0 )
-            {
-               luaL_addlstring(&emulatehiregs, (const char*)d->data, x->nodeSize);
-               baFree(d);
-            }
-            if(coremaskclear)
-               luaL_addlstring(&emulatehiregs, (const char*)x->last->data, coremaskclear);
-            luaL_pushresult(&emulatehiregs);
-         }
+         consolesetup(x, lua_gettop(L) > 1 && lua_toboolean(L, 2) == 1, L);
       }
    }
    else
    {
-     L_error:
       lua_pushnil(L);
    }
    
-   if(HttpResponse_setResponseBuf(x->resp, (BufPrint*)x, TRUE))
-   {
-      baAssert(0);
-   }
+   HttpResponse_setResponseBuf(x->resp, (BufPrint*)x, TRUE);
    suspendenable(L,x);
    return 1;
 }
@@ -104568,6 +104628,13 @@ stage2range(lua_State* L)
       L,HttpResponse_setStatus(LHttpCommand_toResp(L),sffsdrnandflash));
 }
 
+static int
+debugfault(lua_State* L)
+{
+   LHttpCommand* deviceattribute = LHttpCommand_toCmd(L, 1);
+   lua_pushboolean(L, deviceattribute->cmd ? TRUE : FALSE);
+   return 1;
+}
 
 static int
 removeoptimized(lua_State* L)
@@ -104781,6 +104848,7 @@ static const luaL_Reg baHttpCmdLib[] = {
    {"\163\145\164\155\141\170\141\147\145",            kernelbreak},
    {"\163\145\164\162\145\163\160\157\156\163\145",          singledefault},
    {"\163\145\164\163\164\141\164\165\163",            stage2range},
+   {"\166\141\154\151\144",                debugfault},
    {"\167\162\151\164\145",                removeoptimized},
    {"\167\162\151\164\145\163\151\172\145",            cpufreqnotifier},
    {"\152\163\157\156",                 callchaintrace},
