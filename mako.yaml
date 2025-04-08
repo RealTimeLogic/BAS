@@ -60,6 +60,7 @@
         dest: "{{ builddir }}/BAS"
         update: yes
         force: no
+      register: basrepo
 
     - name: Clone BAS-Resources repository if not present
       git:
@@ -116,9 +117,12 @@
       when: not sqlite_stat.stat.exists
 
     - name: Compile Mako Server
-      shell: echo "n" | make -f mako.mk
+      shell: |
+        make -f mako.mk clean
+        echo "n" | make -f mako.mk
       args:
-        chdir: "{{ builddir }}/BAS"
+          chdir: "{{ builddir }}/BAS"
+      when: basrepo.changed
 
     - name: Install Mako Server binary
       become: yes
