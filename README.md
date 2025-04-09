@@ -3,6 +3,7 @@
 - **[BAS and BWS License](#license)**
 - **BWS:** [Barracuda Embedded Web Server C library](https://realtimelogic.com/products/barracuda-web-server/)
 - **BAS:** [Barracuda Embedded App Server C library](https://realtimelogic.com/products/barracuda-application-server/)
+- [License Details](#license)
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
@@ -102,7 +103,7 @@ See the tutorial [Embedded Linux Web Interface Design](https://makoserver.net/ar
 ```
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
-For a more **robust compilation option**, use the [included Ansible script](Ansible.md).
+For a more **robust compilation option**, use the [included Ansible script](Ansible.md). You may also [install the server as a systemd process](https://github.com/RealTimeLogic/MakoInstaller) using an Ansible script.
 
 Download and cross-compile the code for (embedded) Linux as follows:
 
@@ -400,15 +401,15 @@ Using the above compilation settings, you would also need to include src/arch/Th
 
 ## License
 
-BAS and BWS Amalgamated are licensed for use under the GPLv2 or a
-standard commercial license.  For our users who cannot use BAS and BWS
+BAS and BWS Amalgamated are licensed for use under the **GPLv2** or a
+standard **commercial license**. For our users who cannot use BAS and BWS
 Amalgamated under GPLv2,
 [a commercial license is available](https://realtimelogic.com/contactus/license/).
-A free commercial license for small companies is available.  See the
+A **free commercial license for small companies** is available.  See the
 startup license page for details:
 https://realtimelogic.com/startuplic/
 
-GPLv2 details:
+**GPLv2 details:**
 
 The following clarification is for users who choose to use GPLv2 and
 to distribute derivative work. The GPLv2 license applies to all BAS and BWS APIs
@@ -420,12 +421,13 @@ GPLv2: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
 
 ## Export restrictions
 
-This distribution includes cryptographic software. The country in 
-which you currently reside may have restrictions on the import, 
-possession, use, and/or re-export to another country, of 
-encryption software.  BEFORE using any encryption software, please 
+This distribution includes
+[cryptographic software](https://realtimelogic.com/products/sharkssl/). The
+country in which you currently reside may have restrictions on the
+import, possession, use, and/or re-export to another country, of
+encryption software.  BEFORE using any encryption software, please
 check your country's laws, regulations and policies concerning the
-import, possession, or use, and re-export of encryption software, to 
+import, possession, or use, and re-export of encryption software, to
 see if this is permitted.  See http://www.wassenaar.org/ for more
 information.
 
