@@ -225,17 +225,16 @@ The file **XedgeZip.c** embodies Xedge's resources, transformed into a C file. Y
 To compile Xedge, include BAS.c as previously explained. In the following example, we use Linux as an example and compile the server into a standalone product. For an embedded device, include the files in your build.
 
 ```
-gcc -o examples/xedge/xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
+gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
+    -DLUA_USE_LINUX\
     src/BAS.c\
     examples/HostInit/Main.c examples/HostInit/HostInit.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
     examples/xedge/src/xedge.c examples/xedge/src/led.c\
-    examples/xedge/XedgeZip.c -lpthread -lm
+    examples/xedge/XedgeZip.c -lpthread -lm -ldl
 ```
 
-- The above produces a warning when compiled on Linux. You can remove the warning by specifying a POSIX environment by adding -DLUA_USE_POSIX.
-
-- The files Main.c and HostInit.c are designed for a non-embedded host build. You need to study those two files and set up similar code for your RTOS environment. At a minimum, you need a dedicated thread to run the function barracuda(void), which does not return, with stack size BA_STACKSZ.
+- The files Main.c and HostInit.c are designed for a non-embedded host build. You need to study those two files and set up similar code for your RTOS environment. At a minimum, you need a dedicated thread to run the function barracuda(void), which does not return, with stack size BA_STACKSZ (in bytes).
 
 - The file xedge.c is the Xedge's C startup code.
 
