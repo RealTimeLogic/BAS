@@ -21377,6 +21377,17 @@ joystickinterrupt(SoDispCon* fdc37m81xconfig)
 }
 
 
+
+static void
+conditionchecks(SoDisp* ptraceaccess, HttpConnection* con)
+{
+   if(HttpConnection_recEvActive(con))
+      SoDisp_deactivateRec(ptraceaccess,(SoDispCon*)con);
+   if(HttpConnection_dispatcherHasCon(con))
+      SoDisp_removeConnection(ptraceaccess, (SoDispCon*)con);
+}
+
+
 static void
 ltm020d550modes(WaitForConClose* o,
                             HttpServer* uarchbuild,
@@ -21391,10 +21402,7 @@ ltm020d550modes(WaitForConClose* o,
                               joystickinterrupt);
    o->alloc=unmapaliases;
    ptraceaccess = HttpServer_getDispatcher(con->server);
-   if(HttpConnection_recEvActive(con))
-      SoDisp_deactivateRec(ptraceaccess,(SoDispCon*)con);
-   if(HttpConnection_dispatcherHasCon(con))
-      SoDisp_removeConnection(ptraceaccess, (SoDispCon*)con);
+   conditionchecks(ptraceaccess,con);
    HttpConnection_moveCon(con, (HttpConnection*)o);
    SoDisp_addConnection(ptraceaccess, (SoDispCon*)o);
    SoDisp_activateRec(ptraceaccess, (SoDispCon*)o);
@@ -22149,10 +22157,7 @@ HttpServer_termOldestIdleCon(HttpServer* o)
    HttpLinkCon* con = HttpLinkConList_removeFirst(&o->connectedList);
    if(con)
    {
-      SoDisp_deactivateRec(
-         o->dispatcher, (SoDispCon*)con);
-      SoDisp_removeConnection(
-         o->dispatcher, (SoDispCon*)con);
+      conditionchecks(o->dispatcher,(HttpConnection*)con);
       HttpConnection_setState(
          (HttpConnection*)con, HttpConnection_HardClose);
       pciercxcfg008(&o->freeList, con);
@@ -22175,10 +22180,7 @@ HttpServer_getFreeCon(HttpServer* o)
       freeCon = HttpLinkConList_removeFirst(&o->connectedList);
       if(freeCon)
       {
-         SoDisp_deactivateRec(
-            o->dispatcher, (SoDispCon*)freeCon);
-         SoDisp_removeConnection(
-            o->dispatcher, (SoDispCon*)freeCon);
+         conditionchecks(o->dispatcher,(HttpConnection*)freeCon);
          HttpConnection_setState(
             (HttpConnection*)freeCon, HttpConnection_HardClose);
       }

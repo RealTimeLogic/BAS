@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5648 2025-03-30 17:51:19Z wini $
+ *   $Id: xedge.c 5650 2025-04-16 19:35:37Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2024
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -188,7 +188,7 @@ onunload(lua_State* L, int onunloadRef)
 #ifndef NO_BAIO_DISK
 
 /* File system init code for HLOS */
-#if defined _WIN32 || defined(BA_POSIX)
+#if (defined _WIN32 || defined(BA_POSIX)) && !defined(NO_INIT_DISK_IO)
 #include <stdlib.h>
 int xedgeInitDiskIo(DiskIo* dio)
 {
