@@ -35,7 +35,7 @@ Ref: https://realtimelogic.com/products/barracuda-application-server/
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wchar-subscripts"
-#if __clang__ != 1
+#ifndef __clang__
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough="
 #endif
 #pragma GCC diagnostic ignored "-Wmisleading-indentation"

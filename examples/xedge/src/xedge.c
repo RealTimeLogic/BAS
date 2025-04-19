@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5650 2025-04-16 19:35:37Z wini $
+ *   $Id: xedge.c 5652 2025-04-17 16:13:35Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *               http://www.realtimelogic.com
@@ -371,9 +371,10 @@ createVmIo()
 #ifndef NO_ENCRYPTIONKEY
 static void pushPrimarySecret(lua_State* L)
 {
+/* We use WBC (code after #if 0) */
 #if 0
-   /* The naive method, ref:
-      https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
+   /* The naive method we do not use; details:
+      https://realtimelogic.com/ba/doc/en/SoftTPM.html
    */
    lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
 #else
@@ -381,18 +382,16 @@ static void pushPrimarySecret(lua_State* L)
     * security, change this code and keep the C code secret.
     */
    baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
-   {
-      luaL_Buffer b;
-      size_t i;
-      U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
-      for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
-         /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
-         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
-         transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
-      }
-      luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
-      luaL_pushresult(&b);
+   luaL_Buffer b;
+   size_t i;
+   U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
+   for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
+      /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
+      transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
+      transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
    }
+   luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
+   luaL_pushresult(&b);
 #endif
 }
 #endif /* NO_ENCRYPTIONKEY */
