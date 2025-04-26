@@ -28,6 +28,10 @@ typedef struct XedgeOpenAUX {
    XedgeCfgFile xedgeCfgFile; /* Set this in xedgeOpenAUX() to enable (2) */
 } XedgeOpenAUX;
 
+/* External code can call this function for graceful shutdown
+ */
+void setDispExit(void);
+
 #ifndef NO_BAIO_DISK
 /* You must create this function unless compiled with NO_BAIO_DISK.
    Some embedded operating systems require the IO to be configured,

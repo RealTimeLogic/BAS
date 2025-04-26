@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5637 2025-03-02 21:51:18Z gianluca $
+ *   $Id: SharkSSL.h 5655 2025-04-25 08:27:43Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
  *
@@ -39,11 +39,9 @@
 
 #include "TargConfig.h"      /* platform dependencies  */
 
-#if SHARKDBG_PRINTF
-#undef SHARKDBG_PRINTF
+#if defined(SHARKDBG_ENABLE) && SHARKDBG_ENABLE
 #define SHARKDBG_PRINTF(x) printf x
 #else
-#undef SHARKDBG_PRINTF
 #define SHARKDBG_PRINTF(x)
 #endif
 

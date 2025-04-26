@@ -8,6 +8,10 @@ installed (example 2).
 Introduction:
 https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html#AsynchC2Lua
 
+NOTE:
+A more rudimentary example than the two following examples can be
+found in the source code led.c (Example 5).
+
 Example 1:
 The example listening on port 8080, referred to as 'ex1' below,
 expects a global Lua function to be defined. If the function is found,

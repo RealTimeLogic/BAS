@@ -6,10 +6,15 @@
        reading/writing the Xedge configuration file
     3. Add additional secrets for TPM key generation
     4. Integrate an embedded, read-only ZIP file system
+    5. Send the time event 'sntp' to the Xedge Lua code
 */
 
 #include "xedge.h"
 #include <sys/stat.h>
+
+/* The LThreadMgr configured in xedge.c */
+extern LThreadMgr ltMgr;
+
 
 /*
   Ex 1. Create Lua bindings to interface with C code.
@@ -61,7 +66,7 @@ static int LED_getLed(lua_State* L)
    return 1; /* Inform Lua that we have one return value */
 }
 
-/**************  END LED API CODE **************************/
+/**************  END LED API CODE (Ex 1) **************************/
 
 
 /* 
@@ -124,52 +129,6 @@ static int xedgeCfgFile(lua_State* L)
    return 2;
 }
 
-ZipReader* hello(void); /* Ex 4: See auto generated code below */
-
-/*
-  The function below is called by the Xedge startup code.
-*/
-int xedgeOpenAUX(XedgeOpenAUX* aux)
-{
-   static const luaL_Reg ledReg[] = {
-      {"setLed", LED_setLed},
-      {"getLed", LED_getLed},
-      {NULL, NULL}
-   };
-   /* Ex1: Install the LED API as a global variable */
-   luaL_newlib(aux->L, ledReg);
-   lua_setglobal(aux->L, "LED");
-
-   /* Ex2: Install the optional config file handler. See function and comments above */
-   aux->xedgeCfgFile = xedgeCfgFile;
-
-   /* Ex 3. Add additional secrets for TPM key generation
-      Config TPM: https://realtimelogic.com/ba/examples/xedge/readme.html#security
-      TPM API: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
-      When using the softTPM, in addition to the main secret you must
-      set in EncryptionKey.h, additional secrets can be added to the
-      logic in xedge.lua that calculates the pre-master key. At least
-      one key should be a fixed ID specific to the device. It could be
-      the Ethernet MAC address or any other unique ID. In the ESP32
-      reference port, we use "eFUSE Registers". Note that you cannot
-      use random generated data, as secret(s) must be persistent.
-    */
-#ifndef NO_ENCRYPTIONKEY
-   const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
-   aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
-   aux->addSecret(aux, "You can add any number of secrets", 33);
-#endif
-
-   /* Ex 4: Add an embedded ZIP file (read only file system)
-      The content of hello.txt (see embedded zip file below) can be
-      printed using Lua as follows:
-      print(ba.mkio"hello-handle":open"hello.txt":read"a")
-   */
-   balua_installZIO(aux->L, "hello-handle", hello());
-
-   return 0; /* OK */
-}
-
 
 /* Ex 4: Add an embedded ZIP file (read only file system)
    The C code below was generated as follows:
@@ -219,4 +178,125 @@ ZipReader* hello(void)
    ZipReader_constructor(&zipReader,DataZipReader_diskRead,sizeof(cspPages));
    CspReader_setIsValid(&zipReader);
    return &zipReader;
+}
+
+/***************************  END Ex 4 **************************/
+
+/* 
+ Ex 5: This example shows how to send the SNTP event to Xedge. A
+ device without a clock must use an SNTP client to update the system
+ time. See the following for an introduction:
+ https://realtimelogic.com/ba/examples/xedge/readme.html#time
+
+ The SNTP client C code may include an event mechanism for the C
+ code to use; however, in the following example, we wait for the time
+ to be set in a thread. When the time is set, the code calls the Lua
+ '_XedgeEvent' function with the argument sntp to signal that we have
+ the correct time.
+
+ The code below uses the LThreadMgr object:
+ https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html#fullsolution
+*/
+
+
+/* This callback is called by one of the threads managed by LThreadMgr
+ * when a job is taken off the queue and executed. The callback
+ * attempts to find the global Lua function '_XedgeEvent', and if the
+ * function is found, it will be executed as follows: _XedgeEvent("sntp")
+ */
+static void executeXedgeEvent(ThreadJob* job, int msgh, LThreadMgr* mgr)
+{
+   lua_State* L = job->Lt;
+   lua_pushglobaltable(L); /* _G */
+   lua_getfield(L, -1, "_XedgeEvent");
+   if(lua_isfunction(L, -1))  /* Do we have _G._XedgeEvent */
+   {
+      /* Call _XedgeEvent("sntp") */
+      lua_pushstring(L,"sntp"); /* Arg */
+      lua_pcall(L, 1, 0, msgh); /* one arg, no return value */
+   }
+}
+
+
+/* Thread started by xedgeOpenAUX() */
+static void checkTimeThread(Thread* th)
+{
+   ThreadMutex* soDispMutex = HttpServer_getMutex(ltMgr.server);
+   (void)th; /* not used */
+
+   /* Use the compile time macros for date and time and convert the
+    * date/time to a value that can be used by function baParseDate
+    */
+   const char* d = __DATE__;
+   char buf[50];
+   if (!(basnprintf(buf, sizeof(buf), "Mon, %c%c %c%c%c %s %s",
+                    d[4],d[5], d[0],d[1],d[2], d + 7, __TIME__) < 0))
+   {
+      BaTime compileT = baParseDate(buf);
+      if(compileT) /* If OK: Seconds since 1970 */
+      {
+         compileT -= 24*60*60; /* Give it one day for time zone adj. */
+         /* Wait for time to be updated by NTP */
+         while(baGetUnixTime() < compileT)
+            Thread_sleep(500);
+         /* Initiate executing the Lua func _XedgeEvent("sntp") */
+         ThreadJob* job=ThreadJob_lcreate(sizeof(ThreadJob), executeXedgeEvent);
+         ThreadMutex_set(soDispMutex);
+         LThreadMgr_run(&ltMgr, job);
+         ThreadMutex_release(soDispMutex);
+      }
+   }
+   /* Exit thread */
+}
+
+
+/***************************  END Ex 5 **************************/
+
+/*
+  The function below is called by the Xedge startup code.
+*/
+int xedgeOpenAUX(XedgeOpenAUX* aux)
+{
+   static const luaL_Reg ledReg[] = {
+      {"setLed", LED_setLed},
+      {"getLed", LED_getLed},
+      {NULL, NULL}
+   };
+   /* Ex1: Install the LED API as a global variable */
+   luaL_newlib(aux->L, ledReg);
+   lua_setglobal(aux->L, "LED");
+
+   /* Ex2: Install the optional config file handler. See function and comments above */
+   aux->xedgeCfgFile = xedgeCfgFile;
+
+   /* Ex 3. Add additional secrets for TPM key generation
+      Config TPM: https://realtimelogic.com/ba/examples/xedge/readme.html#security
+      TPM API: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
+      When using the softTPM, in addition to the main secret you must
+      set in EncryptionKey.h, additional secrets can be added to the
+      logic in xedge.lua that calculates the pre-master key. At least
+      one key should be a fixed ID specific to the device. It could be
+      the Ethernet MAC address or any other unique ID. In the ESP32
+      reference port, we use "eFUSE Registers". Note that you cannot
+      use random generated data, as secret(s) must be persistent.
+    */
+#ifndef NO_ENCRYPTIONKEY
+   const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
+   aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
+   aux->addSecret(aux, "You can add any number of secrets", 33);
+#endif
+
+   /* Ex 4: Add an embedded ZIP file (read only file system)
+      The content of hello.txt (see embedded zip file below) can be
+      printed using Lua as follows:
+      print(ba.mkio"hello-handle":open"hello.txt":read"a")
+   */
+   balua_installZIO(aux->L, "hello-handle", hello());
+
+   /* Ex 5 */
+   static Thread checkTime;
+   Thread_constructor(&checkTime, checkTimeThread, ThreadPrioNormal, 2000);
+   Thread_start(&checkTime);
+
+   return 0; /* OK */
 }

@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5652 2025-04-17 16:13:35Z wini $
+ *   $Id: xedge.c 5653 2025-04-24 22:16:40Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *               http://www.realtimelogic.com
@@ -45,11 +45,10 @@
  into a ZIP file. The optional BAS aux APIs included are documented in
  the startup code below.
 
- This C code includes support for a graceful shutdown, which is
- enabled only if the code is compiled with USE_DBGMON=1, indicating
- that the Lua debug monitor is enabled. While graceful shutdown is
- usually unnecessary in a firmware environment, it is essential for
- the Lua debug monitor's hot restart feature.
+ This C code includes support for a graceful shutdown, which external
+ code can initiate by calling setDispExit(). Graceful shutdown is also
+ used when Xedge is restarted by the debugger; however, when
+ restarted, the program does not exit.
 
  The C code below also installs a Lua debugger hook, indirectly when
  compiled with USE_DBGMON=1, or directly when compiled with the macro
@@ -94,17 +93,6 @@
 #include "ZipPublicKey.h"
 #endif
 
-/* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
- * pool) is not utilized. Instead, the LThreadMgr is used as the
- * thread pool. Additionally, the LThreadMgr is configured to prohibit
- * the creation of additional threads.
- * Details:
- *  https://realtimelogic.com/ba/doc/en/C/reference/html/group__ThreadMgr.html
- */
-#ifdef ESP_PLATFORM
-#define MAXTHREADS 2
-#endif
-
 /* Call this function from the program's main() function or from a
  * dedicated thread.
  */
@@ -119,6 +107,16 @@ static SoDisp dispatcher;
    extern LThreadMgr ltMgr;
 */
 LThreadMgr ltMgr;
+
+
+/* External code can call this function for graceful shutdown
+ */
+static BaBool shutDown=FALSE;
+void setDispExit(void)
+{
+   shutDown=TRUE;
+   SoDisp_setExit(&dispatcher);
+}
 
 
 /* 
@@ -155,7 +153,6 @@ int luaopen_org_conman_cbor_c(lua_State *L);
 #include <opcua_module.h>
 #endif
 
-#if USE_DBGMON
 /* This function runs the Lua 'onunload' handlers for all loaded apps
    when the server exits.  onunload is an optional function Lua
    applications loaded by the server can use if the applications
@@ -178,7 +175,6 @@ onunload(lua_State* L, int onunloadRef)
    luaL_unref(L, LUA_REGISTRYINDEX, onunloadRef);
    balua_relsocket(L); /* Gracefully close all cosockets, if any */
 }
-#endif
 
 
 /* RTOS devices typically require special file system initialization.
@@ -255,6 +251,13 @@ static void
 createServer(HttpServer* server)
 {
    HttpServerConfig scfg;
+   /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
+    * pool) is not utilized. Instead, the LThreadMgr is used as the
+    * thread pool. Additionally, the LThreadMgr is configured to prohibit
+    * the creation of additional threads.
+    * Details:
+    *  https://realtimelogic.com/ba/doc/en/C/reference/html/group__ThreadMgr.html
+    */
 #ifdef MAXTHREADS
    U16 cmdInstances=MAXTHREADS;
    if(cmdInstances > 1)
@@ -267,7 +270,8 @@ createServer(HttpServer* server)
 
    HttpServerConfig_setNoOfHttpCommands(&scfg,cmdInstances);
 
-   HttpServerConfig_setNoOfHttpConnections(&scfg,8);
+   HttpServerConfig_setNoOfHttpConnections(
+      &scfg, cmdInstances+3 < 8 ? 8 : cmdInstances+3);
 
    /* For huge url encoded data, if any. */
    HttpServerConfig_setRequest(&scfg,2*1024, 8*1024);
@@ -502,9 +506,7 @@ barracuda(void)
 #endif
 
 /* If restarted by Lua debugger */
-#if USE_DBGMON
   L_restart:
-#endif
 
    HttpTrace_setPrio(9); /* block > 9 */
 
@@ -700,9 +702,9 @@ barracuda(void)
    ThreadMutex_release(&mutex);
    SoDisp_run(&dispatcher, -1);
 
-   /* Enable gracefull shutdown if debug monitor is included.
+   /* Gracefull shutdown
     */
-#if USE_DBGMON
+
    /*Dispatcher mutex must be locked when terminating the following objects.*/
    ThreadMutex_set(&mutex);
    /* Graceful termination of Lua apps. See function above. */
@@ -727,10 +729,15 @@ barracuda(void)
    SoDisp_destructor(&dispatcher);
    ThreadMutex_release(&mutex);   
    ThreadMutex_destructor(&mutex);
-   HttpTrace_printf(0,"\n\nRestarting xedge.\n\n");
-   HttpTrace_flush();
-   goto L_restart;
-#else /*  USE_DBGMON */
-   (void)onunloadRef;
-#endif
+
+   if(shutDown) /* via setDispExit() */
+   {
+      shutDown=FALSE;
+   }
+   else /* via debugger */
+   {
+      HttpTrace_printf(0,"\n\nRestarting xedge.\n\n");
+      HttpTrace_flush();
+      goto L_restart;
+   }
 }

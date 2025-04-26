@@ -44359,9 +44359,13 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
 
 
 #if SHARKSSL_TLS_1_3
-#if SHARKSSL_SSL_CLIENT_CODE
+#if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE)
 
-static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
+#if (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_SSL_SERVER_CODE)
+static int bv1(SharkSslCon* o, U8* registeredevent, U16 len, SharkSsl_Role startkernel)
+#else
+static int bv1(SharkSslCon* o, U8* registeredevent, U16 len)
+#endif
 {
    U16 prminstwrite, paramnamed;
 
@@ -44395,17 +44399,57 @@ static int dfbmcs320device(SharkSslCon* o, U8* registeredevent, U16 len)
          #if (SHARKSSL_PROTOCOL_MAJOR(SHARKSSL_PROTOCOL_TLS_1_3) != SHARKSSL_PROTOCOL_MAJOR(SHARKSSL_PROTOCOL_TLS_1_2))
          #error INTERNAL ERROR SHARKSSL_PROTOCOL_MAJOR TLS 1.3 <> TLS 1.2
          #endif
-         if ((paramnamed != 2) || (*registeredevent++ != SHARKSSL_PROTOCOL_MAJOR(SHARKSSL_PROTOCOL_TLS_1_3)))
+         #if SHARKSSL_SSL_CLIENT_CODE 
+         #if SHARKSSL_SSL_SERVER_CODE
+         if (SharkSsl_Client == startkernel)
+         #endif
          {
+            if ((paramnamed != 2) || (*registeredevent++ != SHARKSSL_PROTOCOL_MAJOR(SHARKSSL_PROTOCOL_TLS_1_3)))
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;  
+            }
+            if ((*registeredevent != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) && (*registeredevent != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)))
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;  
+            }
+            return (int)*registeredevent;
+         }
+         #if SHARKSSL_SSL_SERVER_CODE
+         else
+         #endif
+         #endif  
+         #if SHARKSSL_SSL_SERVER_CODE
+         {
+            #if SHARKSSL_SSL_CLIENT_CODE
+            baAssert(SharkSsl_Server == startkernel);  
+            #endif
+            if (!(paramnamed & 1))
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;  
+            }
+            paramnamed--;
+            if (paramnamed != *registeredevent++)  
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;  
+            }
+            while (paramnamed >= 2)
+            {
+               if ((SHARKSSL_PROTOCOL_MAJOR(SHARKSSL_PROTOCOL_TLS_1_3) == *registeredevent++) && 
+                   ((SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3) == *registeredevent) || (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == *registeredevent)))
+               {
+                  return (int)*registeredevent;  
+               }
+               registeredevent++;
+               paramnamed -= 2;
+            }
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
             return -1;  
          }
-         if ((*registeredevent != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) && (*registeredevent != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)))
-         {
-            SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-            return -1;  
-         }
-         return (int)*registeredevent;
+         #endif  
       }
       else  
       {
@@ -46007,16 +46051,82 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                goto regionfixed;
             }
+            
             paramnamed  = (U16)(*registeredevent++) << 8;
             paramnamed += *registeredevent++;
             hsDataLen -= 2;
-
-            if (hsDataLen < paramnamed)
+            if (hsDataLen != paramnamed)  
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                goto regionfixed;
             }
 
+            #if SHARKSSL_TLS_1_3
+            
+            #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_SSL_CLIENT_CODE)
+            now_ccLen = bv1(o, registeredevent, paramnamed, SharkSsl_Server);
+            #else
+            now_ccLen = bv1(o, registeredevent, paramnamed);
+            #endif
+            #else
+            now_ccLen = 0;  
+            #endif
+
+            switch (now_ccLen)
+            {
+               #if SHARKSSL_TLS_1_3
+               case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3):
+                  
+                  if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+                  {
+                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3);
+                  }
+                  else
+                  {
+                     SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                     return savedconfig(o, SHARKSSL_ALERT_PROTOCOL_VERSION);
+                  }
+                  break;
+
+               case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2):
+                  #if SHARKSSL_TLS_1_2
+                  if ((o->minor == 0) || (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)))
+                  {
+                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);
+                     break;
+                  }
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  goto regionfixed;
+                  #else
+                  goto _sharkssl_hs_alert_protocol_version;
+                  #endif
+                  break;  
+               #endif  
+
+               case 0:  
+                  if (o->minor == 0)  
+                  {
+                     #if SHARKSSL_TLS_1_2
+                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);
+                     break;
+                     #endif
+                     
+                  }
+                  #if SHARKSSL_TLS_1_2
+                  else if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))  
+                  {
+                     break;
+                  }
+                  #endif
+                  
+
+               default:  
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  goto regionfixed;
+                  break;
+            }
+
+            #if SHARKSSL_TLS_1_2 && !SHARKSSL_TLS_1_3
             
             i = (U16)handleptrauth(o, (SHARKSSL_WEIGHT*)afterhandler, registeredevent, paramnamed);
             if (i != 0)
@@ -46030,7 +46140,17 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                #endif
                goto _sharkssl_hs_alert_handshake_failure;
             }
+            #endif
             hsDataLen -= paramnamed;
+         }
+         else  
+         {
+            #if SHARKSSL_TLS_1_2
+            o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);
+            #else
+            SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+            return savedconfig(o, SHARKSSL_ALERT_PROTOCOL_VERSION);
+            #endif
          }
 
          #if SHARKSSL_ENABLE_SNI
@@ -47127,7 +47247,11 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
 
             #if SHARKSSL_TLS_1_3
             
-            now_ccLen = dfbmcs320device(o, registeredevent, paramnamed);
+            #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_SSL_CLIENT_CODE)
+            now_ccLen = bv1(o, registeredevent, paramnamed, SharkSsl_Client);
+            #else
+            now_ccLen = bv1(o, registeredevent, paramnamed);
+            #endif
             #else
             now_ccLen = 0;  
             #endif
