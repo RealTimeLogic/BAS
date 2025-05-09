@@ -1,48 +1,82 @@
 /*
-The following example is part of the Advanced Lua Bindings tutorial
-and demonstrates how to call Lua code asynchronously from C code. This
-example receives UDP messages on ports 8080 and 8090, forwarding these
-events to Lua if the relevant Lua functions have been created (example 1) and
-installed (example 2).
+ * This software may only be used in accordance with the terms and
+ * conditions stipulated in the corresponding license agreement under
+ * which it has been supplied, or, at your option, under the terms of
+ * the MIT License.
+ *
+ * The MIT License text follows below.
+ *
+ * No attribution or contribution is required when copying, modifying,
+ * or redistributing this file.
+ *
+ * MIT License:
+ * Copyright (c) 2025 Real Time Logic
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+
+/*
+  The following example is part of the Advanced Lua Bindings tutorial
+  and demonstrates how to call Lua code asynchronously from C
+  code. This example receives UDP messages on ports 8080 and 8090,
+  forwarding these events to Lua if the relevant Lua functions have
+  been created (example 1) and installed (example 2).
 
 Introduction:
-https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html#AsynchC2Lua
+  https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html#AsynchC2Lua
 
 NOTE:
-A more rudimentary example than the two following examples can be
-found in the source code led.c (Example 5).
+  A more rudimentary example than the two following examples can be
+  found in the source code led.c (Example 5).
 
 Example 1:
-The example listening on port 8080, referred to as 'ex1' below,
-expects a global Lua function to be defined. If the function is found,
-the example will call this function. To create this function, add the
-following Lua code to the .preload script of a Lua application using
-Xedge:
+  The example listening on port 8080, referred to as 'ex1' below,
+  expects a global Lua function to be defined. If the function is
+  found, the example will call this function. To create this function,
+  add the following Lua code to the .preload script of a Lua
+  application using Xedge:
 
-function _G.udpmsg(msg)
-    trace("Global func received:", msg)
-end
+  function _G.udpmsg(msg)
+      trace("Global func received:", msg)
+  end
 
-You can also insert this code into an LSP page to experiment with the
-incoming data. Repeatedly refreshing the LSP page will replace the
-previous function with a new function.
+  You can also insert this code into an LSP page to experiment with
+  the incoming data. Repeatedly refreshing the LSP page will replace
+  the previous function with a new function.
 
 Example 2:
-The example listening on port 8090, referred to as 'ex2' below, expects
-a Lua callback function to be installed. To install the callback
-function, use the following code:
+  The example listening on port 8090, referred to as 'ex2' below, expects
+  a Lua callback function to be installed. To install the callback
+  function, use the following code:
+  
+  UDPTST.install(function(msg)
+      trace("CB received:", msg)
+  end)
+  
+  You can insert this code into an LSP page as well. Calling the
+  UDPTST.install() function repeatedly will replace the previous
+  callback with the new callback.
 
-UDPTST.install(function(msg)
-    trace("CB received:", msg)
-end)
-
-You can insert this code into an LSP page as well. Calling the
-UDPTST.install() function repeatedly will replace the previous
-callback with the new callback.
-
-The following Python script can be used for sending UDP broadcast
-messages on port 8080 and generate UDP events for example 1. To test
-example 2, change the port number in the Python script to 8090.
+  The following Python script can be used for sending UDP broadcast
+  messages on port 8080 and generate UDP events for example 1. To test
+  example 2, change the port number in the Python script to 8090.
 
 Here is the Python script:
 
