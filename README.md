@@ -2,7 +2,7 @@
 ## Embedded Web Server and IoT Toolkit C Code Libraries
 - **BWS:** [Barracuda Embedded Web Server C library](https://realtimelogic.com/products/barracuda-web-server/)
 - **BAS:** [Barracuda Embedded App Server C library](https://realtimelogic.com/products/barracuda-application-server/)
-- [License Details](#license)
+- **[Three license options](#license)**: GPLv2, free commercial license, and standard royalty-free commercial license.
 
 <img align="left" width="200" height="200" alt="Barracuda App Server Logo" src="https://realtimelogic.com/ba/doc/logo.svg">
 
