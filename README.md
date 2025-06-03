@@ -222,7 +222,12 @@ cd ../../BAS
 
 The file **XedgeZip.c** embodies Xedge's resources, transformed into a C file. You can uncover this file's resources and detailed build instructions in the [BAS-Resources Repository](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build).
 
-To compile Xedge, include BAS.c as previously explained. In the following example, we use Linux as an example and compile the server into a standalone product. For an embedded device, include the files in your build.
+To compile Xedge, include:
+
+- **Required :** BAS.c, xedge.c, Xedge startup code (examples: Main.c and HostInit.c), XedgeZip.c, ThreadLib.c, SoDisp.c, and dlmalloc.c (required for most RTOS builds)
+- **Optional :** BaFile.c and led.c
+
+In the following build example, we use Linux to compile the server as a standalone application. For embedded devices, simply include the relevant source files in your build system instead.
 
 ```
 gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
@@ -238,9 +243,9 @@ gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
 
 - The file xedge.c is the Xedge's C startup code.
 
-- The file led.c includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP). You can remove this from your build by defining -DNO_XEDGE_AUX or simply removing the function call in xedge.c
+- The led.c file includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP) for device control. If you don't need these examples, you can exclude them by either defining -DNO_XEDGE_AUX or by removing the xedgeOpenAUX() call in xedge.c. That said, you'll eventually want to implement your own Lua APIs for device management, so we recommend keeping an empty xedgeOpenAUX() in your build as a starting point. The [led.c file](https://github.com/RealTimeLogic/BAS/blob/main/examples/xedge/src/led.c) contains several practical examples worth studying to guide your own implementation.
 
-- For embedded, a recommendation is to initially tests the server without file system support. Remove the file BaFile.c from your build and compile with -DNO_BAIO_DISK, a macro used by xedge.c
+- For embedded, a recommendation is to initially tests the server without file system support. Remove the file BaFile.c from your build and compile with -DNO_BAIO_DISK, a macro used by the file xedge.c.
 
 - If you get a link error that includes dlmalloc, include src/dlmalloc.c in your build and initialize the allocator as shown in the file examples/HostInit/Main.c.
 
@@ -248,7 +253,7 @@ gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
 
 **Cross Compiling Xedge for Embedded Systems**
 
-Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included. See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.
+Include the files as instructed above in your IDE or Makefile. Most embedded systems require an efficient allocator, which is included (dlmalloc). See, for example, the [FreeRTOS Readme File](src/arch/FreeRTOS/README.txt) for how to set up all required components. Most embedded RTOSs require the same setup.
 
 **Pre-compiled binaries:** Try running the server on an ESP32 using FreeRTOS and lwIP, even if you plan to use a different RTOS or device. The ESP32 is user-friendly and great for learning about RTOS. Use the [pre-compiled ESP32 Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/) for this purpose.
 

@@ -61,7 +61,8 @@ extern LThreadMgr ltMgr;
         https://tutorial.realtimelogic.com/Lua-Bindings.lsp
 
   Lua binding tutorials:
-    https://realtimelogic.com/ba/doc/?url=GettingStarted.html#UsingLSP
+    https://tutorial.realtimelogic.com/Lua-Bindings.lsp
+    https://realtimelogic.com/ba/doc/en/introduction.html#UsingLSP
     https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html
 
  Auto generation:
@@ -127,7 +128,7 @@ static int xedgeCfgFile(lua_State* L)
 {
    FILE* fp;
    static const char* fn = "Xedge-configuration-file";
-   if(lua_isstring(L, 1)) /* Write */
+   if(lua_isstring(L, 1)) /* Write (optional feature) */
    {
       size_t size;
       const char* data=lua_tolstring(L, 1, &size);
@@ -177,7 +178,9 @@ static int xedgeCfgFile(lua_State* L)
 */
 
 
-/****** The C array below contains data from file: hello.zip *****/
+/* The C array below and the two following functions were copied from
+ * the generated file hello.zip.
+*/
 static const U8 cspPages[] = {
 (U8)0x50,(U8)0x4B,(U8)0x03,(U8)0x04,(U8)0x14,(U8)0x00,(U8)0x00,(U8)0x00
 ,(U8)0x00,(U8)0x00,(U8)0x5C,(U8)0x75,(U8)0x50,(U8)0x59,(U8)0x86,(U8)0xA6
@@ -216,6 +219,7 @@ ZipReader* hello(void)
 }
 
 /***************************  END Ex 4 **************************/
+
 
 /* 
  Ex 5: This example shows how to send the SNTP event to Xedge. A
@@ -316,7 +320,7 @@ int xedgeOpenAUX(XedgeOpenAUX* aux)
       use random generated data, as secret(s) must be persistent.
     */
 #ifndef NO_ENCRYPTIONKEY
-   const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EX. */
+   const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EXAMPLE */
    aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
    aux->addSecret(aux, "You can add any number of secrets", 33);
 #endif
