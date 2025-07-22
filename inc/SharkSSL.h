@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5655 2025-04-25 08:27:43Z gianluca $
+ *   $Id: SharkSSL.h 5658 2025-04-30 05:08:15Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
  *
@@ -175,6 +175,10 @@ when the peer fails to process the data.
 #define SHARKSSL_ALERT_USER_CANCELED               90
 /** SHARKSSL_ALERT_NO_RENEGOTIATION */
 #define SHARKSSL_ALERT_NO_RENEGOTIATION            100
+/** SHARKSSL_ALERT_MISSING_EXTENSION */
+#define SHARKSSL_ALERT_MISSING_EXTENSION           109
+/** SHARKSSL_ALERT_UNSUPPORTED_EXTENSION */
+#define SHARKSSL_ALERT_UNSUPPORTED_EXTENSION       110
 /** SHARKSSL_ALERT_UNRECOGNIZED_NAME */
 #define SHARKSSL_ALERT_UNRECOGNIZED_NAME           112
 /** SHARKSSL_ALERT_NO_APPLICATION_PROTOCOL */

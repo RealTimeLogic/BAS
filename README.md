@@ -80,6 +80,7 @@ BAS and BWS are versatile C libraries designed for seamless integration into a w
 - The [Mako Server](#mako-server-hlos) (BAS)
 - The [Xedge](#xedge-rtos) (BAS)
 - The [C++ WebSocket Server Example](examples/C-WebSockets/README.md) (BWS)
+- [Designing Embedded RESTful Services in C and C++](examples/C-RESTful-Service/README.md) (BWS)
 
 * **BAS Examples:** The Mako Server is designed for HLOS, and Xedge is designed for RTOS. Both examples provide a [Lua foundation](https://realtimelogic.com/products/lua-server-pages/) enabling rapid interactive development of web, IoT, and business logic (high level logic).
 * **BWS Example:** The C++ WebSocket Server Example shows how to implement everything using C code.

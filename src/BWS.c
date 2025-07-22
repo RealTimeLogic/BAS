@@ -6316,12 +6316,11 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 #define coverstate   0x00080000L  
 
 
-#if SHARKSSL_TLS_1_2
 #if SHARKSSL_SSL_SERVER_CODE
 #if SHARKSSL_ENABLE_SNI
 #include <SharkSslEx.h>
 #endif
-static int handleptrauth(SharkSslCon *o, SHARKSSL_WEIGHT *mfgpt0counter, U8 *registeredevent, U16 len)
+static int writepmresr(SharkSslCon *o, SHARKSSL_WEIGHT *mfgpt0counter, U8 *registeredevent, U16 len)
 {
    SHARKSSL_WEIGHT *p;
    SingleListEnumerator e;
@@ -6329,11 +6328,14 @@ static int handleptrauth(SharkSslCon *o, SHARKSSL_WEIGHT *mfgpt0counter, U8 *reg
    SharkSslHSParam *sharkSslHSParam;
 
 #else
-static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
+static int writepmresr(SharkSslCon* o, U8* registeredevent, U16 len)
 {
 #endif
 
    U16 prminstwrite, paramnamed;
+   #if SHARKSSL_TLS_1_3
+   U16 kLen, ksLen;
+   #endif
 
    baAssert(o);
    baAssert(registeredevent);
@@ -6469,12 +6471,14 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          case featurespresent:
             if (len < 1)
             {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                return -1;
             }
             paramnamed = *registeredevent++;
             len--;
             if (paramnamed > len)
             {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                return -1;
             }
             len -= paramnamed;
@@ -6778,12 +6782,209 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
          #endif
          #endif  
 
-         default:  
+         #if SHARKSSL_TLS_1_3
+         case reboothandler:
+            
+            if (len < 5)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
+            #if SHARKSSL_TLS_1_2
+            if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor)  
+            {
+               goto _skip_over_extension;
+            }
+            #endif
+            #if SHARKSSL_TLS_1_3 && SHARKSSL_SSL_SERVER_CODE
+            ksLen = 0;  
+            if (SharkSsl_isServer(o->sharkSsl))
+            {
+               
+               ksLen = (U16)(*registeredevent++) << 8;
+               ksLen += (*registeredevent++);
+               len -= 2;
+               if ((len < ksLen) || (paramnamed < ksLen))
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+            }
+            _next_key_share_entry:
+            #endif
+            prminstwrite = (U16)(*registeredevent++) << 8;
+            prminstwrite += (*registeredevent++);
+            len -= 2;
+            
+            kLen = controllerregister(prminstwrite);
+            
+            paramnamed = (U16)(*registeredevent++) << 8;
+            paramnamed += (*registeredevent++);
+            len -= 2;
             if (len < paramnamed)
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                return -1;
             }
+            #if SHARKSSL_TLS_1_3 && SHARKSSL_SSL_SERVER_CODE
+            if (SharkSsl_isServer(o->sharkSsl))
+            {
+               if (ksLen < paramnamed)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+            }
+            #endif
+            if (0 == kLen)  
+            {
+               #if SHARKSSL_TLS_1_3 && SHARKSSL_SSL_SERVER_CODE
+               if (SharkSsl_isServer(o->sharkSsl))
+               {
+                  
+                  ksLen -= paramnamed;
+                  ksLen -= 4; 
+                  len -= paramnamed;
+                  registeredevent += paramnamed;
+                  if (ksLen)
+                  {
+                     goto _next_key_share_entry;
+                  }
+                  else  
+                  {
+                     SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                     return -1;
+                  }
+               }
+               else
+               #endif
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+            }
+            hsParam(o)->ecdhParam.curveType = prminstwrite;  
+            #if SHARKSSL_ECC_USE_EDWARDS
+            if ((prminstwrite == TLS_NAMEDGROUP_CURVE25519) || (prminstwrite == TLS_NAMEDGROUP_CURVE448))
+            {
+               if (paramnamed != kLen)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+            }
+            else
+            #endif
+            {
+               #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
+               if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               paramnamed--;
+               len--;
+               if (paramnamed != (U16)(kLen << 1))
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               #else
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+               #endif
+            }
+            hsParam(o)->ecdhParam.xLen = kLen;
+            hsParam(o)->ecdhParam.XY = registeredevent;      
+            switch (prminstwrite)
+            {
+               #if SHARKSSL_ECC_USE_SECP384R1
+               case pciercxcfg034:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP384R1;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_SECP256R1
+               case ucb1400pdata:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP256R1;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_CURVE25519
+               case TLS_NAMEDGROUP_CURVE25519:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_CURVE448
+               case TLS_NAMEDGROUP_CURVE448:
+                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE448;
+                  break;
+               #endif
+
+               default:
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+            }
+            len -= paramnamed;
+            registeredevent += paramnamed;
+            if (SharkSsl_isClient(o->sharkSsl))
+            {
+               
+               SharkSslECDHParam_ECDH(&(hsParam(o)->ecdhParam), switcheractive, hsParam(o)->ecdhParam.k);
+            }
+            break;
+
+         case allocconsistent:
+            #if SHARKSSL_TLS_1_2
+            if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor)  
+            {
+               goto _skip_over_extension;
+            }
+            #endif
+            #if SHARKSSL_SSL_SERVER_CODE
+            if (SharkSsl_isServer(o->sharkSsl))
+            {
+               
+               if (len < paramnamed)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               len -= paramnamed;
+               registeredevent += paramnamed;
+            }
+            else
+            #endif
+            {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               paramnamed = (U16)(*registeredevent++) << 8;  
+               paramnamed += (*registeredevent++);
+               len -= 2;
+               if (paramnamed != 0)  
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               o->flags |= startqueue;
+            }
+            break;
+         #endif  
+
+         default:  
+            
+            if (len < paramnamed)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
+            #if (SHARKSSL_TLS_1_3 && SHARKSSL_TLS_1_2)
+            _skip_over_extension:
+            #endif
             len -= paramnamed;
             registeredevent += paramnamed;
             break;
@@ -6791,11 +6992,8 @@ static int handleptrauth(SharkSslCon* o, U8* registeredevent, U16 len)
    }
    return 0;
 }
-#endif  
-
 
 #if SHARKSSL_TLS_1_3
-#if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE)
 
 #if (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_SSL_SERVER_CODE)
 static int ZZTSTSharkSslCon_parseExtensionSV(SharkSslCon* o, U8* registeredevent, U16 len, SharkSsl_Role startkernel)
@@ -6894,230 +7092,6 @@ static int ZZTSTSharkSslCon_parseExtensionSV(SharkSslCon* o, U8* registeredevent
       }
    }
    return 0;  
-}
-#endif  
-
-   
- static int registerclass(SharkSslCon *o, U8 *registeredevent, U16 len)
-{
-   U16 prminstwrite, paramnamed, kLen;
-
-   baAssert(o);
-   baAssert(registeredevent);
-   #if SHARKSSL_USE_ECC
-   baAssert(SHARKSSL_EC_CURVE_ID_SECP256R1 == ucb1400pdata);
-   baAssert(SHARKSSL_EC_CURVE_ID_SECP384R1 == pciercxcfg034);
-   baAssert(SHARKSSL_EC_CURVE_ID_SECP521R1 == audiopdata);
-   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1 == gpio3config);
-   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1 == negativeoffset);
-   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 == sa1111disable);
-   baAssert(SHARKSSL_EC_CURVE_ID_CURVE25519 == TLS_NAMEDCURVE_CURVE25519);
-   baAssert(SHARKSSL_EC_CURVE_ID_CURVE448 == TLS_NAMEDCURVE_CURVE448);
-   #endif
-
-   while (len >= 2)
-   {
-      prminstwrite = (U16)(*registeredevent++) << 8;
-      prminstwrite += *registeredevent++;
-      len -= 2;
-
-      if (len < 2)
-      {
-         SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-         return -1;
-      }
-
-      paramnamed = (U16)(*registeredevent++) << 8;
-      paramnamed += *registeredevent++;
-      len -= 2;
-
-      if (len < paramnamed)
-      {
-         return -1;
-      }
-
-      switch (prminstwrite)
-      {
-         #if SHARKSSL_ENABLE_ALPN_EXTENSION
-         case clkdmclear:
-            if (paramnamed)
-            {
-               if (len < 2)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               paramnamed = (U16)(*registeredevent++) << 8;
-               paramnamed += *registeredevent++;
-               len -= 2;
-               if (paramnamed > len)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               paramnamed = *registeredevent++;
-               len--;
-               if (paramnamed > len)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               len -= paramnamed;
-               
-               if (o->pALPN)
-               {
-                  
-                  U8* afterhandler = (U8*)baMalloc(paramnamed + 1);
-                  if (afterhandler)
-                  {
-                     memcpy(afterhandler, registeredevent, paramnamed);
-                     *(afterhandler + paramnamed) = 0;
-                     o->rALPN = strstr(o->pALPN, (const char*)afterhandler);
-                     baFree(afterhandler);
-                  }
-               }
-               registeredevent += paramnamed;
-            }
-            break;
-         #endif
-
-         case reboothandler:
-            if (len < 5)
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            prminstwrite = (U16)(*registeredevent++) << 8;
-            prminstwrite += (*registeredevent++);
-            len -= 2;
-            hsParam(o)->ecdhParam.curveType = prminstwrite;  
-            
-            kLen = controllerregister(prminstwrite);
-            
-            paramnamed = (U16)(*registeredevent++) << 8;
-            paramnamed += (*registeredevent++);
-            len -= 2;
-            if ((0 == kLen) || (len < paramnamed))
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            #if SHARKSSL_ECC_USE_EDWARDS
-            if ((prminstwrite == TLS_NAMEDGROUP_CURVE25519) || (prminstwrite == TLS_NAMEDGROUP_CURVE448))
-            {
-               if (paramnamed != kLen)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-            }
-            else
-            #endif
-            {
-               #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-               if (*registeredevent++ != SHARKSSL_EC_POINT_UNCOMPRESSED)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               paramnamed--;
-               len--;
-               if (paramnamed != (U16)(kLen << 1))
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               #else
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-               #endif
-            }
-            hsParam(o)->ecdhParam.xLen = kLen;
-            hsParam(o)->ecdhParam.XY = registeredevent;      
-            switch (prminstwrite)
-            {
-               #if SHARKSSL_ECC_USE_SECP384R1
-               case pciercxcfg034:
-                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP384R1;
-                  break;
-               #endif
-
-               #if SHARKSSL_ECC_USE_SECP256R1
-               case ucb1400pdata:
-                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeySECP256R1;
-                  break;
-               #endif
-
-               #if SHARKSSL_ECC_USE_CURVE25519
-               case TLS_NAMEDGROUP_CURVE25519:
-                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
-                  break;
-               #endif
-
-               #if SHARKSSL_ECC_USE_CURVE448
-               case TLS_NAMEDGROUP_CURVE448:
-                  hsParam(o)->ecdhParam.k = hsParam(o)->prot.tls13.privKeyCURVE448;
-                  break;
-               #endif
-
-               default:
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-            }
-            len -= paramnamed;
-            registeredevent += paramnamed;
-            
-            SharkSslECDHParam_ECDH(&(hsParam(o)->ecdhParam), switcheractive, hsParam(o)->ecdhParam.k);
-            break;
-
-         case allocconsistent:
-            #if SHARKSSL_SSL_SERVER_CODE
-            if (SharkSsl_isServer(o->sharkSsl))
-            {
-               
-               if (len < paramnamed)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               len -= paramnamed;
-               registeredevent += paramnamed;
-            }
-            else
-            #endif
-            {
-               if (len < 2)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               paramnamed = (U16)(*registeredevent++) << 8;  
-               paramnamed += (*registeredevent++);
-               len -= 2;
-               if (paramnamed != 0)  
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               o->flags |= startqueue;
-            }
-            break;
-
-         
-         default:  
-            
-            if (len < paramnamed)
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            len -= paramnamed;
-            registeredevent += paramnamed;
-            break;
-      }
-   }
-
-   return 0;
 }
 #endif  
 
@@ -8513,9 +8487,9 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                #if SHARKSSL_TLS_1_3
                case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3):
                   
-                  if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+                  if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor)
                   {
-                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3);
+                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);  
                   }
                   else
                   {
@@ -8526,7 +8500,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
 
                case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2):
                   #if SHARKSSL_TLS_1_2
-                  if ((o->minor == 0) || (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)))
+                  if ((o->minor == 0) || (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor))
                   {
                      o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);
                      break;
@@ -8549,7 +8523,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                      
                   }
                   #if SHARKSSL_TLS_1_2
-                  else if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))  
+                  else if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor)  
                   {
                      break;
                   }
@@ -8562,9 +8536,8 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   break;
             }
 
-            #if SHARKSSL_TLS_1_2 && !SHARKSSL_TLS_1_3
             
-            i = (U16)handleptrauth(o, (SHARKSSL_WEIGHT*)afterhandler, registeredevent, paramnamed);
+            i = (U16)writepmresr(o, (SHARKSSL_WEIGHT*)afterhandler, registeredevent, paramnamed);
             if (i != 0)
             {
                #if SHARKSSL_ENABLE_ALPN_EXTENSION
@@ -8574,9 +8547,15 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   return savedconfig(o, SHARKSSL_ALERT_NO_APPLICATION_PROTOCOL);
                }
                #endif
+               #if SHARKSSL_TLS_1_3
+               if ((U16)-3 == i)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return savedconfig(o, SHARKSSL_ALERT_MISSING_EXTENSION);
+               }
+               #endif
                goto _sharkssl_hs_alert_handshake_failure;
             }
-            #endif
             hsDataLen -= paramnamed;
          }
          else  
@@ -9765,16 +9744,20 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             {
                #if SHARKSSL_TLS_1_3
                case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3):
-                  now_ccLen = (U32)registerclass(o, registeredevent, paramnamed);
+                  #if SHARKSSL_SSL_SERVER_CODE
+                  now_ccLen = (U32)writepmresr(o, (void*)0, registeredevent, paramnamed);
+                  #else
+                  now_ccLen = (U32)writepmresr(o, registeredevent, paramnamed);
+                  #endif
                   break;
                #endif
 
                #if SHARKSSL_TLS_1_2
                case SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2):
                   #if SHARKSSL_SSL_SERVER_CODE
-                  now_ccLen = handleptrauth(o, (void*)0, registeredevent, paramnamed);
+                  now_ccLen = (U32)writepmresr(o, (void*)0, registeredevent, paramnamed);
                   #else
-                  now_ccLen = handleptrauth(o, registeredevent, paramnamed);
+                  now_ccLen = (U32)writepmresr(o, registeredevent, paramnamed);
                   #endif
                   break;
                #endif
@@ -11829,7 +11812,11 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             goto updatereserved;
          }
 
-         if ((paramnamed) && (registerclass(o, registeredevent, paramnamed)))
+         #if SHARKSSL_SSL_SERVER_CODE
+         if ((paramnamed) && (writepmresr(o, (void*)0, registeredevent, paramnamed)))
+         #else
+         if ((paramnamed) && (writepmresr(o, registeredevent, paramnamed)))
+         #endif
          {
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
             goto regionfixed;
@@ -16592,7 +16579,7 @@ HttpResRdr_constructor(HttpResRdr* o,
    HttpDir_constructor((HttpDir*)o, statenames, gpio1resources);
 
    
-   o->superServiceFunc = HttpDir_overloadService(
+   o->superServiceFunc = HttpDir_setService(
       (HttpDir*)o, enablesingle);
 
    DoubleList_constructor(&o->filterList);
@@ -16648,7 +16635,7 @@ HttpResRdr_constructor2(HttpResRdr* o,
 {
 
    HttpResRdr_constructor(o, io, 0, unmapaliases, gpio1resources);
-   HttpDir_overloadService((HttpDir*)o, mcbspforce);
+   HttpDir_setService((HttpDir*)o, mcbspforce);
    o->domain=sanitiseinner;
    o->p404=doubleunpack;
 }
@@ -21085,7 +21072,7 @@ HttpDir_insertDir(HttpDir* o, HttpDir* dir)
 
 
 BA_API HttpDir_Service
-HttpDir_overloadService(HttpDir* o, HttpDir_Service s)
+HttpDir_setService(HttpDir* o, HttpDir_Service s)
 {
    HttpDir_Service handlersetup = o->service;
    o->service = s;
@@ -21298,7 +21285,7 @@ static void
 misalignedaccess(HttpDir* o, const char *gpio1config, S8 gpio1resources)
 {
    HttpDir_constructor(o, gpio1config, gpio1resources);
-   HttpDir_overloadService(o, doubleftoui);
+   HttpDir_setService(o, doubleftoui);
 }
 
 
@@ -21426,7 +21413,7 @@ static void
 vddmaxshift(HttpRootDir* o)
 {
    HttpDir_constructor((HttpDir*)o, 0, 0);
-   o->superServiceFunc = HttpDir_overloadService(
+   o->superServiceFunc = HttpDir_setService(
       (HttpDir*)o, (HttpDir_Service)timer0clockevent);
    o->page404 = 0;
    o->page404InProgress = FALSE;

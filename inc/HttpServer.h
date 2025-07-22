@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5412 2023-03-17 01:49:04Z wini $
+ *   $Id: HttpServer.h 5661 2025-07-07 15:38:53Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2023
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5657
+#define BASLIB_VER_NO 5663
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5657)
+#define BASLIB_VER BASLIB_VER_M(5663)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -2506,7 +2506,7 @@ typedef struct HttpDir
       /** Replace the original service function in HttpDir with your own.
        * \return the original service function.
        */
-      HttpDir_Service overloadService(HttpDir_Service s);
+      HttpDir_Service setService(HttpDir_Service s);
 
       /** Set a 403 denied request handler.
          The directory forwards the request to the page if an
@@ -2597,7 +2597,8 @@ BA_API HttpDir* HttpDir_findDir(
    HttpDir* iter, const char* name,unsigned int nameLen);
 BA_API HttpDir* HttpDir_createOrGet(HttpDir* o, const char* name);
 BA_API void HttpDir_p403(HttpDir* o, const char* p403);
-BA_API HttpDir_Service HttpDir_overloadService(HttpDir*o, HttpDir_Service s);
+#define HttpDir_overloadService HttpDir_setService
+BA_API HttpDir_Service HttpDir_setService(HttpDir*o, HttpDir_Service s);
 #define HttpDir_isLinked(o) (o)->parent
 BA_API int HttpDir_unlink(HttpDir* o);
 #define HttpDir_setAuthenticator(o,authenticatorMA,authorizerMA) \
@@ -2638,8 +2639,8 @@ inline HttpDir* HttpDir::findDir(HttpDir* iter, const char* name,
    return HttpDir_findDir(iter, name, nameLen); }
 inline HttpDir* HttpDir::createOrGet(const char* name) {
    return HttpDir_createOrGet(this, name); }
-inline HttpDir_Service HttpDir::overloadService(HttpDir_Service s) {
-   return HttpDir_overloadService(this, s); }
+inline HttpDir_Service HttpDir::setService(HttpDir_Service s) {
+   return HttpDir_setService(this, s); }
 inline void HttpDir::p403(const char* p403) {
    HttpDir_p403(this, p403); }
 inline int HttpDir::unlink() {return HttpDir_unlink(this); }
