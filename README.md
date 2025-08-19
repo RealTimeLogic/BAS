@@ -1,5 +1,4 @@
-# BWS and BAS Amalgamated
-## Embedded Web Server and IoT Toolkit C Code Libraries
+# Embedded Web Server and IoT Toolkit C Code Libraries
 - **BWS:** [Barracuda Embedded Web Server C library](https://realtimelogic.com/products/barracuda-web-server/)
 - **BAS:** [Barracuda Embedded App Server C library](https://realtimelogic.com/products/barracuda-application-server/)
 - **[Three license options](#license)**: GPLv2, free commercial license, and standard royalty-free commercial license.
@@ -320,7 +319,13 @@ BAS Amalgamated (BAS.c) includes features that are by default not compiled. Thes
 
 The generic directory 'inc' must also be in the include path.
 
-# Additional Build Examples
+# Build Examples
+
+## NuttX
+
+NuttX is a standards-compliant RTOS with a small footprint, scalable from 8-bit to 64-bit MCUs. With POSIX/ANSI APIs and familiar Unix/VxWorks extensions, it brings powerful functionality to deeply embedded systems. Paired with Xedge, NuttX provides a rock-solid foundation for secure, connected IoT devices; it's lightweight, portable, and ready for real-time applications. See the [Xedge NuttX documentation](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html) for details.
+
+![NuttX](https://nuttx.apache.org/assets/themes/apache/img/logo.png)
 
 ## INTEGRITY
 
