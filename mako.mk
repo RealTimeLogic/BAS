@@ -125,7 +125,7 @@ endif
 OBJS = $(SOURCE:%.c=%.o)
 
 mako: $(ENCRYPTION_KEY_HEADER) $(OBJS) mako.zip
-	$(CC) -o mako $(OBJS) $(XLIB)
+	$(CC) -o mako $(HEXEFLAGS) $(OBJS) $(XLIB)
 
 # Must be in the same directory as the mako executable
 mako.zip:
