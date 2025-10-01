@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5661 2025-07-07 15:38:53Z wini $
+ *   $Id: HttpServer.h 5666 2025-09-01 16:33:54Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2023
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5663
+#define BASLIB_VER_NO 5668
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5663)
+#define BASLIB_VER BASLIB_VER_M(5668)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -2353,14 +2353,10 @@ typedef int (*HttpDir_Service)(struct HttpDir* o,
 
     The HttpDir class can be sub-classed and the functionality can be
     extended. The HttpDir instance is an ideal building block when
-    designing
-    <a href= "https://en.wikipedia.org/wiki/Representational_State_Transfer">
-    Representational State Transfer</a> (RESTful) based applications.
-    
-    In a true RESTful application, every resource is uniquely
-    addressable through the resource's URL. The URL can point to
-    physical objects such as files handled by the HttpResMgr or to virtual
-    resources created on demand from the URL itself.
+    designing Representational State Transfer</a> (RESTful) based
+    applications. See the tutorial <a target="_blank" href=
+    "https://realtimelogic.com/articles/Designing-Embedded-RESTful-Services-in-C-and-C"
+    >Designing Embedded RESTful Services in C and C++</a> for details.
 
 
     \sa HttpPage

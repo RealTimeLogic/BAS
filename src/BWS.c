@@ -16373,6 +16373,8 @@ HttpResRdr_sendFile(IoIntf* io,
                sffsdrnandflash = domainstart->readFp(domainstart, ptr, notifierretry, &notifierretry);
                if(sffsdrnandflash || notifierretry == 0)
                {
+                  if (0 == sffsdrnandflash)
+                     sffsdrnandflash = IOINTF_IOERROR;
                   dc21285enable(FALSE, &cmd->response, gpio1config, sffsdrnandflash, 0);
                   break;
                }
