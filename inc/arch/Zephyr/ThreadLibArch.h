@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 5134 2022-04-27 22:40:57Z wini $
+ *   $Id: ThreadLibArch.h 5672 2025-10-17 00:14:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022
+ *   COPYRIGHT:  Real Time Logic, 2022 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -42,10 +42,8 @@
 
 #include <TargConfig.h>
 
-#include <zephyr.h>
-#include <arch/cpu.h>
-#include <sys/arch_interface.h>
-#undef KB /* Used by Lua */
+#include <zephyr/kernel.h>
+#undef KB /* zephyr/Lua conflict */
 
 typedef struct ThreadMutexBase
 {

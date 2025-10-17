@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 5141 2022-05-03 18:45:53Z wini $
+ *   $Id: gBsdSock.h 5672 2025-10-17 00:14:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -207,7 +207,7 @@ typedef struct {
                        sizeof(struct sockaddr_in6)); \
 } while(0)
 #else
-#define HttpSocket_bindIp6(o, sockAddr, port, status) baAssert(0)
+#define HttpSocket_bindIp6(o, sockAddr, port, status) *status=-1
 #endif
 #define HttpSocket_bind(o, sockAddr, port, status) do { \
    if((sockAddr)->isIp6) \
@@ -572,7 +572,7 @@ do { \
   *(port)=baHtons(in6.sin6_port);\
 } while(0)
 #else
-#define HttpSocket_recvfromIp6(o,data,len,sockAddr,port,status) baAssert(0)
+#define HttpSocket_recvfromIp6(o,data,len,sockAddr,port,status) *status=-1
 #endif
 #define HttpSocket_recvfrom(o,data,len,sockAddr,port,status) do { \
    if((sockAddr)->isIp6) \

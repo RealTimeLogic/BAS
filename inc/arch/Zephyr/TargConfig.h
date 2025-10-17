@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
+ *   $Id: TargConfig.h 5672 2025-10-17 00:14:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2023
+ *   COPYRIGHT:  Real Time Logic, 2023 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -59,6 +59,15 @@
 #endif
 #endif
 
+/* Create dummies for BaFile.c: No F_SETFD macros */
+#ifndef F_SETFD
+#define F_SETFD 2
+#endif
+#ifndef FD_CLOEXEC
+#define FD_CLOEXEC 1
+#endif
+
+
 /***********************************************************************
  *  Barracuda types
  ***********************************************************************/
@@ -75,6 +84,9 @@
 
 #ifdef USE_DLMALLOC
 #include <dlmalloc.h>
+#ifndef baMalloc
+#error Using incorrect dlmalloc.h
+#endif
 #else
 #include <stdlib.h>
 #define baMalloc(size) malloc(size)

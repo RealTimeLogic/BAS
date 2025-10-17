@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5134 2022-04-27 22:40:57Z wini $
+ *   $Id: ThreadLib.c 5672 2025-10-17 00:14:58Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022
+ *   COPYRIGHT:  Real Time Logic, 2022 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -40,6 +40,20 @@
 #include <ThreadLib.h>
 #include <BaErrorCodes.h>
 #include <HttpCfg.h>
+#include <HttpServer.h>  /* For HttpCommand */
+
+static time_t unix_time_offset = 0;
+
+BaTime baGetUnixTime(void)
+{
+   struct timeval tv;
+   if (gettimeofday(&tv, NULL) == 0)
+   {
+      return tv.tv_sec;
+   }
+   return (time_t)-1;
+}
+
 
 void HttpSockaddr_gethostbynameF(
    HttpSockaddr* o, const char* host, BaBool useIp6, int* status) 
@@ -136,6 +150,7 @@ Thread_constructor(
       default:
          baAssert(0);
    }
+   o->runnable=r;
    stackSize+=sizeof(k_thread_stack_t);
    o->stackStart = (k_thread_stack_t*)baMalloc(stackSize);
    o->startSem = (struct k_sem*)baMalloc(sizeof(struct k_sem));
