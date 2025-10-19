@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5672 2025-10-17 00:14:58Z wini $
+ *   $Id: HttpCfg.h 5675 2025-10-19 20:15:54Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2025
  *
@@ -86,13 +86,13 @@
 
 #define HttpSocket_setBlocking(o, status) do {                  \
       int flags=zsock_fcntl((o)->hndl, F_GETFL, 0);             \
-      zsock_fcntl((o)->hndl,F_SETFL,flags | O_NONBLOCK);        \
+      zsock_fcntl((o)->hndl,F_SETFL,flags & ~O_NONBLOCK);       \
       *(status)=0;                                              \
    } while(0)
 
 #define HttpSocket_setNonblocking(o, status) do {               \
       int flags=zsock_fcntl((o)->hndl, F_GETFL, 0);             \
-      zsock_fcntl((o)->hndl,F_SETFL,flags & ~O_NONBLOCK);       \
+      zsock_fcntl((o)->hndl,F_SETFL,flags | O_NONBLOCK);        \
       *(status)=0;                                              \
    } while(0)
 

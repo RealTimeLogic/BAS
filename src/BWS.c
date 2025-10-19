@@ -6627,161 +6627,6 @@ static int writepmresr(SharkSslCon* o, U8* registeredevent, U16 len)
             break;
          #endif  
 
-         #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
-         case registerpwrdms:
-            if ((o->flags & startqueue)
-                #if SHARKSSL_SSL_CLIENT_CODE  
-                || (SharkSsl_isClient(o->sharkSsl))
-                #endif
-               )
-            {
-               goto swiotlbdetect;
-            }
-            if ((len < 2)
-                #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
-                || (o->minor == 0)
-                #endif
-               )
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            paramnamed  = (U16)(*registeredevent++) << 8;
-            paramnamed += *registeredevent++;
-            len -= 2;
-            if (paramnamed > len)
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            len -= paramnamed;
-            sharkSslHSParam->ecdhParam.xLen = 0;
-            while (paramnamed)
-            {
-               U8 savedsigmask;
-
-               if (paramnamed < 2)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               
-               prminstwrite  = (U16)(*registeredevent++) << 8;
-               prminstwrite += *registeredevent++;
-               paramnamed -= 2;
-
-               
-               savedsigmask = controllerregister(prminstwrite);
-               if (savedsigmask)
-               {
-                  
-                  if (0 == sharkSslHSParam->ecdhParam.xLen)
-                  {
-                     sharkSslHSParam->ecdhParam.xLen = savedsigmask;
-                     
-                     sharkSslHSParam->ecdhParam.curveType = prminstwrite;
-                  }
-
-                  
-                  SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
-                  for (p = mfgpt0counter, link = SingleListEnumerator_getElement(&e);
-                       link;
-                       link = SingleListEnumerator_nextElement(&e), p++)
-                  {
-                     if ( (*p)
-                          && (((SharkSslCertList*)link)->certP.keyType == compatrestart)  
-                          && (((SharkSslCertList*)link)->certP.keyOID == prminstwrite))
-                     {
-                        *(SHARKSSL_WEIGHT*)p |= trainingneeded;
-                     }
-                  }
-               }
-            }
-            break;
-         #endif  
-
-         case entrypaddr:
-            #if SHARKSSL_SSL_CLIENT_CODE  
-            if (SharkSsl_isClient(o->sharkSsl))
-            {
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-            }
-            #endif
-            if (o->minor >= 3)  
-            {
-               if (len < 2)
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               paramnamed  = (U16)(*registeredevent++) << 8;
-               paramnamed += *registeredevent++;
-               len -= 2;
-               if ((paramnamed > len) || (paramnamed & 0x1))
-               {
-                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-                  return -1;
-               }
-               len -= paramnamed;
-               prminstwrite = 0;  
-               while (paramnamed)
-               {
-                  
-                  SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
-                  for (p = mfgpt0counter, link = SingleListEnumerator_getElement(&e);
-                       link;
-                       link = SingleListEnumerator_nextElement(&e), p++)
-                  {
-                     if ((*p) && (!(*p & smbuswrite)))
-                     {
-                        if ((((SharkSslCertList*)link)->certP.hashAlgo == registeredevent[0]) &&
-                            (((SharkSslCertList*)link)->certP.signatureAlgo == registeredevent[1]))
-                        {
-                           *(SHARKSSL_WEIGHT*)p |= smbuswrite;
-                        }
-                     }
-                  }
-
-                  
-                  if (prminstwrite < 2)
-                  {
-                     if ((registeredevent[0] == presentpages) || (registeredevent[0] == domainnumber)
-                         #if SHARKSSL_USE_SHA_384
-                         || (registeredevent[0] == probewrite)
-                         #endif
-                         #if SHARKSSL_USE_SHA_512
-                         || (registeredevent[0] == batterythread)
-                         #endif
-                        )
-                     {
-                        #if SHARKSSL_ENABLE_RSA
-                        if ((0 == sharkSslHSParam->signParam.signature.signatureAlgo) && (registeredevent[1] == entryearly))
-                        {
-                           sharkSslHSParam->signParam.signature.signatureAlgo = registeredevent[0];
-                           prminstwrite++;
-                        }
-                        #endif
-                        #if SHARKSSL_ENABLE_ECDSA
-                        if ((0 == sharkSslHSParam->signParam.signature.hashAlgo) && (registeredevent[1] == accessactive))
-                        {
-                           sharkSslHSParam->signParam.signature.hashAlgo = registeredevent[0];
-                           prminstwrite++;
-                        }
-                        #endif
-                     }
-                  }
-                  registeredevent += 2;
-                  paramnamed -= 2;
-               }
-               break;
-            }
-            
-         #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
-            swiotlbdetect:
-         #endif
-         #endif  
-
          #if SHARKSSL_TLS_1_3
          case reboothandler:
             
@@ -6974,6 +6819,163 @@ static int writepmresr(SharkSslCon* o, U8* registeredevent, U16 len)
             }
             break;
          #endif  
+
+         #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
+         case registerpwrdms:
+            if ((o->flags & startqueue)
+                #if SHARKSSL_SSL_CLIENT_CODE  
+                || (SharkSsl_isClient(o->sharkSsl))
+                #endif
+               )
+            {
+               goto swiotlbdetect;
+            }
+            if ((len < 2)
+                #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
+                || (o->minor == 0)
+                #endif
+               )
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
+            paramnamed  = (U16)(*registeredevent++) << 8;
+            paramnamed += *registeredevent++;
+            len -= 2;
+            if (paramnamed > len)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
+            len -= paramnamed;
+            sharkSslHSParam->ecdhParam.xLen = 0;
+            while (paramnamed)
+            {
+               U8 savedsigmask;
+
+               if (paramnamed < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               
+               prminstwrite  = (U16)(*registeredevent++) << 8;
+               prminstwrite += *registeredevent++;
+               paramnamed -= 2;
+
+               
+               savedsigmask = controllerregister(prminstwrite);
+               if (savedsigmask)
+               {
+                  
+                  if (0 == sharkSslHSParam->ecdhParam.xLen)
+                  {
+                     sharkSslHSParam->ecdhParam.xLen = savedsigmask;
+                     
+                     sharkSslHSParam->ecdhParam.curveType = prminstwrite;
+                  }
+
+                  
+                  SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+                  for (p = mfgpt0counter, link = SingleListEnumerator_getElement(&e);
+                       link;
+                       link = SingleListEnumerator_nextElement(&e), p++)
+                  {
+                     if ( (*p)
+                          && (((SharkSslCertList*)link)->certP.keyType == compatrestart)  
+                          && (((SharkSslCertList*)link)->certP.keyOID == prminstwrite))
+                     {
+                        *(SHARKSSL_WEIGHT*)p |= trainingneeded;
+                     }
+                  }
+               }
+            }
+            break;
+         #endif  
+
+         case entrypaddr:
+            #if SHARKSSL_SSL_CLIENT_CODE  
+            if (SharkSsl_isClient(o->sharkSsl))
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return -1;
+            }
+            #endif
+            if (o->minor >= 3)  
+            {
+               if (len < 2)
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               paramnamed  = (U16)(*registeredevent++) << 8;
+               paramnamed += *registeredevent++;
+               len -= 2;
+               if ((paramnamed > len) || (paramnamed & 0x1))
+               {
+                  SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+                  return -1;
+               }
+               len -= paramnamed;
+               prminstwrite = 0;  
+               while (paramnamed)
+               {
+                  
+                  SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+                  for (p = mfgpt0counter, link = SingleListEnumerator_getElement(&e);
+                       link;
+                       link = SingleListEnumerator_nextElement(&e), p++)
+                  {
+                     if ((*p) && (!(*p & smbuswrite)))
+                     {
+                        if ((((SharkSslCertList*)link)->certP.hashAlgo == registeredevent[0]) &&
+                            (((SharkSslCertList*)link)->certP.signatureAlgo == registeredevent[1]))
+                        {
+                           *(SHARKSSL_WEIGHT*)p |= smbuswrite;
+                        }
+                     }
+                  }
+
+                  
+                  if (prminstwrite < 2)
+                  {
+                     if ((registeredevent[0] == presentpages) || (registeredevent[0] == domainnumber)
+                         #if SHARKSSL_USE_SHA_384
+                         || (registeredevent[0] == probewrite)
+                         #endif
+                         #if SHARKSSL_USE_SHA_512
+                         || (registeredevent[0] == batterythread)
+                         #endif
+                        )
+                     {
+                        #if SHARKSSL_ENABLE_RSA
+                        if ((0 == sharkSslHSParam->signParam.signature.signatureAlgo) && (registeredevent[1] == entryearly))
+                        {
+                           sharkSslHSParam->signParam.signature.signatureAlgo = registeredevent[0];
+                           prminstwrite++;
+                        }
+                        #endif
+                        #if SHARKSSL_ENABLE_ECDSA
+                        if ((0 == sharkSslHSParam->signParam.signature.hashAlgo) && (registeredevent[1] == accessactive))
+                        {
+                           sharkSslHSParam->signParam.signature.hashAlgo = registeredevent[0];
+                           prminstwrite++;
+                        }
+                        #endif
+                     }
+                  }
+                  registeredevent += 2;
+                  paramnamed -= 2;
+               }
+               break;
+            }
+            
+         #if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
+            swiotlbdetect:
+         #endif
+         #endif  
+
+         
 
          default:  
             
@@ -8489,7 +8491,7 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
                   
                   if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2) == o->minor)
                   {
-                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);  
+                     o->minor = SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2);   
                   }
                   else
                   {
@@ -25350,7 +25352,7 @@ SoDispCon_asyncConnect(SoDispCon* o,
          ac->addr=ac->iter=serialports;
          HttpServCon_bindExec(o);
          sffsdrnandflash = sigframelayout(o, ac);
-         if(sffsdrnandflash >= 0)
+         if(sffsdrnandflash == 0)
          {
             o->sslData = ac;
             return sffsdrnandflash;
