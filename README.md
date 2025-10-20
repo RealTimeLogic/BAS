@@ -319,13 +319,22 @@ BAS Amalgamated (BAS.c) includes features that are by default not compiled. Thes
 
 The generic directory 'inc' must also be in the include path.
 
-# Build Examples
+# HLOS Build Examples
+
+See the [Mako Server download page](https://makoserver.net/download/overview/) for platform and compile examples.
+
+# RTOS Build Examples
+
+Zephyr RTOS, with the Xedge port, provides a lightweight, real-time environment optimized for IoT and edge computing. The Xedge integration adds support for efficient networking, secure communications, and remote device management, enabling robust, low-latency operation across heterogeneous embedded hardware platforms. See the [Xedge Zephyr documentation](https://github.com/RealTimeLogic/Xedge4Zephyr) for details.
+
+
+[![Zephyr](https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Zephyr_RTOS_logo_2015.svg/500px-Zephyr_RTOS_logo_2015.svg.png)](https://github.com/RealTimeLogic/Xedge4Zephyr)
 
 ## NuttX
 
 NuttX is a standards-compliant RTOS with a small footprint, scalable from 8-bit to 64-bit MCUs. With POSIX/ANSI APIs and familiar Unix/VxWorks extensions, it brings powerful functionality to deeply embedded systems. Paired with Xedge, NuttX provides a rock-solid foundation for secure, connected IoT devices; it's lightweight, portable, and ready for real-time applications. See the [Xedge NuttX documentation](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html) for details.
 
-![NuttX](https://nuttx.apache.org/assets/themes/apache/img/logo.png)
+[![NuttX](https://nuttx.apache.org/assets/themes/apache/img/logo.png)](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html)
 
 ## INTEGRITY
 
