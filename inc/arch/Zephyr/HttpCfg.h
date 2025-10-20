@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5675 2025-10-19 20:15:54Z wini $
+ *   $Id: HttpCfg.h 5676 2025-10-20 14:28:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2025
  *
@@ -41,6 +41,7 @@
 
 #include <fcntl.h>
 #include <zephyr/net/socket.h>
+#include <sys/select.h>
 #include <TargConfig.h>
 
 /***********************************************************************

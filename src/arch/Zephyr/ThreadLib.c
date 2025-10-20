@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5672 2025-10-17 00:14:58Z wini $
+ *   $Id: ThreadLib.c 5676 2025-10-20 14:28:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2025
  *
@@ -35,14 +35,19 @@
  *
  */
 
+#ifndef BAS_PRIO_BASE
+/* from kconfig, if set */
+#ifdef CONFIG_XEDGE_THREAD_PRIORITY
+#define BAS_PRIO_BASE CONFIG_XEDGE_THREAD_PRIORITY
+#else
 #define BAS_PRIO_BASE 10
+#endif
+#endif
 
 #include <ThreadLib.h>
 #include <BaErrorCodes.h>
 #include <HttpCfg.h>
-#include <HttpServer.h>  /* For HttpCommand */
-
-static time_t unix_time_offset = 0;
+#include <sys/time.h>  /* For gettimeofday */
 
 BaTime baGetUnixTime(void)
 {
@@ -156,7 +161,7 @@ Thread_constructor(
    o->startSem = (struct k_sem*)baMalloc(sizeof(struct k_sem));
    if( ! o->stackStart || !  o->startSem )
    {
-      baFatalE(FE_MALLOC, sizeof(HttpCommand));
+      baFatalE(FE_MALLOC, stackSize);
    }
    k_sem_init(o->startSem, 0, 1);
    o->tid=k_thread_create(&o->thread,
