@@ -116,7 +116,6 @@ if (-not (Get-Command zip -ErrorAction SilentlyContinue)) {
     $dest   = "$env:TEMP\zip.exe"
     $binDir = "$env:TEMP"
     Invoke-WebRequest $zipUrl -OutFile $dest
-    Expand-Archive $dest -DestinationPath $binDir -Force
     $env:Path += ";$binDir"
 }
 
