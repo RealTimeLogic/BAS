@@ -21,6 +21,9 @@ ifeq (,$(wildcard ../BAS-Resources/build/mako.sh))
 $(error ../BAS-Resources not found. Repository https://github.com/RealTimeLogic/BAS-Resources required!)
 endif
 
+USE_OPCUA?=1
+DEBUG?=0
+
 
 #Optional
 export LPEGDIR=../LPeg
@@ -37,15 +40,26 @@ ifndef XLIB
 XLIB= -lpthread -lm -ldl 
 endif
 
-CFLAGS += -fmerge-all-constants -O3 -Os -Wall
+CFLAGS += -fmerge-all-constants -Wall
 
 # Add required macros and enable large-file support
-CFLAGS += -DNDEBUG -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
+CFLAGS += -DMAKO -DUSE_EMBEDDED_ZIP=0 -DLUA_USE_LINUX -DBA_FILESIZE64
+
+ifeq ($(DEBUG),1)
+CFLAGS += -g -O0
+else
+CFLAGS += -O3 -Os -DNDEBUG
+endif
 
 # Add features
 CFLAGS += -DUSE_LUAINTF=1
 CFLAGS += -DUSE_DBGMON=1
+
+ifeq ($(USE_OPCUA),1)
 CFLAGS += -DUSE_OPCUA=1
+else
+CFLAGS += -DUSE_OPCUA=0
+endif
 
 CFLAGS += -Iinc -Iinc/arch/Posix
 ifdef EPOLL
