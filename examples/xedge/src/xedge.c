@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5653 2025-04-24 22:16:40Z wini $
+ *   $Id: xedge.c 5711 2025-12-14 23:15:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *               http://www.realtimelogic.com
@@ -153,6 +153,22 @@ int luaopen_org_conman_cbor_c(lua_State *L);
 #include <opcua_module.h>
 #endif
 
+
+#ifdef NDEBUG
+#define xpcall(L,nargs) lua_pcall(L,nargs,0,0)
+#else
+static void
+xpcall(lua_State *L, int nargs)
+{
+   if(lua_pcall(L, nargs, 1, 0))
+   {
+      HttpTrace_printf(0,"Error in 'startServer': %s\n",
+                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
+   }
+   lua_pop(L,1);
+}
+#endif
+
 /* This function runs the Lua 'onunload' handlers for all loaded apps
    when the server exits.  onunload is an optional function Lua
    applications loaded by the server can use if the applications
@@ -167,11 +183,7 @@ onunload(lua_State* L, int onunloadRef)
     */
    lua_rawgeti(L, LUA_REGISTRYINDEX, onunloadRef);
    baAssert(lua_isfunction(L, -1));
-   if(lua_pcall(L, 0, 1, 0))
-   {
-      HttpTrace_printf(0,"Error in 'onunload': %s\n",
-                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
-   }
+   xpcall(L,0);
    luaL_unref(L, LUA_REGISTRYINDEX, onunloadRef);
    balua_relsocket(L); /* Gracefully close all cosockets, if any */
 }
@@ -368,81 +380,57 @@ createVmIo()
    return (IoIntf*)(&vmIo);
 }
 
-
 /*
   Push the embedded primary secret key material as a Lua string
 */
 #ifndef NO_ENCRYPTIONKEY
 static void pushPrimarySecret(lua_State* L)
 {
-/* We use WBC (code after #if 0) */
-#if 0
-   /* The naive method we do not use; details:
-      https://realtimelogic.com/ba/doc/en/SoftTPM.html
-   */
-   lua_pushlstring(L,(char*)ENCRYPTIONKEY,sizeof(ENCRYPTIONKEY));
-#else
-   /* White-box cryptography (WBC) transforming main secret. For extra
-    * security, change this code and keep the C code secret.
-    */
-   baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
-   luaL_Buffer b;
-   size_t i;
-   U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
-   for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
-      /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
-      transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]];
-      transformedKey[i] = transformedKey[i] ^ ENCRYPTIONKEY[i];
-   }
-   luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
-   luaL_pushresult(&b);
-#endif
+#include "XedgeWBC.h"
 }
-#endif /* NO_ENCRYPTIONKEY */
 
 
-/* This function simplifies calling the Lua function returned after
+/* Add additional TPM secrets.
+   This function simplifies calling the Lua function returned after
    .config has been executed (see balua_loadconfigExt() below). One Lua
    value must be pushed on the Lua stack when this function is
    called. This value is sent as an argument to the Lua function. The
-   Lua function accepts the following arguments: nil, string, boolean
-   (true). When called with nil, the Lua code immediately starts the
+   Lua function accepts the following arguments:
+   nil, (string,bollean), boolean (true).
+   When called with nil, the Lua code immediately starts the
    server. If called with string values (binary), the Lua function
    collects the passed-in string values as long as the function is
    called. When the function is finally called with the argument
    'true', it calculates a device unique pre-master key based on the
    passed-in string values and starts the server.
-
-   The function in xedge.lua also calculates a non device specific
-   (global) AES key based on the first argument (the main secret in
-   EncryptionKey.h). This AES key is used for encrypting/decrypting
-   components of xedge.conf. The first argument passed in should be
-   the same for all devices to make it possible to copy xedge.conf
-   between devices.
-*/
-static int
-initXedge(lua_State* L, int initXedgeFuncRef)
-{
-   lua_rawgeti(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
-   baAssert(lua_isfunction(L, -1));
-   lua_rotate(L, -2, 1);
-   if(lua_pcall(L, 1, 1, 0))
-   {
-      HttpTrace_printf(0,"Error in 'startServer': %s\n",
-                       lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
-      return -1;
-   }
-   return 0;
-}
-
-
-/* Add additional secrets for the device's unique TPM master key.
+   Note that the calculated non device specific (global) AES key
+   (based on main secret in EncryptionKey.h and values set by you is
+   used for encrypting/decrypting components of xedge.conf. this makes
+   it possible to copy xedge.conf between devices.
  */
-static void addSecret(XedgeOpenAUX* aux, const U8* secret, size_t slen)
+static void
+addSecret(XedgeOpenAUX* aux, BaBool unique, const U8* secret, size_t slen)
 {
-   lua_pushlstring(aux->L,(char*)secret,slen);
-   initXedge(aux->L, aux->initXedgeFuncRef);
+   lua_State* L = aux->L;
+   lua_rawgeti(L, LUA_REGISTRYINDEX, aux->initXedgeFuncRef);
+   if(secret)
+   {
+      lua_pushlstring(L,(char*)secret,slen);
+   }
+   else
+   {
+      lua_pushvalue(L, -2);
+      baAssert(LUA_TSTRING == lua_type(L, -1));
+   }
+   lua_pushboolean(L,unique);
+   xpcall(L, 2);
+   if(!secret)
+   {
+      lua_pop(L,1);
+   }
 }
+#endif /* NO_ENCRYPTIONKEY */
+
 
 /* Wrapper for calling function xedgeOpenAUX.
  * Two xedgeOpenAUX examples: led.c and AsynchLua.c.
@@ -456,17 +444,28 @@ callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
    XedgeOpenAUX aux = {
       L,
       dio,
-      addSecret,
-      initXedgeFuncRef,
+#ifdef NO_ENCRYPTIONKEY
+      0,0,
+#else
+      addSecret,initXedgeFuncRef,
+#endif
       0
    };
+#ifndef NO_ENCRYPTIONKEY
+   /* ENCRYPTIONKEY from (New)EncryptionKey.h
+      Push the primary secret key material as a Lua string
+   */
+   pushPrimarySecret(L);
+   addSecret(&aux, FALSE, 0, 0);
+#endif
    if(xedgeOpenAUX(&aux))
       baFatalE(FE_USER_ERROR_1, __LINE__);
    if(aux.xedgeCfgFile)
    {
+      lua_rawgeti(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
       lua_pushcfunction(L, aux.xedgeCfgFile);
       /* Register the open/save cfg file */
-      initXedge(L, initXedgeFuncRef);
+      xpcall(L,1);
    }
 }
 #endif
@@ -661,15 +660,6 @@ barracuda(void)
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 #endif
 
-   /* ENCRYPTIONKEY from (New)EncryptionKey.h
-      Push the primary secret key material as a Lua string
-   */
-#ifndef NO_ENCRYPTIONKEY
-   pushPrimarySecret(L);
-   if(initXedge(L, initXedgeFuncRef))
-      baFatalE(FE_USER_ERROR_1, __LINE__);
-#endif
-
    /* Example Lua bindings, compile with AsynchLua.c or led.c.
       This code opens ESP32 bindings when Xedge32 is compiled.
     */
@@ -680,13 +670,13 @@ barracuda(void)
 #endif
 
    /* Signal done, now start server */
-#ifdef NO_ENCRYPTIONKEY
+   lua_rawgeti(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
+#if defined(NO_XEDGE_AUX) || defined(NO_ENCRYPTIONKEY)
    lua_pushnil(L);
 #else
    lua_pushboolean(L, TRUE);
 #endif
-   if(initXedge(L, initXedgeFuncRef))
-      baFatalE(FE_USER_ERROR_1, __LINE__);
+   xpcall(L, 1);
    luaL_unref(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
 
    /*

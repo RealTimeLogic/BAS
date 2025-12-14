@@ -42754,6 +42754,7 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define ftracehandler               0x01000000
 #define SHARKSSL_FLAG_CA_EXTENSION_REQUEST         0x02000000
 #define SHARKSSL_FLAG_PARTIAL_HS_SEND              0x04000000
+#define SHARKSSL_FLAG_FORCE_SERVER_PROTOCOL        0x08000000
 
 
 #define bcm1x80bcm1x55                     0x01
@@ -42900,6 +42901,10 @@ typedef struct SharkSslHSParam
          #endif  /* SHARKSSL_USE_ECC */
          #if SHARKSSL_ENABLE_CLIENT_AUTH
          U16 signatureScheme;
+         #endif
+         #if SHARKSSL_SSL_SERVER_CODE
+         U16 grpLen;
+         U8 *grpPtr;
          #endif
       } tls13;
       #endif
@@ -43055,9 +43060,7 @@ struct SharkSslCon
    SharkSslClonedCertInfo *clonedCertInfo;
    #endif
 
-   #if ((SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA) && (SHARKSSL_ENABLE_CA_LIST) && \
-        ((SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH) || \
-         (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_EXTENSION)))
+   #if (SHARKSSL_ENABLE_CA_EXTENSION && SHARKSSL_ENABLE_CA_LIST)
    SharkSslCAList caListCertReq;
    #endif
 
@@ -78056,7 +78059,7 @@ SHARKSSL_API void SharkSslMd5Ctx_finish(SharkSslMd5Ctx *registermcasp, U8 second
 }
 
 
-SHARKSSL_API int sharkssl_md5(const U8* alloccontroller, U32 len, U8 *secondaryentry)
+SHARKSSL_API int sharkssl_md5(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
 {
    #if SHARKSSL_CRYPTO_USE_HEAP
    SharkSslMd5Ctx *hctx = (SharkSslMd5Ctx *)baMalloc(claimresource(sizeof(SharkSslMd5Ctx)));
@@ -80944,7 +80947,7 @@ static const U16 serialsetup[16] =
 };
 
 
-static void machinecheck(U8* X)
+static void machinecheck(U8 *X)
 {
    U32 Z[4];
    U8  b;
@@ -89499,7 +89502,7 @@ sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattribu
 
 #if SHARKSSL_CHECK_DATE
 
-BaTime sharkParseCertTime(const U8* utc, U8 len)
+BaTime sharkParseCertTime(const U8 *utc, U8 len)
 {
    int i;
    int dt[7];
@@ -89588,7 +89591,7 @@ dbdmastart(SharkSslCertInfo* ci)
 
 
 SHARKSSL_API SharkSslConTrust
-SharkSslCon_trusted(SharkSslCon* o, const char* gpio1config, SharkSslCertInfo** cPtr)
+SharkSslCon_trusted(SharkSslCon *o, const char *gpio1config, SharkSslCertInfo **cPtr)
 {
    if(o) 
    {
@@ -91964,7 +91967,7 @@ HttpSharkSslServCon_destructor(HttpSharkSslServCon* o)
 
 
 #if ((SHARKSSL_USE_AES_256 || SHARKSSL_USE_AES_128) && (SHARKSSL_ENABLE_AES_GCM))
-int offsetkernel(SharkSslCon* o, U8 op, U8 *stackchecker, U16 len)
+int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
 {
    SharkSslAesGcmCtx *registermcasp;
    #if SHARKSSL_TLS_1_3
@@ -92092,7 +92095,7 @@ int offsetkernel(SharkSslCon* o, U8 op, U8 *stackchecker, U16 len)
 
 
 #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
-int updatecontext(SharkSslCon* o, U8 op, U8 *stackchecker, U16 len)
+int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
 {
    SharkSslPoly1305Ctx timer8hwmod;
    SharkSslChaChaCtx  *registermcasp;
@@ -93514,7 +93517,7 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
 #if SHARKSSL_ENABLE_SESSION_CACHE
 
 #define bgezllabel(s,b,c,o,l,h) brespdisable(s,b,c,o,l,0,h)
-static int brespdisable(U8* spi4000check, char* clkdmoperations, U8* context, U8* out, U16 cachemumbojumbo, U8 ptrauthdisable, U8 configwrite)
+static int brespdisable(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *out, U16 cachemumbojumbo, U8 ptrauthdisable, U8 configwrite)
 #else
 
 static int bgezllabel(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *out, U16 cachemumbojumbo, U8 configwrite)
@@ -93600,7 +93603,7 @@ int SharkSslCon_calcTicketPSK(SharkSslCon *o, U8 *PSK, U8 *broadcastenter, U8 un
 }
 
 
-int SharkSslCon_calcEarlySecret(SharkSslCon* o, U8* PSK, U8 configwrite)
+int SharkSslCon_calcEarlySecret(SharkSslCon *o, U8 *PSK, U8 configwrite)
 {
    SharkSslHSParam* sharkSslHSParam = hsParam(o);
    U8 t1[SHARKSSL_MAX_HASH_LEN];
@@ -94002,7 +94005,7 @@ U8 *templateentry(SharkSslCon *o,
 }
 
 
-void fpemureturn(SharkSslCon* o)
+void fpemureturn(SharkSslCon *o)
 {
    baAssert(o);
    baAssert(!(o->flags & firstcomponent));
@@ -94037,15 +94040,15 @@ U16 disableclean(SharkSslCipherSuite* c)
 }
 
 
-int allocalloc(SharkSslCon* o, U8 *pciercxcfg448, U16 len,
-                                U8* s, U16 sLen, U8 r1[32], U8 r2[32])
+int allocalloc(SharkSslCon *o, U8 *pciercxcfg448, U16 len,
+                                U8 *s, U16 sLen, U8 r1[32], U8 r2[32])
 {
    #if SHARKSSL_CRYPTO_USE_HEAP
-   U8* buf;
+   U8 *buf;
    #else 
    U8  buf[claimresource(SHARKSSL_MAX_DIGEST_LEN + 13 + 32 + 32)];
    #endif
-   U8* p;
+   U8 *p;
    int offsetarray = -1;
    U16 ftraceupdate;
    U8  configwrite, n;

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: mako.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: mako.h 5711 2025-12-14 23:15:19Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2012 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2012 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,6 +39,24 @@
 
 #define APPNAME "mako"
 
+struct MakoOpenAUX;
+
+/* Function pointer to addSecret() in MakoMain.c */
+typedef void (*AddSecret)(
+   struct MakoOpenAUX* aux, BaBool unique, const U8* secret, size_t slen);
+
+
+typedef struct MakoOpenAUX {
+   lua_State* L; /* The main Lua state */
+   IoIntfPtr dio; /* The IO instance named "disk" */
+   IoIntfPtr hio; /* The IO instance named "home" */
+   AddSecret addSecret; /* Callback to addSecret() in MakoMain.c */
+   int tpmFuncRef; /* Reference to the TPM seed function in MakoTPM.lua */
+} MakoOpenAUX;
+
+/* Dummy version in MakoExt.ch
+ */
+void makoOpenAUX(MakoOpenAUX* aux);
 
 void makoprintf(int isErr,const char* fmt, ...);
 void makovprintf(int isErr,const char* fmt, va_list argList);

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEx.h 5102 2022-02-19 19:34:26Z gianluca $
+ *   $Id: SharkSslEx.h 5679 2025-10-24 21:09:53Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2022
  *
@@ -95,13 +95,13 @@ SHARKSSL_API int sharkStrCaseCmp(
 /** Certificate subject name/subject alternative name comparison to "name"
  */
 SHARKSSL_API int sharkSubjectSubjectAltCmp(
-   const char *cn, U16 cnLen, U8 *subjAltPtr, U16 subjAltLen, const char* name, U16 nameLen);
+   const char *cn, U16 cnLen, U8 *subjAltPtr, U16 subjAltLen, const char *name, U16 nameLen);
 
 /** Converts the expected certificate time string format
     YY[YY]MMDDHHMMSSZ
     to seconds since Jan 1, 1970.
 */
-SHARKSSL_API BaTime sharkParseCertTime(const U8* utc, U8 len);
+SHARKSSL_API BaTime sharkParseCertTime(const U8 *utc, U8 len);
 
 
 
@@ -178,7 +178,7 @@ typedef enum
     \sa SharkSslConTrust and SharkSslCon_trustedCA
 */
 SHARKSSL_API SharkSslConTrust SharkSslCon_trusted(
-   SharkSslCon* o, const char* name, SharkSslCertInfo** cPtr);
+   SharkSslCon *o, const char *name, SharkSslCertInfo **cPtr);
 
 /** @} */ /* end group SharkSslApi */ 
 

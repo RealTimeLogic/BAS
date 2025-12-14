@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 5612 2025-02-15 09:33:48Z gianluca $
+ *   $Id: SharkSslCrypto.h 5679 2025-10-24 21:09:53Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -254,17 +254,17 @@ SHARKSSL_API int   sharkssl_kmemcmp(const void *a, const void *b, U32 n);
 
     \param ctx Uninitialized data of size sizeof(SharkSslMd5Ctx).
 */
-SHARKSSL_API void  SharkSslMd5Ctx_constructor(SharkSslMd5Ctx* ctx);
+SHARKSSL_API void  SharkSslMd5Ctx_constructor(SharkSslMd5Ctx *ctx);
 
 /** append
     \ingroup RayCryptoMD5
 */
-SHARKSSL_API void  SharkSslMd5Ctx_append(SharkSslMd5Ctx* ctx, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslMd5Ctx_append(SharkSslMd5Ctx *ctx, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoMD5
 */
-SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx* ctx, U8 digest[SHARKSSL_MD5_HASH_LEN]);
+SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx *ctx, U8 digest[SHARKSSL_MD5_HASH_LEN]);
 
 /** md5
     \ingroup RayCryptoMD5
@@ -278,12 +278,12 @@ SHARKSSL_API int   sharkssl_md5(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha1Ctx).
 */
-SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
+SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *ctx);
 
 /** append
     \ingroup RayCryptoSHA1
 */
-SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx *ctx, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoSHA1
@@ -302,12 +302,12 @@ SHARKSSL_API int   sharkssl_sha1(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha256Ctx).
 */
-SHARKSSL_API void  SharkSslSha256Ctx_constructor(SharkSslSha256Ctx* ctx);
+SHARKSSL_API void  SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *ctx);
 
 /** append
     \ingroup RayCryptoSHA256
 */
-SHARKSSL_API void  SharkSslSha256Ctx_append(SharkSslSha256Ctx*, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslSha256Ctx_append(SharkSslSha256Ctx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoSHA256
@@ -326,12 +326,12 @@ SHARKSSL_API int   sharkssl_sha256(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha384Ctx).
 */
-SHARKSSL_API void  SharkSslSha384Ctx_constructor(SharkSslSha384Ctx* ctx);
+SHARKSSL_API void  SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *ctx);
 
 /** append
     \ingroup RayCryptoSHA384
 */
-SHARKSSL_API void  SharkSslSha384Ctx_append(SharkSslSha384Ctx*, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslSha384Ctx_append(SharkSslSha384Ctx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoSHA384
@@ -350,7 +350,7 @@ SHARKSSL_API int   sharkssl_sha384(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha512Ctx).
 */
-SHARKSSL_API void  SharkSslSha512Ctx_constructor(SharkSslSha512Ctx* ctx);
+SHARKSSL_API void  SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *ctx);
 
 /** append
     \ingroup RayCryptoSHA512
@@ -379,12 +379,12 @@ SHARKSSL_API int   sharkssl_sha512(const U8*, U32, U8*);
     \param key pointer to the cryptographic key
     \param keyLen 'key' length
 */
-SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx* ctx, U8 hashID, const U8* key, U16 keyLen);
+SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx *ctx, U8 hashID, const U8 *key, U16 keyLen);
 
 /** append
     \ingroup RayCryptoHMAC
 */
-SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx*, const U8* data, U32 len);
+SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoHMAC

@@ -313,16 +313,21 @@ int xedgeOpenAUX(XedgeOpenAUX* aux)
       TPM API: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
       When using the softTPM, in addition to the main secret you must
       set in EncryptionKey.h, additional secrets can be added to the
-      logic in xedge.lua that calculates the pre-master key. At least
-      one key should be a fixed ID specific to the device. It could be
+      logic in .config that calculates the pre-master key. At least
+      one key should be a unique ID specific to the device. It could be
       the Ethernet MAC address or any other unique ID. In the ESP32
       reference port, we use "eFUSE Registers". Note that you cannot
       use random generated data, as secret(s) must be persistent.
     */
 #ifndef NO_ENCRYPTIONKEY
    const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EXAMPLE */
-   aux->addSecret(aux, secret, sizeof(secret)); /* Send secret to Lua code */
-   aux->addSecret(aux, "You can add any number of secrets", 33);
+   /* Send secret to Lua code */
+   aux->addSecret(aux, FALSE, secret, sizeof(secret));
+   lua_pushliteral(aux->L,"You can add any number of secrets");
+   aux->addSecret(aux, FALSE, 0, 0);
+   /* Set unique (TRUE) when adding a device unique key such as the MAC address
+    * aux->addSecret(aux, TRUE, deviceMacAddr, 6);
+    */
 #endif
 
    /* Ex 4: Add an embedded ZIP file (read only file system)

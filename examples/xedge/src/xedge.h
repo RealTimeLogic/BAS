@@ -14,7 +14,7 @@ struct XedgeOpenAUX;
 
 /* Function pointer to addSecret() in xedge.c */
 typedef void (*AddSecret)(
-   struct XedgeOpenAUX* aux, const U8* secret, size_t slen);
+   struct XedgeOpenAUX* aux, BaBool unique, const U8* secret, size_t slen);
 
 /* Set this in xedgeOpenAUX() to enable (2)
  */

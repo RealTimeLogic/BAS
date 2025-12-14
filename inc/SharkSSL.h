@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5658 2025-04-30 05:08:15Z gianluca $
+ *   $Id: SharkSSL.h 5693 2025-11-08 15:29:55Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
  *
@@ -72,8 +72,8 @@ typedef U64 SharkCertSerialNumber;
 #define sharkCertSerialNumber2NetworkEndian(n)  \
    do {                                         \
       U64 nn=0;                                 \
-      register U8* t=(U8*)&nn;                  \
-      register U8* f=(U8*)&n;                   \
+      register U8 *t=(U8*)&nn;                  \
+      register U8 *f=(U8*)&n;                   \
       t[7]=f[0];                                \
       t[6]=f[1];                                \
       t[5]=f[2];                                \
@@ -994,7 +994,7 @@ SHARKSSL_API void  SharkSsl_destructor(SharkSsl *o);
     [example programs](\ref SharkExamples).
     \code
 int rc;
-SharkSslCon* scon;
+SharkSslCon *scon;
 if( (rc=se_connect(&sock, "realtimelogic.com", 443)) == 0) // open socket
 {
    if( (scon = SharkSsl_createCon(&sharkSsl)) != NULL)
@@ -1023,7 +1023,7 @@ SharkSslCon *SharkSsl_createCon(SharkSsl *o);
        \until se_close
 
  */
-void SharkSsl_terminateCon(const SharkSsl *o, SharkSslCon* con);
+void SharkSsl_terminateCon(const SharkSsl *o, SharkSslCon *con);
 
 
 #if SHARKSSL_ENABLE_SESSION_CACHE
@@ -1480,9 +1480,7 @@ U8  SharkSslCon_favorRSA(SharkSslCon *o, U8 flag);
 #endif  /* SHARKSSL_SSL_SERVER_CODE */
 #endif  /* SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA */
 
-#if SHARKSSL_SSL_CLIENT_CODE 
 U8  SharkSslCon_selectProtocol(SharkSslCon *o, U8 protocol);
-#endif
 
 /** @addtogroup SharkSslSessionApi
 @{
@@ -1623,7 +1621,7 @@ SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
     handshaking phase.
 */
 SHARKSSL_API U8 SharkSslCon_setALPNProtocols(
-   SharkSslCon* o, const char* protList);
+   SharkSslCon *o, const char *protList);
 
 /** This function is used by client solutions to return the application
     layer protocol selected by the server among the ones specified through
@@ -1638,10 +1636,10 @@ SHARKSSL_API U8 SharkSslCon_setALPNProtocols(
     function #SharkSslCon_setALPNProtocols; please be aware that the protocol
     name can be terminated by a NULL or a comma, according to the passed string.
 */
-SHARKSSL_API const char *SharkSslCon_getALPNProtocol(SharkSslCon* o);
+SHARKSSL_API const char *SharkSslCon_getALPNProtocol(SharkSslCon *o);
 #endif
 #if SHARKSSL_SSL_SERVER_CODE
-typedef int(*ALPNFunction)(SharkSslCon*, const char*, void *);
+typedef int(*ALPNFunction)(SharkSslCon*, const char*, void*);
 SHARKSSL_API U8 SharkSslCon_setALPNFunction(
    SharkSslCon *o, ALPNFunction func, void *pvoid);
 #endif

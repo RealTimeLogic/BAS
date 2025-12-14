@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5648 2025-03-30 17:51:19Z wini $
+ *   $Id: MakoMain.c 5711 2025-12-14 23:15:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2025
  *
@@ -42,6 +42,7 @@
 #error The macro MAKO must be defined when you compile the Mako Server (for all BAS files)
 #endif
 
+#define _GNU_SOURCE
 #include "mako.h"
 
 
@@ -77,7 +78,8 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 
 
 /* Your optional Custom mods */
-#include "MakoExt.ch"
+#include "MakoExt1.ch"
+#include "MakoExt2.ch"
 
 #define MAKOEXNAME ""
 
@@ -803,6 +805,22 @@ setUser(int argc, char** argv)
 #endif /* #ifdef CUSTOM_PLAT */
 
 
+#ifdef NDEBUG
+#define xpcall(L,nargs) lua_pcall(L,nargs,0,0)
+#else
+static void
+xpcall(lua_State *L, int nargs)
+{
+   if(lua_pcall(L, nargs, 1, 0))
+   {
+      errQuit("Fatal err: %s\n",
+              lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
+   }
+   lua_pop(L,1);
+}
+#endif
+
+
 /* Run the Lua 'onunload' handlers for all loaded apps when mako exits.
    onunload is an optional function applications loaded by mako can
    use if the applications require graceful termination such as
@@ -816,11 +834,7 @@ onunload(int onunloadRef)
     */
    lua_rawgeti(L, LUA_REGISTRYINDEX, onunloadRef);
    baAssert(lua_isfunction(L, -1));
-   if(lua_pcall(L, 0, 1, 0))
-   {
-      makoprintf(TRUE,"Error in 'onunload': %s\n",
-                 lua_isstring(L,-1) ? lua_tostring(L, -1) : "?");
-   }
+   xpcall(L, 0);
    luaL_unref(L, LUA_REGISTRYINDEX, onunloadRef);
    balua_relsocket(L); /* Gracefully close all cosockets, if any */
 }
@@ -1406,99 +1420,38 @@ checkEndian()
    confidential. The array is intentionally not stored as a C string,
    making it extremely difficult to extract from the compiled binary.
 
-   Additional secrets can be provided to the Lua script. The
-   platform-specific function 'pushUniqueKey()' attempts to inject a
-   unique per-device key, further enhancing the security of the TPM by
-   making it more difficult to transfer TPM-generated secrets to
-   another machine.
-
+   Additional secrets can be provided to the Lua script.
    Note that all keys must remain persistent across system reboots and
    any modifications to the operating system.
 */
 #ifdef NO_ENCRYPTIONKEY
 #define installTPM(L)
 #else
-#ifdef BA_WIN32
-static int pushUniqueKey(lua_State*L)
+
+/* Add additional TPM secrets.
+ */
+static void
+addSecret(MakoOpenAUX* aux, BaBool unique, const U8* secret, size_t slen)
 {
-   int retVal=-1;
-   HKEY hKey;
-   LONG result;
-   DWORD dwType = REG_SZ;
-   char guid[256];
-   DWORD dwSize = sizeof(guid);
-   result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         "SOFTWARE\\Microsoft\\Cryptography",
-                         0,
-                         KEY_READ | KEY_WOW64_64KEY,
-                         &hKey);
-   if(result == ERROR_SUCCESS)
+   lua_State* L = aux->L;
+   lua_rawgeti(L, LUA_REGISTRYINDEX, aux->tpmFuncRef);
+   if(secret)
    {
-      result = RegQueryValueEx(hKey,
-                               "MachineGuid",
-                               NULL,
-                               &dwType,
-                               (LPBYTE)guid,
-                               &dwSize);
-      if (result == ERROR_SUCCESS)
-      {
-         retVal=0;
-         lua_pushstring(L,guid);
-      }
-      RegCloseKey(hKey);
+      lua_pushlstring(L,(char*)secret,slen);
    }
-   return retVal;
-}
-#elif defined(_OSX_)
-#include <IOKit/IOKitLib.h>
-#include <CoreFoundation/CoreFoundation.h>
-static int pushUniqueKey(lua_State*L)
-{
-   int retVal=-1;
-   io_registry_entry_t ioRegistryRoot = IORegistryEntryFromPath(
-      kIOMainPortDefault, "IOService:/");
-   if(ioRegistryRoot != MACH_PORT_NULL)
+   else
    {
-      CFStringRef uuidString=IORegistryEntryCreateCFProperty(
-         ioRegistryRoot, CFSTR("IOPlatformUUID"), kCFAllocatorDefault, 0);
-      if(uuidString)
-      {
-         CFIndex length = CFStringGetLength(uuidString);
-         CFIndex maxLength = CFStringGetMaximumSizeForEncoding(
-            length, kCFStringEncodingUTF8) + 1;
-         char* binaryData = (char*)malloc(maxLength);
-         if (CFStringGetCString(
-                uuidString,(char*)binaryData,maxLength,kCFStringEncodingUTF8))
-         {
-            retVal=0;
-            /* -1: Exclude the null terminator */
-            lua_pushlstring(L,binaryData,maxLength - 1);
-         }
-         free(binaryData);
-         CFRelease(uuidString);
-      }
-      IOObjectRelease(ioRegistryRoot);
+      lua_pushvalue(L, -2);
+      baAssert(LUA_TSTRING == lua_type(L, -1));
    }
-   return retVal;
-}
-#else /* Linux */
-static int pushUniqueKey(lua_State*L)
-{
-   int retVal=-1;
-   FILE *file = fopen("/etc/machine-id", "r");
-   if(file)
+   lua_pushboolean(L,unique);
+   xpcall(L, 2);
+   if(!secret)
    {
-      char guid[64];
-      if(fgets(guid, sizeof(guid), file) != NULL)
-      {
-         retVal=0;
-         lua_pushstring(L,guid);
-      }
-      fclose(file);
+      lua_pop(L,1);
    }
-   return retVal;
 }
-#endif
+
 
 /* This function executes ".config" in the embedded ZIP file in tpm.h,
    the Lua TPM implementation. The .config script returns a function
@@ -1513,72 +1466,39 @@ static void installTPM(lua_State* L)
    status=balua_loadconfigExt(L, (IoIntf*)&io, 0, 1);
    if(status)
    {
-     L_cfgerr:
-#if 0
-      errQuit("TPM error: %s.\n", lua_tostring(L, -1)); // For testing
+#ifndef NDEBUG
+      errQuit("TPM error: %s.\n", lua_tostring(L, -1));
 #endif
-      exit(1); /* Make sure the Lua code works */
+      return; 
    }
-   lua_pushvalue(L, -1); /* TPM func */
+   MakoOpenAUX aux = {
+      L,
+      (IoIntf*)&diskIo,
+#ifdef MAKO_HOME_DIR
+      (IoIntf*)&homeIo,
+#else
+      0
+#endif
+      addSecret,
+      luaL_ref(L,LUA_REGISTRYINDEX), /*Reference to func returned by .config*/
+   };
 
-   /*
-     Push the primary secret key material as a Lua string. 
+   /* Include the code that applies White-box Cryptography to
+    * ENCRYPTIONKEY and pushes the value on the Lua stack.
+    */
+#include "MakoWBC.ch"
 
-     A basic approach would be to push the secret key onto the Lua stack directly using:
-     lua_pushlstring(L, (char*)ENCRYPTIONKEY, sizeof(ENCRYPTIONKEY));
-
-     However, this naive approach has significant security risks, as
-     it could potentially expose the key in compiled code, making it
-     feasible to extract, as discussed in detail here:
-     https://security.stackexchange.com/questions/205675/is-it-possible-to-extract-secret-key-in-compiled-code-automatically
-
-     To mitigate this, we utilize White-box Cryptography (WBC) to
-     obfuscate the secret key material. The Lua TPM (Trusted Platform
-     Module) implementation doesn't require a specific fixed secret
-     key; the only requirement is that a pre-selected, randomly chosen
-     number remains consistent across reboots. This ensures
-     persistence without exposing the actual key.
-
-     The transformation applied below uses an S-box substitution
-     technique to obscure the key's value, adding an extra layer of
-     protection.
-   */
-   baAssert(sizeof(ENCRYPTIONKEY) > 255); /* ENCRYPTIONKEY too short */
-   {
-      luaL_Buffer b;
-      size_t i;
-      U8* transformedKey = (U8*)luaL_buffinitsize(L,&b,sizeof(ENCRYPTIONKEY));
-      for (i = 0; i < sizeof(ENCRYPTIONKEY); i++) {
-         /* Apply S-box substitution; This would crash if ENCRYPTIONKEY < 256 */
-         transformedKey[i] = ENCRYPTIONKEY[ENCRYPTIONKEY[i]] ^ ENCRYPTIONKEY[i];
-      }
-      luaL_addsize(&b, sizeof(ENCRYPTIONKEY));
-      luaL_pushresult(&b);
-   }
-
-   if(lua_pcall(L, 1, 0, 0))
-      goto L_cfgerr;
-   lua_pushvalue(L, -1); /* TPM func */
-   if(pushUniqueKey(L)) /* Per device key */
-   {
-      lua_pop(L,1);
-      makoprintf(TRUE,"Warning: no device unique TPM ID\n");
-   }
-   else
-   {
-      if(lua_pcall(L, 1, 0, 0))
-         goto L_cfgerr;
-   }
+   addSecret(&aux, FALSE, 0, 0);
+   makoOpenAUX(&aux);
+   lua_rawgeti(L, LUA_REGISTRYINDEX, aux.tpmFuncRef);
    lua_pushboolean(L,TRUE); /* signal end of key material */
-   if(lua_pcall(L, 1, 0, 0))
-      goto L_cfgerr;
+   xpcall(L, 1);
    baAssert(0 == lua_gettop(L));
    ZipIo_destructor(&io);
+   luaL_unref(L, LUA_REGISTRYINDEX, aux.tpmFuncRef);
 }
 #endif /* NO_ENCRYPTIONKEY */
 /*******************   End Trusted Platform Module ************************/
-
-
 
 void
 runMako(int isWinService, int argc, char* argv[], char* envp[])
@@ -1627,6 +1547,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
     */
    SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX);
 #endif
+#include "MakoExtM1.ch" /* Inject optional code */
    if( ! isWinService )
       fprintf(stderr,"\n%s\n%s\n%s\n\n",MAKO_VNAME,MAKO_DATE,MAKO_CPR);
    if(isWinService)
@@ -1816,7 +1737,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L,&ltMgr); /* Install optional trace logger  */
-   myCustomBindings(L);
+   myCustomBindings(L); /* Deprecated, use MakoExt2.ch -> makoOpenAUX */
 
    /* Install optional SQL bindings */
    luaopen_SQL(L);
@@ -1873,28 +1794,32 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       When run as: sudo mako -u `whoami`
    */
    setUser(argc,argv);
+#include "MakoExtM2.ch" /* Inject optional code */
    ecode=balua_loadconfigExt(L, blp.vmio, 0, 2); /* Load and run .config  */
    if(ecode)
    {
       L_cfgerr:
       errQuit(".config error: %s.\n", lua_tostring(L, -1));
    }
-   if(!lua_isfunction(L, -2) || !lua_isnumber(L, -1) || 1 != lua_tonumber(L, -1))
+   /* .config returns two values: init func, .config version */
+   if(!lua_isfunction(L, -2) || !lua_isnumber(L, -1) || 1!=lua_tonumber(L, -1))
    {
       errQuit("mako.zip version err");
    }
    lua_pop(L, 1); /* Version */
    if( ! limitedZip )
    {
+      /* Save func returned by .config */
       luaFuncRef = luaL_ref(L, LUA_REGISTRYINDEX);
       installTPM(L);
-      lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef);
+      lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef); /* restore */
    }
+   /* Call the .config's init func, which returns the onunload func */
    if(lua_pcall(L, 0, 1, 0))
       goto L_cfgerr;
    if(!lua_isfunction(L, -1))
       errQuit(".config error: no onunload");
-   luaFuncRef=luaL_ref(L,LUA_REGISTRYINDEX);
+   luaFuncRef=luaL_ref(L,LUA_REGISTRYINDEX); /* the .config's onunload func */
    HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
 
    /*
@@ -1903,6 +1828,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
      a Barracuda resource such as the WebDAV instance.
    */
    ThreadMutex_release(&mutex);
+#include "MakoExtM3.ch" /* Inject optional code */
    if( ! disp.doExit ) /* Can be set by debugger */
    {
       /* Arg -1: Never returns unless CTRL-C handler (or debugger monitor)
@@ -1913,6 +1839,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 
    /*Dispatcher mutex must be locked when terminating the following objects.*/
    ThreadMutex_set(&mutex);
+#include "MakoExtM4.ch" /* Inject optional code */
    /* Graceful termination of Lua apps. See function above. */
    onunload(luaFuncRef);
    LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */

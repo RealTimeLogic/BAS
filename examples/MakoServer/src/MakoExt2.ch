@@ -89,7 +89,8 @@
 
 
 /* Template function:
-   Include your own Lua bindings and extend Mako.
+   Include your own Lua bindings and extend Mako (Legacy version: use
+   makoOpenAUX)
  */
 #ifdef AUX_LUA_BINDINGS
 static void myCustomBindings(lua_State* L)
@@ -133,6 +134,28 @@ static const U8 zipBinPwd[] ={
 };
 
 */
+   
+/********************************* TPM ***********************************/
+#ifndef NO_ENCRYPTIONKEY
+
+/* The platform-specific function 'pushUniqueKey()' attempts to inject
+   a unique per-device key, further enhancing the security of the TPM
+   by making it more difficult to transfer TPM-generated secrets to
+   another machine.
+*/
+#include "PushUniqueKey.ch"
+
+
+void makoOpenAUX(MakoOpenAUX* aux)
+{
+   if(pushUniqueKey(L)) /* Per device key */
+      makoprintf(TRUE,"Warning: no device unique TPM ID\n");
+   else
+      aux->addSecret(aux, TRUE, 0, 0);
+}
+
+#endif /* NO_ENCRYPTIONKEY */
+
 
 
 /*************************************************************************
