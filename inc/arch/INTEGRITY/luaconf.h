@@ -1,11 +1,6 @@
 
 #ifndef lconfig_h
 
-/* Use integers, not 'double' for Lua numbers */
-#ifndef LUA_NUMBER_INTEGER
-#define LUA_NUMBER_INTEGER 0
-#endif
-
 /* Only a subset of the os lib is available for embedded systems */
 #ifdef USE_SYSTEM_POSIX
 #define BA_HAS_ANSI_IO

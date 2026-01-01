@@ -7,13 +7,13 @@
 #ifndef _luaintfint_h
 #define _luaintfint_h
 
-#define LUAINTF_VER 4
+#define LUAINTF_VER 5
 
 /* If using: https://realtimelogic.info/amalgamator/ */
 #ifdef USE_AMALGAMATED_BAS
 #include <barracuda.h>
 #else
-#include "lualib.h"
+#include "lua.h"
 #include "lauxlib.h"
 #endif
 
@@ -25,9 +25,10 @@ LUA_API int lua_vgc(lua_State *L, int what, va_list argp);
 
 struct BaTimer;
 
-typedef lua_State *(*Tlua_newstate) (lua_Alloc f, void *ud);
+typedef lua_State *(*Tlua_newstate) (lua_Alloc f, void *ud, unsigned seed);
 typedef void (*Tlua_close) (lua_State *L);
 typedef lua_State *(*Tlua_newthread) (lua_State *L);
+typedef int (*Tlua_closethread) (lua_State *L, lua_State *from);
 typedef lua_CFunction (*Tlua_atpanic) (lua_State *L, lua_CFunction panicf);
 typedef lua_Number (*Tlua_version) (lua_State *L);
 typedef int (*Tlua_absindex) (lua_State *L, int idx);
@@ -61,6 +62,7 @@ typedef void (*Tlua_pushnil) (lua_State *L);
 typedef void (*Tlua_pushnumber) (lua_State *L, lua_Number n);
 typedef void (*Tlua_pushinteger) (lua_State *L, lua_Integer n);
 typedef const char *(*Tlua_pushlstring) (lua_State *L, const char *s, size_t len);
+typedef const char *(*Tlua_pushexternalstring) (lua_State *L, const char *s, size_t len, lua_Alloc falloc, void *ud);
 typedef const char *(*Tlua_pushstring) (lua_State *L, const char *s);
 typedef const char *(*Tlua_pushvfstring) (lua_State *L, const char *fmt,va_list argp);
 typedef void (*Tlua_pushcclosure) (lua_State *L, lua_CFunction fn, int n);
@@ -75,9 +77,11 @@ typedef int (*Tlua_rawget) (lua_State *L, int idx);
 typedef int (*Tlua_rawgeti) (lua_State *L, int idx, lua_Integer n);
 typedef int (*Tlua_rawgetp) (lua_State *L, int idx, const void *p);
 typedef void (*Tlua_createtable) (lua_State *L, int narr, int nrec);
-typedef void *(*Tlua_newuserdata) (lua_State *L, size_t sz, int nuvalue);
+typedef void *(*Tlua_newuserdatauv) (lua_State *L, size_t sz, int nuvalue);
+typedef Tlua_newuserdatauv Tlua_newuserdata; /* backward compat */
 typedef int (*Tlua_getmetatable) (lua_State *L, int objindex);
-typedef int (*Tlua_getuservalue) (lua_State *L, int idx, int nuvalue);
+typedef int (*Tlua_getiuservalue) (lua_State *L, int idx, int n);
+typedef Tlua_getiuservalue Tlua_getuservalue; /* backward compat */
 typedef void (*Tlua_setglobal) (lua_State *L, const char *name);
 typedef void (*Tlua_settable) (lua_State *L, int idx);
 typedef void (*Tlua_setfield) (lua_State *L, int idx, const char *k);
@@ -86,7 +90,8 @@ typedef void (*Tlua_rawset) (lua_State *L, int idx);
 typedef void (*Tlua_rawseti) (lua_State *L, int idx, lua_Integer n);
 typedef void (*Tlua_rawsetp) (lua_State *L, int idx, const void *p);
 typedef int (*Tlua_setmetatable) (lua_State *L, int objindex);
-typedef int (*Tlua_setuservalue) (lua_State *L, int idx, int nuvalue);
+typedef int (*Tlua_setiuservalue) (lua_State *L, int idx, int n);
+typedef Tlua_setiuservalue Tlua_setuservalue; /* backward compat */
 typedef void (*Tlua_callk) (lua_State *L, int nargs, int nresults,lua_KContext ctx, lua_KFunction k);
 typedef int (*Tlua_pcallk) (lua_State *L, int nargs, int nresults, int errfunc,lua_KContext ctx, lua_KFunction k);
 typedef int (*Tlua_load) (lua_State *L, lua_Reader reader, void *dt,const char *chunkname, const char *mode);
@@ -97,12 +102,17 @@ typedef int (*Tlua_status) (lua_State *L);
 typedef int (*Tlua_isyieldable) (lua_State *L);
 typedef int (*Tlua_vgc) (lua_State *L, int what, va_list argp);
 typedef int (*Tlua_error) (lua_State *L);
+typedef void (*Tlua_setwarnf) (lua_State *L, lua_WarnFunction f, void *ud);
+typedef void (*Tlua_warning) (lua_State *L, const char *msg, int tocont);
 typedef int (*Tlua_next) (lua_State *L, int idx);
 typedef void (*Tlua_concat) (lua_State *L, int n);
 typedef void (*Tlua_len) (lua_State *L, int idx);
+typedef unsigned (*Tlua_numbertocstring) (lua_State *L, int idx, char *buff);
 typedef size_t (*Tlua_stringtonumber) (lua_State *L, const char *s);
 typedef lua_Alloc (*Tlua_getallocf) (lua_State *L, void **ud);
 typedef void (*Tlua_setallocf) (lua_State *L, lua_Alloc f, void *ud);
+typedef void (*Tlua_toclose) (lua_State *L, int idx);
+typedef void (*Tlua_closeslot) (lua_State *L, int idx);
 typedef int (*Tlua_getstack) (lua_State *L, int level, lua_Debug *ar);
 typedef int (*Tlua_getinfo) (lua_State *L, const char *what, lua_Debug *ar);
 typedef const char *(*Tlua_getlocal) (lua_State *L, const lua_Debug *ar, int n);
@@ -168,6 +178,7 @@ typedef struct {
    Tlua_newstate lua_newstateFp;
    Tlua_close lua_closeFp;
    Tlua_newthread lua_newthreadFp;
+   Tlua_closethread lua_closethreadFp;
    Tlua_atpanic lua_atpanicFp;
    Tlua_version lua_versionFp;
    Tlua_absindex lua_absindexFp;
@@ -201,6 +212,7 @@ typedef struct {
    Tlua_pushnumber lua_pushnumberFp;
    Tlua_pushinteger lua_pushintegerFp;
    Tlua_pushlstring lua_pushlstringFp;
+   Tlua_pushexternalstring lua_pushexternalstringFp;
    Tlua_pushstring lua_pushstringFp;
    Tlua_pushvfstring lua_pushvfstringFp;
    Tlua_pushcclosure lua_pushcclosureFp;
@@ -215,9 +227,9 @@ typedef struct {
    Tlua_rawgeti lua_rawgetiFp;
    Tlua_rawgetp lua_rawgetpFp;
    Tlua_createtable lua_createtableFp;
-   Tlua_newuserdata lua_newuserdataFp;
+   Tlua_newuserdatauv lua_newuserdatauvFp;
    Tlua_getmetatable lua_getmetatableFp;
-   Tlua_getuservalue lua_getuservalueFp;
+   Tlua_getiuservalue lua_getiuservalueFp;
    Tlua_setglobal lua_setglobalFp;
    Tlua_settable lua_settableFp;
    Tlua_setfield lua_setfieldFp;
@@ -226,7 +238,7 @@ typedef struct {
    Tlua_rawseti lua_rawsetiFp;
    Tlua_rawsetp lua_rawsetpFp;
    Tlua_setmetatable lua_setmetatableFp;
-   Tlua_setuservalue lua_setuservalueFp;
+   Tlua_setiuservalue lua_setiuservalueFp;
    Tlua_callk lua_callkFp;
    Tlua_pcallk lua_pcallkFp;
    Tlua_load lua_loadFp;
@@ -237,12 +249,17 @@ typedef struct {
    Tlua_isyieldable lua_isyieldableFp;
    Tlua_vgc lua_vgcFp;
    Tlua_error lua_errorFp;
+   Tlua_setwarnf lua_setwarnfFp;
+   Tlua_warning lua_warningFp;
    Tlua_next lua_nextFp;
    Tlua_concat lua_concatFp;
    Tlua_len lua_lenFp;
-   Tlua_stringtonumber lua_stringtonumberFp;
+      Tlua_numbertocstring lua_numbertocstringFp;
+Tlua_stringtonumber lua_stringtonumberFp;
    Tlua_getallocf lua_getallocfFp;
    Tlua_setallocf lua_setallocfFp;
+   Tlua_toclose lua_tocloseFp;
+   Tlua_closeslot lua_closeslotFp;
    Tlua_getstack lua_getstackFp;
    Tlua_getinfo lua_getinfoFp;
    Tlua_getlocal lua_getlocalFp;
@@ -342,6 +359,7 @@ static const LuaFuncs luaFuncs={
    lua_newstate,
    lua_close,
    lua_newthread,
+   lua_closethread,
    lua_atpanic,
    lua_version,
    lua_absindex,
@@ -375,6 +393,7 @@ static const LuaFuncs luaFuncs={
    lua_pushnumber,
    lua_pushinteger,
    lua_pushlstring,
+   lua_pushexternalstring,
    lua_pushstring,
    lua_pushvfstring,
    lua_pushcclosure,
@@ -411,12 +430,17 @@ static const LuaFuncs luaFuncs={
    lua_isyieldable,
    lua_vgc,
    lua_error,
+   lua_setwarnf,
+   lua_warning,
    lua_next,
    lua_concat,
    lua_len,
+   lua_numbertocstring,
    lua_stringtonumber,
    lua_getallocf,
    lua_setallocf,
+   lua_toclose,
+   lua_closeslot,
    lua_getstack,
    lua_getinfo,
    lua_getlocal,

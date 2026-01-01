@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5581 2024-10-21 23:22:49Z wini $
+ *   $Id: balua.h 5712 2025-12-22 18:14:12Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2024
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2025
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -113,6 +113,9 @@ extern "C" {
 #define balua_check(x,y) baAssert(y == x)
 #endif
 
+#ifndef BALUA_XH
+#define BALUA_XH 0xA5
+#endif
 
 #define dmpstk1(L,x) \
    HttpTrace_printf(0,"%d: %s %p\n", __LINE__,lua_typename(L,lua_type(L,(x))), \
