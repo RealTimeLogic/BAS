@@ -1,14 +1,6 @@
 
 #ifndef lconfig_h
 
-#if 0
-/* Use integers, not 'double' for Lua numbers */
-#ifndef LUA_NUMBER_INTEGER
-#define LUA_NUMBER_INTEGER 1
-#endif
-#endif
-
-/* when LUA_NUMBER_INTEGER == 0 (using float). No log2 in VxWorks */
 #define NO_LOG2
 
 /*  Use the standard Lua I/O and loadfile. The C libraries required

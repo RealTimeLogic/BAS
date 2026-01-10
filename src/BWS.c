@@ -7001,9 +7001,9 @@ static int writepmresr(SharkSslCon* o, U8* registeredevent, U16 len)
 #if SHARKSSL_TLS_1_3
 
 #if (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_SSL_SERVER_CODE)
-static int ZZTSTSharkSslCon_parseExtensionSV(SharkSslCon* o, U8* registeredevent, U16 len, SharkSsl_Role startkernel)
+static int earlyalloc(SharkSslCon* o, U8* registeredevent, U16 len, SharkSsl_Role startkernel)
 #else
-static int ZZTSTSharkSslCon_parseExtensionSV(SharkSslCon* o, U8* registeredevent, U16 len)
+static int earlyalloc(SharkSslCon* o, U8* registeredevent, U16 len)
 #endif
 {
    U16 prminstwrite, paramnamed;
@@ -8479,9 +8479,9 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             #if SHARKSSL_TLS_1_3
             
             #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_SSL_CLIENT_CODE)
-            now_ccLen = ZZTSTSharkSslCon_parseExtensionSV(o, registeredevent, paramnamed, SharkSsl_Server);
+            now_ccLen = earlyalloc(o, registeredevent, paramnamed, SharkSsl_Server);
             #else
-            now_ccLen = ZZTSTSharkSslCon_parseExtensionSV(o, registeredevent, paramnamed);
+            now_ccLen = earlyalloc(o, registeredevent, paramnamed);
             #endif
             #else
             now_ccLen = 0;  
@@ -9668,9 +9668,9 @@ SharkSslCon_RetVal configdword(SharkSslCon *o,
             #if SHARKSSL_TLS_1_3
             
             #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_SSL_CLIENT_CODE)
-            now_ccLen = ZZTSTSharkSslCon_parseExtensionSV(o, registeredevent, paramnamed, SharkSsl_Client);
+            now_ccLen = earlyalloc(o, registeredevent, paramnamed, SharkSsl_Client);
             #else
-            now_ccLen = ZZTSTSharkSslCon_parseExtensionSV(o, registeredevent, paramnamed);
+            now_ccLen = earlyalloc(o, registeredevent, paramnamed);
             #endif
             #else
             now_ccLen = 0;  

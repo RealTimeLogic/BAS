@@ -1,11 +1,6 @@
 
 #ifndef lconfig_h
 
-/* Use integers, not 'double' for Lua numbers */
-#ifndef LUA_NUMBER_INTEGER
-#define LUA_NUMBER_INTEGER 1
-#endif
-
 /* Only a subset of the os lib is available for embedded systems */
 #define BA_MINIOSLIB
 #define LUA_NOIOLIB

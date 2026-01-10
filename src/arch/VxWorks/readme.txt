@@ -26,14 +26,6 @@ Macros:
  Required:
    BA_VXWORKS
  Optional:
-   LUA_NUMBER_INTEGER=0 - e.g. -DLUA_NUMBER_INTEGER=0
-     Standard Lua supports both double precision floating point and 64
-     bit integer; however, the default for the VxWorks BAS build is to
-     use 32 bit integer only. To enable floating point and 64 bit
-     integer, set LUA_NUMBER_INTEGER=0. Note: floating point requires
-     that you create a dedicated task for the socket dispatcher SoDisp
-     with the flag VX_FP_TASK -- i.e.
-     taskCreate("SoDisp", prio, VX_FP_TASK,....
    USE_ADDRINFO -
      Use addrinfo for name translation and enable multi name
      DNS lookups that work with Round Robin DNS clusters.
@@ -51,6 +43,10 @@ We provide generic makefiles for compiling BAS. However, the makefiles
 are not needed if you use the C file BAS.c, which includes
 all other BAS C files using the "#include" directive. You can simply
 include this C file in your build instead of using the makefiles (recommended).
+
+Note: floating point requires that you create a dedicated task for the
+      socket dispatcher SoDisp with the flag VX_FP_TASK -- i.e.
+      taskCreate("SoDisp", prio, VX_FP_TASK,....
 
 Note: all code, when compiled with DIAB, must be compiled with:
        -Xchar-unsigned
