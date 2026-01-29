@@ -4541,11 +4541,15 @@ SharkSslCert removerecursive(SharkSslCertEnum *o);
 #define cacherange                 0x8
 
 
+#if SHARKSSL_ENABLE_RSA
 #if (SHARKSSL_KEYTYPE_RSA != rewindsingle)
 #error incoherency between SHARKSSL_KEYTYPE_RSA in SharkSSL.h and rewindsingle in SharkSslCert.h
 #endif
+#endif
+#if SHARKSSL_USE_ECC
 #if (SHARKSSL_KEYTYPE_EC != ts409partitions)
 #error incoherency between SHARKSSL_KEYTYPE_EC in SharkSSL.h and ts409partitions in SharkSslCert.h
+#endif
 #endif
 
 #define coupledexynos(e)               (mcbspregister(e) & cacherange)
@@ -41570,6 +41574,7 @@ U16 interrupthandler(SharkSslCertKey *disableclock, SharkSslCert kernelvaddr)
 }
 
 
+#if SHARKSSL_ENABLE_ECDSA
 
 SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey sourcerouting)
 {
@@ -41676,6 +41681,7 @@ SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey sourcerouting, U
    }
    return icachealiases;
 }
+#endif  
 
 
 #if ((SHARKSSL_SSL_CLIENT_CODE && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)) || \

@@ -57,9 +57,4 @@ The following options configure the smallest possible SharkSSL library:
 #define BASIC_TRUST_CHECK
 #endif
 
-#ifndef NDEBUG
-#define NDEBUG
-#endif
-
-
 #endif

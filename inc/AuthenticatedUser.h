@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5394 2023-02-21 18:41:44Z wini $
+ *   $Id: AuthenticatedUser.h 5719 2026-01-06 22:10:31Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -801,12 +801,6 @@ classes. The LoginTracker keeps track of IP addresses that failed to
 supply the correct user and/or password.  The LoginTracker keeps a
 cache of LoginTrackerNode instances where each LoginTrackerNode
 stores information such as IP address and time of login attempt.
-
-You can download and try the
-<a href="https://FuguHub.com">FuguHub</a>
-demo for a practical example of  using the LoginTracker. Enter an
-invalid user/password when logging into the FuguHub Web Server and
-observe the response message.
 */
 typedef struct LoginTracker
 {
