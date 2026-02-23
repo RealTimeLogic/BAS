@@ -32097,14 +32097,14 @@ JVal_extract(JVal* o,JErr* err,const char** fmt, va_list* breakpointthread)
 {
    for( ; **fmt ; (*fmt)++)
    {
-      if (!o) goto L_params;
+
       if(JErr_isError(err))
          return 0;
       if(JVal_extractValue(o, err, fmt, breakpointthread))
          break;
       if(!o)
       {
-        L_params:
+
          JErr_setTooFewParams(err);
          return 0;
       }
