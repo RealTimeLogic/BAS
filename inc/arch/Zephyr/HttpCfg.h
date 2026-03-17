@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5676 2025-10-20 14:28:22Z wini $
+ *   $Id: HttpCfg.h 5748 2026-03-17 23:03:27Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022 - 2025
+ *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -80,6 +80,15 @@
 #define socketSetsockopt zsock_setsockopt
 #define socketSocket zsock_socket
 #define socketInetNtoa zsock_inet_ntoa
+
+#define BaAddrinfo_get(node, service,hints,res,status,errinfo) do {     \
+      *(status) = zsock_getaddrinfo(node, service, hints, res);         \
+      *(errinfo) = *(status) ? (char*)zsock_gai_strerror(*(status)) : 0; \
+   } while(0)
+#define BaAddrinfo_free(addr) zsock_freeaddrinfo(addr)
+#define BaAddrinfo struct zsock_addrinfo
+
+
 #define socketWouldBlock(s) (EWOULDBLOCK == socketErrno(s))
 #define socketInProgress(s) (EINPROGRESS == socketErrno(s))
 #define socketConnect zsock_connect
