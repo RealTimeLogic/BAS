@@ -269,12 +269,6 @@ BAS Amalgamated (BAS.c) includes features that are by default not compiled. Thes
 * USE_REDIRECTOR=1: Enable the [Reverse Proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy)
 * USE_UBJSON=1: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson)
 
-* LUA_NUMBER_INTEGER=1
-    * Makes Lua use integer only and excludes floating point numbers. To re-enable floating point, compile the code with:
-
-* LUA_NUMBER_INTEGER=0
-  * See inc/arch/XXX/luaconf.h for details.
-
 * NO_LDEBUG
   * Exclude the Lua "debug" module
 
@@ -366,7 +360,6 @@ We recommend [Xedge](#xedge-rtos) for VxWorks; however, The following example sh
 ```
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_HAS_ANSI_IO -DMAKO -DUSE_SQL=0\
-    -DLUA_NUMBER_INTEGER=0\
     -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/VxWorks/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
