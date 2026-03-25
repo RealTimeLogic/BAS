@@ -150,7 +150,7 @@ Push-Location "BAS"
 try {
     if (-not (Test-Path -LiteralPath "src/sqlite3.c")) {
         # Allow override via $env:SQLITEURL; otherwise use the same default as the bash script
-        $sqliteUrl = if ($env:SQLITEURL) { $env:SQLITEURL } else { "https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip" }
+        $sqliteUrl = if ($env:SQLITEURL) { $env:SQLITEURL } else { "https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip" }
         $sqliteZip = Join-Path $env:TEMP ([IO.Path]::GetFileName($sqliteUrl))
         $sqliteTmp = Join-Path $env:TEMP "sqlite-extract"
 

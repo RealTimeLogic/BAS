@@ -75,7 +75,7 @@ if ! [ -f "src/sqlite3.c" ]; then
     # if SQLITEURL url not set
     if [  -z ${SQLITEURL+x} ]; then
         # There is no 'latest' with SQLite :-(
-	SQLITEURL="https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip"
+	SQLITEURL="https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip"
     fi
     SQLITE=${SQLITEURL##*/}
     pushd /tmp || abort $LINENO

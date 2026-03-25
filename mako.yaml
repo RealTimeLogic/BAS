@@ -34,8 +34,8 @@
       - unzip
       - gcc
       - make
-    sqldir: "2025"
-    sqlver: "3490100"
+    sqldir: "2026"
+    sqlver: "3510300"
     mako_install_path: "/usr/local/bin"
     builddir: "makobuild"
     install: false
