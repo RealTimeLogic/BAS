@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5666 2025-09-01 16:33:54Z wini $
+ *   $Id: HttpServer.h 5765 2026-04-14 08:27:48Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5750
+#define BASLIB_VER_NO 5765
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5750)
+#define BASLIB_VER BASLIB_VER_M(5765)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -135,11 +135,19 @@ BA_API struct AuthenticatedUser* AuthenticatedUser_get2(
 /** Formats the pointer 'buf' with date/time according to RFC 1123
  */
 BA_API void httpFmtDate(char* buf, U16 bufLen, BaTime t);
-/** Decodes a string encoded with httpEscape.
+
+/** strict %xx only */
+#define httpUnescape(s) httpUnescapeInternal(s,FALSE)
+
+/** strict %xx + '+' => ' ' */
+#define httpFormUnescape(s) httpUnescapeInternal(s,TRUE)
+
+/** Common decoder core used by macros httpUnescape and httpFormUnescap.
     Decodes a string containing %[hex][hex].
     Returns the last character -- i.e. the character before \0.
 */
-BA_API char* httpUnescape(char* from);
+BA_API char* httpUnescapeInternal(char* from, BaBool plusAsSpace);
+
 /** Encodes characters that cannot be in a http URL.
  * "out" should be 3 times the size of "in"
  */

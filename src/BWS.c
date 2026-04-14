@@ -12451,71 +12451,57 @@ baConvBin2Hex(void* writereg32, U8 devicehsmmc1)
 }
 
 
-static int
-hex2Bin( char c )
+
+static int pc104maskack(int c)
 {
-   if ( c >= '\060' && c <= '\071' )
-      return c - '\060';
-   if ( c >= '\141' && c <= '\146' )
-      return c - '\141' + 10;
-   if ( c >= '\101' && c <= '\106' )
-      return c - '\101' + 10;
-   baAssert(0);
-   return 0;
+   if (c >= '\060' && c <= '\071') return c - '\060';
+   if (c >= '\141' && c <= '\146') return c - '\141' + 10;
+   if (c >= '\101' && c <= '\106') return c - '\101' + 10;
+   return -1;
 }
 
 
-
 BA_API char*
-httpUnescape(char* forcereload)
+httpUnescapeInternal(char* forcereload, BaBool usageflags)
 {
    char* to = forcereload;
-   for ( ; *forcereload != '\000'; ++to, ++forcereload)
+   for(; *forcereload; ++forcereload, ++to)
    {
       if(*forcereload == '\045')
       {
-         if(bIsxdigit(forcereload[1]) && bIsxdigit(forcereload[2]))
-         {
-            *to = (char)hex2Bin(forcereload[1]) * 16 + (char)hex2Bin(forcereload[2]);
-            if(((U8)*to) == 250)
-               *to = '\047'; 
-            forcereload += 2;
-         }
-         else if(forcereload[1] == '\165' &&
-                 bIsxdigit(forcereload[2]) &&
-                 bIsxdigit(forcereload[3]) &&
-                 bIsxdigit(forcereload[4]) &&
-                 bIsxdigit(forcereload[5]))
-         {
-            U32 cryptblock =
-               ((U32)hex2Bin(forcereload[2]) << 12) |
-               ((U32)hex2Bin(forcereload[3]) <<  8) | 
-               ((U32)hex2Bin(forcereload[4]) <<  4) | 
-               (U32)hex2Bin(forcereload[5]);
-            if (cryptblock < 0x80)
-            {
-               *to = (U8)cryptblock;
-            }
-            else if (cryptblock < 0x800)
-            {
-               *to++ = (U8)(0xc0|(cryptblock >> 6));
-               *to   = (U8)(0x80|(cryptblock & 0x3f));
-            }
-            else
-            {
-               *to++ = (U8)(0xe0 | (cryptblock >> 12));
-               *to++ = (U8)(0x80 | ((cryptblock>>6)&0x3f));
-               *to   = (U8)(0x80 | (cryptblock & 0x3f));
-            }
-            forcereload += 5;
-         }
-         else
-            *to = *forcereload;
+         int h1, h2;
+         U8 c;
+
+         
+         if(forcereload[1] == '\165' || forcereload[1] == '\125')
+            return 0;
+
+         
+         h1 = pc104maskack(forcereload[1]);
+         h2 = pc104maskack(forcereload[2]);
+         if(h1 < 0 || h2 < 0)
+            return 0;
+
+         c = (U8)((h1 << 4) | h2);
+
+         
+         if(c == 0 || c < 0x20 || c == 0x7F)
+            return 0;
+
+         *to = (char)c;
+         forcereload += 2;
       }
-      else if(*forcereload == '\053')
+      else if(usageflags && *forcereload == '\053')
+      {
          *to = '\040';
+      }
       else
+      {
+         
+         if((U8)*forcereload < 0x20 || (U8)*forcereload == 0x7F)
+            return 0;
          *to = *forcereload;
+      }
    }
    *to = 0;
    return to-1;
@@ -17267,8 +17253,6 @@ ThreadReleaseLock_internalConstructor(struct ThreadReleaseLock* o,
 }
 
 
-
-
 #ifdef HTTP_TRACE
 static void
 reprogramdpllcore(int reservevmcore, HttpRequest* o)
@@ -17295,7 +17279,7 @@ _z_2(HttpResponse* doublefsqrt, int enabledisable)
 {
    S16 i;
    HttpAllocator* a = &(HttpResponse_getRequest(doublefsqrt)->inData.allocator);
-   for(i = a->index; i > 0; i--)
+   for(i = a->index-1; i > 0; i--)
       if( !isprint(a->buf[i]) )
          a->buf[i]='\077';
    reprogramdpllcore(8,HttpResponse_getRequest(doublefsqrt));
@@ -17313,6 +17297,14 @@ _z_1(HttpResponse* doublefsqrt)
    return -1;
 }
 #endif
+
+
+static int 
+serial1platform(HttpRequest* req)
+{
+   return _z_1(HttpRequest_getResponse(req));
+}
+
 
 static void
 pciercxcfg032(HttpResponse* doublefsqrt)
@@ -17852,9 +17844,10 @@ registerlookup(HttpInData* o, char* dbdmaresume)
             *dbdmaresume=0;
             if(!videoprobe)
                videoprobe=dbdmaresume; 
-            else
-               httpUnescape(videoprobe);
-            httpUnescape(gpio1config);
+            else if(!httpFormUnescape(videoprobe))
+               return -1;
+            if(!httpFormUnescape(gpio1config))
+               return -1;
             if(mappingerror(o->request, gpio1config, videoprobe))
                return -1;
 #ifndef NO_HTTP_SESSION
@@ -17868,8 +17861,10 @@ registerlookup(HttpInData* o, char* dbdmaresume)
       if(*gpio1config)
       {
          if(!videoprobe) videoprobe = gpio1config+strlen(gpio1config); 
-         else httpUnescape(videoprobe);
-         httpUnescape(gpio1config);
+         else if(!httpFormUnescape(videoprobe))
+            return -1;
+         if(!httpFormUnescape(gpio1config))
+            return -1;
          if(mappingerror(o->request, gpio1config, videoprobe))
             return -1;
 #ifndef NO_HTTP_SESSION
@@ -17909,7 +17904,7 @@ driverprobe(HttpInData* o)
 
       
       if( !(ref = (char*)baGetToken((const char**)&enabledisable, "\040\011\012\015")) )
-         return _z_1(HttpRequest_getResponse(req));
+         return serial1platform(req);
       if(!baStrnCaseCmp("\107\105\124", enabledisable, 3))
          req->methodType = HttpMethod_Get;
       else
@@ -17927,7 +17922,7 @@ driverprobe(HttpInData* o)
       if(*enabledisable == '\057')
       { 
          if( !(ref = (char*)baGetToken((const char**)&enabledisable, "\040\011\077")) )
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
          baAssert(*enabledisable == '\057');
       }
       else
@@ -17941,23 +17936,23 @@ driverprobe(HttpInData* o)
                HttpRequest_sendDefaultMethodsAllowed(req);
                return -1; 
             }
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
          }
          enabledisable += 7;
          if(*enabledisable == '\057') enabledisable++;
 
          stdH->hostHOffs=HttpInData_2Index(o,enabledisable);
          if( ! (ref = strpbrk(enabledisable, "\057\072")) )
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
          end = ref;
          if(*ref == '\072')
          {
             if( ! (ref = strchr(++ref, '\057')) )
-               return _z_1(HttpRequest_getResponse(req));
+               return serial1platform(req);
          }
          enabledisable=ref;
          if( !(ref = (char*)baGetToken((const char**)&enabledisable, "\040\011\077")) )
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
          *end=0;
       }
       if(*ref == '\077')
@@ -17967,17 +17962,20 @@ driverprobe(HttpInData* o)
          
          httpEatNonWhiteSpace(ref);
          if(*ref == 0)
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
          
          *ref=0;
          if(registerlookup(o, ptr))
-            return _z_1(HttpRequest_getResponse(req));
+            return serial1platform(req);
       }
       else
          *ref = 0;
       
       enabledisable++;
       ptr=httpUnescape((char*)enabledisable);
+      if(!ptr)
+         return serial1platform(req);
+
       
       while(bIsspace(*ptr) && ptr > enabledisable)
       {
@@ -17991,9 +17989,9 @@ driverprobe(HttpInData* o)
       req->pathI = HttpInData_2Index(o, enabledisable);
       enabledisable = ref+1;
       if( !(ref = (char*)baGetToken((const char**)&enabledisable, "\040\011\012\015")) )
-          return _z_1(HttpRequest_getResponse(req));
+          return serial1platform(req);
       if(baStrnCaseCmp("\110\124\124\120\057", enabledisable, 5))
-         return _z_1(HttpRequest_getResponse(req));
+         return serial1platform(req);
       req->versionI = HttpInData_2Index(o, enabledisable+5);
       if(ref)
          *ref=0;
@@ -18135,7 +18133,7 @@ driverprobe(HttpInData* o)
       
       *ref = 0;
       if(registerlookup(o, HttpInData_lineStartPtr(o)))
-         return _z_1(HttpRequest_getResponse(req));
+         return serial1platform(req);
       o->lineStartI=o->lineEndI=0;
       o->allocator.index=0;
    }
@@ -18450,8 +18448,7 @@ HttpCookie_ExtractAvPair(char* ref)
    kprobedecode = timerdying;
    httpEatCharacters(kprobedecode, '\073');
    *kprobedecode = 0;
-   httpUnescape(timerdying);
-   return timerdying;
+   return httpUnescape(timerdying) ? timerdying : 0;
 }
 
 
@@ -18911,7 +18908,9 @@ HttpRequest_getCookie(HttpRequest* o, const char* gpio1config)
                else
                {
                   nhpoly1305update = HttpCookie_ExtractAvPair(ads7846platform);
-                  if( ! baStrnCaseCmp("\120\141\164\150", ads7846platform, 5) )
+                  if(!nhpoly1305update)
+                     prctlenable=0; 
+                  else if( ! baStrnCaseCmp("\120\141\164\150", ads7846platform, 5) )
                      HttpCookie_setPath(helperrgmii, nhpoly1305update);
                   else
                      HttpCookie_setDomain(helperrgmii, nhpoly1305update);
@@ -29498,14 +29497,13 @@ BasicAuthenticator_setAutHeader(const char* mappingprotection, HttpResponse* r30
 #define INL_baConvBin2Hex 1
 
 #include <DigestAuthenticator.h>
-#ifndef NO_SHARKSSL
 #include <SharkSslCrypto.h>
-#endif
 #include <BaServerLib.h>
 #include <HttpTrace.h>
 #include <stdlib.h>
 
-#define NONCE_SECRET_KEY "\101\061\124\144\130\172"
+
+#define NONCE_SECRET_KEY "\101\061\124\144\130\172" __TIME__
 
 
 
@@ -29759,7 +29757,7 @@ probegtoffset(DigestData* o)
 {
    SharkSslMd5Ctx state;
    U8 secondaryentry[16];
-   basnprintf((char*)secondaryentry, sizeof(secondaryentry), "\045\130", baGetMsClock());
+   sharkssl_rng(secondaryentry, sizeof(secondaryentry)); 
    SharkSslMd5Ctx_constructor(&state);
    SharkSslMd5Ctx_append(&state, secondaryentry, iStrlen((char*)secondaryentry));
    SharkSslMd5Ctx_append(
