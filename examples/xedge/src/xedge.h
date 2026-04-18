@@ -28,6 +28,16 @@ typedef struct XedgeOpenAUX {
    XedgeCfgFile xedgeCfgFile; /* Set this in xedgeOpenAUX() to enable (2) */
 } XedgeOpenAUX;
 
+
+#ifdef xedgeWait4Network
+/* Optional function you may enable if the system needs to wait for
+ * the network to be up before starting the socket dispatcher
+ * SoDisp
+*/
+void xedgeWait4Network(void);
+#endif
+
+
 /* External code can call this function for graceful shutdown
  */
 void setDispExit(void);

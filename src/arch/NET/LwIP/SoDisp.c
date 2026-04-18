@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5460 2023-07-05 14:16:50Z wini $
+ *   $Id: SoDisp.c 5767 2026-04-18 10:47:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -1000,6 +1000,11 @@ SoDisp_run(SoDisp* o, S32 msecTimeout)
    baAssert((sizeof(int) >= sizeof(void*)));
 #endif
    o->doExit = FALSE;
+
+   /* sys_arch_sem_wait: timeout in milliseconds; 0 = wait forever */
+   if(msecTimeout< 0)
+      msecTimeout=0;
+
    if(disp != o)
    {
       /* Max one SoDisp instance */

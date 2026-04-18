@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5711 2025-12-14 23:15:19Z wini $
+ *   $Id: xedge.c 5767 2026-04-18 10:47:22Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2025
  *               http://www.realtimelogic.com
@@ -690,6 +690,9 @@ barracuda(void)
      Arg -1: Never returns, unless SoDisp_setExit() is called
    */
    ThreadMutex_release(&mutex);
+#ifdef xedgeWait4Network
+   xedgeWait4Network();
+#endif
    SoDisp_run(&dispatcher, -1);
 
    /* Gracefull shutdown
