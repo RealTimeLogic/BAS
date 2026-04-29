@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5765 2026-04-14 08:27:48Z wini $
+ *   $Id: HttpServer.h 5774 2026-04-29 06:41:03Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5767
+#define BASLIB_VER_NO 5774
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5767)
+#define BASLIB_VER BASLIB_VER_M(5774)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -146,7 +146,7 @@ BA_API void httpFmtDate(char* buf, U16 bufLen, BaTime t);
     Decodes a string containing %[hex][hex].
     Returns the last character -- i.e. the character before \0.
 */
-BA_API char* httpUnescapeInternal(char* from, BaBool plusAsSpace);
+BA_API char* httpUnescapeInternal(char* from, BaBool isForm);
 
 /** Encodes characters that cannot be in a http URL.
  * "out" should be 3 times the size of "in"
