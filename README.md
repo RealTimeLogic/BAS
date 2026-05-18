@@ -10,7 +10,7 @@ BWS and BAS share the same porting layer model and support a broad range of targ
 ## Getting Started
 
 - If you plan to use **BAS**, start here and select your operating system: https://realtimelogic.com/downloads/bas/. This page includes a drop-down menu that opens purpose-built instructions for selected operating systems, including precompiled packages and platform-specific build options.
-- If your operating system is not listed there, if you need the generic source integration details, or if you plan to use **BWS**, see the [generic compilation instructions](compiling.md).
+- If your operating system is not listed there, if you need the generic source integration details, or if you plan to use **BWS**, see the [generic compilation instructions](doc/compiling.md).
 
 ## License
 
