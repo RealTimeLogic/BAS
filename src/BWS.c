@@ -12462,7 +12462,7 @@ static int pc104maskack(int c)
 
 
 BA_API char*
-httpUnescapeInternal(char* forcereload, BaBool ZZTSTisForm)
+httpUnescapeInternal(char* forcereload, BaBool parkingprotocol)
 {
    char* to = forcereload;
    for(; *forcereload; ++forcereload, ++to)
@@ -12481,13 +12481,13 @@ httpUnescapeInternal(char* forcereload, BaBool ZZTSTisForm)
          
          if(c == 0)
             return 0;
-         if((c < 0x20 || c == 0x7F) && !ZZTSTisForm)
+         if((c < 0x20 || c == 0x7F) && !parkingprotocol)
             return 0;
 
          *to = (char)c;
          forcereload += 2;
       }
-      else if(ZZTSTisForm && *forcereload == '\053')
+      else if(parkingprotocol && *forcereload == '\053')
       {
          *to = '\040';
       }
