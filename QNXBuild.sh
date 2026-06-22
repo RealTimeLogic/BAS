@@ -41,8 +41,12 @@ function clone_or_update() {
     local url="$2"
 
     if [ -d "$dir/.git" ]; then
-        printf "Updating %s\n" "$dir"
-        git -C "$dir" pull --ff-only || abort "Updating $dir failed"
+        if git -C "$dir" diff --quiet && git -C "$dir" diff --cached --quiet; then
+            printf "Updating %s\n" "$dir"
+            git -C "$dir" pull --ff-only || abort "Updating $dir failed"
+        else
+            printf "Skipping update for %s; working tree has local changes\n" "$dir"
+        fi
     elif [ -e "$dir" ]; then
         abort "'$dir' already exists but is not a Git repository"
     else
@@ -97,6 +101,54 @@ REPOS=(
     "lua-protobuf|https://github.com/starwing/lua-protobuf.git"
     "CBOR|https://github.com/spc476/CBOR.git"
 )
+
+DEVELOPER_MAKO_ZIP_URL="https://makoserver.net/download/packages/mako.zip"
+DEVELOPER_MAKO_ZIP_INFO_URL="https://makoserver.net/documentation/developer-package/"
+
+function open_developer_mako_zip_info() {
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$DEVELOPER_MAKO_ZIP_INFO_URL" >/dev/null 2>&1 &
+    elif command -v open >/dev/null 2>&1; then
+        open "$DEVELOPER_MAKO_ZIP_INFO_URL" >/dev/null 2>&1 &
+    else
+        printf "Open this page for more information: %s\n" "$DEVELOPER_MAKO_ZIP_INFO_URL"
+    fi
+}
+
+function ask_install_developer_mako_zip() {
+    local target_zip="$1"
+    local tmpdir tmpzip backup
+
+    [ -f "$target_zip" ] || abort "Cannot find mako.zip to replace: $target_zip"
+
+    printf "\nMako Developer Edition mako.zip adds Xedge, LSP-Claw, and local MQTT development tools.\n"
+    printf "If you install it, this script backs up the current mako.zip before replacing it.\n"
+
+    [ -r /dev/tty ] || abort "Cannot prompt for Mako Developer Edition installation"
+    read -p "Do you want more information in your browser (y/N)?" </dev/tty || abort "Could not read response"
+    if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
+        open_developer_mako_zip_info
+    fi
+
+    read -p "Do you want to install Mako Developer Edition mako.zip (y/N)?" </dev/tty || abort "Could not read response"
+    if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+        return 0
+    fi
+
+    tmpdir="$(mktemp -d)" || abort "Could not create temporary directory"
+    tmpzip="${tmpdir}/mako.zip"
+    backup="${target_zip}.bak-$(date +%Y%m%d-%H%M%S)"
+
+    printf "Downloading Mako Developer Edition mako.zip\n"
+    curl -fL "$DEVELOPER_MAKO_ZIP_URL" -o "$tmpzip" || abort "Downloading Mako Developer Edition mako.zip failed"
+
+    printf "Backing up %s to %s\n" "$target_zip" "$backup"
+    cp "$target_zip" "$backup" || abort "Backing up mako.zip failed"
+
+    printf "Installing Mako Developer Edition mako.zip to %s\n" "$target_zip"
+    cp "$tmpzip" "$target_zip" || abort "Installing Mako Developer Edition mako.zip failed"
+    rm -rf "$tmpdir"
+}
 
 if [ -z "${QNX_TARGET+x}" ]; then
     abort "Oops, you must source qnxsdp-env.sh before running this script."
@@ -162,3 +214,4 @@ fi
 make -f mako.mk || abort $LINENO
 
 echo "Done building 'mako' for QNX"
+ask_install_developer_mako_zip "mako.zip"

@@ -1,188 +1,310 @@
 <# QNXBuild.ps1
-   Build Mako Server (BAS) for QNX from Windows PowerShell using native cmdlets.
-   - If `git` is present, clones repos.
-   - If `git` is NOT present, downloads repo ZIPs, expands, renames, deletes ZIPs.
-   - Requires a QNX environment (QNX SDP) set up (qcc/make on PATH).
+   Download or update the Mako Server source tree and build Mako Server for QNX
+   from Windows PowerShell.
 
-Run this script in PowerShell as follows:
+   Initialize the QNX SDP environment before running this script, or pass
+   -QnxEnvBat with the path to qnxsdp-env.bat.
 
-cmd /c ""$env:USERPROFILE\qnx800\qnxsdp-env.bat" && set" |
-ForEach-Object {
-    if ($_ -match "^(.*?)=(.*)$") {
-        Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
-    }
-}
-irm http://localhost/QNXBuild.ps1 | iex
-
+   Example:
+   .\QNXBuild.ps1 -QnxEnvBat "$env:USERPROFILE\qnx800\qnxsdp-env.bat"
 #>
 
-#--------------------------- Helpers ---------------------------#
-function Abort($msg) {
-    Write-Host ""
-    Write-Host "ERROR: $msg" -ForegroundColor Red
-    throw "Script aborted"
+param(
+    [string]$QnxEnvBat,
+    [string]$Target = $env:TARGET,
+    [string]$Make = "make",
+    [switch]$NoCompile
+)
+
+$ErrorActionPreference = "Stop"
+
+$DeveloperMakoZipUrl = "https://makoserver.net/download/packages/mako.zip"
+$DeveloperMakoZipInfoUrl = "https://makoserver.net/documentation/developer-package/"
+
+$Repos = @(
+    @{ Dir = "BAS";           Url = "https://github.com/RealTimeLogic/BAS.git" },
+    @{ Dir = "BAS-Resources"; Url = "https://github.com/RealTimeLogic/BAS-Resources.git" },
+    @{ Dir = "LPeg";          Url = "https://github.com/roberto-ieru/LPeg.git" },
+    @{ Dir = "lua-protobuf";  Url = "https://github.com/starwing/lua-protobuf.git" },
+    @{ Dir = "CBOR";          Url = "https://github.com/spc476/CBOR.git" }
+)
+
+function Abort {
+    param([Parameter(Mandatory)][string]$Message)
+    throw $Message
 }
 
-function Test-Cmd($name) {
-    $null -ne (Get-Command $name -ErrorAction SilentlyContinue)
-}
-
-function Download-File($Url, $OutFile) {
-    try {
-        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
-        return $true
-    } catch {
-        Write-Host "Download failed: $Url" -ForegroundColor Yellow
-        return $false
-    }
-}
-
-function Expand-Zip($ZipPath, $DestPath) {
-    if (Test-Path $DestPath) { Remove-Item -Recurse -Force $DestPath }
-    Expand-Archive -Path $ZipPath -DestinationPath $DestPath -Force
-}
-
-function Copy-DirectoryContent($SrcDir, $DestDir) {
-    if (-not (Test-Path $DestDir)) { New-Item -ItemType Directory -Path $DestDir | Out-Null }
-    Get-ChildItem -LiteralPath $SrcDir -Force | ForEach-Object {
-        $target = Join-Path $DestDir $_.Name
-        if (Test-Path $target) {
-            if ($_.PSIsContainer) { Remove-Item -Recurse -Force $target } else { Remove-Item -Force $target }
-        }
-        Move-Item -LiteralPath $_.FullName -Destination $DestDir
-    }
-}
-
-function Download-GitHubRepo {
-    param(
-        [Parameter(Mandatory)][string]$Owner,
-        [Parameter(Mandatory)][string]$Repo,
-        [Parameter(Mandatory)][string]$DestName
+function Test-Cmd {
+    param([Parameter(Mandatory)][string]$Name)
+    $null -ne (
+        Get-Command $Name -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandType -ne "Alias" } |
+            Select-Object -First 1
     )
-    if (Test-Path $DestName) { return }  # already present
+}
 
-    if (Test-Cmd git) {
-        Write-Host "Cloning $Owner/$Repo (git)..."
-        git clone "https://github.com/$Owner/$Repo.git" $DestName 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $DestName)) {
-            Abort "Cloning $Owner/$Repo failed."
+function Invoke-External {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [Parameter(Mandatory)][string]$ErrorMessage
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        Abort "$ErrorMessage Exit code: $LASTEXITCODE"
+    }
+}
+
+function Import-CmdEnvironment {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [string]$WorkingDirectory
+    )
+
+    $cmdLine = if ($WorkingDirectory) {
+        "cd /d `"$WorkingDirectory`" && $Command && set"
+    } else {
+        "$Command && set"
+    }
+
+    $environment = cmd.exe /c $cmdLine
+    if ($LASTEXITCODE -ne 0) {
+        Abort "QNX environment setup failed."
+    }
+
+    foreach ($line in $environment) {
+        if ($line -match "^(.*?)=(.*)$") {
+            [Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
         }
+    }
+}
+
+function New-TempDirectory {
+    param([Parameter(Mandatory)][string]$Prefix)
+
+    $path = Join-Path ([IO.Path]::GetTempPath()) ("$Prefix-$PID-$([Guid]::NewGuid().ToString('N'))")
+    New-Item -ItemType Directory -Path $path | Out-Null
+    return $path
+}
+
+function Remove-TempDirectory {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
         return
     }
 
-    # No git - try ZIP download (prefer main, then master)
-    $tmp     = Join-Path $env:TEMP "$Repo.zip"
-    $tmpdir  = Join-Path $env:TEMP "$Repo-extract"
-    $zips    = @(
-        "https://github.com/$Owner/$Repo/archive/refs/heads/main.zip",
-        "https://github.com/$Owner/$Repo/archive/refs/heads/master.zip"
+    $resolvedPath = [IO.Path]::GetFullPath($Path)
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if (-not $resolvedPath.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Abort "Refusing to remove non-temporary path: $resolvedPath"
+    }
+
+    Remove-Item -LiteralPath $resolvedPath -Recurse -Force
+}
+
+function Sync-GitRepo {
+    param(
+        [Parameter(Mandatory)][string]$Dir,
+        [Parameter(Mandatory)][string]$Url
     )
 
-    $downloaded = $false
-    foreach ($z in $zips) {
-        Write-Host "Downloading ZIP: $z"
-        if (Download-File -Url $z -OutFile $tmp) { $downloaded = $true; break }
+    if (Test-Path -LiteralPath (Join-Path $Dir ".git")) {
+        $status = & git -C $Dir status --porcelain
+        if ($LASTEXITCODE -ne 0) {
+            Abort "Could not inspect repository state: $Dir"
+        }
+
+        if ($status) {
+            Write-Host "Skipping update for $Dir; working tree has local changes"
+            return
+        }
+
+        Write-Host "Updating $Dir"
+        Invoke-External -FilePath "git" -Arguments @("-C", $Dir, "pull", "--ff-only") -ErrorMessage "Updating $Dir failed."
+        return
     }
-    if (-not $downloaded) { Abort "Could not download $Owner/$Repo ZIP (main/master)." }
+
+    if (Test-Path -LiteralPath $Dir) {
+        Abort "'$Dir' already exists but is not a Git repository."
+    }
+
+    Write-Host "Cloning $Dir"
+    Invoke-External -FilePath "git" -Arguments @("clone", $Url, $Dir) -ErrorMessage "Cloning $Dir failed."
+}
+
+function Get-SqliteAmalgamationUrl {
+    if ($env:SQLITEURL) {
+        return $env:SQLITEURL
+    }
+
+    Write-Host "Fetching latest SQLite amalgamation metadata"
+    $html = (Invoke-WebRequest -Uri "https://sqlite.org/download.html" -UseBasicParsing).Content
+    $match = [regex]::Match($html, "PRODUCT,[0-9.]+,([0-9]{4}/sqlite-amalgamation-[0-9]+\.zip),")
+    if (-not $match.Success) {
+        Abort "Could not determine latest SQLite amalgamation URL."
+    }
+
+    return "https://sqlite.org/$($match.Groups[1].Value)"
+}
+
+function Install-SqliteAmalgamation {
+    $sqliteUrl = Get-SqliteAmalgamationUrl
+    $tempDir = New-TempDirectory -Prefix "sqlite-amalgamation"
+    $sqliteZip = Join-Path $tempDir ([IO.Path]::GetFileName($sqliteUrl))
 
     try {
-        if (Test-Path $tmpdir) { Remove-Item -Recurse -Force $tmpdir }
-        Expand-Zip -ZipPath $tmp -DestPath $tmpdir
-        # ZIP extracts to <Repo>-<branch>. Move that extracted single directory to $DestName.
-        $sub = Get-ChildItem -LiteralPath $tmpdir | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-        if (-not $sub) { Abort "Unexpected ZIP layout for $Owner/$Repo." }
-        Move-Item -LiteralPath $sub.FullName -Destination $DestName
-    } finally {
-        if (Test-Path $tmp)    { Remove-Item -Force $tmp }
-        if (Test-Path $tmpdir) { Remove-Item -Recurse -Force $tmpdir }
+        Write-Host "Downloading SQLite amalgamation: $sqliteUrl"
+        Invoke-WebRequest -Uri $sqliteUrl -OutFile $sqliteZip -UseBasicParsing
+
+        Expand-Archive -Path $sqliteZip -DestinationPath $tempDir -Force
+        $root = Get-ChildItem -LiteralPath $tempDir -Directory |
+            Where-Object { $_.Name -like "sqlite-amalgamation-*" } |
+            Select-Object -First 1
+
+        if (-not $root) {
+            Abort "Downloaded SQLite archive did not contain sqlite-amalgamation-*."
+        }
+
+        $srcDir = Join-Path (Get-Location) "src"
+        if (-not (Test-Path -LiteralPath $srcDir)) {
+            New-Item -ItemType Directory -Path $srcDir | Out-Null
+        }
+
+        Copy-Item -Path (Join-Path $root.FullName "*") -Destination $srcDir -Force
+        Write-Host "Placed SQLite amalgamation in BAS\src"
+    }
+    finally {
+        Remove-TempDirectory -Path $tempDir
+    }
+}
+
+function Ask-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [bool]$DefaultYes = $false
+    )
+
+    $suffix = if ($DefaultYes) { " (Y/n)" } else { " (y/N)" }
+    $reply = Read-Host "$Prompt$suffix"
+    if ([string]::IsNullOrWhiteSpace($reply)) {
+        return $DefaultYes
     }
 
-    Write-Host "Fetched $Owner/$Repo via ZIP."
+    return $reply -ieq "y" -or $reply -ieq "yes"
 }
 
-#----------------------- Environment checks --------------------#
+function Open-DeveloperMakoZipInfo {
+    try {
+        Start-Process $DeveloperMakoZipInfoUrl | Out-Null
+    }
+    catch {
+        Write-Host "Open this page for more information: $DeveloperMakoZipInfoUrl"
+    }
+}
+
+function Install-DeveloperMakoZip {
+    param([Parameter(Mandatory)][string]$TargetZip)
+
+    if (-not (Test-Path -LiteralPath $TargetZip)) {
+        Abort "Cannot find mako.zip to replace: $TargetZip"
+    }
+
+    Write-Host ""
+    Write-Host "Mako Developer Edition mako.zip adds Xedge, LSP-Claw, and local MQTT development tools."
+    Write-Host "If you install it, this script backs up the current mako.zip before replacing it."
+
+    if (Ask-YesNo -Prompt "Do you want more information in your browser") {
+        Open-DeveloperMakoZipInfo
+    }
+
+    if (-not (Ask-YesNo -Prompt "Do you want to install Mako Developer Edition mako.zip")) {
+        return
+    }
+
+    $tempDir = New-TempDirectory -Prefix "mako-developer-zip"
+    $tempZip = Join-Path $tempDir "mako.zip"
+    $backup = "$TargetZip.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+
+    try {
+        Write-Host "Downloading Mako Developer Edition mako.zip"
+        Invoke-WebRequest -Uri $DeveloperMakoZipUrl -OutFile $tempZip -UseBasicParsing
+
+        Write-Host "Backing up $TargetZip to $backup"
+        Copy-Item -LiteralPath $TargetZip -Destination $backup -Force
+
+        Write-Host "Installing Mako Developer Edition mako.zip to $TargetZip"
+        Copy-Item -LiteralPath $tempZip -Destination $TargetZip -Force
+    }
+    finally {
+        Remove-TempDirectory -Path $tempDir
+    }
+}
+
+if ($QnxEnvBat) {
+    if (-not (Test-Path -LiteralPath $QnxEnvBat)) {
+        Abort "Cannot find QNX environment script: $QnxEnvBat"
+    }
+    Import-CmdEnvironment "`"$QnxEnvBat`"" -WorkingDirectory (Split-Path -Parent $QnxEnvBat)
+}
+
 if (-not $env:QNX_TARGET) {
-    Abort "You must initialize the QNX environment first (run qnxsdp-env.bat) so QNX_TARGET is set."
+    Abort "You must initialize the QNX environment first, or pass -QnxEnvBat with the path to qnxsdp-env.bat."
 }
 
-if (-not (Test-Cmd qcc))  { Abort "QNX compiler (qcc) not found in PATH. Did you run qnxsdp-env.bat?" }
-if (-not (Test-Cmd make)) { Abort "make not found in PATH. Use the QNX environment that includes 'make'." }
-
-
-#----------------------- Ensure zip.exe exists --------------------#
-if (-not (Get-Command zip -ErrorAction SilentlyContinue)) {
-    Write-Host "zip not found: downloading zip.exe..."
-    $zipUrl = "https://realtimelogic.com/downloads/tools/zip.exe"
-    $dest   = "$env:TEMP\zip.exe"
-    $binDir = "$env:TEMP"
-    Invoke-WebRequest $zipUrl -OutFile $dest
-    $env:Path += ";$binDir"
+foreach ($cmd in @("git", "make", "qcc", "sh", "cp", "zip", "chmod")) {
+    if (-not (Test-Cmd $cmd)) {
+        Abort "Required command not found on PATH: $cmd"
+    }
 }
 
-#----------------------- Compiler flags ------------------------#
-if ($env:TARGET) {
-    $env:HEXEFLAGS = "-Vgcc_nto$($env:TARGET)"
-} else {
-    $env:HEXEFLAGS = "-Vgcc_ntox86_64"
+$makeCommand = Get-Command $Make -ErrorAction SilentlyContinue
+if (-not $makeCommand) {
+    Abort "Could not find make command: $Make"
 }
-Write-Host "Target compile flag: $env:HEXEFLAGS"
 
-$env:CFLAGS = "$($env:HEXEFLAGS) -DBA_QNX -DBA_64BIT -DBA_FILESIZE64 -DUSE_DBGMON=1 -DNDEBUG -DLUA_USE_LINUX -DMAKO -DUSE_EMBEDDED_ZIP=0 -DUSE_IPV6 -DNO_IPV6_MEMBERSHIP -D_POSIX"
-$env:CC     = "qcc"
-$env:XLIB   = "-lz -lsocket -lm"
-
-# Safety: don't run inside the BAS source directory
 if (Test-Path -LiteralPath "src/BAS.c") {
     Abort "Incorrect use! Do not run this script from inside the BAS directory."
 }
 
-#------------------------- Repositories ------------------------#
-Download-GitHubRepo -Owner "RealTimeLogic" -Repo "BAS"           -DestName "BAS"
-Download-GitHubRepo -Owner "RealTimeLogic" -Repo "BAS-Resources" -DestName "BAS-Resources"
-# (Linux script chmods the BAS-Resources build .sh files; not needed on Windows)
+foreach ($repo in $Repos) {
+    Sync-GitRepo -Dir $repo.Dir -Url $repo.Url
+}
 
-Download-GitHubRepo -Owner "roberto-ieru" -Repo "LPeg"          -DestName "LPeg"
-Download-GitHubRepo -Owner "starwing"     -Repo "lua-protobuf"  -DestName "lua-protobuf"
-Download-GitHubRepo -Owner "spc476"       -Repo "CBOR"          -DestName "CBOR"
+if (Test-Path -LiteralPath (Join-Path "BAS-Resources" "build")) {
+    Get-ChildItem -LiteralPath (Join-Path "BAS-Resources" "build") -Filter "*.sh" | ForEach-Object {
+        Invoke-External -FilePath "chmod" -Arguments @("+x", $_.FullName) -ErrorMessage "Could not mark $($_.Name) executable."
+    }
+}
 
-#---------------------- SQLite amalgamation --------------------#
+$hexeFlags = if ($Target) { "-Vgcc_nto$Target" } else { "-Vgcc_ntox86_64" }
+Write-Host "Target compile flag: $hexeFlags"
+
+$env:HEXEFLAGS = $hexeFlags
+$env:CFLAGS = "$hexeFlags -DBA_QNX -DBA_64BIT -DBA_FILESIZE64 -DUSE_DBGMON=1 -DNDEBUG -DLUA_USE_LINUX -DMAKO -DUSE_EMBEDDED_ZIP=0 -DUSE_IPV6 -DNO_IPV6_MEMBERSHIP -D_POSIX"
+$env:CC = "qcc"
+$env:XLIB = "-lz -lsocket -lm"
+
 Push-Location "BAS"
 try {
     if (-not (Test-Path -LiteralPath "src/sqlite3.c")) {
-        # Allow override via $env:SQLITEURL; otherwise use the same default as the bash script
-        $sqliteUrl = if ($env:SQLITEURL) { $env:SQLITEURL } else { "https://www.sqlite.org/2026/sqlite-amalgamation-3510300.zip" }
-        $sqliteZip = Join-Path $env:TEMP ([IO.Path]::GetFileName($sqliteUrl))
-        $sqliteTmp = Join-Path $env:TEMP "sqlite-extract"
-
-        Write-Host "Downloading: $sqliteUrl"
-        if (-not (Download-File -Url $sqliteUrl -OutFile $sqliteZip)) {
-            Abort "Failed to download SQLite amalgamation."
-        }
-
-        try {
-            Expand-Zip -ZipPath $sqliteZip -DestPath $sqliteTmp
-            # Move everything from extracted dir into BAS\src
-            $root = Get-ChildItem -LiteralPath $sqliteTmp | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-            if (-not $root) { Abort "Unexpected SQLite ZIP layout." }
-            Copy-DirectoryContent -SrcDir $root.FullName -DestDir (Join-Path (Get-Location) "src")
-        } finally {
-            if (Test-Path $sqliteZip) { Remove-Item -Force $sqliteZip }
-            if (Test-Path $sqliteTmp) { Remove-Item -Recurse -Force $sqliteTmp }
-        }
+        Install-SqliteAmalgamation
     }
 
-    #------------------------- Build ---------------------------#
-    if ($env:NOCOMPILE) {
+    if ($NoCompile -or $env:NOCOMPILE) {
         Write-Host "NOCOMPILE is set: skipping build."
         exit 0
     }
 
-    # Use QNX 'make' with the provided makefile
-    Write-Host "Building (make -f mako.mk) ..."
-    & make -f mako.mk
-    if ($LASTEXITCODE -ne 0) { Abort "Build failed (make returned $LASTEXITCODE)." }
+    Write-Host "Building QNX Mako Server with mako.mk"
+    & $makeCommand.Source -f mako.mk "OS=QNX" "SHELL=sh"
+    if ($LASTEXITCODE -ne 0) {
+        Abort "Build failed. make returned $LASTEXITCODE."
+    }
 
-    Write-Host "Done building 'mako' for QNX." -ForegroundColor Green
+    Write-Host "Done building 'mako' for QNX."
+    Install-DeveloperMakoZip -TargetZip "mako.zip"
 }
 finally {
     Pop-Location
