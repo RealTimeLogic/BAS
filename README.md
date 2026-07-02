@@ -12,6 +12,10 @@ BWS and BAS share the same porting layer model and support a broad range of targ
 - If you plan to use **BAS**, start here and select your operating system: https://realtimelogic.com/downloads/bas/. This page includes a drop-down menu that opens purpose-built instructions for selected operating systems, including precompiled packages and platform-specific build options.
 - If your operating system is not listed there, if you need the generic source integration details, or if you plan to use **BWS**, see the [generic compilation instructions](doc/compiling.md).
 
+## AI-Assisted Development
+
+The [BAS/BWS Agent Guide](AGENTS.md) includes additional BAS and BWS design patterns for both humans and AI assistants. Use the guide when designing native C or C++ BAS/BWS applications, REST services, WebSocket apps, VFS layouts, generated resources, uploads, WebDAV, or Lua binding work.
+
 ## License
 
 BAS and BWS Amalgamated are available under three license options:
