@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5712 2025-12-22 18:14:12Z wini $
+ *   $Id: balua.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2025
  *
@@ -61,10 +61,10 @@ extern "C" {
 
 /** @defgroup LSP Lua C API
 
-   balua.h is header file that provides the *public* symbols for creating,
-   destroying and configuring an LSP VM.
+   balua.h provides the public C API for creating, destroying, and
+   configuring a BAS Lua/LSP VM.
 
-   Creating and initializing A Barracuda Lua VM consists of calling
+   Creating and initializing a BAS Lua VM consists of calling
    balua_create() and calling balua_loadconfig().
 
    See the C startup source code for the two following examples for
@@ -88,7 +88,10 @@ extern "C" {
 #endif
 #define BA_ENV_IX lua_upvalueindex(1)
 #define BA_TABLE "_BA"
-/** Creates the Barracuda Lua VM */
+/** Create a BAS Lua VM.
+    Use this macro instead of calling _balua_create() directly so the
+    runtime can verify the BAS library version.
+ */
 #define balua_create(p) _balua_create(p, BALUA_VERSION)
 
 #define baluaENV_getmetatable(L,mtId) lua_rawgeti(L, BA_ENV_IX, mtId)
@@ -99,12 +102,12 @@ extern "C" {
 #define balua_newlib(L,l) \
   (luaL_newlibtable(L,l), balua_pushbatab(L), luaL_setfuncs(L,l,1))
 #define baluaENV_getmutex(L) baluaENV_getparam(L)->mutex
-/** Get the SoDisp mutex */
+/** Get the SoDisp mutex associated with the Lua VM. */
 #define balua_getmutex(L) balua_getparam(L)->mutex
 #define GET_BAMUTEX ThreadMutex* m = baluaENV_getmutex(L)
-/** Release mutex 'm' */
+/** Release mutex \c m if it is not NULL. */
 #define balua_releasemutex(m) if(m) ThreadMutex_release(m)
-/** Set mutex 'm' */
+/** Lock mutex \c m if it is not NULL. */
 #define balua_setmutex(m) if(m) ThreadMutex_set(m)
 
 #ifdef NDEBUG
@@ -144,7 +147,7 @@ extern "C" {
 struct BaTimer;
 struct LoginTracker;
 
-/** The startup and runtime parameters for a Barracuda Server Lua VM.
+/** Startup and runtime parameters for a BAS Lua VM.
     For param zipBinPwd and zipBinPwdLen, use
     [binpwd2str](https://github.com/RealTimeLogic/BAS/blob/main/tools/binpwd2str.c)
     for generating the password C code. See
@@ -152,12 +155,12 @@ struct LoginTracker;
 */
 typedef struct
 {
-   lua_State* L; /**< The lua universe */
-   HttpServer* server; /**< Pointer to server for this vm */
+   lua_State* L; /**< Lua state created or used by this VM. */
+   HttpServer* server; /**< Server associated with this VM. */
    struct BaTimer* timer; /**< Timer bindings activated if not NULL. */
-   IoIntf* vmio; /**< The required VM (Lua) IO */
-   ThreadMutex* mutex; /**<The mutex used by the server's SoDisp */
-   struct LoginTracker* tracker; /**< The optional tracker */
+   IoIntf* vmio; /**< Required VM I/O interface used for Lua resources. */
+   ThreadMutex* mutex; /**< Mutex used by the server's SoDisp. */
+   struct LoginTracker* tracker; /**< Optional login tracker. */
    int errHndRef; /**< Internal: The ba.seterrh(func) ref */
    const U8* zipPubKey;  /**< Set when zip signature check enabled */
    const U8* zipBinPwd; /**< Set the binary password for all ZIP files */
@@ -176,12 +179,13 @@ typedef struct
 BA_API void* baLMallocL(lua_State* L, size_t size,const char* file, int line);
 #define baLMalloc(L,size) baLMallocL(L,size,__FILE__,__LINE__)
 #else
-/** Same as baMalloc, but does an emergency GC if baMalloc returns NULL. */
+/** Allocate memory for Lua and run an emergency GC if baMalloc returns NULL. */
 BA_API void* baLMalloc(lua_State* L, size_t size);
 #endif
 
 /** 
-    Creates the Barracuda Lua VM; Note: use macro balua_create(BaLua_param).
+    Create the BAS Lua VM.
+    Use macro balua_create(BaLua_param) instead of calling this function directly.
 */
 BA_API lua_State* _balua_create(const BaLua_param* p, int version);
 
@@ -401,7 +405,7 @@ typedef struct LHttpDir
 
 BA_API int LHttpResRdr_loadLsp(
    lua_State* L, IoIntf* io, const char* pathname, IoStat* st);
-/** Install the \ref UBJSONRef "UBJSON" lua api */
+/** Install the \ref UBJSONRef "UBJSON" Lua API. */
 BA_API void balua_ubjson(lua_State* L);
 BA_API void balua_luaio(lua_State* L);
 BA_API void luaopen_ba_redirector(lua_State *L);
@@ -412,22 +416,22 @@ BA_API void balua_mallinfo(lua_State* L);
 struct CspReader;
 
 /**
- * @brief Verifies the signature of a ZIP file using a public key.
+ * @brief Verify the signature of a ZIP file using a public key.
  *
- * This function checks the signature of a ZIP file using the provided public key.
- * It reads data from the given CspReader and validates the ZIP file's signature.
+ * This function reads ZIP data through the supplied CspReader and verifies
+ * the archive signature with the provided public key.
  *
  * @param pubKey Pointer to the public key used for signature verification.
- * @param fileSize Size of the public key.
+ * @param fileSize Size of the ZIP file in bytes.
  * @param reader Pointer to the CspReader structure used for reading the ZIP file.
- * @return Returns 0 on success, or an error code on failure.
+ * @return 0 on success, or an error code on failure.
  */
 BA_API int baCheckZipSignature(
    const U8* pubKey, U32 fileSize, struct CspReader* reader);
 struct ZipReader;
 
 /**
- * @brief Installs a Zip I/O interface into the Lua environment.
+ * @brief Install a Zip I/O interface into the Lua environment.
  *
  * This function registers a ZIP reader with the Lua environment,
  * making it accessible via the provided name (the handle). It is

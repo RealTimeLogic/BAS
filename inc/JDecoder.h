@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JDecoder.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: JDecoder.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -76,7 +76,7 @@ typedef enum {
     */
    JDecoderS_Underflow,
 
-   /** Unkown error */
+   /** Unknown error */
    JDecoderS_Unknown,
 
    /** Memory buffer(s) provided in JDecoder constructor must be word aligned */
@@ -182,7 +182,7 @@ typedef struct JDecoder
 
        \param bufSize the size of 'buf'
 
-       \param extraStackLen is a non documented value and must be set to 0.
+       \param extraStackLen is an undocumented value and must be set to 0.
    */
    JDecoder(U8* buf, int bufSize, int extraStackLen=0);
 #if 0

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JParser.h 5633 2025-02-24 17:25:34Z wini $
+ *   $Id: JParser.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2025
  *
@@ -302,7 +302,7 @@ typedef enum {
    JParserT_String = 's', /**< String */
    JParserT_Double = 'f', /**< Double */
    JParserT_Int = 'd', /**< Int */
-   JParserT_Long = 'l',   /**< 64 bit (long long) */
+   JParserT_Long = 'l',   /**< 64-bit (long long) */
    JParserT_Boolean = 'b', /**< Boolean */
    JParserT_BeginObject = '{', /**< BeginObject */
    JParserT_BeginArray = '[', /**< BeginArray */
@@ -417,7 +417,7 @@ struct JParser
 
        \param alloc is the allocator used for internal buffer management.
 
-       \param extraStackLen is a non documented feature and must be set to 0.
+       \param extraStackLen is an undocumented feature and must be set to 0.
    */
    JParser(JParserIntf* intf, char* nameBuf, int namebufSize,
            AllocatorIntf* alloc, int extraStackLen=0);

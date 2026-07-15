@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: Authenticator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: Authenticator.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2005-2008
  *
@@ -47,8 +47,11 @@
 */
 
 
-/** This class implements HTTP Basic, HTTP Digest, and Form-Based
-   Authentication.
+/** Combines HTTP Basic, HTTP Digest, and form-based authentication.
+
+    Authenticator lets the client select between the built-in
+    authentication mechanisms and shares the same user database and
+    login response interface between them.
 
     \htmlinclude Authenticator.txt
 */
@@ -75,15 +78,15 @@ typedef struct Authenticator
       */
       void setLoginTracker(LoginTracker* tracker);
 
-      /** Get the internal BasicAuthenticator
+      /** Get the internal BasicAuthenticator.
        */
       BasicAuthenticator* getBasicAuthenticator();
 
-      /** Get the internal DigestAuthenticator
+      /** Get the internal DigestAuthenticator.
        */
       DigestAuthenticator* getDigestAuthenticator();
 
-      /** Get the internal FormAuthenticator
+      /** Get the internal FormAuthenticator.
        */
       FormAuthenticator* getFormAuthenticator();
 #else

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResRdr.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: HttpResRdr.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -81,8 +81,8 @@ typedef struct {
 The HttpResRdr class makes it possible for HTTP clients to fetch
 resources from an IoIntf implementation. The HttpResRdr is a bridge
 between HTTP request/response and the IoIntf implementation. As an
-example, the HttpResRdr class can fetch files such as HTML files, gif
-images, etc from a file system and send the file to a HTTP client
+example, the HttpResRdr class can fetch files such as HTML files, GIF
+images, etc. from a file system and send the file to an HTTP client
 requesting the information.
 
 The HttpResRdr can only download files to a client, not upload files
@@ -116,7 +116,7 @@ this is a forward or include call. This makes it possible to design
 model view controller applications by using HttpResponse::forward from
 a CSP page or an HttpPage.
 
-Response data is sent with a HTTP size header for direct delegations
+Response data is sent with an HTTP size header for direct delegations
 and HttpResponse::forward delegations. HttpResponse::include
 delegations require special handling and data is sent using chunk
 encoding for HTTP 1.1 clients.
@@ -194,9 +194,9 @@ typedef struct HttpResRdr
          activated if a prologue directory finds the
          resource. Epilogue directories can be inserted by using
          method HttpDir::insertDir. prologue and epilogue directories
-         are chained instead of added as sub directories if the
+         are chained instead of added as subdirectories if the
          directory name for the added directories is NULL.  The
-         priorities for sub directories and/or chained directories
+         priorities for subdirectories and chained directories
          are: prologue > HttpResRdr > epilogue.
       */
       int insertPrologDir(HttpDir* dir);

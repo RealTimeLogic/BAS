@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5774 2026-04-29 06:41:03Z wini $
+ *   $Id: HttpServer.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5803
+#define BASLIB_VER_NO 5832
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5803)
+#define BASLIB_VER BASLIB_VER_M(5832)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -114,10 +114,10 @@ struct LHttpCommand;
 #endif
 
 
-/*  NonBlockingSendBuf is used when sending asynchronous (non blocking
-    data).  A pointer to this buffer is stored in SoDispCon.sslData
-    for HTTP cons.: this pointer is not used for anything else for a
-    non secure socket con..  */
+/*  NonBlockingSendBuf is used when sending asynchronous, non-blocking
+    data. A pointer to this buffer is stored in SoDispCon.sslData for
+    HTTP connections; this pointer is not used for anything else for a
+    non-secure socket connection. */
 typedef struct
 {
       int cursor;
@@ -804,7 +804,7 @@ typedef enum {
 } HttpMethod;
 
 
-/* Convert a HTTP method from string value to the type HttpMethod */
+/* Convert an HTTP method from string value to the type HttpMethod */
 BA_API HttpMethod HttpMethod_a2m(const char* str);
 
 
@@ -897,9 +897,9 @@ typedef struct HttpRequest
           port number, and server path, but it does not include query
           string parameters.
 
-          \param forceHttps makes the function return an URL that
+          \param forceHttps makes the function return a URL that
           starts with HTTPS if forceHttps is set to true. The default
-          is to return a URL that starts with HTTP for a non secure
+          is to return a URL that starts with HTTP for a non-secure
           connection and HTTPS for a secure connection.
 
           \sa HttpResponse::forceHttps
@@ -964,7 +964,7 @@ typedef struct HttpRequest
       */
       int wsUpgrade();
 
-      /** Return a HTTP header iterator that can iterate and fetch all
+      /** Return an HTTP header iterator that can iterate and fetch all
           the HTTP headers.
 
           <b>CSP page Example:</b>
@@ -1232,7 +1232,7 @@ typedef struct HttpResponse
 
       /** Encodes an absolute or relative URL, or if encoding is not needed,
        * returns the URL unchanged.
-       *  This method escapes all symbols that cannot be in an URL.
+       *  This method escapes all symbols that cannot be in a URL.
        *  The method differs from encodeRedirectURL in that it only escapes
        *  non-URL compatible symbols.
        */
@@ -1260,9 +1260,8 @@ typedef struct HttpResponse
           assumed to be an absolute path value on the server if the string
           starts with "/". The path is otherwise assumed to be a relative path.
 
-          This method is similar to method redirect, with the
-          exception that forward bypasses any form of required
-          authentication and/or authentication.
+          This method is similar to method redirect, except that
+          forward bypasses any required authentication or authorization.
 
           \returns Zero on success. Returns a non-zero value if the
           response is committed.
@@ -1282,9 +1281,8 @@ typedef struct HttpResponse
           assumed to be an absolute path value on the server if the string
           starts with "/". The path is otherwise assumed to be a relative path.
 
-          This method is similar to method forward, with the exception
-          that forward bypasses any form of required authentication
-          and/or authentication.
+          This method is similar to method forward. Unlike forward,
+          redirect does not bypass required authentication or authorization.
 
           \returns Zero on success. Returns a non-zero value if the
           response is committed.
@@ -1422,7 +1420,7 @@ typedef struct HttpResponse
       int sendRedirect(const char* url);
 
       /** Converts the URL to HTTPS and sends a redirect
-          (301) response to the client if this is a non secure
+          (301) response to the client if this is a non-secure
           connection. This function fails if the response is committed.
 
           \returns 0 if the connection is secure and nothing is
@@ -1492,9 +1490,9 @@ typedef struct HttpResponse
       /** Pre-allocate memory for a {name, value} pair in the response
           header database.
 
-          Sometimes when setting a header value with setHeader
-          involves unnecessary copying and/or allocation of
-          memory. The fmtHeader method makes it possible to
+          Sometimes setting a header value with setHeader involves
+          unnecessary copying or allocation of memory. The fmtHeader
+          method makes it possible to
           pre-allocate a memory area in the internal {name, value}
           pair database in the response object. The function, if
           successful, returns a pointer to a memory area for the value
@@ -1518,7 +1516,7 @@ typedef struct HttpResponse
           \endcode
 
           \param name the name of the header to set.
-          \param valueLen the lenght of the memory area returned by fmtHeader.
+          \param valueLen the length of the memory area returned by fmtHeader.
           \param replace the parameter if already set.
       */
       char* fmtHeader(const char* name, int valueLen, bool replace=true);
@@ -2532,7 +2530,7 @@ typedef struct HttpDir
        */
       int unlink();
 
-      /** Set the optional authenticator and/or the optional AuthorizerIntf.
+      /** Set the optional authenticator and optional AuthorizerIntf.
           \param authenticator is one of the authenticator implementations.
           \param authorizer the authorizer.
       */
@@ -2995,7 +2993,7 @@ address}/start.html <b>(*)</b></td></tr>
 
       /** Set a more user friendly 404 page. Have you ever noticed
           that some sites give you a nice looking page when you
-          mistype an URL, as opposed to the default nasty 404 File Not
+          mistype a URL, as opposed to the default 404 File Not
           Found error? This function lets you set your own user
           friendly 404 page.
          \param page404 is a URL to your user friendly 404 page.

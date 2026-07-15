@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: MultipartUpload.h 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: MultipartUpload.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -215,7 +215,7 @@ typedef struct MultipartUpload
          should probably be > 10K.
 
          \param allocator An allocator used for various small string
-          allocations needed when parsing the incomming data stream
+          allocations needed when parsing the incoming data stream
           and for allocating the internal buffer. The size of the
           internal buffer is set with parameter 'bufferSize'.
       */
@@ -228,7 +228,7 @@ typedef struct MultipartUpload
                       U32 bufferSize,
                       AllocatorIntf* allocator = 0);
 
-      /** Release buffers used during parsing the multipart stream. */
+      /** Release buffers used while parsing the multipart stream. */
       ~MultipartUpload();
 
       /** Start receiving data asynchronously.
@@ -242,6 +242,10 @@ typedef struct MultipartUpload
       int start(HttpRequest *req);
 
 
+      /** Run multipart parsing synchronously for data already owned by the request.
+          \param req The active HTTP request.
+          \param setKeepAlive TRUE to preserve keep-alive handling when possible.
+       */
       int run(HttpRequest *req, bool setKeepAlive=true);
 
       /** Returns the internal active connection object.

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpAsynchReq.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpAsynchReq.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2012
  *
@@ -52,15 +52,15 @@ struct HttpAsynchReq;
      end of stream. End of stream is signaled by setting data = NULL
      and size=0.
 
-     If a HTTP client sends a 100-continue message, the function is
+     If an HTTP client sends a 100-continue message, the function is
      initially called with a non NULL data pointer, but with size set
      to zero. The callback should create the resource and manage the
      error if creating the resource fails.
 
     \param super The object pointer, which you must upcast to your class 
     implementation, i.e. MyAsynchReq* o = (MyAsynchReq*)super;
-    \param data pointer to received data.
-\param size is the size of the received data.
+    \param data Pointer to received data, or NULL at end of stream.
+    \param size Number of bytes in data, or 0 at end of stream.
 */
 typedef void (*HttpAsynchReq_OnData)(struct HttpAsynchReq* super,
                                       void* data, S32 size);
@@ -131,7 +131,7 @@ typedef struct HttpAsynchReq
        */
       void* getBuffer();
 
-      /** Returns the lenght of the internal buffer. */
+      /** Returns the length of the internal buffer. */
       SBaFileSize getBufferSize();
 
 

@@ -13315,7 +13315,7 @@ baTime2ISO8601(const BaTimeEx* tex, char* str, size_t len)
       *ptr++ = '\132';
    }
    *ptr = 0;
-   return ptr-str;
+   return (int)(ptr-str);
 }
 
 
@@ -26376,7 +26376,7 @@ ZipFileHeader_getTime(ZipFileHeader* o)
    t += ( year - 69 ) / 4;
    
    month = ((allocbytes >> 5) & 0xF) - 1;
-   baAssert(month < 12);
+   if (month > 11) month = 11;
    t += cachevunmap[month%12];
    
    if(month >= 2)

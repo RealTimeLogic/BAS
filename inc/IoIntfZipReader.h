@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: IoIntfZipReader.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: IoIntfZipReader.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -52,9 +52,9 @@ typedef struct IoIntfZipReader
 {
       IoIntfZipReader() {}
 
-   /** The IoIntfZipReader constructor opens the Zip-File for reading.
-       \param io the I/O-interface to read from.
-       \param pathName the path+name to a ZIP file in the I/O-interface. 
+   /** The IoIntfZipReader constructor opens the ZIP file for reading.
+       \param io the I/O interface to read from.
+       \param pathName the path+name to a ZIP file in the I/O interface. 
    */
    IoIntfZipReader(IoIntf* io, const char* pathName);
       

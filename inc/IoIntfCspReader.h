@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: IoIntfCspReader.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: IoIntfCspReader.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008
  *
@@ -51,8 +51,8 @@ typedef struct IoIntfCspReader
 {
       IoIntfCspReader() {}
 
-   /** The IoIntfCspReader constructor opens the Zip-File for reading.
-       \param io the I/O-interface to read from.
+   /** The IoIntfCspReader constructor opens the CSP data file for reading.
+       \param io the I/O interface to read from.
        \param pathName the path+name to the "CSP dat" file. 
    */
    IoIntfCspReader(IoIntf* io, const char* pathName);

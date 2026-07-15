@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: ThreadLib.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2008
  *
@@ -96,7 +96,7 @@ BA_API void ThreadReleaseLock_internalConstructor(
 struct ThreadReleaseLock;
 #endif
 
-/** This class provides an easy and less error prone way of locking
+/** This class provides an easy and less error-prone way of locking
     and releasing a mutex. The class should be instantiated on the
     stack such that the constructor locks the mutex when the scope
     becomes active and the destructor releases the mutex when the
@@ -128,7 +128,7 @@ struct ThreadLock
 };
 
 
-/** This class provides an easy and less error prone way of
+/** This class provides an easy and less error-prone way of
     temporarily releasing a locked mutex. This class is the inverse of
     class ThreadLock.
 
@@ -180,7 +180,7 @@ struct ThreadReleaseLock
 
 /** A mutual exclusion class.
    \sa ThreadLock, ThreadReleaseLock and
-   \ref DispatcherMutext "Dispatcher Mutext"
+   \ref DispatcherMutext "Dispatcher Mutex"
  */
 struct ThreadMutex : public ThreadMutexBase
 {

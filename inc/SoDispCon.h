@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: SoDispCon.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -174,7 +174,7 @@ typedef struct SoDispCon
 
       /** Disable the TCP delay.
        * What TCP normally does is queue up data so it only sends full
-       * packets out when possible. (This is called Nagle’s algorithm.)
+       * packets out when possible. (This is called Nagle's algorithm.)
        * Call this function if you do not want that behavior.
        */
       void setTCPNoDelay(bool enable);
@@ -196,7 +196,7 @@ typedef struct SoDispCon
        */
       bool recEvActive();
 
-      /** Used for non blocking send.
+      /** Used for non-blocking send.
        */
       bool sendEvActive();
 

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5796 2026-06-02 14:01:17Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5817 2026-06-20 22:00:16Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
  *
@@ -185,9 +185,12 @@
 /** Select 1 to enable support for Post Handshake Authentication
  *  (RFC 8446 sections 4.2.6 and 4.6.2)
  *  Note: #SHARKSSL_TLS_1_3 and #SHARKSSL_ENABLE_CLIENT_AUTH must be enabled
+ *  ========================================================================
+ *  EXPERIMENTAL! Application encrypted data returned by SharkSslCon_encrypt()
+ *  must be sent before calling SharkSslCon_decrypt() again.
  */
 #ifndef SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH
-#define SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH              1
+#define SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH              0
 #endif
 
 

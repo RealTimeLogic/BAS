@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: HttpClient.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2020
  *
@@ -67,8 +67,8 @@ struct HttpClient;
    @{
 */
 
-/** A container for key/value pairs that is used when setting custom
-    HTTP headers and/or when setting URL encoded HTTP parameters.
+/** A container for key/value pairs used when setting custom HTTP
+    headers or URL encoded HTTP parameters.
 
     HttpClientKeyVal can be statically declared at compile time or be
     dynamically created during runtime. A dynamically created
@@ -263,7 +263,7 @@ typedef struct HttpClient
        */
       void setAcceptTrusted(bool acceptTrusted);
 
-      /** 
+      /** Send an HTTP request.
 
         \param methodType is one of:
            - HttpMethod_Delete
@@ -278,8 +278,8 @@ typedef struct HttpClient
         \param userPass use basic authentication if not NULL. Format:
         "user:password"
 
-        \param query optional HTTP parameters. A table with key value
-        pairs. Includes url encoded data in the query component of the
+        \param query optional HTTP parameters. A table with key/value
+        pairs. Includes URL-encoded data in the query component of the
         request URL.
 
         \param headers optional (custom) HTTP headers.
@@ -288,7 +288,7 @@ typedef struct HttpClient
         using POST or PUT. The client sends data using chunked transfer
         encoding if no size is specified.
 
-        \return zero on succsss.
+        \return zero on success, or a negative error code on failure.
        */
       int request(HttpMethod methodType,
                   const char* url,
@@ -309,6 +309,7 @@ typedef struct HttpClient
        */
       int sendData(const void* data, int len);
 
+      /** Returns the size of the internal response buffer. */
       int getBufSize();
 
       /** Read HTTP response data.
@@ -336,7 +337,7 @@ typedef struct HttpClient
        */
       HttpClientHeader* getHeaders(int* hlen);
 
-      /** Close a persisten HTTP 1.1 connection.
+      /** Close a persistent HTTP 1.1 connection.
        */
       void close();
 
@@ -351,10 +352,11 @@ typedef struct HttpClient
        */
       int getError();
 
-   /** Wrapper for SoDispCon:getSharkSslCon
+   /** Wrapper for SoDispCon::getSharkSslCon.
     */
    SharkSslCon* getSharkSslCon();
 
+      /** Returns the underlying dispatcher connection object. */
       SoDispCon* getSoDispCon();
 #else
 {

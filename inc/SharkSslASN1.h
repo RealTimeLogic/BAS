@@ -186,6 +186,10 @@ extern const U8 sharkssl_oid_HMACWithSHA256[8];
 extern const U8 sharkssl_oid_aes128cbc[9];
 extern const U8 sharkssl_oid_aes256cbc[9];
 #endif
+#if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS)
+extern const U8 sharkssl_oid_rsassaPss[9];
+extern const U8 sharkssl_oid_mgf1[9];
+#endif
 
 
 #define sharkssl_oid_ex(type)  (const U8*)sharkssl_oid_ ## type, (sizeof(sharkssl_oid_ ## type)/sizeof(sharkssl_oid_ ## type[0]))

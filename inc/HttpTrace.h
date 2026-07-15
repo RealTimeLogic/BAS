@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpTrace.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpTrace.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2021
  *
@@ -206,7 +206,7 @@ typedef struct HttpTrace
       */
       static void releaseWriter(void);
 
-      /**
+      /** Enable or disable request-line tracing.
          If enabled, the web-server prints the first line in the
          request header to the trace buffer.
          <p>
@@ -215,22 +215,26 @@ typedef struct HttpTrace
          \code
          68.5.99.169 GET "intro.html" Mozilla/5.0 (Macintosh; U; PPC Mac OS X Mach-O; en-US; rv:1.7) Gecko/20040623 Camino/0.8
          \endcode
+         \param cmd TRUE to enable request-line tracing.
       */
       static void setRequest(bool cmd);
 
       /** If enabled, the web-server dumps the content of the request
           header to the trace buffer.
+          \param cmd TRUE to enable request-header tracing.
       */
       static void setRequestHeaders(bool cmd);
 
       /** If enabled, the web-server dumps the content of the response
           header to the trace buffer.
+          \param cmd TRUE to enable response-header tracing.
       */
       static void setResponseHeaders(bool cmd);
 
       /** If enabled, the web-server dumps the content of the response
           body to the trace buffer.
           Warning: this generates an enormous amount of trace data.
+          \param cmd TRUE to enable response-body tracing.
       */
       static void setResponseBody(bool cmd);
 
@@ -272,9 +276,11 @@ typedef struct HttpTrace
        */
       static void setReqBufOverflow(bool cmd);
 
-      /** Set trace buffer. The default buffer is 80 characters long.
+      /** Set trace buffer size. The default buffer is 80 characters long.
       This function is not re-entrant, and you should therefore call
       this function at system startup.
+      \param size New trace buffer size in bytes.
+      \return 0 on success or a negative error code.
        */
       static int setBufSize(int size);
 
@@ -282,10 +288,15 @@ typedef struct HttpTrace
       */
       static void flush();
 
+      /** Returns true if request-line tracing is enabled. */
       static bool isRequestSet();
+      /** Returns true if request-header tracing is enabled. */
       static bool isRequestHeadersSet();
+      /** Returns true if response-header tracing is enabled. */
       static bool isResponseHeadersSet();
+      /** Returns true if response-body tracing is enabled. */
       static bool isResponseBodySet();
+      /** Returns true if HTTP/1.1 connection-state tracing is enabled. */
       static bool isHttp11StateSet();
 
    private:

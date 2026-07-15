@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpMuxDir.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpMuxDir.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008
  *
@@ -68,7 +68,7 @@ typedef struct HttpMuxDir
 #ifdef __cplusplus
 : public HttpDir
 {
- /**
+ /** Create an HttpMuxDir instance.
    \param name the HttpDir name.
 
    \param startDir the directory where we search for the mux muxResource.

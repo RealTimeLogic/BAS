@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjson.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: ubjson.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2023
  *
@@ -372,7 +372,7 @@ typedef enum
    /** Object depth exceeding internal stack */
    UBJEStatus_StackOverflow,
 
-   /** The value set does not mach type set for Optimized Strongly Typed  */
+   /** The value set does not match the type set for Optimized Strongly Typed */
    UBJEStatus_TypeMismatch,
 
    /** (curly) bracket start/end mismatch */

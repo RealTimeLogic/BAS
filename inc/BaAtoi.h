@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaAtoi.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaAtoi.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -59,7 +59,7 @@ BA_API U64 U64_atoll2(const char* s, const char* e);
 #define S64_atoll(s) ((S64)U64_atoll(s))
 
 
-   /** Negates a 32 bit number.
+   /** Negates a 32-bit number.
     */
 BA_API U32 U32_negate(U32 n);
 

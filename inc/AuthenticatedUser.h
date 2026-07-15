@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5719 2026-01-06 22:10:31Z wini $
+ *   $Id: AuthenticatedUser.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -148,8 +148,10 @@ AuthorizerIntf::authorize(struct AuthenticatedUser* user,
 
 
 /**
-  The GetPwd callback function searches for info->username and sets
-  AuthInfo::password if found and/or the AuthInfo::ct parameter.
+  User database callback used by authenticators.
+
+  The callback searches for info->username and sets AuthInfo::password,
+  AuthInfo::ct, or both if the user is found.
 
   info->userObj is NULL, but can be set in this callback to signal
   information to the other callbacks such as
@@ -157,7 +159,7 @@ AuthorizerIntf::authorize(struct AuthenticatedUser* user,
 
   info->user is NULL when this method is called.
   
-  The method is allowed to set header values and work with the
+  The callback is allowed to set header values and work with the
   response object.  The authenticator stops authentication and returns
   FALSE if the response object is committed; i.e., the login fails.
 
@@ -167,8 +169,9 @@ AuthorizerIntf::authorize(struct AuthenticatedUser* user,
 */
 typedef void (*UserIntf_GetPwd)(struct UserIntf* intf,struct AuthInfo* info);
 
-/**  Interface class used by the Authentication classes.
- *   The getPwd function returns the user's password if user found.
+/** User database interface used by the authentication classes.
+ *   The getPwd function populates AuthInfo with password data when a
+ *   matching user is found.
  */
 typedef struct UserIntf
 {
@@ -249,7 +252,7 @@ typedef struct AuthenticatedUser
 
           \code
           AuthenticatedUser* user;
-          user = AuthenticatedUser::get(reguest);
+          user = AuthenticatedUser::get(request);
           \endcode
 
           C name: AuthenticatedUser_get1
@@ -262,7 +265,7 @@ typedef struct AuthenticatedUser
 
           \code
           AuthenticatedUser* user;
-          user = AuthenticatedUser::get(reguest->getSession(false));
+          user = AuthenticatedUser::get(request->getSession(false));
           \endcode
 
           C name: AuthenticatedUser_get2
@@ -271,17 +274,17 @@ typedef struct AuthenticatedUser
       */
       static AuthenticatedUser* get(HttpSession* session);
 
-      /** Get the session object.
+      /** Get the session object associated with this authenticated user.
 
       \sa HttpSession::getId
        */
       HttpSession* getSession();
 
-      /** Returns the user's password
+      /** Returns the user's password or password hash as provided by the authenticator.
        */
       const char* getPassword();
 
-      /** Returns the user's name
+      /** Returns the authenticated user's name.
        */
       const char* getName();
 
@@ -320,7 +323,7 @@ typedef struct AuthenticatedUser
        */
       AuthenticatedUserType getType();
 
-      /** non public
+      /** Returns the shared anonymous user object used internally.
        */
       static AuthenticatedUser* getAnonymous();
 #endif
@@ -620,7 +623,7 @@ typedef BaBool (*LoginTrackerIntf_Validate)(
     The Login method is called when a user is authenticated.
     \param o the object
     \param info The AuthInfo container object.
-    \param node may be be NULL if the object was recycled. This object
+    \param node may be NULL if the object was recycled. This object
     is automatically terminated as soon as this callback returns;
     i.e., the terminate callback is called.
  */
@@ -631,7 +634,7 @@ typedef void (*LoginTrackerIntf_Login)(
 
 /** Prototype for the LoginFailed callback method.
 The LoginFailed method is called when a user attempts to log in and
-the user and/or password is incorrect.
+the user name, password, or both are incorrect.
 
 One can potentially
 <a href="https://en.wikipedia.org/wiki/Tarpit_(computing)">tarpit</a>
@@ -798,7 +801,7 @@ Dictionary attack</a>.
 The purpose with the LoginTracker is to make it virtually impossible
 to perform dictionary attacks on the Barracuda authenticator
 classes. The LoginTracker keeps track of IP addresses that failed to
-supply the correct user and/or password.  The LoginTracker keeps a
+supply the correct user name or password. The LoginTracker keeps a
 cache of LoginTrackerNode instances where each LoginTrackerNode
 stores information such as IP address and time of login attempt.
 */

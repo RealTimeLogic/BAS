@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpUpload.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpUpload.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -221,8 +221,8 @@ typedef struct HttpUpload
       /** The HttpUpload service method. This method is typically
           called from a HttpDir or HttpPage service method.
           \param name is:
-          \li if PUT: path + name relative to the I/O intf.
-          \li if POST: path relative to the I/O intf. The full
+          \li if PUT: path + name relative to the I/O interface.
+          \li if POST: path relative to the I/O interface. The full
           path+name is constructed from the name in the multipart
           message.
           \param cmd is the request/response container object.

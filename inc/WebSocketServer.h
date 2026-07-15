@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: WebSocketServer.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2023
  *
@@ -45,7 +45,7 @@
 /** @defgroup WebSockets WebSockets 
 
     The Lua socket library (including WebSockets) provides three
-    modes: blocking, asynchronous, and non blocking (cosockets). The C
+    modes: blocking, asynchronous, and non-blocking (cosockets). The C
     WebSocket Server library provides one mode, the asynchronous
     mode. Asynchronous sockets means that receiving data is event
     driven and sending data is blocking (socket is in blocking

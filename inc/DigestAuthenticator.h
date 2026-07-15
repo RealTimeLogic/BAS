@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: DigestAuthenticator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: DigestAuthenticator.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2013
  *
@@ -44,7 +44,7 @@
  */
 
 
-/** Implements Digest Authentication.
+/** Implements HTTP Digest authentication.
     Please see the
     <a href="../../authentication.html">User Authentication</a>
     documentation for more information.
@@ -70,14 +70,17 @@ typedef struct DigestAuthenticator
       */
       void setLoginTracker(LoginTracker* tracker);
 
-      /** Sets a HTTP digest authenticate header and sets status to
+      /** Sets an HTTP Digest authentication challenge and status code
           401. This method can be used to design logic for invalidating
           the user and password saved by a browser.
+          \param realm Realm name sent in the authentication challenge.
+          \param response Response object receiving the 401 challenge.
        */
       static void setAutHeader(const char* realm, HttpResponse* response);
 
-      /**
-        Enable strict mode. Few browsers support this.
+      /** Enable strict RFC-compatible Digest mode.
+          Few browsers support strict Digest mode.
+          \param enableStrictMode Set to TRUE to enable strict mode.
        */
       void setStrictMode(bool enableStrictMode=false);
 

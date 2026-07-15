@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjsonex.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: ubjsonex.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -74,7 +74,7 @@ typedef enum {
     */
    UBJDecoderS_Underflow,
 
-   /** Unkown error */
+   /** Unknown error */
    UBJDecoderS_Unknown,
 
    /** Memory buffer(s) provided in UBJDecoder constructor must be
@@ -186,7 +186,7 @@ typedef struct UBJDecoder
 
        \param bufSize the size of 'buf'
 
-       \param extraStackLen is a non documented value and must be set to 0.
+       \param extraStackLen is an undocumented value and must be set to 0.
    */
    UBJDecoder(U8* buf, int bufSize, int extraStackLen=0);
 #if 0

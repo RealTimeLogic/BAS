@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: FormAuthenticator.h 5360 2022-11-27 19:03:40Z wini $
+ *   $Id: FormAuthenticator.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2017
  *
@@ -53,7 +53,7 @@ typedef struct
  */
 
 
-/** Implements Form-Based Authentication.
+/** Implements browser-oriented form-based authentication.
     See the
     <a href="../../authentication.html">User Authentication</a>
     documentation for an introduction to authentication and authorization.
@@ -89,10 +89,10 @@ typedef struct FormAuthenticator
       */
       void setLoginTracker(LoginTracker* tracker);
 
-      /** Set authenticator into secure mode and accept only SSL connections.
-          The authenticator ignores non secure connections and
+      /** Set the authenticator into secure mode and accept only SSL/TLS connections.
+          The authenticator ignores non-secure connections and
           directly calls the LoginRespIntf callback if not secure. You
-          must add logic for testing for non secure connections in
+          must add logic for testing for non-secure connections in
           your callback.
       */
       void setSecure();

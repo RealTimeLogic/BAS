@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaDiskIo.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaDiskIo.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006
  *
@@ -62,7 +62,7 @@
     @{
  */
 
-/** The DiskIo class makes it possible for the web-server to work with
+/** The DiskIo class makes it possible for the web server to work with
     resources on a hard drive.
 
     A directory separator is always '/'. DOS based file systems that
@@ -79,7 +79,7 @@
     mode executes from the 'obj/debug' directory. All 'debug mode'
     examples opens a DiskIo and sets the root path to '../../html' and
     binds the DiskIo to a HttpResRdr instance. This makes it
-    possible for the web-server to access the HTML files in the 'html'
+    possible for the web server to access the HTML files in the 'html'
     directory.
 
     This is a generic header file for all file systems and
@@ -115,7 +115,7 @@ typedef struct DiskIo
 
       /** Set the root directory.
 
-         \param root is a UTF8 formated path using forward slash. The
+         \param root is a UTF-8 formatted path using forward slashes. The
          meaning of 'root' depends on the implementation. Please see
          the comments in the DiskIo implementation for your target
          platform for more information.
@@ -166,4 +166,3 @@ inline int DiskIo::getRootDir(char* buf, int len) {
 /** @} */ /* end of IO */ 
 
 #endif
-

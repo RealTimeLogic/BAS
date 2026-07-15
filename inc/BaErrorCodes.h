@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaErrorCodes.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaErrorCodes.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2021
  *
@@ -123,7 +123,7 @@ typedef enum {
    E_PROXY_ADDRESS_NOT_SUP, /* Address type not supported */
    E_PROXY_NOT_COMPATIBLE, /* Not a supported SOCKS version */
    E_PROXY_READY,/*Set HttpClient, not an error: socket in state proxy ready*/
-   E_PROXY_UNKNOWN, /* Unkown socks err */
+   E_PROXY_UNKNOWN, /* Unknown SOCKS error */
 
    E_SYS_SHUTDOWN = -600 /* Used by Mako Server (and others) when program exits */
 } BaErrorCodes;

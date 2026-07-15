@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BasicAuthenticator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BasicAuthenticator.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2013
  *
@@ -43,7 +43,7 @@
     @{
  */
 
-/** Implements Basic Authentication.
+/** Implements HTTP Basic authentication.
     Please see the
     <a href="../../authentication.html">User Authentication</a>
     documentation for more information.
@@ -68,9 +68,11 @@ typedef struct BasicAuthenticator
       */
       void setLoginTracker(LoginTracker* tracker);
 
-      /** Sets a HTTP basic authenticate header and sets status to
+      /** Sets an HTTP Basic authentication challenge and status code
           401. This method can be used to design logic for invalidating
           the user and password saved by a browser.
+          \param realm Realm name sent in the authentication challenge.
+          \param response Response object receiving the 401 challenge.
        */
       static void setAutHeader(const char* realm, HttpResponse* response);
 

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpAsynchResp.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: HttpAsynchResp.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2022
  *
@@ -152,7 +152,7 @@ typedef struct HttpAsynchResp
       A valid and persistent HTTP 1.1 socket connection object is moved
       back into the Web-server's HTTP 1.1 HttpConnection pool such
       that the connection can be recycled.  A non-persistent HTTP
-      connection such as a HTTP 1.0 connection is terminated.
+      connection such as an HTTP 1.0 connection is terminated.
       */
       void close();
 

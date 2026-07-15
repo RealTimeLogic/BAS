@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5568 2024-09-14 14:51:10Z wini $
+ *   $Id: lxrc.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2024
  *               https://realtimelogic.com
@@ -163,9 +163,9 @@ typedef struct ThreadJob
  */
 BA_API void LThreadMgr_destructor(LThreadMgr* o);
 
-/** Initialize the Thread Pool.
- * \param o
- * \param server
+/** Initialize the thread pool.
+ * \param o The LThreadMgr instance to initialize.
+ * \param server The HttpServer instance that owns the pool.
  * \param  priority typically set to ThreadPrioNormal
  * \param stackSize typically set to BA_STACKSZ
  * \param threads Specify the initial number of threads to create

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BaTimer.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaTimer.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2017
  *
@@ -45,24 +45,27 @@
 /* The number of slots in the timer. This must be a value of 2^x */
 #define BA_TIMER_SLOTS 32
 
-/** The timer callback function.
+/** Timer callback function.
+    \param data Application data supplied when the timer was created.
+    \return TRUE to keep a periodic timer active, or FALSE to remove the timer.
  */
 typedef BaBool (*BaTimer_CB)(void* data);
 
-/** The timer class makes it possible to create events that are
-    activated at regular intervals or to create events that are
-    activated only one time.
+/** Timer manager used for one-shot and periodic callbacks.
+
+    BaTimer runs its own worker thread. Timer callbacks are therefore
+    not executed in the HTTP request thread that created the timer.
  */
 typedef struct BaTimer
 #ifdef __cplusplus
 : public Thread
 {
-      /** Create a BaTimer object and one thread.
-         \param mutex
-         \param stackSize
-         \param ticklen
-         \param priority
-         \param alloc
+      /** Create a BaTimer object and its worker thread.
+         \param mutex Mutex shared with the server dispatcher.
+         \param stackSize Worker thread stack size in bytes.
+         \param ticklen Timer tick interval in milliseconds.
+         \param priority Worker thread priority.
+         \param alloc Optional allocator used for timer nodes.
        */
       BaTimer(ThreadMutex* mutex,int stackSize, U32 ticklen=10,
               ThreadPriority priority=ThreadPrioNormal,
@@ -77,7 +80,8 @@ typedef struct BaTimer
           \param milliSec the timer callback function is activated in
           "millisecs" time, unless method "reset" or "cancelled" is
           called before the timer triggers.
-          web-server callback i.e. called from another thread.
+          The callback runs in the timer thread, not in the web-server
+          request thread.
           \returns the timer key.
        */
       size_t set(BaTimer_CB cb, void* data, U32 milliSec);
@@ -85,13 +89,13 @@ typedef struct BaTimer
       /** Resets the timer.
           \param tkey the timer key.
           \param milliSec the new timeout.
-          web-server callback i.e. called from another thread.
+          The timer is reset from the time this method is called.
       */
       int reset(size_t tkey, U32 milliSec);
 
       /** Cancels the timer.
           \param tkey the timer key.
-          web-server callback i.e. called from another thread.
+          \return 0 on success or a non-zero value if the timer key was not found.
       */
       int cancel(size_t tkey);
 #else

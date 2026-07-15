@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ZipIo.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: ZipIo.h 5811 2026-06-12 16:18:19Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2019
  *
@@ -45,7 +45,7 @@
  */
 
 
-/** The ZipIo class makes it possible for the web-server to work with
+/** The ZipIo class makes it possible for the web server to work with
 resources in a ZIP file as if the ZIP file is a read-only file system.
 
 The most common archive format, ZIP-File, is an "archive" that can

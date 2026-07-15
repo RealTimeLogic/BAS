@@ -569,7 +569,7 @@ static int calculateToken(lua_State *L)
 	SHA256_constructor(&sha256Ctx);
 	SHA256_append(&sha256Ctx, rnd32, 32);
 	SHA256_append(&sha256Ctx, dk, 32);
-	SHA256_append(&sha256Ctx, serverId, serverIdLen);
+	SHA256_append(&sha256Ctx, serverId, (int)serverIdLen);
 	SHA256_append(&sha256Ctx, serverHash, 32);
 	SHA256_finish(&sha256Ctx, buf);
 	lua_pushlstring(L, (char*)buf, 32);

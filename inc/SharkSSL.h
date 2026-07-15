@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5693 2025-11-08 15:29:55Z gianluca $
+ *   $Id: SharkSSL.h 5804 2026-06-06 06:48:09Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
  *
@@ -403,13 +403,13 @@ U32 baGetUnixTime(void);
    error, where the typical reason would be that the buffer is full.
  */
 SHARKSSL_API int
-SharkSslASN1Create_CSR(struct SharkSslASN1Create* o,
+SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
                        SharkSslKey privKey,
                        U8 hashID,
-                       struct SharkSslCertDN* certDN,
+                       struct SharkSslCertDN *certDN,
                        const char *SAN,
-                       struct SharkSslBitExtReq* keyUsage,
-                       struct SharkSslBitExtReq* nsCertType);
+                       struct SharkSslBitExtReq *keyUsage,
+                       struct SharkSslBitExtReq *nsCertType);
 #endif
 
 #if SHARKSSL_ENABLE_CSR_SIGNING
@@ -525,8 +525,8 @@ struct SharkSsl;
  */
 #ifndef _DOXYGEN
 struct SharkSslIntf;
-typedef void (*SharkSslIntf_Terminate)(struct SharkSslIntf* o,
-                                       struct SharkSsl* ssl); 
+typedef void (*SharkSslIntf_Terminate)(struct SharkSslIntf *o,
+                                       struct SharkSsl *ssl); 
 typedef struct SharkSslIntf
 {
    SharkSslIntf_Terminate terminate;
@@ -567,7 +567,7 @@ SharkSsl
 {
 #ifdef __cplusplus
    void *operator new(size_t s) { return ::baMalloc(s); }
-   void operator delete(void* d) { if(d) ::baFree(d); }
+   void operator delete(void *d) { if(d) ::baFree(d); }
    void *operator new(size_t, void *place) { return place; }
    void operator delete(void*, void *) { }
 
@@ -600,7 +600,7 @@ SharkSsl
    #if SHARKSSL_ENABLE_SESSION_CACHE  || SHARKSSL_NOPACK
    SharkSslSessionCache sessionCache;
    /* Reserved for use with one SharkSslSCMgr object  */
-   SharkSslIntf* intf;
+   SharkSslIntf *intf;
    #endif
 } SharkSsl;
 
@@ -1784,14 +1784,14 @@ typedef enum
     example:
 
     \code
-int addMyCert(SharkSsl* shark)
+int addMyCert(SharkSsl *shark)
 {
    SharkSslCert *sharkCert;
    // The two following functions illustrate how a certificate and
    // key can be read from a file system and inserted into an
    // allocated buffer.
-   char* cert=readMyCertFromFileSystem();
-   char* key=readMyKeyFromFileSystem();
+   char *cert=readMyCertFromFileSystem();
+   char *key=readMyKeyFromFileSystem();
    if(sharkssl_PEM(cert,key,NULL,&sharkCert))
       return -1;
    free(cert);
@@ -2346,7 +2346,7 @@ SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType
 
 #if SHARKSSL_ENABLE_ECCKEY_CREATE
 
-typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
+typedef int (*sharkssl_rngfunc)(void *handle, U8 *ptr, U16 len);
 
 
 /** A macro for creating an ECC key using the SharkSSL library.
@@ -2401,13 +2401,13 @@ typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
    be persistent. 
    The following example shows how to create and save a key.
    \code
-   SharkSslECCKey createAndSaveKey(const char* filename)
+   SharkSslECCKey createAndSaveKey(const char *filename)
    {
       SharkSslECCKey privKey;
       int len = SharkSslECCKey_create(&privKey, SHARKSSL_EC_CURVE_ID_SECP256R1,0,0);
       if(len > 0)
       {
-         FILE* fp = fopen(filename, "w");
+         FILE *fp = fopen(filename, "w");
          if(fp)
          {
             fwrite(privKey, sizeof(U8), len, fp);
@@ -2419,7 +2419,7 @@ typedef int (*sharkssl_rngfunc)(void* handle, U8 *ptr, U16 len);
    }
    \endcode
  */
-SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey* privKey, U16 curveID, void* rngHandle, sharkssl_rngfunc rngFunc);
+SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *privKey, U16 curveID, void *rngHandle, sharkssl_rngfunc rngFunc);
 #endif
 
 
@@ -2628,7 +2628,7 @@ SHARKSSL_API void  SharkSslCertStore_constructor(SharkSslCertStore *o);
 
 /** Cleanup all memory used by the SharkSslCAList object. 
  */
-SHARKSSL_API void  SharkSslCertStore_destructor(SharkSslCertStore* o);
+SHARKSSL_API void  SharkSslCertStore_destructor(SharkSslCertStore *o);
 
 /** Alias for SharkSslCertStore_destructor */
 #define            SharkSslCertStore_release(o) SharkSslCertStore_destructor(o)

@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoWinMain.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: MakoWinMain.c 5824 2026-07-06 11:15:02Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -59,7 +59,7 @@ RunElevated()
    BOOL status;
    SHELLEXECUTEINFO shex;
    char* cmd=GetCommandLine();
-   int len = strlen(cmd) + 100;
+   int len = (int)strlen(cmd) + 100;
    char* params=malloc(len);
    basnprintf(params,len,"-pause %s",cmd);
    GetModuleFileName(NULL, szPath, MAX_PATH);

@@ -97,7 +97,7 @@ static int pushUniqueKey(lua_State*L)
             struct sockaddr_dl* sdl = (struct sockaddr_dl *)ifa->ifa_addr;      
             if (sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == 6)
             {
-               unsigned char *mac = (unsigned char *)LLADDR(sdl);
+               const char *mac = (const char *)LLADDR(sdl);
                lua_pushlstring(L,mac,6);
                retVal=0;
                break; /* use first interface */

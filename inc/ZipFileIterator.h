@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ZipFileIterator.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: ZipFileIterator.h 5813 2026-06-15 10:15:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2019
  *
@@ -51,7 +51,7 @@ struct ZipFileHeaderData;
     @ingroup ZipFileSystem
     @{
 
-    \brief Minnow Server ZIP file system IO plugin.
+    \brief Barracuda Server ZIP file system I/O plugin.
 
  */
 #else
@@ -384,7 +384,7 @@ typedef struct ZipContainer
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
  
-      /**
+      /** Create a ZipContainer instance.
          \param reader a ZipReader instance.
          \param buf is a buffer with minimum size 256 bytes.
          You must make sure that this buffer is valid during the lifetime
