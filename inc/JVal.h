@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JVal.h 5380 2023-02-16 15:40:23Z wini $
+ *   $Id: JVal.h 5839 2026-07-29 13:27:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2014
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -206,6 +206,9 @@ struct JVal
        */
       const char* getString(JErr* e);
 
+      /** Returns the string length. */
+      size_t getStringLen();
+
       /** Sets a string value and changes the JSON type if needed. The
           pointer is directly stored and not copied. The string must,
           therefore, have been allocated with the dynamic allocator
@@ -222,6 +225,9 @@ struct JVal
       /** Returns the member name if this value is part of a JSON object.
        */
       const char* getName();
+
+      /** Returns the member-name length. */
+      size_t getNameLen();
 
       /** Similar to getName, but you must manage the value as the
           value is detached from the tree.
@@ -307,6 +313,8 @@ struct JVal
 
       char* memberName;
       struct JVal* next;
+      size_t stringLen;
+      size_t memberNameLen;
       JVType type;
 };
 
@@ -323,8 +331,10 @@ BA_API S64 JVal_getLong(JVal* o, JErr* e);
 BA_API double JVal_getDouble(JVal* o, JErr* e);
 BA_API BaBool JVal_getBoolean(JVal* o, JErr* e);
 BA_API const char* JVal_getString(JVal* o, JErr* e);
+#define JVal_getStringLen(o) (o)->stringLen
 BA_API char* JVal_manageString(JVal* o, JErr* e);
 BA_API const char* JVal_getName(JVal* o);
+#define JVal_getNameLen(o) (o)->memberNameLen
 BA_API char* JVal_manageName(JVal* o);
 #define JVal_getNextElem(o) (o)->next
 BA_API JVal* JVal_getObject(JVal* o, JErr* e);
@@ -369,10 +379,14 @@ inline BaBool JVal::getBoolean(JErr* e){
    return JVal_getBoolean(this, e); }
 inline const char* JVal::getString(JErr* e){
    return JVal_getString(this, e); }
+inline size_t JVal::getStringLen(){
+   return JVal_getStringLen(this); }
 inline char* JVal::manageString(JErr* e){
    return JVal_manageString(this, e); }
 inline const char* JVal::getName(){
    return JVal_getName(this); }
+inline size_t JVal::getNameLen(){
+   return JVal_getNameLen(this); }
 inline char* JVal::manageName(){
    return JVal_manageName(this); }
 inline JVal* JVal::getNextElem(){

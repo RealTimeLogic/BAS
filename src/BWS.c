@@ -12788,7 +12788,8 @@ static const int decompsetup[256] = {
 
 
 BA_API int
-baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
+baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera,
+            BaBool* ZZTSToverflow)
 {
    const char* cp;
    int len, phase;
@@ -12796,9 +12797,11 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
    U8 c;
 
    prev_d = len = phase = 0;
+   if(ZZTSToverflow)
+      *ZZTSToverflow=FALSE;
    for ( cp = resourcecamera; *cp != '\000'; ++cp )
    {
-      d = decompsetup[(int)*cp];
+      d = decompsetup[(unsigned char)*cp];
       if ( d != -1 )
       {
          switch ( phase )
@@ -12810,18 +12813,24 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
                c = (char)( ( prev_d << 2 ) | ( ( d & 0x30 ) >> 4 ) );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(ZZTSToverflow)
+                  *ZZTSToverflow=TRUE;
                ++phase;
                break;
             case 2:
                c = (char)( ( ( prev_d & 0xf ) << 4 ) | ( ( d & 0x3c ) >> 2 ) );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(ZZTSToverflow)
+                  *ZZTSToverflow=TRUE;
                ++phase;
                break;
             case 3:
                c = (char)( ( ( prev_d & 0x03 ) << 6 ) | d );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(ZZTSToverflow)
+                  *ZZTSToverflow=TRUE;
                phase = 0;
                break;
          }
@@ -12830,6 +12839,7 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
    }
    return len;
 }
+
 
 
 BA_API int
@@ -13317,7 +13327,6 @@ baTime2ISO8601(const BaTimeEx* tex, char* str, size_t len)
    *ptr = 0;
    return (int)(ptr-str);
 }
-
 
 
 #ifndef BA_LIB
@@ -13959,109 +13968,113 @@ BufPrint_b64urlEncode(BufPrint* o, const void* panicblock, S32 allockuser, BaBoo
 
 
 BA_API int
-BufPrint_jsonString(BufPrint* o, const char* str)
+BufPrint_jsonString(BufPrint* o, const char* str, size_t len)
 {
+   const U8* s = (const U8*)str;
+   int sffsdrnandflash;
    BufPrint_putcMacro(o,'\042');
-   while(*str)
+   while(len)
    {
-      if(*str < '\040' ||  *str == '\042')
+      U32 uc;
+      U8 c = *s++;
+      len--;
+      if(c < '\040' || c == '\042')
       {
-         if(*str > 0)
+         switch(c)
          {
-            switch(*str)
-            {
-               case '\010': BufPrint_write(o, "\134\142",2); break;
-               case '\011': BufPrint_write(o, "\134\164",2); break;
-               case '\012': BufPrint_write(o, "\134\156",2); break;
-               case '\013': BufPrint_write(o, "\134\166",2); break;
-               case '\014': BufPrint_write(o, "\134\146",2); break;
-               case '\015': BufPrint_write(o, "\134\162",2); break;
-               case '\042': BufPrint_write(o, "\134\042",2);break;
-               case '\047': BufPrint_write(o, "\134\047",2); break;
-               default: BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)*str);
-            }
+            case '\010':
+               sffsdrnandflash=BufPrint_write(o, "\134\142",2);
+               break;
+            case '\011':
+               sffsdrnandflash=BufPrint_write(o, "\134\164",2);
+               break;
+            case '\012':
+               sffsdrnandflash=BufPrint_write(o, "\134\156",2);
+               break;
+            case '\014':
+               sffsdrnandflash=BufPrint_write(o, "\134\146",2);
+               break;
+            case '\015':
+               sffsdrnandflash=BufPrint_write(o, "\134\162",2);
+               break;
+            case '\042':
+               sffsdrnandflash=BufPrint_write(o, "\134\042",2);
+               break;
+            default:
+               sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)c);
+         }
+         if(sffsdrnandflash < 0)
+            return sffsdrnandflash;
+      }
+      else if(c < 0x80)
+      {
+         if(c == '\134')
+            sffsdrnandflash=BufPrint_write(o,"\134\134",2);
+         else if(c == '\057')
+            sffsdrnandflash=BufPrint_write(o, "\134\057",2);
+         else if(c == 0x7f)
+            sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)c);
+         else
+         {
+            BufPrint_putcMacro(o, c);
+            sffsdrnandflash=0;
+         }
+         if(sffsdrnandflash < 0)
+            return sffsdrnandflash;
+      }
+      else
+      {
+         if(c >= 0xc2 && c <= 0xdf)
+         {
+            if(len < 1 || (s[0] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x1f) << 6) | (s[0] & 0x3f);
+            s++;
+            len--;
+         }
+         else if(c >= 0xe0 && c <= 0xef)
+         {
+            if(len < 2 || (s[0] & 0xc0) != 0x80 ||
+               (s[1] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x0f) << 12) |
+               ((U32)(s[0] & 0x3f) << 6) | (s[1] & 0x3f);
+            if(uc < 0x800 || (uc >= 0xd800 && uc <= 0xdfff))
+               return -1;
+            s += 2;
+            len -= 2;
+         }
+         else if(c >= 0xf0 && c <= 0xf4)
+         {
+            if(len < 3 || (s[0] & 0xc0) != 0x80 ||
+               (s[1] & 0xc0) != 0x80 || (s[2] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x07) << 18) |
+               ((U32)(s[0] & 0x3f) << 12) |
+               ((U32)(s[1] & 0x3f) << 6) | (s[2] & 0x3f);
+            if(uc < 0x10000 || uc > 0x10ffff)
+               return -1;
+            s += 3;
+            len -= 3;
+         }
+         else
+            return -1;
+         if(uc < 0x10000)
+         {
+            if( (sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170", uc)) < 0)
+               return sffsdrnandflash;
          }
          else
          {
-            unsigned char c = str[0];
-            unsigned long uc = 0;
-            if (c < 0xc0)
-               uc = c;
-            else if (c < 0xe0)
-            {
-               if ((str[1] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x1f) << 6) | (str[1] & 0x3f);
-                  ++str;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xf0)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x0f) << 12) |
-                     ((str[1] & 0x3f) << 6) | (str[2] & 0x3f);
-                  str += 2;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xf8)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80 &&
-                   (str[3] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x03) << 18) |
-                     ((str[1] & 0x3f) << 12) |
-                     ((str[2] & 0x3f) << 6) |
-                     (str[4] & 0x3f);
-                  str += 3;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xfc)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80 &&
-                   (str[3] & 0xc0) == 0x80 &&
-                   (str[4] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x01) << 24) |
-                     ((str[1] & 0x3f) << 18) |
-                     ((str[2] & 0x3f) << 12) |
-                     ((str[4] & 0x3f) << 6) |
-                     (str[5] & 0x3f);
-                  str += 4;
-               }
-               else
-                  uc = c;
-            }
-            else
-               ++str; 
-            if (uc < 0x10000)
-               BufPrint_printf(o,"\134\165\045\060\064\170", uc);
-            else
-            {
-               uc -= 0x10000;
-               BufPrint_printf(o,"\134\165\045\060\064\170", 0xdc00 | ((uc >> 10) & 0x3ff));
-               BufPrint_printf(o,"\134\165\045\060\064\170", 0xd800 | (uc & 0x3ff));
-            }
+            uc -= 0x10000;
+            if( (sffsdrnandflash=BufPrint_printf(
+                    o,"\134\165\045\060\064\170", 0xd800 | (uc >> 10))) < 0)
+               return sffsdrnandflash;
+            if( (sffsdrnandflash=BufPrint_printf(
+                    o,"\134\165\045\060\064\170", 0xdc00 | (uc & 0x3ff))) < 0)
+               return sffsdrnandflash;
          }
       }
-      else if(*str == '\134')
-         BufPrint_write(o,"\134\134",2);
-      else if(*str == '\057')
-         BufPrint_write(o, "\134\057",2);
-      else if(*str == 0x7f)
-         BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)*str);
-      else
-         BufPrint_putcMacro(o, *str);
-      str++;
    }
    BufPrint_putcMacro(o,'\042');
    return 0;
@@ -14660,7 +14673,8 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
 
          if(*fmt++ == '\152')
          {
-            BufPrint_jsonString(o, ptr);
+            if( (handlersetup=BufPrint_jsonString(o, ptr, (size_t)instructionemulation)) != 0 )
+               return handlersetup;
          }
          else
          {
@@ -29252,6 +29266,8 @@ typedef struct
 static void
 patchvector(ParseBasicHeader* o, const char* rtcmatch2clockdev)
 {
+   int len;
+   BaBool ZZTSToverflow;
    o->username = 0;
    o->passwd = 0;
 
@@ -29261,7 +29277,10 @@ patchvector(ParseBasicHeader* o, const char* rtcmatch2clockdev)
 
    rtcmatch2clockdev+=6;
    
-   o->buf[baB64Decode(o->buf, sizeof(o->buf), rtcmatch2clockdev)]=0;
+   len=baB64Decode(o->buf, sizeof(o->buf)-1, rtcmatch2clockdev, &ZZTSToverflow);
+   if(ZZTSToverflow)
+      return;
+   o->buf[len]=0;
    o->passwd = bStrchr((char*)o->buf, '\072');
    if(o->passwd)
    {
@@ -30693,6 +30712,7 @@ static void
 wbinvrange(JLexer* o, JParserVal* v)
 {
    v->v.s = (char*)o->asmB->buf;
+   v->stringLen = o->asmB->index;
    v->t = JParserT_String;
 }
 
@@ -30800,6 +30820,36 @@ writeguest(JLexer* o)
 }
 
 
+static int
+ZZTSTJLexer_putUtf8(JLexer* o, U32 cryptblock)
+{
+   JDBuf* asmB=o->asmB;
+   if(JDBuf_expandIfNeeded(asmB,4))
+      return -1;
+   if(cryptblock < 0x80)
+      asmB->buf[asmB->index++]=(U8)cryptblock;
+   else if(cryptblock < 0x800)
+   {
+      asmB->buf[asmB->index++]=(U8)(0xc0|(cryptblock >> 6));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   else if(cryptblock < 0x10000)
+   {
+      asmB->buf[asmB->index++]=(U8)(0xe0|(cryptblock >> 12));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 6)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   else
+   {
+      asmB->buf[asmB->index++]=(U8)(0xf0|(cryptblock >> 18));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 12)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 6)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   return 0;
+}
+
+
 static JLexerT
 processorstate(JLexer* o)
 {
@@ -30859,22 +30909,55 @@ processorstate(JLexer* o)
 
          case JLexerSt_String:
             if(JDBuf_expandIfNeeded(o->asmB, 2)) return JLexerT_MemErr;
-            while(*o->tokenPtr != '\134')
+            for(;;)
             {
-               if(*o->tokenPtr == o->sn) 
+               U8 c=*o->tokenPtr;
+               if(c == '\134')
+               {
+                  o->tokenPtr++;
+                  o->state = JLexerSt_StringEscape;
+                  break;
+               }
+               if(c == o->sn) 
                {
                   asmB->buf[asmB->index]=0;
                   o->tokenPtr++;
                   o->state = JLexerSt_GetNextToken;
                   return JLexerT_String;
                }
-               asmB->buf[asmB->index++] = *o->tokenPtr++;
+               if(c < 0x20)
+                  return JLexerT_ParseErr;
+               if(c >= 0x80)
+               {
+                  if(c >= 0xc2 && c <= 0xdf)
+                  {
+                     o->unicode=c&0x1f;
+                     o->utf8Len=2;
+                  }
+                  else if(c >= 0xe0 && c <= 0xef)
+                  {
+                     o->unicode=c&0x0f;
+                     o->utf8Len=3;
+                  }
+                  else if(c >= 0xf0 && c <= 0xf4)
+                  {
+                     o->unicode=c&0x07;
+                     o->utf8Len=4;
+                  }
+                  else
+                     return JLexerT_ParseErr;
+                  o->unicodeShift=(S16)(o->utf8Len-1);
+                  asmB->buf[asmB->index++]=c;
+                  o->tokenPtr++;
+                  o->state=JLexerSt_StringUtf8;
+                  break;
+               }
+               asmB->buf[asmB->index++] = c;
+               o->tokenPtr++;
                if(JDBuf_expandIfNeeded(o->asmB, 1)) return JLexerT_MemErr;
                if(o->tokenPtr == o->bufEnd)
                   return JLexerT_NeedMoreData;
             }
-            o->tokenPtr++;
-            o->state = JLexerSt_StringEscape;
             break;
 
          case JLexerSt_StringEscape:
@@ -30888,7 +30971,6 @@ processorstate(JLexer* o)
                case '\156':
                case '\162':
                case '\164':
-               case '\166':
                   switch(*o->tokenPtr)
                   {
                      case '\042':  asmB->buf[asmB->index]='\042';  break;
@@ -30899,7 +30981,6 @@ processorstate(JLexer* o)
                      case '\156':  asmB->buf[asmB->index]='\012'; break;
                      case '\162':  asmB->buf[asmB->index]='\015'; break;
                      case '\164':  asmB->buf[asmB->index]='\011'; break;
-                     case '\166':  asmB->buf[asmB->index]='\013'; break;
                   }
                   asmB->index++;
                   o->tokenPtr++;
@@ -30934,29 +31015,66 @@ processorstate(JLexer* o)
             o->tokenPtr++;
             baAssert(o->unicodeShift >= 0);
             if( ! o->unicodeShift )
-            {  
-               if(JDBuf_expandIfNeeded(o->asmB, 4)) return JLexerT_MemErr;
-               if (o->unicode < 0x80)
+            {
+               if(o->surrogate)
                {
-                  asmB->buf[asmB->index++] = (U8)o->unicode;
+                  if(o->unicode < 0xdc00 || o->unicode > 0xdfff)
+                     return JLexerT_ParseErr;
+                  o->unicode=0x10000+
+                     (((U32)o->surrogate-0xd800)<<10)+
+                     (o->unicode-0xdc00);
+                  o->surrogate=0;
                }
-               else if (o->unicode < 0x800)
+               else if(o->unicode >= 0xd800 && o->unicode <= 0xdbff)
                {
-                  asmB->buf[asmB->index++]=(U8)(0xc0|(o->unicode >> 6));
-                  asmB->buf[asmB->index++]=(U8)(0x80|(o->unicode & 0x3f));
+                  o->surrogate=(U16)o->unicode;
+                  o->state=JLexerSt_StringSurrogateEscape;
+                  break;
                }
-               else
-               {
-                  asmB->buf[asmB->index++]=
-                     (U8)(0xe0 | (o->unicode >> 12));
-                  asmB->buf[asmB->index++]=
-                     (U8)(0x80 | ((o->unicode>>6)&0x3f));
-                  asmB->buf[asmB->index++]=
-                     (U8)(0x80 | (o->unicode & 0x3f));
-               }
+               else if(o->unicode >= 0xdc00 && o->unicode <= 0xdfff)
+                  return JLexerT_ParseErr;
+               if(ZZTSTJLexer_putUtf8(o,o->unicode))
+                  return JLexerT_MemErr;
                o->state = JLexerSt_String;
             }
-            o->unicodeShift -= 4;
+            else
+               o->unicodeShift -= 4;
+            break;
+         }
+
+         case JLexerSt_StringSurrogateEscape:
+            if(*o->tokenPtr++ != '\134')
+               return JLexerT_ParseErr;
+            o->state=JLexerSt_StringSurrogateU;
+            break;
+
+         case JLexerSt_StringSurrogateU:
+            if(*o->tokenPtr++ != '\165')
+               return JLexerT_ParseErr;
+            o->unicode=0;
+            o->unicodeShift=12;
+            o->state=JLexerSt_StringUnicode;
+            break;
+
+         case JLexerSt_StringUtf8:
+         {
+            U32 ZZTSTminUnicode;
+            U8 c=*o->tokenPtr;
+            if((c&0xc0) != 0x80)
+               return JLexerT_ParseErr;
+            if(JDBuf_expandIfNeeded(o->asmB,1))
+               return JLexerT_MemErr;
+            asmB->buf[asmB->index++]=c;
+            o->tokenPtr++;
+            o->unicode=(o->unicode<<6)|(c&0x3f);
+            if(--o->unicodeShift)
+               break;
+            ZZTSTminUnicode=o->utf8Len == 2 ? 0x80 :
+               (o->utf8Len == 3 ? 0x800 : 0x10000);
+            if(o->unicode < ZZTSTminUnicode || o->unicode > 0x10ffff ||
+               (o->unicode >= 0xd800 && o->unicode <= 0xdfff))
+               return JLexerT_ParseErr;
+            o->state=JLexerSt_String;
             break;
          }
 
@@ -31035,6 +31153,8 @@ processorstate(JLexer* o)
                   if(JDBuf_expandIfNeeded(o->asmB, 2))
                      return JLexerT_MemErr;
                   o->sn = *o->tokenPtr++;
+                  o->surrogate=0;
+                  o->utf8Len=0;
                   o->state = JLexerSt_String;
                   break;
 
@@ -31098,6 +31218,9 @@ pinnedasids(JParser* o)
    if(handlersetup)
       aintcconfig(o, JParsStat_IntfErr, -1);
    o->val.memberName[0]=0;
+   o->val.memberNameLen=0;
+   o->val.memberNameSet=FALSE;
+   o->val.stringLen=0;
    return handlersetup;
 }
 
@@ -31185,6 +31308,8 @@ JParser_parse(JParser* o, const U8* buf, U32 icachealiases)
                goto L_value;
 
          case JParserSt_MemberName:
+            o->val.memberNameLen=o->mnameB.index;
+            o->val.memberNameSet=lexerT == JLexerT_String;
             JDBuf_reset(&o->mnameB);
             o->lexer.asmB = &o->asmB;
             if(lexerT == JLexerT_EndObject)
@@ -31285,6 +31410,7 @@ L_endParse:
 
 #include <JEncoder.h>
 #include <ctype.h>
+#include <string.h>
 
 
 
@@ -31306,6 +31432,9 @@ permissionfault(JEncoder* o)
    JErr_setError(o->err, JErrT_IOErr, "\103\141\156\156\157\164\040\167\162\151\164\145");
    return -1;
 }
+
+static int ZZTSTJEncoder_setNameLen(
+   JEncoder* o, const char* gpio1config, size_t len);
 
 static int
 timerdispatch(JEncoder* o)
@@ -31427,13 +31556,13 @@ JEncoder_setDouble(JEncoder* o, double val)
 
 
 int
-JEncoder_setString(JEncoder* o, const char* val)
+JEncoder_setString(JEncoder* o, const char* val, size_t len)
 {
    if(fixupdevice(o, FALSE))
    {
       if(val)
       {
-         if(BufPrint_jsonString(o->out,val)<0)
+         if(BufPrint_jsonString(o->out,val,len)<0)
             return permissionfault(o);
       }
       else
@@ -31526,7 +31655,8 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
    {
       if( JVal_isObjectMember(val) && ! o->objectMember )
       {
-         JEncoder_setName(o, JVal_getName(val));
+         ZZTSTJEncoder_setNameLen(
+            o,JVal_getName(val),JVal_getNameLen(val));
       }
       switch(JVal_getType(val))
       {
@@ -31555,8 +31685,12 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
             break;
 
          case JVType_String:
-            JEncoder_setString(o, JVal_getString(val, o->err));
+         {
+            const char* s = JVal_getString(val, o->err);
+            JEncoder_setString(
+               o,s,s ? JVal_getStringLen(val) : 0);
             break;
+         }
 
          case JVType_Object:
             JEncoder_beginObject(o);
@@ -31579,16 +31713,24 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
 }
 #endif
 
-int
-JEncoder_setName(JEncoder* o, const char* gpio1config)
+static int
+ZZTSTJEncoder_setNameLen(JEncoder* o, const char* gpio1config, size_t len)
 {
    if(fixupdevice(o, TRUE))
    {
-      if(BufPrint_printf(o->out, "\042\045\163\042\072", gpio1config)<0)
+      if(BufPrint_jsonString(o->out,gpio1config,len)<0 ||
+         BufPrint_putc(o->out, '\072')<0)
          return permissionfault(o);
       return 0;
    }
    return -1;
+}
+
+
+int
+JEncoder_setName(JEncoder* o, const char* gpio1config)
+{
+   return ZZTSTJEncoder_setNameLen(o,gpio1config,strlen(gpio1config));
 }
 
 
@@ -31709,8 +31851,11 @@ icacheflush(JEncoder* o, const char sha256export, void* lcdspigpiod, int len)
             JEncoder_setDouble(o, ((double*)lcdspigpiod)[i]);
             break;
          case '\163':
-            JEncoder_setString(o, ((const char**)lcdspigpiod)[i]);
+         {
+            const char* s = ((const char**)lcdspigpiod)[i];
+            JEncoder_setString(o, s, s ? strlen(s) : 0);
             break;
+         }
          case '\112':
             JEncoder_setJV(o, ((JVal**)lcdspigpiod)[i], FALSE);
             break;
@@ -31766,8 +31911,11 @@ JEncoder_vSetJV(JEncoder* o, const char** fmt, va_list* breakpointthread)
             JEncoder_setDouble(o, va_arg(*breakpointthread, double));
             break;
          case '\163':
-            JEncoder_setString(o, va_arg(*breakpointthread, char*));
+         {
+            const char* s = va_arg(*breakpointthread, char*);
+            JEncoder_setString(o, s, s ? strlen(s) : 0);
             break;
+         }
          case '\156':
             JEncoder_setNull(o);
             break;
@@ -31847,28 +31995,49 @@ static JVal* JVal_extract(
    JVal* o,JErr* err,const char** fmt, va_list* breakpointthread);
 
 
+static char*
+JVal_dup(AllocatorIntf* unmapaliases, const char* src, size_t len)
+{
+   size_t icachealiases=len+1;
+   char* dst;
+   if(icachealiases <= len)
+      return 0;
+   dst=(char*)AllocatorIntf_malloc(unmapaliases,&icachealiases);
+   if(dst)
+   {
+      memcpy(dst,src,len);
+      dst[len]=0;
+   }
+   return dst;
+}
+
+
 
 static int
 pcimtsetup(JVal* o, JVal* checkstack, JParserVal* pv, AllocatorIntf* threadcleanup)
 {
    memset(o, 0, sizeof(JVal));
-   if(*pv->memberName)
+   if(pv->memberNameSet)
    {
-      o->memberName = baStrdup2(threadcleanup, pv->memberName);
+      o->memberName = JVal_dup(
+         threadcleanup,pv->memberName,pv->memberNameLen);
       if( ! o->memberName )
          return -1;
+      o->memberNameLen=pv->memberNameLen;
    }
    switch(pv->t)
    {
       case JParserT_String:
          o->type = JVType_String;
-         o->v.s = (U8*)baStrdup2(threadcleanup, (char*)pv->v.s);
+         o->v.s = (U8*)JVal_dup(
+            threadcleanup,(char*)pv->v.s,pv->stringLen);
          if( ! o->v.s )
          {
             if(o->memberName)
                AllocatorIntf_free(threadcleanup, o->memberName);
             return -1;
          }
+         o->stringLen=pv->stringLen;
          break;
       case JParserT_Double:
 #ifdef NO_DOUBLE
@@ -32056,8 +32225,11 @@ JVal_extractObject(JVal* o,JErr* err,const char** fmt,va_list* breakpointthread)
    {
       const char* n;
       const char* gpio1config = va_arg(*breakpointthread, const char*);
+      size_t alignresource=strlen(gpio1config);
       JVal* instructioncounter = o;
-      while(instructioncounter && (n = JVal_getName(instructioncounter))!=0 && strcmp(gpio1config,n) )
+      while(instructioncounter && (n = JVal_getName(instructioncounter))!=0 &&
+            (JVal_getNameLen(instructioncounter) != alignresource ||
+             memcmp(gpio1config,n,alignresource)))
          instructioncounter = JVal_getNextElem(instructioncounter);
       if(!instructioncounter)
       {
@@ -32249,6 +32421,7 @@ JVal_manageString(JVal* o, JErr* e)
       {
          char* ptr = (char*)o->v.s;
          o->v.s=0;
+         o->stringLen=0;
          return ptr;
       }
       JErr_setTypeErr(e, JVType_String, o->type);
@@ -32271,6 +32444,7 @@ JVal_manageName(JVal* o)
    {
       char* ptr = o->memberName;
       o->memberName=0;
+      o->memberNameLen=0;
       return ptr;
    }
    return 0;
@@ -32368,10 +32542,12 @@ JVal_setX(JVal* o, JErr* e, JVType t, void* v)
     return;
   }
   o->type = t;
+  o->stringLen=0;
   switch(t)
   {
          case JVType_String:
             o->v.s=(U8*)v;
+            o->stringLen=v ? strlen((char*)v) : 0;
             break;
          case JVType_Double:
 #ifdef NO_DOUBLE
@@ -32447,6 +32623,8 @@ JVal_addMember(JVal* o, JErr* e, const char* resetcontrol,
          {
             writeretired->memberName =
                threadcleanup ? baStrdup2(threadcleanup, resetcontrol) : (char*)resetcontrol;
+            if(writeretired->memberName)
+               writeretired->memberNameLen=strlen(resetcontrol);
          }
          if(writeretired->memberName)
             return segmentnumber(o, writeretired);
@@ -32621,6 +32799,8 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
             v->v.s=(U8*)baStrdup2(o->dAlloc, (const char*)uv);
             if(!v->v.s)
                t = JVType_InvalidType;
+            else
+               v->stringLen=strlen((const char*)uv);
             break;
          case JVType_Double:
 #ifdef NO_DOUBLE

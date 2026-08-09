@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaServerLib.h 5355 2022-11-16 10:33:45Z wini $
+ *   $Id: BaServerLib.h 5834 2026-07-18 11:16:52Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2002 - 2021
  *
@@ -116,11 +116,14 @@ const char* baGetToken(const char** str, const char* set);
 BA_API BaTime baParseDate(const char* str);
 
 
-/** Decodes a B64 encoded string.
-    outStr and b64EncStr can be the same.
+/** Decodes a B64 encoded string and reports output truncation.
+    outStr and b64EncStr can be the same. Non-base64 bytes are ignored.
+    The overflow argument may be NULL when the caller does not need the
+    truncation result.
  */
 BA_API int baB64Decode(
-   unsigned char* outStr,int outStrSize,const char* b64EncStr);
+   unsigned char* outStr,int outStrSize,const char* b64EncStr,
+   BaBool* overflow);
 
 /** Fix a path with ../ in it
  */

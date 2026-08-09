@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: BaFile.c 5837 2026-07-29 11:17:51Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2020
  *
@@ -418,12 +418,21 @@ static int
 DiskRes_write(ResIntfPtr super, const void* buf, size_t size)
 {
    DiskRes* o = (DiskRes*)super; /* upcast */
-   DWORD writeSize;
-   if( ! WriteFile(o->hndl, buf, (DWORD)size, &writeSize, 0) )
+   const U8* cursor = (const U8*)buf;
+   while(size)
    {
-      int status;
-      setErrCode(&status, 0);
-      return status;
+      DWORD chunkSize = size > (size_t)MAXDWORD ? MAXDWORD : (DWORD)size;
+      DWORD writeSize;
+      if( ! WriteFile(o->hndl, cursor, chunkSize, &writeSize, 0) )
+      {
+         int status;
+         setErrCode(&status, 0);
+         return status;
+      }
+      if(writeSize == 0)
+         return IOINTF_IOERROR;
+      cursor += writeSize;
+      size -= writeSize;
    }
    return 0;
 }

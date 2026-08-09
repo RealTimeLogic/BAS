@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BufPrint.h 5387 2023-02-20 22:50:13Z wini $
+ *   $Id: BufPrint.h 5839 2026-07-29 13:27:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -239,9 +239,11 @@ typedef struct BufPrint
           The function can, for example, be used if the server generates a
           <a href="http://json.org">JSON</a>
           response or generates dynamic JavaScript in a CSP page.
+          \param str string data.
+          \param len string length.
           \sa BufPrint::printf with format flag j
       */
-      int jsonString(const char* str);
+      int jsonString(const char* str, size_t len);
 #endif
       BufPrint_Flush flushCB;
       void *userData;
@@ -282,7 +284,7 @@ BA_API int BufPrint_b64Encode(BufPrint* o, const void* source, S32 slen);
 BA_API int BufPrint_b64urlEncode(
    BufPrint* o, const void* source, S32 slen, BaBool padding);
 
-BA_API int BufPrint_jsonString(BufPrint* o, const char* str);
+BA_API int BufPrint_jsonString(BufPrint* o, const char* str, size_t len);
 #ifdef __cplusplus
 }
 inline void* BufPrint::getUserData() {
@@ -325,8 +327,8 @@ inline int BufPrint::b64Encode(const void* source, S32 slen){
 inline int BufPrint::b64urlEncode(const void* source, S32 slen, bool padding){
    return BufPrint_b64urlEncode(this, source, slen, padding?TRUE:FALSE);
 }
-inline int BufPrint::jsonString(const char* str){
-   return BufPrint_jsonString(this, str);
+inline int BufPrint::jsonString(const char* str, size_t len){
+   return BufPrint_jsonString(this, str, len);
 }
 #endif
 

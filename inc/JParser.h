@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JParser.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: JParser.h 5839 2026-07-29 13:27:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2025
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -260,6 +260,9 @@ typedef enum {
    JLexerSt_String,
    JLexerSt_StringEscape,
    JLexerSt_StringUnicode,
+   JLexerSt_StringSurrogateEscape,
+   JLexerSt_StringSurrogateU,
+   JLexerSt_StringUtf8,
    JLexerSt_Number,
    JLexerSt_GetNextToken
 } JLexerSt;
@@ -274,6 +277,8 @@ typedef struct
 
       U32 unicode;
       S16 unicodeShift;
+      U16 surrogate;
+      U8 utf8Len;
 
       /* typeChkPtr and retVal is used if the Lexer finds the start of
          true, false, or null.
@@ -331,7 +336,7 @@ typedef struct JParserVal
    /** object member name is set for objects. Use the following
        construction to differentiate between an object/array:
        \code
-       if(*val->memberName)
+       if(val->memberNameSet)
        {
           // object
        }
@@ -343,6 +348,9 @@ typedef struct JParserVal
        \endcode
    */
    char* memberName;
+   size_t stringLen; /**< String length when t is JParserT_String. */
+   size_t memberNameLen; /**< Object member-name length. */
+   BaBool memberNameSet; /**< True when this value is an object member. */
    JParserT t; /**< The type controlling 'v' */
 } JParserVal;
 

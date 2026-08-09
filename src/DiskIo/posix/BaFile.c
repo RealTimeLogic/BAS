@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 5078 2022-02-10 22:52:48Z wini $
+ *   $Id: BaFile.c 5837 2026-07-29 11:17:51Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2021
  *
@@ -405,12 +405,19 @@ static int
 DiskRes_write(ResIntfPtr super, const void* buf, size_t size)
 {
    DiskRes* o = (DiskRes*)super; /* upcast */
-   int status;
-   if(fwrite(buf, size, 1, o->fp) == 1)
-      status=0;
-   else
+   size_t writeSize;
+   if(size == 0)
+      return 0;
+   writeSize=fwrite(buf, 1, size, o->fp);
+   if(writeSize == size)
+      return 0;
+   if(ferror(o->fp))
+   {
+      int status;
       setErrCode(&status, 0);
-   return status;
+      return status;
+   }
+   return IOINTF_IOERROR;
 }
 
 

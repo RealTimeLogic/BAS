@@ -53232,7 +53232,8 @@ static const int decompsetup[256] = {
 
 
 BA_API int
-baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
+baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera,
+            BaBool* bv1)
 {
    const char* cp;
    int len, phase;
@@ -53240,9 +53241,11 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
    U8 c;
 
    prev_d = len = phase = 0;
+   if(bv1)
+      *bv1=FALSE;
    for ( cp = resourcecamera; *cp != '\000'; ++cp )
    {
-      d = decompsetup[(int)*cp];
+      d = decompsetup[(unsigned char)*cp];
       if ( d != -1 )
       {
          switch ( phase )
@@ -53254,18 +53257,24 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
                c = (char)( ( prev_d << 2 ) | ( ( d & 0x30 ) >> 4 ) );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(bv1)
+                  *bv1=TRUE;
                ++phase;
                break;
             case 2:
                c = (char)( ( ( prev_d & 0xf ) << 4 ) | ( ( d & 0x3c ) >> 2 ) );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(bv1)
+                  *bv1=TRUE;
                ++phase;
                break;
             case 3:
                c = (char)( ( ( prev_d & 0x03 ) << 6 ) | d );
                if ( len < queryinput )
                   disableevent[len++] = c;
+               else if(bv1)
+                  *bv1=TRUE;
                phase = 0;
                break;
          }
@@ -53274,6 +53283,7 @@ baB64Decode(U8* disableevent, int queryinput, const char* resourcecamera)
    }
    return len;
 }
+
 
 
 BA_API int
@@ -53761,7 +53771,6 @@ baTime2ISO8601(const BaTimeEx* tex, char* str, size_t len)
    *ptr = 0;
    return (int)(ptr-str);
 }
-
 
 
 #ifndef BA_LIB
@@ -54773,109 +54782,113 @@ BufPrint_b64urlEncode(BufPrint* o, const void* panicblock, S32 allockuser, BaBoo
 
 
 BA_API int
-BufPrint_jsonString(BufPrint* o, const char* str)
+BufPrint_jsonString(BufPrint* o, const char* str, size_t len)
 {
+   const U8* s = (const U8*)str;
+   int sffsdrnandflash;
    BufPrint_putcMacro(o,'\042');
-   while(*str)
+   while(len)
    {
-      if(*str < '\040' ||  *str == '\042')
+      U32 uc;
+      U8 c = *s++;
+      len--;
+      if(c < '\040' || c == '\042')
       {
-         if(*str > 0)
+         switch(c)
          {
-            switch(*str)
-            {
-               case '\010': BufPrint_write(o, "\134\142",2); break;
-               case '\011': BufPrint_write(o, "\134\164",2); break;
-               case '\012': BufPrint_write(o, "\134\156",2); break;
-               case '\013': BufPrint_write(o, "\134\166",2); break;
-               case '\014': BufPrint_write(o, "\134\146",2); break;
-               case '\015': BufPrint_write(o, "\134\162",2); break;
-               case '\042': BufPrint_write(o, "\134\042",2);break;
-               case '\047': BufPrint_write(o, "\134\047",2); break;
-               default: BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)*str);
-            }
+            case '\010':
+               sffsdrnandflash=BufPrint_write(o, "\134\142",2);
+               break;
+            case '\011':
+               sffsdrnandflash=BufPrint_write(o, "\134\164",2);
+               break;
+            case '\012':
+               sffsdrnandflash=BufPrint_write(o, "\134\156",2);
+               break;
+            case '\014':
+               sffsdrnandflash=BufPrint_write(o, "\134\146",2);
+               break;
+            case '\015':
+               sffsdrnandflash=BufPrint_write(o, "\134\162",2);
+               break;
+            case '\042':
+               sffsdrnandflash=BufPrint_write(o, "\134\042",2);
+               break;
+            default:
+               sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)c);
+         }
+         if(sffsdrnandflash < 0)
+            return sffsdrnandflash;
+      }
+      else if(c < 0x80)
+      {
+         if(c == '\134')
+            sffsdrnandflash=BufPrint_write(o,"\134\134",2);
+         else if(c == '\057')
+            sffsdrnandflash=BufPrint_write(o, "\134\057",2);
+         else if(c == 0x7f)
+            sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)c);
+         else
+         {
+            BufPrint_putcMacro(o, c);
+            sffsdrnandflash=0;
+         }
+         if(sffsdrnandflash < 0)
+            return sffsdrnandflash;
+      }
+      else
+      {
+         if(c >= 0xc2 && c <= 0xdf)
+         {
+            if(len < 1 || (s[0] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x1f) << 6) | (s[0] & 0x3f);
+            s++;
+            len--;
+         }
+         else if(c >= 0xe0 && c <= 0xef)
+         {
+            if(len < 2 || (s[0] & 0xc0) != 0x80 ||
+               (s[1] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x0f) << 12) |
+               ((U32)(s[0] & 0x3f) << 6) | (s[1] & 0x3f);
+            if(uc < 0x800 || (uc >= 0xd800 && uc <= 0xdfff))
+               return -1;
+            s += 2;
+            len -= 2;
+         }
+         else if(c >= 0xf0 && c <= 0xf4)
+         {
+            if(len < 3 || (s[0] & 0xc0) != 0x80 ||
+               (s[1] & 0xc0) != 0x80 || (s[2] & 0xc0) != 0x80)
+               return -1;
+            uc = ((U32)(c & 0x07) << 18) |
+               ((U32)(s[0] & 0x3f) << 12) |
+               ((U32)(s[1] & 0x3f) << 6) | (s[2] & 0x3f);
+            if(uc < 0x10000 || uc > 0x10ffff)
+               return -1;
+            s += 3;
+            len -= 3;
+         }
+         else
+            return -1;
+         if(uc < 0x10000)
+         {
+            if( (sffsdrnandflash=BufPrint_printf(o,"\134\165\045\060\064\170", uc)) < 0)
+               return sffsdrnandflash;
          }
          else
          {
-            unsigned char c = str[0];
-            unsigned long uc = 0;
-            if (c < 0xc0)
-               uc = c;
-            else if (c < 0xe0)
-            {
-               if ((str[1] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x1f) << 6) | (str[1] & 0x3f);
-                  ++str;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xf0)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x0f) << 12) |
-                     ((str[1] & 0x3f) << 6) | (str[2] & 0x3f);
-                  str += 2;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xf8)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80 &&
-                   (str[3] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x03) << 18) |
-                     ((str[1] & 0x3f) << 12) |
-                     ((str[2] & 0x3f) << 6) |
-                     (str[4] & 0x3f);
-                  str += 3;
-               }
-               else
-                  uc = c;
-            }
-            else if (c < 0xfc)
-            {
-               if ((str[1] & 0xc0) == 0x80 &&
-                   (str[2] & 0xc0) == 0x80 &&
-                   (str[3] & 0xc0) == 0x80 &&
-                   (str[4] & 0xc0) == 0x80)
-               {
-                  uc = ((c & 0x01) << 24) |
-                     ((str[1] & 0x3f) << 18) |
-                     ((str[2] & 0x3f) << 12) |
-                     ((str[4] & 0x3f) << 6) |
-                     (str[5] & 0x3f);
-                  str += 4;
-               }
-               else
-                  uc = c;
-            }
-            else
-               ++str; 
-            if (uc < 0x10000)
-               BufPrint_printf(o,"\134\165\045\060\064\170", uc);
-            else
-            {
-               uc -= 0x10000;
-               BufPrint_printf(o,"\134\165\045\060\064\170", 0xdc00 | ((uc >> 10) & 0x3ff));
-               BufPrint_printf(o,"\134\165\045\060\064\170", 0xd800 | (uc & 0x3ff));
-            }
+            uc -= 0x10000;
+            if( (sffsdrnandflash=BufPrint_printf(
+                    o,"\134\165\045\060\064\170", 0xd800 | (uc >> 10))) < 0)
+               return sffsdrnandflash;
+            if( (sffsdrnandflash=BufPrint_printf(
+                    o,"\134\165\045\060\064\170", 0xdc00 | (uc & 0x3ff))) < 0)
+               return sffsdrnandflash;
          }
       }
-      else if(*str == '\134')
-         BufPrint_write(o,"\134\134",2);
-      else if(*str == '\057')
-         BufPrint_write(o, "\134\057",2);
-      else if(*str == 0x7f)
-         BufPrint_printf(o,"\134\165\045\060\064\170",(unsigned)*str);
-      else
-         BufPrint_putcMacro(o, *str);
-      str++;
    }
    BufPrint_putcMacro(o,'\042');
    return 0;
@@ -55474,7 +55487,8 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
 
          if(*fmt++ == '\152')
          {
-            BufPrint_jsonString(o, ptr);
+            if( (handlersetup=BufPrint_jsonString(o, ptr, (size_t)instructionemulation)) != 0 )
+               return handlersetup;
          }
          else
          {
@@ -72638,6 +72652,8 @@ typedef struct
 static void
 patchvector(ParseBasicHeader* o, const char* rtcmatch2clockdev)
 {
+   int len;
+   BaBool bv1;
    o->username = 0;
    o->passwd = 0;
 
@@ -72647,7 +72663,10 @@ patchvector(ParseBasicHeader* o, const char* rtcmatch2clockdev)
 
    rtcmatch2clockdev+=6;
    
-   o->buf[baB64Decode(o->buf, sizeof(o->buf), rtcmatch2clockdev)]=0;
+   len=baB64Decode(o->buf, sizeof(o->buf)-1, rtcmatch2clockdev, &bv1);
+   if(bv1)
+      return;
+   o->buf[len]=0;
    o->passwd = bStrchr((char*)o->buf, '\072');
    if(o->passwd)
    {
@@ -91855,6 +91874,7 @@ static void
 wbinvrange(JLexer* o, JParserVal* v)
 {
    v->v.s = (char*)o->asmB->buf;
+   v->stringLen = o->asmB->index;
    v->t = JParserT_String;
 }
 
@@ -91962,6 +91982,36 @@ writeguest(JLexer* o)
 }
 
 
+static int
+bv2(JLexer* o, U32 cryptblock)
+{
+   JDBuf* asmB=o->asmB;
+   if(JDBuf_expandIfNeeded(asmB,4))
+      return -1;
+   if(cryptblock < 0x80)
+      asmB->buf[asmB->index++]=(U8)cryptblock;
+   else if(cryptblock < 0x800)
+   {
+      asmB->buf[asmB->index++]=(U8)(0xc0|(cryptblock >> 6));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   else if(cryptblock < 0x10000)
+   {
+      asmB->buf[asmB->index++]=(U8)(0xe0|(cryptblock >> 12));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 6)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   else
+   {
+      asmB->buf[asmB->index++]=(U8)(0xf0|(cryptblock >> 18));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 12)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|((cryptblock >> 6)&0x3f));
+      asmB->buf[asmB->index++]=(U8)(0x80|(cryptblock & 0x3f));
+   }
+   return 0;
+}
+
+
 static JLexerT
 processorstate(JLexer* o)
 {
@@ -92021,22 +92071,55 @@ processorstate(JLexer* o)
 
          case JLexerSt_String:
             if(JDBuf_expandIfNeeded(o->asmB, 2)) return JLexerT_MemErr;
-            while(*o->tokenPtr != '\134')
+            for(;;)
             {
-               if(*o->tokenPtr == o->sn) 
+               U8 c=*o->tokenPtr;
+               if(c == '\134')
+               {
+                  o->tokenPtr++;
+                  o->state = JLexerSt_StringEscape;
+                  break;
+               }
+               if(c == o->sn) 
                {
                   asmB->buf[asmB->index]=0;
                   o->tokenPtr++;
                   o->state = JLexerSt_GetNextToken;
                   return JLexerT_String;
                }
-               asmB->buf[asmB->index++] = *o->tokenPtr++;
+               if(c < 0x20)
+                  return JLexerT_ParseErr;
+               if(c >= 0x80)
+               {
+                  if(c >= 0xc2 && c <= 0xdf)
+                  {
+                     o->unicode=c&0x1f;
+                     o->utf8Len=2;
+                  }
+                  else if(c >= 0xe0 && c <= 0xef)
+                  {
+                     o->unicode=c&0x0f;
+                     o->utf8Len=3;
+                  }
+                  else if(c >= 0xf0 && c <= 0xf4)
+                  {
+                     o->unicode=c&0x07;
+                     o->utf8Len=4;
+                  }
+                  else
+                     return JLexerT_ParseErr;
+                  o->unicodeShift=(S16)(o->utf8Len-1);
+                  asmB->buf[asmB->index++]=c;
+                  o->tokenPtr++;
+                  o->state=JLexerSt_StringUtf8;
+                  break;
+               }
+               asmB->buf[asmB->index++] = c;
+               o->tokenPtr++;
                if(JDBuf_expandIfNeeded(o->asmB, 1)) return JLexerT_MemErr;
                if(o->tokenPtr == o->bufEnd)
                   return JLexerT_NeedMoreData;
             }
-            o->tokenPtr++;
-            o->state = JLexerSt_StringEscape;
             break;
 
          case JLexerSt_StringEscape:
@@ -92050,7 +92133,6 @@ processorstate(JLexer* o)
                case '\156':
                case '\162':
                case '\164':
-               case '\166':
                   switch(*o->tokenPtr)
                   {
                      case '\042':  asmB->buf[asmB->index]='\042';  break;
@@ -92061,7 +92143,6 @@ processorstate(JLexer* o)
                      case '\156':  asmB->buf[asmB->index]='\012'; break;
                      case '\162':  asmB->buf[asmB->index]='\015'; break;
                      case '\164':  asmB->buf[asmB->index]='\011'; break;
-                     case '\166':  asmB->buf[asmB->index]='\013'; break;
                   }
                   asmB->index++;
                   o->tokenPtr++;
@@ -92096,29 +92177,66 @@ processorstate(JLexer* o)
             o->tokenPtr++;
             baAssert(o->unicodeShift >= 0);
             if( ! o->unicodeShift )
-            {  
-               if(JDBuf_expandIfNeeded(o->asmB, 4)) return JLexerT_MemErr;
-               if (o->unicode < 0x80)
+            {
+               if(o->surrogate)
                {
-                  asmB->buf[asmB->index++] = (U8)o->unicode;
+                  if(o->unicode < 0xdc00 || o->unicode > 0xdfff)
+                     return JLexerT_ParseErr;
+                  o->unicode=0x10000+
+                     (((U32)o->surrogate-0xd800)<<10)+
+                     (o->unicode-0xdc00);
+                  o->surrogate=0;
                }
-               else if (o->unicode < 0x800)
+               else if(o->unicode >= 0xd800 && o->unicode <= 0xdbff)
                {
-                  asmB->buf[asmB->index++]=(U8)(0xc0|(o->unicode >> 6));
-                  asmB->buf[asmB->index++]=(U8)(0x80|(o->unicode & 0x3f));
+                  o->surrogate=(U16)o->unicode;
+                  o->state=JLexerSt_StringSurrogateEscape;
+                  break;
                }
-               else
-               {
-                  asmB->buf[asmB->index++]=
-                     (U8)(0xe0 | (o->unicode >> 12));
-                  asmB->buf[asmB->index++]=
-                     (U8)(0x80 | ((o->unicode>>6)&0x3f));
-                  asmB->buf[asmB->index++]=
-                     (U8)(0x80 | (o->unicode & 0x3f));
-               }
+               else if(o->unicode >= 0xdc00 && o->unicode <= 0xdfff)
+                  return JLexerT_ParseErr;
+               if(bv2(o,o->unicode))
+                  return JLexerT_MemErr;
                o->state = JLexerSt_String;
             }
-            o->unicodeShift -= 4;
+            else
+               o->unicodeShift -= 4;
+            break;
+         }
+
+         case JLexerSt_StringSurrogateEscape:
+            if(*o->tokenPtr++ != '\134')
+               return JLexerT_ParseErr;
+            o->state=JLexerSt_StringSurrogateU;
+            break;
+
+         case JLexerSt_StringSurrogateU:
+            if(*o->tokenPtr++ != '\165')
+               return JLexerT_ParseErr;
+            o->unicode=0;
+            o->unicodeShift=12;
+            o->state=JLexerSt_StringUnicode;
+            break;
+
+         case JLexerSt_StringUtf8:
+         {
+            U32 bv3;
+            U8 c=*o->tokenPtr;
+            if((c&0xc0) != 0x80)
+               return JLexerT_ParseErr;
+            if(JDBuf_expandIfNeeded(o->asmB,1))
+               return JLexerT_MemErr;
+            asmB->buf[asmB->index++]=c;
+            o->tokenPtr++;
+            o->unicode=(o->unicode<<6)|(c&0x3f);
+            if(--o->unicodeShift)
+               break;
+            bv3=o->utf8Len == 2 ? 0x80 :
+               (o->utf8Len == 3 ? 0x800 : 0x10000);
+            if(o->unicode < bv3 || o->unicode > 0x10ffff ||
+               (o->unicode >= 0xd800 && o->unicode <= 0xdfff))
+               return JLexerT_ParseErr;
+            o->state=JLexerSt_String;
             break;
          }
 
@@ -92197,6 +92315,8 @@ processorstate(JLexer* o)
                   if(JDBuf_expandIfNeeded(o->asmB, 2))
                      return JLexerT_MemErr;
                   o->sn = *o->tokenPtr++;
+                  o->surrogate=0;
+                  o->utf8Len=0;
                   o->state = JLexerSt_String;
                   break;
 
@@ -92260,6 +92380,9 @@ pinnedasids(JParser* o)
    if(handlersetup)
       aintcconfig(o, JParsStat_IntfErr, -1);
    o->val.memberName[0]=0;
+   o->val.memberNameLen=0;
+   o->val.memberNameSet=FALSE;
+   o->val.stringLen=0;
    return handlersetup;
 }
 
@@ -92347,6 +92470,8 @@ JParser_parse(JParser* o, const U8* buf, U32 icachealiases)
                goto L_value;
 
          case JParserSt_MemberName:
+            o->val.memberNameLen=o->mnameB.index;
+            o->val.memberNameSet=lexerT == JLexerT_String;
             JDBuf_reset(&o->mnameB);
             o->lexer.asmB = &o->asmB;
             if(lexerT == JLexerT_EndObject)
@@ -92698,6 +92823,7 @@ SharkSslCon_trusted(SharkSslCon *o, const char *gpio1config, SharkSslCertInfo **
 
 #include <JEncoder.h>
 #include <ctype.h>
+#include <string.h>
 
 
 
@@ -92719,6 +92845,9 @@ permissionfault(JEncoder* o)
    JErr_setError(o->err, JErrT_IOErr, "\103\141\156\156\157\164\040\167\162\151\164\145");
    return -1;
 }
+
+static int bv4(
+   JEncoder* o, const char* gpio1config, size_t len);
 
 static int
 timerdispatch(JEncoder* o)
@@ -92840,13 +92969,13 @@ JEncoder_setDouble(JEncoder* o, double val)
 
 
 int
-JEncoder_setString(JEncoder* o, const char* val)
+JEncoder_setString(JEncoder* o, const char* val, size_t len)
 {
    if(fixupdevice(o, FALSE))
    {
       if(val)
       {
-         if(BufPrint_jsonString(o->out,val)<0)
+         if(BufPrint_jsonString(o->out,val,len)<0)
             return permissionfault(o);
       }
       else
@@ -92939,7 +93068,8 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
    {
       if( JVal_isObjectMember(val) && ! o->objectMember )
       {
-         JEncoder_setName(o, JVal_getName(val));
+         bv4(
+            o,JVal_getName(val),JVal_getNameLen(val));
       }
       switch(JVal_getType(val))
       {
@@ -92968,8 +93098,12 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
             break;
 
          case JVType_String:
-            JEncoder_setString(o, JVal_getString(val, o->err));
+         {
+            const char* s = JVal_getString(val, o->err);
+            JEncoder_setString(
+               o,s,s ? JVal_getStringLen(val) : 0);
             break;
+         }
 
          case JVType_Object:
             JEncoder_beginObject(o);
@@ -92992,16 +93126,24 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
 }
 #endif
 
-int
-JEncoder_setName(JEncoder* o, const char* gpio1config)
+static int
+bv4(JEncoder* o, const char* gpio1config, size_t len)
 {
    if(fixupdevice(o, TRUE))
    {
-      if(BufPrint_printf(o->out, "\042\045\163\042\072", gpio1config)<0)
+      if(BufPrint_jsonString(o->out,gpio1config,len)<0 ||
+         BufPrint_putc(o->out, '\072')<0)
          return permissionfault(o);
       return 0;
    }
    return -1;
+}
+
+
+int
+JEncoder_setName(JEncoder* o, const char* gpio1config)
+{
+   return bv4(o,gpio1config,strlen(gpio1config));
 }
 
 
@@ -93122,8 +93264,11 @@ icacheflush(JEncoder* o, const char sha256export, void* lcdspigpiod, int len)
             JEncoder_setDouble(o, ((double*)lcdspigpiod)[i]);
             break;
          case '\163':
-            JEncoder_setString(o, ((const char**)lcdspigpiod)[i]);
+         {
+            const char* s = ((const char**)lcdspigpiod)[i];
+            JEncoder_setString(o, s, s ? strlen(s) : 0);
             break;
+         }
          case '\112':
             JEncoder_setJV(o, ((JVal**)lcdspigpiod)[i], FALSE);
             break;
@@ -93179,8 +93324,11 @@ JEncoder_vSetJV(JEncoder* o, const char** fmt, va_list* breakpointthread)
             JEncoder_setDouble(o, va_arg(*breakpointthread, double));
             break;
          case '\163':
-            JEncoder_setString(o, va_arg(*breakpointthread, char*));
+         {
+            const char* s = va_arg(*breakpointthread, char*);
+            JEncoder_setString(o, s, s ? strlen(s) : 0);
             break;
+         }
          case '\156':
             JEncoder_setNull(o);
             break;
@@ -93473,28 +93621,49 @@ static JVal* JVal_extract(
    JVal* o,JErr* err,const char** fmt, va_list* breakpointthread);
 
 
+static char*
+JVal_dup(AllocatorIntf* unmapaliases, const char* src, size_t len)
+{
+   size_t icachealiases=len+1;
+   char* dst;
+   if(icachealiases <= len)
+      return 0;
+   dst=(char*)AllocatorIntf_malloc(unmapaliases,&icachealiases);
+   if(dst)
+   {
+      memcpy(dst,src,len);
+      dst[len]=0;
+   }
+   return dst;
+}
+
+
 
 static int
 pcimtsetup(JVal* o, JVal* checkstack, JParserVal* pv, AllocatorIntf* threadcleanup)
 {
    memset(o, 0, sizeof(JVal));
-   if(*pv->memberName)
+   if(pv->memberNameSet)
    {
-      o->memberName = baStrdup2(threadcleanup, pv->memberName);
+      o->memberName = JVal_dup(
+         threadcleanup,pv->memberName,pv->memberNameLen);
       if( ! o->memberName )
          return -1;
+      o->memberNameLen=pv->memberNameLen;
    }
    switch(pv->t)
    {
       case JParserT_String:
          o->type = JVType_String;
-         o->v.s = (U8*)baStrdup2(threadcleanup, (char*)pv->v.s);
+         o->v.s = (U8*)JVal_dup(
+            threadcleanup,(char*)pv->v.s,pv->stringLen);
          if( ! o->v.s )
          {
             if(o->memberName)
                AllocatorIntf_free(threadcleanup, o->memberName);
             return -1;
          }
+         o->stringLen=pv->stringLen;
          break;
       case JParserT_Double:
 #ifdef NO_DOUBLE
@@ -93682,8 +93851,11 @@ JVal_extractObject(JVal* o,JErr* err,const char** fmt,va_list* breakpointthread)
    {
       const char* n;
       const char* gpio1config = va_arg(*breakpointthread, const char*);
+      size_t alignresource=strlen(gpio1config);
       JVal* instructioncounter = o;
-      while(instructioncounter && (n = JVal_getName(instructioncounter))!=0 && strcmp(gpio1config,n) )
+      while(instructioncounter && (n = JVal_getName(instructioncounter))!=0 &&
+            (JVal_getNameLen(instructioncounter) != alignresource ||
+             memcmp(gpio1config,n,alignresource)))
          instructioncounter = JVal_getNextElem(instructioncounter);
       if(!instructioncounter)
       {
@@ -93875,6 +94047,7 @@ JVal_manageString(JVal* o, JErr* e)
       {
          char* ptr = (char*)o->v.s;
          o->v.s=0;
+         o->stringLen=0;
          return ptr;
       }
       JErr_setTypeErr(e, JVType_String, o->type);
@@ -93897,6 +94070,7 @@ JVal_manageName(JVal* o)
    {
       char* ptr = o->memberName;
       o->memberName=0;
+      o->memberNameLen=0;
       return ptr;
    }
    return 0;
@@ -93994,10 +94168,12 @@ JVal_setX(JVal* o, JErr* e, JVType t, void* v)
     return;
   }
   o->type = t;
+  o->stringLen=0;
   switch(t)
   {
          case JVType_String:
             o->v.s=(U8*)v;
+            o->stringLen=v ? strlen((char*)v) : 0;
             break;
          case JVType_Double:
 #ifdef NO_DOUBLE
@@ -94073,6 +94249,8 @@ JVal_addMember(JVal* o, JErr* e, const char* resetcontrol,
          {
             writeretired->memberName =
                threadcleanup ? baStrdup2(threadcleanup, resetcontrol) : (char*)resetcontrol;
+            if(writeretired->memberName)
+               writeretired->memberNameLen=strlen(resetcontrol);
          }
          if(writeretired->memberName)
             return segmentnumber(o, writeretired);
@@ -94247,6 +94425,8 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
             v->v.s=(U8*)baStrdup2(o->dAlloc, (const char*)uv);
             if(!v->v.s)
                t = JVType_InvalidType;
+            else
+               v->stringLen=strlen((const char*)uv);
             break;
          case JVType_Double:
 #ifdef NO_DOUBLE
@@ -101075,7 +101255,6 @@ ocelotpcb123(lua_State *L)
 
 static void*
 balua_alloc(void *ud, void *ptr, size_t hugetlbvalid, size_t ahashsetkey) {
-   register void* mem;
    (void)ud;
    (void)hugetlbvalid;
    if (ahashsetkey == 0)
@@ -101083,18 +101262,8 @@ balua_alloc(void *ud, void *ptr, size_t hugetlbvalid, size_t ahashsetkey) {
       baFree(ptr);
       return 0;
    }
-   else
-   {
-      mem = baRealloc(ptr, ahashsetkey);
-      if (!mem)
-      {
-         luaC_fullgc(((BaLua_param *)ud)->L, 1);
-         mem = baRealloc(ptr, ahashsetkey);
-         if (!mem)
-            baFatalE(FE_MALLOC, (unsigned int)ahashsetkey);
-      }
-      return mem;
-   }
+   
+   return baRealloc(ptr, ahashsetkey);
 }
 
 
@@ -101121,22 +101290,32 @@ _balua_create(const BaLua_param* p, int dummywrite)
    int sffsdrnandflash;
    lua_State *L;
    BaLua_param* pc; 
-   pc=(BaLua_param*)baMalloc(sizeof(BaLua_param));
-   pc->zipBinPwd = p->zipBinPwd;
-   pc->zipBinPwdLen = p->zipBinPwdLen;
-   pc->pwdRequired = p->pwdRequired;
 
 #ifdef NO_BA_SERVER
-   L=p->L;
-   baAssert(L);
+   if(!p || dummywrite != BALUA_VERSION || !p->L)
 #else
    lSharkSSLFuncs=0;
    if(!p || dummywrite != BALUA_VERSION || p->L || !p->vmio)
+#endif
    {
       HttpTrace_printf(0,
          "\102\141\114\165\141\137\160\141\162\141\155\072\040\167\162\157\156\147\040\166\145\162\163\151\157\156\040\157\162\040\151\156\143\157\162\162\145\143\164\040\160\141\162\141\155\163");
       return 0;
    }
+#ifdef NO_BA_SERVER
+   L=p->L;
+#endif
+
+   pc=(BaLua_param*)baMalloc(sizeof(BaLua_param));
+   if(!pc)
+   {
+      HttpTrace_printf(0,"\102\141\114\165\141\137\160\141\162\141\155\072\040\156\157\164\040\145\156\157\165\147\150\040\155\145\155\157\162\171");
+      return 0;
+   }
+   memcpy(pc, p, sizeof(BaLua_param));
+   pc->L=0;
+
+#ifndef NO_BA_SERVER
    
    sharkssl_entropy((U32)((uintptr_t)pc));
    sharkssl_entropy((U32)(baGetMsClock() + baGetUnixTime()));
@@ -101144,6 +101323,7 @@ _balua_create(const BaLua_param* p, int dummywrite)
    if( !(L = lua_newstate(balua_alloc,pc, sffsdrnandflash)) ) 
    {
       HttpTrace_printf(0,"\154\165\141\040\163\164\141\164\145\072\040\156\157\164\040\145\156\157\165\147\150\040\155\145\155\157\162\171");
+      baFree(pc);
       return 0;
    }
    lua_atpanic(L, write64uint16);
@@ -101155,7 +101335,6 @@ _balua_create(const BaLua_param* p, int dummywrite)
    lua_createtable(L,20,0);
    
    lua_pushlightuserdata(L, pc);
-   memcpy(pc, p, sizeof(BaLua_param));
    pc->L=L;
 #ifdef NO_BA_SERVER
    pc->mutex=p->mutex;
@@ -101398,6 +101577,7 @@ luaopen_ba_xmlrpc(lua_State* L)
 #ifndef NO_SHARKSSL
 
 #include <DynBuffer.h>
+#include <limits.h>
 
 #include <SharkSslCrypto.h>
 
@@ -101408,8 +101588,10 @@ currentblocked(lua_State* L)
   U8 sourcerouting[32];
   U16 pernodememory = (U16)luaL_optinteger(L, 1, 16);
   if(pernodememory != 16) pernodememory=32;
-  sharkssl_rng(sourcerouting, pernodememory);
+  if(sharkssl_rng(sourcerouting, pernodememory) < 0)
+     return luaL_error(L,"\162\141\156\144\157\155\040\147\145\156\145\162\141\164\157\162\040\146\141\151\154\145\144");
   lua_pushlstring(L, (char*)sourcerouting, pernodememory);
+  memset(sourcerouting,0,sizeof(sourcerouting));
   return 1;
 }
 
@@ -101436,44 +101618,58 @@ aesPadKey(U8 keyOut[32], const char* featureextract, size_t len)
 
 
 static int
+bv5(lua_State* L)
+{
+   return luaL_argerror(L,2,"\101\105\123\040\151\156\160\165\164\040\164\157\157\040\154\141\162\147\145");
+}
+
+
+static int
+bv6(lua_State* L)
+{
+   return luaL_error(L,"\045\163",baErr2Str(E_MALLOC));
+}
+
+
+static int
 exceptionhandler(lua_State* L)
 {
-   size_t keyInLen,dataInLen,flashparts,mod,x;
+   size_t keyInLen,dataInLen,totalLen;
    U8* alloccontroller;
    const char* featureextract = luaL_checklstring(L,1,&keyInLen);
    const char* pcie1controller = luaL_checklstring(L,2,&dataInLen);
-   x = (lua_isboolean(L,3) ? lua_toboolean(L,3) : TRUE) ? 4 : 0;
-   flashparts = dataInLen+x;
-   mod = (flashparts%16);
-   if(mod != 0) flashparts = flashparts + 16 - mod;
-   alloccontroller = (U8*)baLMalloc(L,flashparts);
+   if(dataInLen > (size_t)UINT_MAX-28)
+      return bv5(L);
+   totalLen=dataInLen+28; 
+   if(totalLen > ((((size_t)INT_MAX-8)*3)/4))
+      return bv5(L);
+   alloccontroller = (U8*)baLMalloc(L,totalLen);
    if(alloccontroller)
    {
-      SharkSslAesCtx aesCtx;
+      SharkSslAesGcmCtx aesCtx;
       DynBuffer buf;
-      U8 IV[16];
       U8 sourcerouting[32];
       U8 creategroup;
-      U32 len = (U32)dataInLen;
-      if(x == 4)
+      if(sharkssl_rng(alloccontroller,12) < 0)
       {
-         len = baNtohl(len);
-         memcpy(alloccontroller, &len, 4);
+         baFree(alloccontroller);
+         return luaL_error(L,"\162\141\156\144\157\155\040\147\145\156\145\162\141\164\157\162\040\146\141\151\154\145\144");
       }
-      memcpy(alloccontroller+x,pcie1controller,dataInLen);
+      memcpy(alloccontroller+12,pcie1controller,dataInLen);
       creategroup = aesPadKey(sourcerouting, featureextract,keyInLen);
-      memset(IV, 0, sizeof(IV));
-      SharkSslAesCtx_constructor(&aesCtx, SharkSslAesCtx_Encrypt, sourcerouting, creategroup);
-      SharkSslAesCtx_ctr_mode(&aesCtx, IV, alloccontroller, alloccontroller, (U16)flashparts);
-      SharkSslAesCtx_destructor(&aesCtx);
-      DynBuffer_constructor(&buf, (int)(((flashparts * 4)/3) + 8), 0, 0, 0);
-      BufPrint_b64urlEncode((BufPrint*)&buf, alloccontroller, (S32)flashparts, FALSE);
+      SharkSslAesGcmCtx_constructor(&aesCtx,sourcerouting,creategroup);
+      SharkSslAesGcmCtx_encrypt(
+         &aesCtx,alloccontroller,alloccontroller+12+dataInLen,0,0,alloccontroller+12,alloccontroller+12,(U32)dataInLen);
+      SharkSslAesGcmCtx_destructor(&aesCtx);
+      memset(sourcerouting,0,sizeof(sourcerouting));
+      DynBuffer_constructor(&buf, (int)(((totalLen * 4)/3) + 8), 0, 0, 0);
+      BufPrint_b64urlEncode((BufPrint*)&buf, alloccontroller, (S32)totalLen, FALSE);
       lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
       DynBuffer_destructor(&buf);
       baFree(alloccontroller);
       return 1;
    }
-   return 0;
+   return bv6(L);
 }
 
 static int
@@ -101481,47 +101677,50 @@ switchrequest(lua_State* L)
 {
    int handlersetup=0;
    size_t keyInLen;
-   size_t l,x;
+   size_t l;
    U32 rc;
    U8* b;
    const char* featureextract = luaL_checklstring(L,1,&keyInLen);
    const char* pcie1controller = luaL_checklstring(L,2,&l);
-   x = (lua_isboolean(L,3) ? lua_toboolean(L,3) : TRUE) ? 4 : 0;
-   l =  (l*3)/4+16;
-   b = (U8*)baLMalloc(L,l);
+   if(memchr(pcie1controller,0,l))
+      return luaL_argerror(L,2,"\145\155\142\145\144\144\145\144\040\116\125\114\040\151\163\040\156\157\164\040\166\141\154\151\144\040\102\141\163\145\066\064");
+   if(l > INT_MAX)
+      return bv5(L);
+   b = (U8*)baLMalloc(L,l ? l : 1);
    if(b)
    {
-      rc =  baB64Decode(b, (int)l, pcie1controller);
-      if(rc % 16 == 0)
+      BaBool bv1;
+      rc = baB64Decode(b,(int)l,pcie1controller,&bv1);
+      if(bv1)
       {
-         SharkSslAesCtx aesCtx;
-         U32 len;
-         U8 IV[16];
-         U8 sourcerouting[32];
-         U8 creategroup;
-         memset(IV, 0, sizeof(IV));
-         creategroup = aesPadKey(sourcerouting, featureextract, keyInLen);
-         SharkSslAesCtx_constructor(&aesCtx,SharkSslAesCtx_Encrypt,sourcerouting,creategroup);
-         SharkSslAesCtx_ctr_mode(&aesCtx, IV, b, b, (U16)rc);
-         SharkSslAesCtx_destructor(&aesCtx);
-         if(x == 4)
-         {
-            memcpy(&len, b, 4);
-            len = baNtohl(len);
-            if(len <= rc)
-            {
-               lua_pushlstring(L, (char*)(b+x),len);
-               handlersetup=1;
-            }
-         }
-         else
-         {
-            lua_pushlstring(L, (char*)b,rc);
-            handlersetup=1;
-         }
+         baFree(b);
+         return luaL_error(L,"\102\141\163\145\066\064\040\157\165\164\160\165\164\040\157\166\145\162\146\154\157\167");
+      }
+      if(rc >= 28)
+      {
+          int err;
+          U32 rebootnotifier=rc-28;
+          SharkSslAesGcmCtx aesCtx;
+          U8 sourcerouting[32];
+          U8 creategroup;
+          creategroup = aesPadKey(sourcerouting, featureextract, keyInLen);
+          SharkSslAesGcmCtx_constructor(&aesCtx,sourcerouting,creategroup);
+          err=SharkSslAesGcmCtx_decrypt(
+             &aesCtx,b,b+12+rebootnotifier,0,0,b+12,b+12,rebootnotifier);
+          SharkSslAesGcmCtx_destructor(&aesCtx);
+          memset(sourcerouting,0,sizeof(sourcerouting));
+          if(!err)
+          {
+             lua_pushlstring(L,(char*)b+12,rebootnotifier);
+             handlersetup=1;
+          }
+          if(rebootnotifier)
+             memset(b+12,0,rebootnotifier);
       }
       baFree(b);
    }
+   else
+      return bv6(L);
    return handlersetup;
 }
 
@@ -101688,7 +101887,10 @@ baCheckZipSignature(const U8* deviceassert, U32 interfaceregister, CspReader* gu
    int sffsdrnandflash;
    char* ptr;
    U32 restorecontext = 0x06054b50;
-   char* buf = baMalloc(512 + SHARKSSL_SHA256_HASH_LEN + 100);
+   char* buf;
+   if(!deviceassert || !guestconfigs || !guestconfigs->readCB || interfaceregister < 512)
+      return -1;
+   buf = baMalloc(512 + SHARKSSL_SHA256_HASH_LEN + 100);
    if(!buf) return E_MALLOC;
    if( 0 != (sffsdrnandflash = guestconfigs->readCB(guestconfigs, buf, interfaceregister-512, 512, 0)) )
       goto L_err;
@@ -103178,7 +103380,6 @@ balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
 }
 
 
-
 #ifndef BA_LIB
 #define BA_LIB 1
 #endif
@@ -103193,6 +103394,20 @@ balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
 #include <AuthenticatedUser.h>
 
 
+
+
+static int
+bv7(lua_State* L)
+{
+  return luaL_error(L,"\045\163",baErr2Str(E_MALLOC));
+}
+
+
+static int
+bv8(lua_State* L)
+{
+  return luaL_argerror(L,1,"\145\155\142\145\144\144\145\144\040\116\125\114\040\151\163\040\156\157\164\040\166\141\154\151\144\040\125\122\114\040\164\145\170\164");
+}
 
 
 static int
@@ -103215,10 +103430,21 @@ probesdecode(lua_State* L)
   size_t l=0;
   const char* s = luaL_checklstring(L,1, &l);
   int rc;
+  BaBool bv1;
   char* b;
-  l =  ((l * 4) / 3) + 16;
-  b = (char*)baLMalloc(L, l );
-  rc =  baB64Decode((unsigned char*)b, (int)l, s);
+  if(memchr(s,0,l))
+     return luaL_argerror(L,1,"\145\155\142\145\144\144\145\144\040\116\125\114\040\151\163\040\156\157\164\040\166\141\154\151\144\040\102\141\163\145\066\064");
+  if(l > INT_MAX)
+     return luaL_argerror(L,1,"\102\141\163\145\066\064\040\151\156\160\165\164\040\164\157\157\040\154\141\162\147\145");
+  b = (char*)baLMalloc(L, l ? l : 1);
+  if(!b)
+     return bv7(L);
+  rc = baB64Decode((unsigned char*)b,(int)l,s,&bv1);
+  if(bv1)
+  {
+     baFree(b);
+     return luaL_error(L,"\102\141\163\145\066\064\040\157\165\164\160\165\164\040\157\166\145\162\146\154\157\167");
+  }
   lua_pushlstring(L, b,rc);
   baFree(b);
   return 1;
@@ -103384,6 +103610,7 @@ onlinenodes(lua_State* L)
       {
          lua_rawgeti(L, 1, i);
          alloccontroller = lua_tolstring(L, -1, &len);
+         
          lua_pop(L, 1);
          if(len)
             simulatereladr(&startearly, &emulatehiregs, alloccontroller, len);
@@ -103665,10 +103892,19 @@ physicaladdress(lua_State* L)
 {
   size_t l=0;
   const char* s = luaL_checklstring(L,1, &l);
-  char* buf = (char*)baStrdup(s);
+  char* buf;
+  if(memchr(s,0,l))
+     return bv8(L);
+  buf = (char*)baStrdup(s);
+  if(!buf)
+     return bv7(L);
 
-  httpUnescape(buf);
-  lua_pushstring(L, buf);
+  if(!httpUnescape(buf))
+  {
+     baFree(buf);
+     return luaL_argerror(L,1,"\151\156\166\141\154\151\144\040\125\122\114\040\145\163\143\141\160\145\040\163\145\161\165\145\156\143\145");
+  }
+  lua_pushstring(L,buf);
   baFree(buf);
   return 1;
 }
@@ -103679,10 +103915,18 @@ staticidmap(lua_State* L)
 {
   size_t l=0;
   const char* s = luaL_checklstring(L,1, &l);
-  char* buf = (char*)baLMalloc(L,(l*3)+1);
+  char* buf;
+  char* end;
+  if(memchr(s,0,l))
+     return bv8(L);
+  if(l > (SIZE_MAX-1)/3)
+     return luaL_argerror(L,1,"\125\122\114\040\151\156\160\165\164\040\164\157\157\040\154\141\162\147\145");
+  buf = (char*)baLMalloc(L,(l*3)+1);
+  if(!buf)
+     return bv7(L);
 
-  httpEscape(buf, s);
-  lua_pushstring(L, buf);
+  end=httpEscape(buf, s);
+  lua_pushlstring(L,buf,(size_t)(end-buf));
   baFree(buf);
   return 1;
 }
@@ -104107,11 +104351,12 @@ spectrevector(JParserIntf* fdc37m81xconfig, JParserVal* pv, int setupserial)
       lua_newtable(L);
    }
    baAssert(setupserial > 0);
-   if(*pv->memberName) lua_pushstring(L, (const char*)pv->memberName);
+   if(pv->memberNameSet)
+      lua_pushlstring(L, (const char*)pv->memberName,pv->memberNameLen);
    switch(pv->t)
    {
       case JParserT_String:
-         lua_pushstring(L, (const char*)pv->v.s);
+         lua_pushlstring(L, (const char*)pv->v.s,pv->stringLen);
          break;
 
       case JParserT_Double:
@@ -104143,14 +104388,14 @@ spectrevector(JParserIntf* fdc37m81xconfig, JParserVal* pv, int setupserial)
 
       case JParserT_BeginObject:
       case JParserT_BeginArray:
-         lua_pushvalue(L, *pv->memberName ? -2 : -1);
+         lua_pushvalue(L, pv->memberNameSet ? -2 : -1);
          ix--;
          break;
 
       default:
          baAssert(0);
    }
-   if ( ! *pv->memberName )
+   if ( ! pv->memberNameSet )
       lua_rawseti(L, ix, (int)lua_rawlen(L, ix) + 1);
    else
       lua_rawset(L, ix-1);
@@ -104233,12 +104478,21 @@ static int
 notifierchain(lua_State* L)
 {
    DynBuffer buf;
+   int sffsdrnandflash;
    size_t l=0;
    const char* s = luaL_checklstring(L,1, &l);
 
    DynBuffer_constructor(&buf, (int)l, (int)(l < 64 ? 128 : l/2),
                          AllocatorIntf_getDefault(), 0);
-   BufPrint_jsonString((BufPrint*)&buf, s);
+   sffsdrnandflash=BufPrint_jsonString((BufPrint*)&buf, s, l);
+   if(sffsdrnandflash < 0 || DynBuffer_getECode(&buf))
+   {
+      int flushoffset=DynBuffer_getECode(&buf);
+      DynBuffer_destructor(&buf);
+      lua_pushnil(L);
+      lua_pushstring(L,flushoffset ? "\155\145\155" : "\165\164\146\070");
+      return 2;
+   }
    lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
    DynBuffer_destructor(&buf);
    return 1;
@@ -104279,6 +104533,21 @@ restoreclkdm(lua_State* L, int rd12rm0noflags, int modifycaller)
 #endif
 
 
+static int
+bv9(lua_State* L, BufPrint* b, int ix)
+{
+   size_t len;
+   const char* s=lua_tolstring(L,ix,&len);
+   if(BufPrint_jsonString(b,s,len)<0)
+   {
+      lua_pushnil(L);
+      lua_pushliteral(L,"\165\164\146\070");
+      return 2;
+   }
+   return 0;
+}
+
+
 int
 ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycaller)
 {
@@ -104306,8 +104575,15 @@ ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycalle
          switch (lua_type(L, -1))
          {
             case LUA_TSTRING:
-               BufPrint_jsonString(b, lua_tostring(L,-1));
+            {
+               int ret=bv9(L,b,-1);
+               if(ret)
+               {
+                  registerregion(L, rd12rm0noflags, modifycaller);
+                  return ret;
+               }
                break;
+            }
             case LUA_TNUMBER:
                if(lua_isinteger(L, -1))
                   BufPrint_printf(b, LUA_INTEGER_FMT, lua_tointeger(L,-1));
@@ -104349,9 +104625,30 @@ ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycalle
          if(i++) BufPrint_putc(b, '\054');
          earlyconsole = lua_type(L, -2);
          if(earlyconsole == LUA_TSTRING)
-            BufPrint_jsonString(b, lua_tostring(L,-2));
+         {
+            int ret=bv9(L,b,-2);
+            if(ret)
+            {
+               registerregion(L, rd12rm0noflags, modifycaller);
+               return ret;
+            }
+         }
          else if (earlyconsole == LUA_TNUMBER)
-            BufPrint_printf(b, "\042\045\165\042", lua_tointeger(L, -2));
+         {
+            size_t len;
+            const char* s;
+            lua_pushvalue(L,-2);
+            s=lua_tolstring(L,-1,&len);
+            if(BufPrint_jsonString(b,s,len)<0)
+            {
+               lua_pop(L,1);
+               registerregion(L, rd12rm0noflags, modifycaller);
+               lua_pushnil(L);
+               lua_pushliteral(L,"\165\164\146\070");
+               return 2;
+            }
+            lua_pop(L,1);
+         }
          else
          {
             lua_pushnil(L);
@@ -104363,8 +104660,15 @@ ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycalle
          switch (lua_type(L, -1))
          {
             case LUA_TSTRING:
-               BufPrint_jsonString(b, lua_tostring(L,-1));
+            {
+               int ret=bv9(L,b,-1);
+               if(ret)
+               {
+                  registerregion(L, rd12rm0noflags, modifycaller);
+                  return ret;
+               }
                break;
+            }
             case LUA_TNUMBER:
                if(lua_isinteger(L, -1))
                   BufPrint_printf(b, LUA_INTEGER_FMT, lua_tointeger(L,-1));
@@ -105021,6 +105325,8 @@ luaopen_ba_datetime(lua_State* L)
 #include <WebDAV.h>
 #include <HttpUpload.h>
 #include <zlib.h>
+
+#define LHTTP_RAW_READ_MAX (16*1024*1024)
 
 
 
@@ -107227,7 +107533,7 @@ kexeccleanup(lua_State* L)
 {
    luaL_Buffer b;
    HttpRecData* rd = (HttpRecData*)lua_touserdata(L,lua_upvalueindex(2));
-   size_t maxz = (int)lua_tointeger(L, lua_upvalueindex(3));
+   size_t maxz = (size_t)lua_tointeger(L, lua_upvalueindex(3));
    size_t zleft;
    char* buf;
    luaL_buffinit(L, &b);
@@ -107261,6 +107567,9 @@ debugexception(lua_State* L)
    SBaFileSize sffsdrnandflash;
    HttpRequest *r = LHttpCommand_toReq(L);
    lua_Integer icachealiases = luaL_optinteger(L, 2, LUAL_BUFFERSIZE);
+
+   if(icachealiases <= 0 || icachealiases > LHTTP_RAW_READ_MAX)
+      return luaL_argerror(L,2,"\162\141\167\040\162\145\141\144\040\163\151\172\145\040\155\165\163\164\040\142\145\040\142\145\164\167\145\145\156\040\061\040\141\156\144\040\061\066\040\115\151\102");
 
    
    lua_pushlightuserdata(L, r);
@@ -109167,7 +109476,8 @@ matchtable(lua_State* L)
       o->authorizerRef=eventmutex(o,L);
    }
    HttpDir_setAuthenticator(dir,authenticator,authorizer);
-   return 0;
+   lua_pushboolean(L, 1);
+   return 1;
 }
 
 
@@ -109883,7 +110193,6 @@ luaopen_ba_create(lua_State *L)
 {
    balua_newlib(L,baCreateLib);
 }
-
 
 
 
@@ -115066,6 +115375,7 @@ NetIo_destructor(NetIo* o)
 #include <HttpClient.h>
 #include <balua.h>
 #include <lxrc.h>
+#include <limits.h>
 
 
 
@@ -115102,35 +115412,68 @@ hugepagerange(LHttpClient* lc, lua_State* L, int err)
 }
 
 
+static void
+bv10(lua_State* L, int ix)
+{
+   if(LUA_TSTRING != lua_type(L,ix))
+      luaL_error(L,"\110\124\124\120\040\164\141\142\154\145\040\153\145\171\163\040\155\165\163\164\040\142\145\040\163\164\162\151\156\147\163");
+}
+
 int
 calcTabSize(lua_State* L, int ix)
 {
-   int n=0;
+   size_t n=0;
    if(lua_istable(L,ix))
    {
       lua_pushnil(L);  
       while(lua_next(L, ix) != 0)
       {
+         bv10(L,-2);
          if(lua_istable(L, -1))
          {
             lua_pushnil(L);  
-            while(lua_next(L, ix) != 0)
+            while(lua_next(L, -2) != 0)
             {
+               bv10(L,-1);
                n++;
                lua_pop(L, 1);
             }
-            n++;
          }
          else
+         {
+            bv10(L,-1);
             n++;
+         }
          lua_pop(L, 1);
       }
    }
-   return n ? (n+1)* sizeof(HttpClientKeyVal) : 0; 
+   if(n > ((size_t)INT_MAX / sizeof(HttpClientKeyVal))-1)
+      luaL_error(L,"\110\124\124\120\040\164\141\142\154\145\040\151\163\040\164\157\157\040\154\141\162\147\145");
+   return n ? (int)((n+1)*sizeof(HttpClientKeyVal)) : 0; 
 }
 
+
 static void
-nvramwrite(const char* tab, lua_State* L, int n, HttpClientKeyVal* kv, const char* k, const char* v)
+bv11(lua_State* L, BaBool bv12)
+{
+   luaL_error(L, bv12 ? "\110\124\124\120\040\143\162\145\144\145\156\164\151\141\154\163\040\141\162\145\040\164\157\157\040\154\141\162\147\145" :
+              "\110\124\124\120\040\162\145\161\165\145\163\164\040\144\141\164\141\040\151\163\040\164\157\157\040\154\141\162\147\145");
+}
+
+
+static void
+bv13(lua_State* L, size_t* bv14, size_t icachealiases,
+                BaBool bv12)
+{
+   if(icachealiases > (size_t)-1-*bv14)
+      bv11(L, bv12);
+   *bv14+=icachealiases;
+}
+
+
+static void
+nvramwrite(const char* tab, lua_State* L, int n,
+         HttpClientKeyVal* kv, const char* k, const char* v)
 {
    if(!k)
    {
@@ -115209,8 +115552,8 @@ r4000tlbchange(lua_State* L)
    const char* spinlockunlock;
    HttpClientKeyVal* cacheflush;
    HttpClientKeyVal* platformioremap;
-   int udSize, n, hIx, qIx;
-   int deasserthardreset=0;
+   size_t udSize,deasserthardreset=0;
+   int n, hIx, qIx;
    int helperpacket;
 
    LHttpClient* lc = tc(L);
@@ -115249,20 +115592,27 @@ r4000tlbchange(lua_State* L)
    }
 #endif
    if(hIx) 
-      udSize += calcTabSize(L,hIx);
+      bv13(L, &udSize, calcTabSize(L,hIx), FALSE);
    if(qIx) 
-      udSize += calcTabSize(L,qIx);
+      bv13(L, &udSize, calcTabSize(L,qIx), FALSE);
    if(buttonsbelkin)
    {
       if(!spinlockunlock)
       {
+         size_t userLen=strlen(buttonsbelkin);
          if(!strchr(buttonsbelkin, '\072')) 
             spinlockunlock="";
-         deasserthardreset = iStrlen(buttonsbelkin) + 2;
+         bv13(L, &deasserthardreset, userLen, TRUE);
       }
       else
-         deasserthardreset = iStrlen(buttonsbelkin) + iStrlen(spinlockunlock) + 2;
-      udSize += deasserthardreset;
+      {
+         bv13(L, &deasserthardreset, strlen(buttonsbelkin), TRUE);
+         bv13(L, &deasserthardreset, strlen(spinlockunlock), TRUE);
+      }
+      bv13(L, &deasserthardreset, 2, TRUE);
+      if(deasserthardreset > INT_MAX)
+         bv11(L, TRUE);
+      bv13(L, &udSize, deasserthardreset, FALSE);
    }
    ud = udSize ? (char*)lua_newuserdata(L, udSize) : 0;
    if(hIx) 
@@ -115299,7 +115649,7 @@ r4000tlbchange(lua_State* L)
    if(buttonsbelkin) 
    {
       if(spinlockunlock) 
-         basnprintf(ud, deasserthardreset, "\045\163\072\045\163",buttonsbelkin,spinlockunlock);
+         basnprintf(ud, (int)deasserthardreset, "\045\163\072\045\163",buttonsbelkin,spinlockunlock);
       else
          strcpy(ud,buttonsbelkin);
       buttonsbelkin=ud;
@@ -116633,7 +116983,13 @@ static int doublefnmsc(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslMd5Ctx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslMd5Ctx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,doublefnmsc,1);
    }
@@ -116660,7 +117016,13 @@ static int genericresume(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslSha1Ctx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslSha1Ctx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,genericresume,1);
    }
@@ -116687,7 +117049,13 @@ static int iommurelease(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslSha256Ctx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslSha256Ctx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,iommurelease,1);
    }
@@ -116714,7 +117082,13 @@ static int optimizekprobes(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslSha384Ctx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslSha384Ctx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,optimizekprobes,1);
    }
@@ -116740,7 +117114,13 @@ static int reportdeath(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslSha512Ctx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslSha512Ctx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,reportdeath,1);
    }
@@ -116774,7 +117154,13 @@ static int clkdmallow(lua_State *L)
    {
       size_t l;
       const U8* s = (const U8*)luaL_tolstring(L,1,&l);
-      SharkSslHMACCtx_append(registermcasp, s, (U16)l);
+      while(l)
+      {
+         U16 devicelcdspi = l > 0xFFFF ? 0xFFFF : (U16)l;
+         SharkSslHMACCtx_append(registermcasp, s, devicelcdspi);
+         s += devicelcdspi;
+         l -= devicelcdspi;
+      }
       lua_pushvalue(L, lua_upvalueindex(1));
       lua_pushcclosure(L,clkdmallow,1);
    }
@@ -117472,6 +117858,11 @@ vddminshift(lua_State *L)
 
 #define BASYMMETRIC "\102\101\123\131\115\115\105\124\122\111\103"
 
+
+#ifndef SHARKSSL_ENABLE_CCM_AUTH_ALL
+#define SHARKSSL_ENABLE_CCM_AUTH_ALL 0
+#endif
+
 #define toLBaSymmetric(L) (LBaSymmetric*)luaL_checkudata(L,1,BASYMMETRIC)
 
 struct LBaSymmetric;
@@ -117529,6 +117920,36 @@ hdq1wclass(lua_State *L, int ix)
       return TRUE;
    }
    return FALSE;
+}
+
+
+static int
+bv15(lua_State* L)
+{
+   return reportpanic(L,"\144\145\143\162\171\160\164\040\146\141\151\154\145\144");
+}
+
+
+static int
+bv16(U8* buf, size_t* len)
+{
+   size_t i;
+   U8 pad,resetcounter=0;
+   unsigned int bad;
+   if(*len == 0 || (*len & 15))
+      return -1;
+   pad=buf[*len-1];
+   bad=(pad == 0) | (pad > 16);
+   for(i=0 ; i < 16 ; i++)
+   {
+      U8 fpemulthreshold=(U8)(0-(U8)(i < pad));
+      resetcounter |= (U8)((buf[*len-1-i]^pad)&fpemulthreshold);
+   }
+   bad |= (resetcounter != 0);
+   if(bad)
+      return -1;
+   *len-=pad;
+   return 0;
 }
 
 
@@ -117608,6 +118029,8 @@ hdq1whwmod(lua_State *L)
          luaL_error(L, "\101\162\147\040\062\072\040\164\141\147\040\154\145\156\040\155\165\163\164\040\142\145\040\061\066");
       pmuv2events = o->mode == 2 ? hdq1wclass(L, 4) : 0;
    }
+   if(o->mode == 1 && pmuv2events && (rebootnotifier == 0 || (rebootnotifier & 15)))
+      return bv15(L);
    processconsole(o, L, rebootnotifier, o->mode);
    switch(o->mode)
    {
@@ -117630,11 +118053,37 @@ hdq1whwmod(lua_State *L)
    }
    if(ret)
    {
-      return reportpanic(L, "\144\145\143\162\171\160\164\040\146\141\151\154\145\144");
+      if(rebootnotifier)
+         memset(o->buf,0,rebootnotifier);
+      return bv15(L);
+   }
+   else if(pmuv2events && o->mode == 1)
+   {
+      if(bv16(o->buf,&rebootnotifier))
+      {
+         memset(o->buf,0,rebootnotifier);
+         return bv15(L);
+      }
    }
    else if(pmuv2events)
    {
-      rebootnotifier -= o->buf[rebootnotifier-1]; 
+      U8 pad;
+      size_t i;
+      if(rebootnotifier == 0)
+         return bv15(L);
+      pad=o->buf[rebootnotifier-1];
+      if(pad == 0 || pad > 8 || pad > rebootnotifier)
+      {
+         memset(o->buf,0,rebootnotifier);
+         return bv15(L);
+      }
+      for(i=0 ; i < pad ; i++)
+         if(o->buf[rebootnotifier-1-i] != pad)
+         {
+            memset(o->buf,0,rebootnotifier);
+            return bv15(L);
+         }
+      rebootnotifier-=pad;
    }
    lua_pushlstring(L, (char*)o->buf, rebootnotifier);
    return 1;
@@ -117647,6 +118096,18 @@ serialprint(lua_State *L)
    size_t authLen;
    LBaSymmetric* o = toLBaSymmetric(L);
    const U8* pmuv3event = (U8*)luaL_checklstring(L,2,&authLen);
+   if(o->mode == 2)
+   {
+#if SHARKSSL_ENABLE_CCM_AUTH_ALL
+      if(authLen >= 0xFEFF)
+         return luaL_argerror(L,2,"\103\103\115\040\141\165\164\150\145\156\164\151\143\141\164\151\157\156\040\144\141\164\141\040\145\170\143\145\145\144\163\040\066\065\062\067\070\040\142\171\164\145\163");
+#else
+      if(authLen >= 15)
+         return luaL_argerror(L,2,"\103\103\115\040\141\165\164\150\145\156\164\151\143\141\164\151\157\156\040\144\141\164\141\040\145\170\143\145\145\144\163\040\061\064\040\142\171\164\145\163");
+#endif
+   }
+   else if(authLen > 0xFFFF)
+      return luaL_argerror(L,2,"\141\165\164\150\145\156\164\151\143\141\164\151\157\156\040\144\141\164\141\040\145\170\143\145\145\144\163\040\066\065\065\063\065\040\142\171\164\145\163");
    if(o->authRef)
       luaL_unref(L, LUA_REGISTRYINDEX, o->authRef);
    o->auth=pmuv3event;
@@ -119153,6 +119614,7 @@ skcipherreqsize(lua_State *L)
    lua_Integer serial;
    U8 *deathsibling;
    int setupgeneric;
+   BaBool bv17;
    const char* stateremove=0;
    int enetswplatform=lua_gettop(L);
    const char* csr = luaL_checkstring(L, 1);
@@ -119172,7 +119634,10 @@ skcipherreqsize(lua_State *L)
    stateremove--; 
    setupgeneric = (int)(stateremove - csr);
    deathsibling = lua_newuserdata(L, setupgeneric);
-   setupgeneric = baB64Decode(deathsibling,setupgeneric,lua_pushlstring(L,csr,setupgeneric));
+   setupgeneric = baB64Decode(
+      deathsibling,setupgeneric,lua_pushlstring(L,csr,setupgeneric),&bv17);
+   if(bv17)
+      return reportpanic(L,"\043\061\054\040\103\123\122\040\151\163\040\164\157\157\040\154\141\162\147\145");
    sourcerouting = extractKeyAndPassword(L, keyIx, &emptytables);
    if(sharkssl_PEM(0, sourcerouting, emptytables, (SharkSslCert*)&mcbspplatform))
       return reportpanic(L,"\043\063\054\040\151\156\166\141\154\151\144\040\153\145\171");
@@ -119684,7 +120149,6 @@ balua_sharkssl(lua_State *L)
 }
 
 
-
 #ifdef NO_SHARKSSL
 #error This guestconfig2 requires SharkSSL. Exclude this debugsetup or undef NO_SHARKSSL
 #endif
@@ -119871,13 +120335,20 @@ setupiommu(lua_State* L, const char* msg)
 }
 
 
+static void
+bv18(lua_State* L)
+{
+   setupiommu(L,"\151\156\144\145\170\040\163\143\157\160\145");
+}
+
+
 static int
 sectionprologue(lua_State* L)
 {
    LByteArray* b = toByteArray(L);
    lua_Integer ix = lua_tointeger(L,2) - 1;
    if(ix < 0 || ix >= b->len)
-      setupiommu(L,"\151\156\144\145\170\040\163\143\157\160\145");
+      bv18(L);
    lua_pushinteger(L, (lua_Integer)b->array[b->startIx + ix]);
    return 1;
 }
@@ -119893,7 +120364,7 @@ uwiredevice(lua_State* L)
    int ix = (int)lua_tointeger(L,2) - 1;
    int rightsvalid = lua_type(L, 3);
    if(ix < 0 || (ix >= b->len && LUA_TSTRING != rightsvalid))
-      setupiommu(L, "\151\156\144\145\170\040\163\143\157\160\145");
+      bv18(L);
    switch(rightsvalid)
    {
       case LUA_TNUMBER:
@@ -120027,7 +120498,7 @@ preparereboot(lua_State* L)
    if(len < 0) len = 0;
 
    if(cachesysfs < 0 || (cachesysfs + len) > b->len)
-      setupiommu(L,"\151\156\144\145\170\040\163\143\157\160\145");
+      bv18(L);
 
    lua_pushlstring(L, (char*)(b->array + b->startIx + cachesysfs), len);
    return 1;
@@ -120057,7 +120528,7 @@ lookuptable(lua_State* L)
    --cachesysfs;
    len = end - cachesysfs;
    if(cachesysfs < 0 || len < 0 || (cachesysfs + len) > b->size)
-      setupiommu(L, "\151\156\144\145\170\040\163\143\157\160\145");
+      bv18(L);
 
    b->startIx = cachesysfs;
    b->len = len;
@@ -120068,46 +120539,45 @@ lookuptable(lua_State* L)
 static int
 preparedoptinsn(lua_State* L)
 {
-   int overflow,maxStrLen;
+   size_t bIx,probesibyte,linkxtimer,copyLen,actualLen,bv1;
+   lua_Integer ix;
    const char* str;
    LByteArray* b = toByteArray(L);
-   int bIx = (int)lua_tointeger(L, 2);
    size_t commonswizzle;
-   int probesibyte = (int)luaL_optinteger(L, 4, 1);
-   int linkxtimer = (int)luaL_optinteger(L, 5, -1);
    if(LUA_TUSERDATA == lua_type(L, 3))
    {
       LByteArray* bta = toByteArrayIx(L, 3);
-      str=(char*)(b->array + b->startIx);
-      commonswizzle=bta->len;
+      str=(char*)(bta->array + bta->startIx);
+      commonswizzle=(size_t)bta->len;
    }
    else
-      str = lua_tolstring(L, 3, &commonswizzle);
-   maxStrLen = (linkxtimer < 0) ? (int)commonswizzle+linkxtimer+1 : (int)commonswizzle;
-   if(maxStrLen > (int)commonswizzle)
-      goto L_rangeE;
-   if(bIx < 0)
-      bIx = b->len + bIx + 1;
-   else
-      bIx += b->startIx;
-   if(probesibyte < 0)
-      probesibyte = b->len + probesibyte + 1;
-   --bIx;
-   --probesibyte;
-   if(bIx < 0 || bIx > b->len)
-   {
-     L_rangeE:
-      setupiommu(L,"\151\156\144\145\170\040\163\143\157\160\145");
-   }
-   if((bIx + maxStrLen) > b->len)
-   {
-      overflow = bIx + maxStrLen - b->len;
-      maxStrLen -= overflow;
-   }
-   else
-      overflow=0;
-   memcpy(b->array+bIx,str+probesibyte,maxStrLen);
-   lua_pushinteger(L, overflow);
+      str = luaL_checklstring(L, 3, &commonswizzle);
+
+   ix=luaL_checkinteger(L,2);
+   if(ix < 0) ix=(lua_Integer)b->len+ix+1;
+   if(ix < 1 || ix > (lua_Integer)b->len+1)
+      bv18(L);
+   bIx=(size_t)(ix-1);
+
+   ix=luaL_optinteger(L,4,1);
+   if(ix < 0) ix=(lua_Integer)commonswizzle+ix+1;
+   if(ix < 1 || ix > (lua_Integer)commonswizzle+1)
+      bv18(L);
+   probesibyte=(size_t)(ix-1);
+
+   ix=luaL_optinteger(L,5,-1);
+   if(ix < 0) ix=(lua_Integer)commonswizzle+ix+1;
+   if(ix < 0 || ix > (lua_Integer)commonswizzle || ix < (lua_Integer)probesibyte)
+      bv18(L);
+   linkxtimer=(size_t)ix; 
+   copyLen=linkxtimer-probesibyte;
+   actualLen=copyLen;
+   if(actualLen > (size_t)b->len-bIx)
+      actualLen=(size_t)b->len-bIx;
+   bv1=copyLen-actualLen;
+   if(actualLen)
+      memmove(b->array+b->startIx+bIx,str+probesibyte,actualLen);
+   lua_pushinteger(L,(lua_Integer)bv1);
    return 1;
 }
 
@@ -121420,6 +121890,13 @@ bypassconsumer(lua_State* L)
       baAssert(s->L);
       baAssert(s->sref == 0);
       baAssert( ! SoDispCon_recEvActive(&s->con.soCon) );
+      
+      if(s->closed)
+      {
+         s->flags &= ~LSockFlag_DisabledBySelf;
+         s->sockState = LSockS_NotConnected;
+         return enterirqoff(L, E_SOCKET_CLOSED);
+      }
       
       lua_pushvalue (L, 1); 
       s->sref = luaL_ref(L, LUA_REGISTRYINDEX); 
@@ -127970,6 +128447,10 @@ ba_ldbgmon(lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData)
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <limits.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #ifndef BA_QNX
 #include <sys/ttydefaults.h>
 #endif
@@ -128009,6 +128490,13 @@ lDoErr(lua_State* L,const char* fmt, ...)
    lua_pushvfstring(L,fmt,demuxregids);
    va_end(demuxregids);
    return 2;
+}
+
+
+static int
+bv19(lua_State* L)
+{
+   return lDoErr(L,"\103\141\156\156\157\164\040\157\160\145\156\040\120\124\131\072\040\045\163",strerror(errno));
 }
 
 
@@ -128200,7 +128688,11 @@ earlyserial(ForkPTY* te, ThreadMutex* m)
       ThreadMutex_release(m);
       kill(te->pid, SIGKILL);
       close(pty);
-      close(te->pipefd[0]);
+      if(te->pipefd[0] >= 0)
+      {
+         close(te->pipefd[0]);
+         te->pipefd[0]=-1;
+      }
       ThreadMutex_set(m);
       te->busy=FALSE;
       if(te->Lt) 
@@ -128537,15 +129029,28 @@ static const luaL_Reg forkptyLib[] = {
 static int
 receivechars(lua_State* L, char* stateswitch, int* pty)
 {
+   int err;
    *pty = zzgetpt();
-   if (*pty < 0 || grantpt(*pty) < 0 || unlockpt(*pty) < 0)
-      return lDoErr(L,"\103\141\156\156\157\164\040\157\160\145\156\040\120\124\131\072\040\045\163",strerror(errno));
+   if (*pty < 0)
+      return bv19(L);
+   if(grantpt(*pty) < 0 || unlockpt(*pty) < 0)
+   {
+      err=errno;
+      close(*pty);
+      *pty=-1;
+      errno=err;
+      return bv19(L);
+   }
 #ifdef BA_QNX
    if( ! baptsname_r(*pty, stateswitch, PTY_NAME_SIZE-1) )
 #else
    if(baptsname_r(*pty, stateswitch, PTY_NAME_SIZE-1))
 #endif
    {
+      err=errno;
+      close(*pty);
+      *pty=-1;
+      errno=err;
       return lDoErr(L,"\160\164\163\156\141\155\145\137\162\072\040\045\163",strerror(errno));
    }
    return 0;
@@ -128579,11 +129084,28 @@ cryptoenable(const char* stateswitch, const char* errorhandler)
 }
 
 
+
+static void
+bv20(long bv21)
+{
+#if defined(__linux__) && defined(SYS_close_range)
+   if(0 == syscall(SYS_close_range, STDERR_FILENO+1, UINT_MAX, 0))
+      return;
+#endif
+   {
+      long fd;
+      for(fd=STDERR_FILENO+1 ; fd < bv21 ; fd++)
+         close((int)fd);
+   }
+}
+
+
 static int
 boardstore(lua_State* L)
 {
    char stateswitch[PTY_NAME_SIZE];
    int i,n,icachealiases,ret,funcIx,doublefsito;
+   long bv21;
    const char* cmd;
    const char** cmdArgv;
    char** env=0;
@@ -128600,6 +129122,8 @@ boardstore(lua_State* L)
    te = (ForkPTY*)lua_newuserdata(L, sizeof(ForkPTY));
    doublefsito = lua_gettop(L);
    memset(te, 0 , sizeof(ForkPTY));
+   te->pty=-1;
+   te->pipefd[0]=te->pipefd[1]=-1;
    te->exitCode=-1;
    cmdArgv[0] = cmd;
    for(i=1 ; i <= (icachealiases-n) ; i++)
@@ -128658,13 +129182,37 @@ boardstore(lua_State* L)
    }
    else
       funcIx=0;
-   if( (ret = receivechars(L, stateswitch, &te->pty)) != 0 ||
-       (ret = pipe(te->pipefd)) != 0 )
+   if( (ret = receivechars(L, stateswitch, &te->pty)) != 0)
+      return ret;
+   if(pipe(te->pipefd) != 0)
    {
-       return ret;
+      int err=errno;
+      close(te->pty);
+      te->pty=-1;
+      errno=err;
+      return lDoErr(L,"\160\151\160\145\072\040\045\163",strerror(errno));
    }
+   bv21=sysconf(_SC_OPEN_MAX);
+   if(bv21 <= STDERR_FILENO)
+   {
+#ifdef OPEN_MAX
+      bv21=OPEN_MAX;
+#else
+      bv21=1024;
+#endif
+   }
+   if(bv21 > INT_MAX)
+      bv21=INT_MAX;
    if ((te->pid = zzbafork()) < 0)
+   {
+      int err=errno;
+      close(te->pty);
+      close(te->pipefd[0]);
+      close(te->pipefd[1]);
+      te->pty=te->pipefd[0]=te->pipefd[1]=-1;
+      errno=err;
       return lDoErr(L,"\146\157\162\153\072\040\045\163",strerror(errno));
+   }
    if(te->pid == 0)
    {  
       int fd;
@@ -128683,13 +129231,19 @@ boardstore(lua_State* L)
          doClientError(efmt,"\163\164\144\157\165\164");
       if(dup2(te->pipefd[1], STDERR_FILENO) != STDERR_FILENO)
          doClientError(efmt,"\163\164\144\145\162\162");
-      close(te->pipefd[0]);
+      if(fd > STDERR_FILENO)
+         close(fd);
+      if(te->pipefd[1] > STDERR_FILENO)
+         close(te->pipefd[1]);
+      bv20(bv21);
       execve(cmd, (char**)cmdArgv, env);
 
       
       fprintf(stderr, "\105\170\145\143\165\164\151\156\147\040\045\163\040\146\141\151\154\145\144\072\040\045\163",cmd,strerror(errno));
       exit(errno);
    }
+   close(te->pipefd[1]);
+   te->pipefd[1]=-1;
    
    if(luaL_newmetatable(L, BAFORKPTY))
    {
@@ -128721,7 +129275,6 @@ boardstore(lua_State* L)
       ptraceaccess = HttpServer_getDispatcher(balua_getparam(L)->server);
       pollingenabled((SoDispCon*)te, ptraceaccess, deviceselect, te->pty);
       pollingenabled(&te->conStderr, ptraceaccess, fixupradeon, te->pipefd[0]);
-      close(te->pipefd[1]);
 
       deviceselect((SoDispCon*)te); 
    }
@@ -131066,31 +131619,53 @@ cpyStrAndAdvance(char* ptr, const char** str)
 }
 
 
+static void
+bv22(lua_State* L)
+{
+   luaL_error(L,"\164\157\153\145\156\040\150\145\141\144\145\162\040\164\141\142\154\145\040\151\163\040\164\157\157\040\154\141\162\147\145");
+}
+
+
 
 static int
 tao3530legacy(lua_State* L)
 {
-   size_t timercountdown,tabSize;
+   size_t debugstart=0,strSize=0,timercountdown,tabSize;
+   HttpClientKeyVal* newHeaders;
    LRevCon* lrc = checkLRevCon(L);
    BaBool afterreset = lrc->headers ? TRUE : FALSE;
    luaL_checktype(L, 2, LUA_TTABLE);
-   timercountdown = tabSize = calcTabSize(L,2);
-   if (0 == timercountdown) 
-   {
-      timercountdown = sizeof(HttpClientKeyVal); 
-   }
    lua_pushnil(L);  
    while(lua_next(L, 2) != 0)
    {
-      timercountdown += strlen(lua_tostring(L, -2)) + strlen(lua_tostring(L, -1)) + 2;
+      size_t pernodememory,chargetoggle;
+      const char* sourcerouting;
+      const char* val;
+      if(LUA_TSTRING != lua_type(L,-2) || LUA_TSTRING != lua_type(L,-1))
+         luaL_error(L,"\164\157\153\145\156\040\150\145\141\144\145\162\040\153\145\171\163\040\141\156\144\040\166\141\154\165\145\163\040\155\165\163\164\040\142\145\040\163\164\162\151\156\147\163");
+      sourcerouting=lua_tolstring(L,-2,&pernodememory);
+      val=lua_tolstring(L,-1,&chargetoggle);
+      if(strlen(sourcerouting) != pernodememory || strlen(val) != chargetoggle)
+         luaL_error(L,"\164\157\153\145\156\040\150\145\141\144\145\162\163\040\143\141\156\156\157\164\040\143\157\156\164\141\151\156\040\145\155\142\145\144\144\145\144\040\116\125\114\040\142\171\164\145\163");
+      if(pernodememory > (size_t)-1-chargetoggle-2 || strSize > (size_t)-1-pernodememory-chargetoggle-2)
+         bv22(L);
+      strSize+=pernodememory+chargetoggle+2;
+      if(debugstart == (size_t)-1)
+         bv22(L);
+      debugstart++;
       lua_pop(L, 1);
    }
-   if(lrc->headers)
-      baFree(lrc->headers);
-   lrc->headers = (HttpClientKeyVal*)baLMalloc(L,timercountdown);
-   if(lrc->headers)
+   if(debugstart > ((size_t)-1/sizeof(HttpClientKeyVal))-1)
+      bv22(L);
+   tabSize=(debugstart+1)*sizeof(HttpClientKeyVal);
+   if(strSize > (size_t)-1-tabSize)
+      bv22(L);
+   timercountdown=tabSize+strSize;
+   newHeaders=(HttpClientKeyVal*)baLMalloc(L,timercountdown);
+   if(!newHeaders)
+      return luaL_error(L,"\045\163",baErr2Str(E_MALLOC));
    {
-      HttpClientKeyVal* h = lrc->headers;
+      HttpClientKeyVal* h = newHeaders;
       char* ptr = ((char*)h)+tabSize;
       lua_pushnil(L);  
       while(lua_next(L, 2) != 0)
@@ -131103,11 +131678,12 @@ tao3530legacy(lua_State* L)
          h++;
       }
       h->key = h->val = 0;
-      if( ! afterreset )
-      {
-         Thread_start((Thread*)lrc);
-      }
    }
+   if(lrc->headers)
+      baFree(lrc->headers);
+   lrc->headers=newHeaders;
+   if( ! afterreset )
+      Thread_start((Thread*)lrc);
    return 0;
 }
 

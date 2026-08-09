@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JEncoder.h 5029 2022-01-16 21:32:09Z wini $
+ *   $Id: JEncoder.h 5839 2026-07-29 13:27:22Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -86,8 +86,10 @@ typedef struct JEncoder
 
       /** Format a string value. The method is internally using 
           BufPrint::jsonString.
+          \param val string data.
+          \param len string length.
        */
-      int setString(const char* val);
+      int setString(const char* val, size_t len);
 
       /** Encode and emit (binary) data using B64 encoding
        */
@@ -238,7 +240,7 @@ BA_API int JEncoder_setDouble(JEncoder* o, double val);
 BA_API int JEncoder_fmtString(JEncoder* o, const char* fmt,...);
 BA_API int JEncoder_vFmtString(
    JEncoder* o, const char* fmt,va_list argList);
-BA_API int JEncoder_setString(JEncoder* o, const char* val);
+BA_API int JEncoder_setString(JEncoder* o, const char* val, size_t len);
 BA_API int JEncoder_b64enc(JEncoder* o, const void* source, S32 slen);
 BA_API int JEncoder_setBoolean(JEncoder* o, BaBool val);
 BA_API int JEncoder_setNull(JEncoder* o);
@@ -276,8 +278,8 @@ inline int JEncoder::fmtString(const char* fmt,...) {
 }
 inline int JEncoder::vFmtString(const char* fmt,va_list argList) {
    return JEncoder_vFmtString(this, fmt, argList); }
-inline int JEncoder::setString(const char* val) {
-   return  JEncoder_setString(this, val); }
+inline int JEncoder::setString(const char* val, size_t len) {
+   return  JEncoder_setString(this, val, len); }
 inline int JEncoder::b64enc(const void* source, S32 slen) {
    return  JEncoder_b64enc(this, source, slen); }
 inline int JEncoder::setBoolean(bool val) {
