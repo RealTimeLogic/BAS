@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Xedge/Mako Lua Apps"
+  short_description: "Build Lua and LSP apps for Xedge and Mako Server"
+  default_prompt: "Use $build-xedge-mako-lua-apps to create or modify my Lua/LSP application for Xedge or Mako Server."

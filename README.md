@@ -7,14 +7,25 @@ This repository contains the amalgamated C source code for Real Time Logic's emb
 
 BWS and BAS share the same porting layer model and support a broad range of targets, including embedded Linux, Zephyr, FreeRTOS, lwIP, VxWorks, QNX, INTEGRITY, Windows, Azure RTOS, Nucleus RTOS, embOS, Mac, and other POSIX systems.
 
-## Getting Started
-
-- If you plan to use **BAS**, start here and select your operating system: https://realtimelogic.com/downloads/bas/. This page includes a drop-down menu that opens purpose-built instructions for selected operating systems, including precompiled packages and platform-specific build options.
-- If your operating system is not listed there, if you need the generic source integration details, or if you plan to use **BWS**, see the [generic compilation instructions](doc/compiling.md).
-
 ## AI-Assisted Development
 
-The [BAS/BWS Agent Guide](AGENTS.md) includes additional BAS and BWS design patterns for both humans and AI assistants. Use the guide when designing native C or C++ BAS/BWS applications, REST services, WebSocket apps, VFS layouts, generated resources, uploads, WebDAV, or Lua binding work.
+The [BAS/BWS Agent Guide](AGENTS.md) routes humans and AI assistants to the included skills and examples. Use the [native C/C++ skill](skills/build-bas-bws-native-apps/SKILL.md) for BAS/BWS applications, REST services, WebSockets, VFS layouts, generated resources, uploads, WebDAV, and native integration. Use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) for Lua and Lua Server Pages applications, including application lifecycle, routing, browser interfaces, authentication, SMQ, SQLite, deployment, and Lua bindings. Use both skills when a native Mako/Xedge host exposes or extends Lua APIs.
+
+## Examples
+
+| Example | Use it when | Important boundary |
+| --- | --- | --- |
+| [C-RESTful-Service](examples/C-RESTful-Service/README.md) | Implementing REST directly with BAS/BWS APIs, using a C-only toolchain, or minimizing additional code and memory overhead. | It does not use the Modern C++ REST library; it and the Modern C++ example are alternatives. |
+| [Modern-Cpp-REST-Service](examples/Modern-Cpp-REST-Service/README.md) | Typed routes, structured errors, streaming, a modern C++ interface, or the embedded Svelte device UI are wanted. | It requires a modern C++ compiler and `cpp/rest`. |
+| [C-WebSockets](examples/C-WebSockets/README.md) | Building a native C++ WebSocket service with text/binary frames, multiple clients, broadcast concurrency, or embedded browser resources. | Use the Lua skill when WebSocket behavior belongs in a Mako/Xedge Lua application. |
+| [MakoServer](examples/MakoServer/) | Building or customizing the standalone Mako executable, platform startup, native extensions, services, or resource packaging. | This is the native host, not an ordinary Lua/LSP application. See [Mako Server compilation](doc/compiling.md#mako-server-hlos). |
+| [xedge](examples/xedge/) | Porting or embedding Xedge into firmware/RTOS, including storage, hardware hooks, embedded resources, or native extensions. | This is the native host. Use the Lua skill for `.preload`, `.config`, `.xlua`, and LSP application work. See [Xedge compilation](doc/compiling.md#xedge-rtos). |
+
+### Getting Started With Lua using Xedge or Mako Server
+
+- If you plan to use **BAS**, start here and select your operating system: https://realtimelogic.com/downloads/bas/. This page includes a drop-down menu that opens purpose-built instructions for selected operating systems, including precompiled packages and platform-specific build options.
+- To build or customize the native **Mako Server** or integrate **Xedge** into an RTOS/firmware target, see [Compiling Mako Server and Xedge](doc/compiling.md).
+
 
 ## License
 

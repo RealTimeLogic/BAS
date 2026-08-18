@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "refreshed_at_utc": "2026-08-18T13:20:10+00:00",
+  "guidance_source": {
+    "repository": "https://github.com/RealTimeLogic/LSP-Examples",
+    "path": "AGENTS.md",
+    "revision_at_import": "d3e61c43fcb8daf4d947eaa0fe0c93d8d2e32aea"
+  },
+  "components": [
+    {
+      "filename": "basapi.md",
+      "url": "https://realtimelogic.com/downloads/basapi.md",
+      "purpose": "BAS, Lua, LSP, Mako, Xedge, VFS, request, response, database, and runtime APIs",
+      "bytes": 1343857,
+      "sha256": "4b375a88aadd27458c41286846deb269521d394ac21df0dea5159a30cd54f78c"
+    },
+    {
+      "filename": "esp32api.md",
+      "url": "https://realtimelogic.com/downloads/esp32api.md",
+      "purpose": "Xedge32 and ESP32 APIs",
+      "bytes": 285261,
+      "sha256": "d6acfcf0f1e1389ee1f6da50fd0bd1a0eb302aaceada1c61840ce8d375f86a63"
+    },
+    {
+      "filename": "opcuaapi.md",
+      "url": "https://realtimelogic.com/downloads/opcuaapi.md",
+      "purpose": "OPC UA Lua Client, Server, and PubSub APIs",
+      "bytes": 556110,
+      "sha256": "f9eae6e8317989c3372fc77f20431cee957a103760c25557601ad1fd0dc7d6a4"
+    },
+    {
+      "filename": "VFS-skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/VFS-skill.md",
+      "purpose": "BAS Lua virtual filesystem and routing guidance",
+      "bytes": 16885,
+      "sha256": "fcb65f966bc045105674efebacf70cf0916df039c5a9f8acd1cb125d3a129812"
+    },
+    {
+      "filename": "Authentication-Authorization-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Authentication-Authorization-Skill.md",
+      "purpose": "Authentication and authorization guidance",
+      "bytes": 21258,
+      "sha256": "f848280249a4784892c1eecd011c583264dc4a119c9157483d82b72cfcabd4df"
+    },
+    {
+      "filename": "OWASP-General-Security-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/OWASP-General-Security-Skill.md",
+      "purpose": "General web and application security guidance",
+      "bytes": 19069,
+      "sha256": "f0b4b081e7bcd912c26161a0eee8c85808d793cc917986591888b8fc2c6e7476"
+    },
+    {
+      "filename": "SMQ-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/SMQ-Skill.md",
+      "purpose": "SMQ real-time messaging guidance",
+      "bytes": 34719,
+      "sha256": "dce4b4bf59638280516dcbbe6f0d58761b2ab4ec0c85949c68f3084fd1088013"
+    },
+    {
+      "filename": "SQLite-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/SQLite-Skill.md",
+      "purpose": "SQLite dedicated writer and concurrency guidance",
+      "bytes": 16160,
+      "sha256": "321f61eafee73a7f642f819b97766df951af8e83e01dca5747a68464d3ca840f"
+    },
+    {
+      "filename": "Lua-Binding-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Lua-Binding-Skill.md",
+      "purpose": "BAS Lua and native C/C++ binding guidance",
+      "bytes": 51432,
+      "sha256": "61b512ab7f4793f5bc4a9d62655257349bb78a4ae00b316cb03771301ca7f56b"
+    },
+    {
+      "filename": "Deploy-Mako-Server-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Deploy-Mako-Server-Skill.md",
+      "purpose": "Mako Server deployment guidance",
+      "bytes": 7931,
+      "sha256": "9fa72056012ecd97bca5a933886e5bb039413ea5202915fac67ea12b61995ec2"
+    },
+    {
+      "filename": "Build-LSP-Web-Interfaces-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Build-LSP-Web-Interfaces-Skill.md",
+      "purpose": "LSP browser interface guidance",
+      "bytes": 8526,
+      "sha256": "44ef1f7ffc4e36c0aee34c36ad20ddd8ab4a1bf048ac58bda479b0f663ad1282"
+    }
+  ]
+}

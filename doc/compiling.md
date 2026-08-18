@@ -1,74 +1,49 @@
-# Compiling BAS and BWS
+# Compiling Mako Server and Xedge
 
-This guide explains how to build and integrate the amalgamated BAS and BWS C libraries. It provides generic source integration details for firmware, embedded Linux, RTOS targets, cross-compilation, custom BAS builds, and BWS builds.
+This guide explains how to build the two BAS-based reference hosts included in this repository: Mako Server for high-level operating systems and Xedge for RTOS and embedded firmware. It also covers the shared BAS source, porting layers, feature macros, and cross-compilation details needed by those hosts.
 
 If you plan to use BAS, the fastest path is usually the BAS download page:
 
 https://realtimelogic.com/downloads/bas/
 
-That page includes a drop-down menu for selected operating systems and opens purpose-built instructions for each platform, including precompiled packages and platform-specific build options. Use this generic guide when your operating system is not covered there, when you need lower-level source integration details, or when you plan to use BWS.
+That page includes a drop-down menu for selected operating systems and opens purpose-built instructions for each platform, including precompiled packages and platform-specific build options. Use this guide when building or customizing the repository's Mako Server or Xedge source directly.
 
-See [README.md](README.md) for licensing.
+For the native BWS, REST, WebSocket, and Modern C++ examples, start with the example chooser in the repository [README](../README.md#ai-assisted-development). See the same README for licensing.
 
-## Choose Your Path
+## Choose Your Host
 
 - **BAS, quickest path:** Use https://realtimelogic.com/downloads/bas/ and select your operating system. The platform pages are easier to follow than these generic instructions when your target is listed.
 - **BAS on a high-level operating system:** See [Mako Server (HLOS)](#mako-server-hlos).
 - **BAS on RTOS or embedded firmware:** See [Xedge (RTOS)](#xedge-rtos), [RTOS Build Examples](#rtos-build-examples), and [Porting Layers](#porting-layers).
-- **BWS:** Follow the [Basic Compile Model](#basic-compile-model) and include `src/BWS.c` plus the required porting layers.
-- **Custom BAS builds:** Follow the [Basic Compile Model](#basic-compile-model) and include `src/BAS.c` plus the required porting layers.
 
-## What Is Included
+## Shared BAS Foundation
 
-The repository contains two amalgamated libraries created from the full BAS SDK. "Amalgamated" means that many separate C files have been combined into one primary source file, making compilation and integration easier. The libraries can run on targets ranging from compact FPGA-based systems to cloud-hosted services.
+Mako Server and Xedge both compile `src/BAS.c`, the amalgamated Barracuda App Server library. "Amalgamated" means that many separate C files have been combined into one primary source file, making compilation and integration easier.
 
-- **BWS.c:** Barracuda Embedded Web Server.
-- **BAS.c:** Barracuda App Server. BAS includes all BWS C APIs and adds Lua, [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/), and higher-level web and IoT APIs.
+- **Mako Server** adds HLOS startup, command-line/service behavior, disk resources, and optional native modules around BAS.
+- **Xedge** adds the embedded application environment, resource package, target startup integration, and optional hardware/native bindings around BAS.
 
-BWS and BAS share the same porting layer modules, so their integration process is almost identical. BAS is often the easiest entry point for secure web and IoT application development because much of the application logic can be written in Lua while performance-critical code can remain in C or C++.
+BAS includes the BWS C APIs and adds Lua, [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/), and higher-level web and IoT APIs. Application logic can be written in Lua while performance-critical or hardware-specific modules remain in C or C++.
 
 > See [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
-
-### BWS
-
-The [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) is a small embedded HTTP(S) and WebSocket C source code library pre-integrated with the SharkSSL TLS stack. The source code is optimized for compact, deeply embedded devices.
-
-[![Barracuda Embedded Web Server](https://realtimelogic.com/GZ/images/BarracudaWebServer.svg)](https://realtimelogic.com/products/barracuda-web-server/)
-
-### BAS
-
-The [Barracuda App Server](https://realtimelogic.com/products/barracuda-application-server/) is powered by BWS and adds the Lua engine and Lua Server Pages. You can build applications in C or C++, but BAS is designed so a large part of an embedded application can be developed in Lua without giving up the option to write performance-critical or hardware-specific modules in C.
-
-[![Barracuda App Server Product Page](https://realtimelogic.com/GZ/images/BarracudaAppServerBLK.svg)](https://realtimelogic.com/products/barracuda-application-server/)
-
-Lua can reduce development time for network-enabled applications because its APIs are higher level than the corresponding C APIs. BAS includes:
-
-- [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/), a compact Lua web framework.
-- Non-blocking asynchronous sockets.
-- Web, IoT, and industrial protocol support.
-- The option to add [custom Lua bindings in C/C++](https://tutorial.realtimelogic.com/Lua-Bindings.lsp).
 
 If you already use Lua, you can exclude the bundled Lua source by compiling with `-DUSE_BA_LUA=0` and linking BAS with your Lua version.
 
 ## C Code Components
 
-Include the following files in your build:
+Both hosts start with the following files:
 
-- One amalgamated library:
-  - `src/BWS.c` for the Barracuda Web Server.
-  - `src/BAS.c` for the Barracuda App Server.
+- `src/BAS.c`: amalgamated Barracuda App Server.
 - `src/arch/XXX/ThreadLib.c`: kernel porting layer.
 - `src/arch/NET/XXX/SoDisp.c`: TCP/IP porting layer, also called the socket dispatcher.
 - `src/DiskIo/XXX/BaFile.c`: optional file system porting layer.
 
-BAS and BWS Amalgamated can run efficiently on a Cortex M4 running at 100 MHz and up, but most microcontrollers need external memory. See the memory section in [Porting Barracuda to an Embedded System](https://realtimelogic.com/ba/doc/en/introduction.html#porting) for details.
+Add the Mako Server or Xedge host sources and generated resources described in their sections below. See the memory section in [Porting Barracuda to an Embedded System](https://realtimelogic.com/ba/doc/en/introduction.html#porting) for target-sizing guidance.
 
 ## Basic Compile Model
 
-To compile BAS or BWS, select one amalgamated library and add the required porting layers:
+To compile either host, add the required porting layers to `src/BAS.c`:
 
-- Use `src/BAS.c` for the Barracuda App Server.
-- Use `src/BWS.c` for the Barracuda Embedded Web Server.
 - Add the required `ThreadLib.c`.
 - Add the required `SoDisp.c`.
 - Optionally add `BaFile.c` when using file system support.
@@ -82,24 +57,12 @@ The compiler include path must include:
 - `inc/arch/NET/XXX`
 - `inc/DiskIo/XXX`, when using a file system porting layer
 
-BAS and BWS can be used in several deployment models:
+BAS can be used in several deployment models. This guide focuses on:
 
-- Integrated into RTOS-powered monolithic firmware.
-- Built and run as a process on a high-level operating system such as embedded Linux.
-- Integrated into a standard desktop application.
+- Mako Server as a process on desktop/server or embedded HLOS targets.
+- Xedge integrated into RTOS-powered or other embedded firmware.
 
-The amalgamated source is easy to compile from the command line, but you can also add it to any IDE, Makefile, CMake project, or vendor build system.
-
-## Reference Builds and Examples
-
-BAS and BWS are designed for a wide range of devices and programs, from small ASIC-powered gadgets to Windows applications. The main reference builds are:
-
-- [Mako Server](#mako-server-hlos), a BAS build for high-level operating systems.
-- [Xedge](#xedge-rtos), a BAS build for RTOS and embedded systems.
-- [C++ WebSocket Server Example](examples/C-WebSockets/README.md), a BWS example.
-- [Designing Embedded RESTful Services in C and C++](examples/C-RESTful-Service/README.md), a BWS example.
-
-BAS examples such as Mako Server and Xedge provide a [Lua foundation](https://realtimelogic.com/articles/Using-Lua-for-Embedded-Development-vs-Traditional-C-Code) for rapid development of web, IoT, and business logic. BWS examples show how to implement services directly in C or C++.
+The amalgamated source can be compiled from the command line or added to an IDE, Makefile, CMake project, or vendor build system.
 
 ## Mako Server (HLOS)
 
@@ -119,7 +82,7 @@ For Linux and embedded Linux, see [Embedded Linux Web Interface Design](https://
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
 
-For a more robust compilation option, use the [included Ansible script](Ansible.md). You can also [install the server as a systemd service](https://github.com/RealTimeLogic/MakoInstaller) using an Ansible script.
+For a more robust compilation option, use the [included Ansible script](../Ansible.md). You can also [install the server as a systemd service](https://github.com/RealTimeLogic/MakoInstaller) using an Ansible script.
 
 To cross-compile for embedded Linux, set `CC` to your cross-compiler:
 
@@ -276,7 +239,7 @@ These Xedge instructions are excerpted from the [Xedge full SDK build guide](htt
 
 ### Cross-Compiling Xedge
 
-Include the files listed above in your IDE or Makefile. Most embedded systems require an efficient allocator, and `dlmalloc` is included for this purpose. See the [FreeRTOS readme](src/arch/FreeRTOS/README.txt) for an example of how to set up the required components. Most embedded RTOS ports use the same pattern.
+Include the files listed above in your IDE or Makefile. Most embedded systems require an efficient allocator, and `dlmalloc` is included for this purpose. See the [FreeRTOS readme](../src/arch/FreeRTOS/README.txt) for an example of how to set up the required components. Most embedded RTOS ports use the same pattern.
 
 For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if your final target uses another RTOS or device. The ESP32 is a practical learning target. Use the [precompiled ESP32 Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/).
 
@@ -382,19 +345,6 @@ wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
     examples/MakoServer/src/MakoMain.c\
     -lnet
 ```
-
-### Azure RTOS Using IAR
-
-The following example compiles the generic BAS library for Azure RTOS using IAR for ARM. The example assumes the directories `tx`, `nx`, and `BAS`.
-
-```bat
-iccarm -e -c^
-  -Itx -Inx^
-  -IBAS/inc -IBAS/inc/arch/ThreadX^
-  BAS/src/BAS.c
-```
-
-With these compilation settings, also include `src/arch/ThreadX/ThreadLib.c`, `src/arch/ThreadX/SoDisp.c`, and optionally `src/DiskIo/FileX/BaFile.c`.
 
 ### FreeRTOS
 

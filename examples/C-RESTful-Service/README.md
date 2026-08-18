@@ -2,6 +2,24 @@
 
 This directory contains the example source code for the tutorial [Designing Embedded RESTful Services in C and C++](https://realtimelogic.com/articles/Designing-Embedded-RESTful-Services-in-C-and-C), which shows how to implement a RESTful API using the [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) library.
 
+This example implements REST routing directly with the BAS/BWS C APIs. It
+remains the best starting point when a target supports only C or when code and
+memory overhead must be kept to an absolute minimum. See
+the [Modern C++ REST Service](../Modern-Cpp-REST-Service/README.md) example, which
+trades some additional requirements and footprint for a much simpler application
+programming model.
+
+## Choosing between the REST examples
+
+| Example | Use it when | Requirements and tradeoffs |
+| --- | --- | --- |
+| C RESTful Service (this example) | The target supports only C, or code and memory overhead must be kept to an absolute minimum. | Uses the BAS/BWS C APIs directly and does not require the C++ REST library. Route parsing and error handling are implemented explicitly by the application. |
+| [Modern C++ REST Service](../Modern-Cpp-REST-Service/README.md) | Ease of development, readable route definitions, typed parameters, and reusable REST handling are more important. | Requires a modern C++ compiler and the [cpp/rest library](../../cpp/rest/README.md). |
+
+Both examples use the same native BWS server and JSON facilities. The choice
+depends on the target toolchain, resource budget, and preferred programming
+model; neither example replaces the other.
+
 ---
 
 ## 🛠️ Building the Project

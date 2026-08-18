@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: Main.c 5065 2022-01-31 23:53:26Z wini $
+ *   $Id: Main.c 5594 2024-12-12 16:18:11Z wini $
  *
  *   COPYRIGHT:  Real Time Logic
  *               https://realtimelogic.com
@@ -46,13 +46,23 @@ extern void barracuda(void);
 extern void init_dlmalloc(char* heapstart, char* heapend);
 #endif
 
+#ifndef CHANGE_2_OBJ_DIR
+#if defined(BA_WINDOWS) || defined(BA_POSIX)
+#define CHANGE_2_OBJ_DIR 1
+#else
+#define CHANGE_2_OBJ_DIR 0
+#endif
+#endif
+
+
 /* Changes the current directory to the object directory.
 
-   This functionality is strictly not needed, but simplfifies using
-   the examples. The example programs, when using the DiskIo, are
-   designed to run from the object directory and will fail if run from
-   another directory.
+   Changing the directory to the object directory is not required, but
+   it simplifies using the examples on a host operating system. When
+   using the DiskIo, the example programs are designed to run from the
+   object directory and will fail if run from another directory.
 */
+#if CHANGE_2_OBJ_DIR
 static void
 change2ObjDir(const char* argv0)
 {
@@ -62,10 +72,10 @@ change2ObjDir(const char* argv0)
 #else
    (void)argv0;
 #endif
-   const char* cpath="obj";
+   const char* cpath="../obj";
    if( ! stat(cpath,&st) )
    {
-      const char* cpath2="obj/debug";
+      const char* cpath2="../obj/debug";
       if( ! stat(cpath2,&st) ) cpath = cpath2;
    }
    else
@@ -73,7 +83,7 @@ change2ObjDir(const char* argv0)
       cpath="../obj";
       if( ! stat(cpath,&st) )
       {
-         const char* cpath2="obj/debug";
+         const char* cpath2="../obj/debug";
          if( ! stat(cpath2,&st) ) cpath = cpath2;
       }
       else
@@ -101,7 +111,16 @@ change2ObjDir(const char* argv0)
    if(path) baFree(path);
 #endif
 }
+#else
+#define change2ObjDir(argv) (void)argv
+#endif
 
+#ifdef USE_DLMALLOC
+static void memExhausted(void)
+{
+   printf("WARNING: memory low\n");
+}
+#endif
 
 int
 main(int argc, char* argv[])
@@ -109,7 +128,9 @@ main(int argc, char* argv[])
 #ifdef USE_DLMALLOC
    static char poolBuf[3 * 1024 * 1024];
    init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
+   dlmalloc_setExhaustedCB(memExhausted);
 #endif
+   (void)argc;
 
    change2ObjDir(argv[0]);
 

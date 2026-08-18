@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build BAS/BWS Native Apps"
+  short_description: "Create native C/C++ BAS and BWS applications"
+  default_prompt: "Use $build-bas-bws-native-apps to create a native C or C++ BAS/BWS application for my target platform."

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "guidance_source": {
+    "repository": "https://github.com/RealTimeLogic/LSP-Examples",
+    "path": "AGENTS.md",
+    "revision_at_import": "d3e61c43fcb8daf4d947eaa0fe0c93d8d2e32aea"
+  },
+  "components": [
+    {
+      "filename": "basapi.md",
+      "url": "https://realtimelogic.com/downloads/basapi.md",
+      "purpose": "BAS, Lua, LSP, Mako, Xedge, VFS, request, response, database, and runtime APIs"
+    },
+    {
+      "filename": "esp32api.md",
+      "url": "https://realtimelogic.com/downloads/esp32api.md",
+      "purpose": "Xedge32 and ESP32 APIs"
+    },
+    {
+      "filename": "opcuaapi.md",
+      "url": "https://realtimelogic.com/downloads/opcuaapi.md",
+      "purpose": "OPC UA Lua Client, Server, and PubSub APIs"
+    },
+    {
+      "filename": "VFS-skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/VFS-skill.md",
+      "purpose": "BAS Lua virtual filesystem and routing guidance"
+    },
+    {
+      "filename": "Authentication-Authorization-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Authentication-Authorization-Skill.md",
+      "purpose": "Authentication and authorization guidance"
+    },
+    {
+      "filename": "OWASP-General-Security-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/OWASP-General-Security-Skill.md",
+      "purpose": "General web and application security guidance"
+    },
+    {
+      "filename": "SMQ-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/SMQ-Skill.md",
+      "purpose": "SMQ real-time messaging guidance"
+    },
+    {
+      "filename": "SQLite-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/SQLite-Skill.md",
+      "purpose": "SQLite dedicated writer and concurrency guidance"
+    },
+    {
+      "filename": "Lua-Binding-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Lua-Binding-Skill.md",
+      "purpose": "BAS Lua and native C/C++ binding guidance"
+    },
+    {
+      "filename": "Deploy-Mako-Server-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Deploy-Mako-Server-Skill.md",
+      "purpose": "Mako Server deployment guidance"
+    },
+    {
+      "filename": "Build-LSP-Web-Interfaces-Skill.md",
+      "url": "https://realtimelogic.com/downloads/ai-skills/Build-LSP-Web-Interfaces-Skill.md",
+      "purpose": "LSP browser interface guidance"
+    }
+  ]
+}
