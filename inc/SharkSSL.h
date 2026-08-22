@@ -10,9 +10,9 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5804 2026-06-06 06:48:09Z gianluca $
+ *   $Id: SharkSSL.h 5853 2026-08-17 09:48:31Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2025
+ *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -1611,17 +1611,20 @@ SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
     
     \param o the SharkSslCon object returned by function #SharkSsl_createCon.
 
-    \param protList a string of comma separated protocols. Do not specify
-    a final comma at the end of the string. This string
-    must be a constant string stored in ROM for the function
-    #SharkSslCon_getALPNProtocol to work properly.
+    \param protList a comma-separated list of protocol names, or NULL to
+    clear the currently configured list. Each protocol name must contain
+    from 1 to 255 bytes. Leading, trailing, and consecutive commas are
+    not permitted. The complete string must not exceed 65532 bytes.
+    The string is not copied and must therefore remain valid and
+    unmodified for as long as it may be used by the connection, including
+    calls to #SharkSslCon_getALPNProtocol (e.g., a constant string stored in ROM).
         
-    \return TRUE (1) if the request is accepted. Returns FALSE (0) if
-    the SharkSSL connection is already going through or done with a
-    handshaking phase.
+    \return TRUE (1) if the protocol list is accepted or successfully
+    cleared. Returns FALSE (0) if the connection is invalid, is not a
+    client connection, has already started the handshake, or if
+    protList is malformed or exceeds the permitted length.
 */
-SHARKSSL_API U8 SharkSslCon_setALPNProtocols(
-   SharkSslCon *o, const char *protList);
+SHARKSSL_API U8 SharkSslCon_setALPNProtocols(SharkSslCon *o, const char *protList);
 
 /** This function is used by client solutions to return the application
     layer protocol selected by the server among the ones specified through

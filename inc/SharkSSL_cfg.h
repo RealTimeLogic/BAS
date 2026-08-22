@@ -10,9 +10,9 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5817 2026-06-20 22:00:16Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5853 2026-08-17 09:48:31Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2022
+ *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -306,16 +306,19 @@
 #endif
 
 
- /** Enable/disable RSASSA-PSS padding in RSA API (RFC 8017)
-  *  (#SHARKSSL_ENABLE_RSA_API must be enabled)
-  *  note: with the default define below, it is enabled
-  *  whenever TLS 1.3 is
-  */
+/** Enable/disable RSASSA-PSS padding in RSA API (RFC 8017)
+ *  (#SHARKSSL_ENABLE_RSA_API must be enabled to use RSASSA-PSS
+ *  through the RSA API)
+ *
+ *  RSASSA-PSS is automatically enabled for RSA CertificateVerify
+ *  signatures when TLS 1.3 and RSA are enabled
+ */
 #ifndef SHARKSSL_ENABLE_RSASSA_PSS
-#define SHARKSSL_ENABLE_RSASSA_PSS                       SHARKSSL_TLS_1_3
+#define SHARKSSL_ENABLE_RSASSA_PSS                       1
 #endif
 
-/** Enable/disable OAEP padding in RSA API
+
+ /** Enable/disable OAEP padding in RSA API
  *  (#SHARKSSL_ENABLE_RSA_API must be enabled)
  */
 #ifndef SHARKSSL_ENABLE_RSA_OAEP
@@ -682,6 +685,10 @@
 /** TLS 1.3 sanity #defines
  */
 #if SHARKSSL_TLS_1_3
+#if SHARKSSL_ENABLE_RSA
+#undef  SHARKSSL_ENABLE_RSASSA_PSS
+#define SHARKSSL_ENABLE_RSASSA_PSS                       1
+#endif
 #if !SHARKSSL_TLS_1_2
 #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
 #undef SHARKSSL_ENABLE_SECURE_RENEGOTIATION

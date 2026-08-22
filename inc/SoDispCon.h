@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: SoDispCon.h 5856 2026-08-18 12:17:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -454,7 +454,7 @@ inline int SoDispCon::connect(const char* host,
                               BaBool dgram, BaBool ipv6,
                               char** errinfo) {
    return SoDispCon_connect(this,host,port, bindIntfName,bindPort,timeout,
-                            dgram?TRUE:FALSE, dgram?TRUE:FALSE,errinfo);
+                            dgram?TRUE:FALSE, ipv6?TRUE:FALSE,errinfo);
 }
 #endif
 
