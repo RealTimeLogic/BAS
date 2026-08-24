@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5853 2026-08-17 09:48:31Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5858 2026-08-22 14:40:42Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -571,6 +571,14 @@
  */
 #ifndef SHARKSSL_ECC_USE_CURVE25519
 #define SHARKSSL_ECC_USE_CURVE25519                      1
+#endif
+
+
+/** Enable/disable the X25519 public API 
+ *  (sharkssl_X25519_createKeyPair, sharkssl_X25519_sharedSecret)
+ */
+#ifndef SHARKSSL_ENABLE_X25519_API
+#define SHARKSSL_ENABLE_X25519_API                       1
 #endif
 
 

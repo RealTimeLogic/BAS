@@ -34840,7 +34840,8 @@ void SharkSslDHParam_setParam(SharkSslDHParam *dh)
 #endif  
 
 
-#if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA)
+#if (SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_ECDHE_ECDSA || \
+     (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ENABLE_X25519_API))
 int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out)
 {
    shtype_t spi4000check;
@@ -34985,7 +34986,11 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       temporaryentry += x_lenk;
       baAssert(pcmciaplatform(temporaryentry));
       updatefrequency(&point, x_lenr * 8, temporaryentry, temporaryentry + x_lenr);
-      unregisterskciphers(&nandflashpartition, &spi4000check, &point);
+      if (unregisterskciphers(&nandflashpartition, &spi4000check, &point))
+      {
+         baFree(afterhandler);
+         return (int)SharkSslCon_AllocationError;
+      }
       #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
       if (x_len != x_lenr)
       {
@@ -35081,6 +35086,13 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          }
       }
       updatefrequency(&point, x_lenr * 8, temporaryentry, temporaryentry + x_lenr);
+      #if SHARKSSL_ECC_USE_CURVE25519
+      if (SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType)
+      {
+         
+         *(consoledevice(&point.x)) &= *(consoledevice(&nandflashpartition.prime));
+      }
+      #endif
       if (initialdomain(&nandflashpartition, &point))
       {
          baFree(afterhandler);
@@ -35088,7 +35100,11 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       }
       temporaryentry += (U16)(x_lenr * 2);
       updatefrequency(&keypoint, x_lenr * 8, temporaryentry, temporaryentry + x_lenr);
-      unregisterskciphers(&nandflashpartition, &spi4000check, &keypoint);
+      if (unregisterskciphers(&nandflashpartition, &spi4000check, &keypoint))
+      {
+         baFree(afterhandler);
+         return (int)SharkSslCon_AllocationError;
+      }
       #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
       if (x_len != x_lenr)
       {
@@ -35115,6 +35131,76 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    baFree(afterhandler);
    return 0;
 }
+
+
+#if (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_CURVE25519 &&  SHARKSSL_ENABLE_X25519_API)
+#if (SHARKSSL_X25519_KEY_LEN != SHARKSSL_CURVE25519_POINTLEN)
+#error "\123\110\101\122\113\123\123\114\137\130\062\065\065\061\071\137\113\105\131\137\114\105\116\040\155\165\163\164\040\145\161\165\141\154\040\123\110\101\122\113\123\123\114\137\103\125\122\126\105\062\065\065\061\071\137\120\117\111\116\124\114\105\116"
+#endif
+
+SHARKSSL_API int sharkssl_X25519_createKeyPair(
+   U8 privateKey[SHARKSSL_X25519_KEY_LEN],
+   U8 publicKey[SHARKSSL_X25519_KEY_LEN])
+{
+   SharkSslECDHParam configvdcdc2;
+
+   if ((privateKey == NULL) || (publicKey == NULL))
+   {
+      return -1;
+   }
+
+   configvdcdc2.XY = NULL;
+   configvdcdc2.k = privateKey;
+   configvdcdc2.xLen = SHARKSSL_X25519_KEY_LEN;
+   configvdcdc2.curveType = SHARKSSL_EC_CURVE_ID_CURVE25519;
+   return SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, publicKey);
+}
+
+
+SHARKSSL_API int sharkssl_X25519_sharedSecret(
+   const U8 privateKey[SHARKSSL_X25519_KEY_LEN], 
+   const U8 peerPublicKey[SHARKSSL_X25519_KEY_LEN], 
+   U8 sharedSecret[SHARKSSL_X25519_KEY_LEN])
+{
+   SharkSslECDHParam configvdcdc2;
+   U32 i, nonzero, word;
+   int sffsdrnandflash;
+
+   if ((privateKey == NULL) || (peerPublicKey == NULL) || (sharedSecret == NULL))
+   {
+      return -1;
+   }
+
+   baAssert(0 == (SHARKSSL_X25519_KEY_LEN % sizeof(U32)));
+   for (i = nonzero = 0; i < SHARKSSL_X25519_KEY_LEN; i += sizeof(U32))
+   {
+      cleanupcount(word, peerPublicKey, i);
+      nonzero |= word;
+   }
+   if (!nonzero)
+   {
+      memset(sharedSecret, 0, SHARKSSL_X25519_KEY_LEN);
+      return -1;
+   }
+
+   configvdcdc2.XY = (U8*)peerPublicKey;
+   configvdcdc2.k = (U8*)privateKey;
+   configvdcdc2.xLen = SHARKSSL_X25519_KEY_LEN;
+   configvdcdc2.curveType = SHARKSSL_EC_CURVE_ID_CURVE25519;
+   sffsdrnandflash = SharkSslECDHParam_ECDH(&configvdcdc2, switcheractive, sharedSecret);
+   if (sffsdrnandflash)
+   {
+      return sffsdrnandflash;
+   }
+
+   for (i = nonzero = 0; i < SHARKSSL_X25519_KEY_LEN; i += sizeof(U32))
+   {
+      cleanupcount(word, sharedSecret, i);
+      nonzero |= word;
+   }
+   return nonzero ? 0 : -1;
+}
+#endif
 #endif
 
 
@@ -35601,7 +35687,8 @@ SHARKSSL_API U8 *SharkSslRSAKey_getPublic(SharkSslRSAKey mcbspplatform)
 
 
 #if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA || \
-    (SHARKSSL_ENABLE_ECDSA && (!SHARKSSL_ECDSA_ONLY_VERIFY)))
+    (SHARKSSL_ENABLE_ECDSA && (!SHARKSSL_ECDSA_ONLY_VERIFY)) || \
+    (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ENABLE_X25519_API))
 #if (SHARKSSL_USE_RNG_TINYMT)
 
 #define TINYMT32_INIT_MAT1 0xA5A6A7A8
