@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5863 2026-08-22 16:02:13Z gianluca $
+ *   $Id: SharkSSL.h 5868 2026-08-23 10:09:50Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -453,11 +453,13 @@ SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
       certificate. The produced certificate , with the dummy key,
       cannot be used as argument to SharkSsl_addCertificate.
 
-   \param validFrom string in format YYYYMMDDHHMMSS. The certificate is
-   valid starting from this date.
+   \param validFrom UTC date/time string in format YYYYMMDDHHMMSS. The
+   certificate is valid starting from this date. No timezone conversion is
+   performed.
 
-   \param validTo string in format YYYYMMDDHHMMSS. The certificate is
-   valid until this date.
+   \param validTo UTC date/time string in format YYYYMMDDHHMMSS. The
+   certificate is valid until this date. No timezone conversion is
+   performed.
 
    \param serialNumber serial number for the generated certificate.
 
@@ -2279,8 +2281,8 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_decrypt(
 
     \note The SharkSSL random number generator must be initialized and
           seeded before calling this function.
-    \note \p privateKey and \p publicKey must point to separate, 
-          non-overlapping buffers.
+    \note \p privateKey and \p publicKey must point to separate,
+          non-overlapping 32-byte buffers.
  */
 SHARKSSL_API int sharkssl_X25519_createKeyPair(
    U8 privateKey[SHARKSSL_X25519_KEY_LEN],

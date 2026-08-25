@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 5837 2026-07-29 11:17:51Z wini $
+ *   $Id: BaFile.c 5869 2026-08-23 10:09:56Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2020
  *
@@ -1060,7 +1060,7 @@ BA_API int DiskIo_setRootDir(DiskIo* o, const char* root)
    }
 
 
-   if(root[0] != '/' && root[1] != ':') /* If not an absolute path */
+   if(!root[0] || (root[0] != '/' && root[1] != ':')) /* If not an absolute path */
    {
       DWORD len = GetCurrentDirectoryW(0, 0);
       if(len == 0)

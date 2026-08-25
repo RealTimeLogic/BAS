@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 5837 2026-07-29 11:17:51Z wini $
+ *   $Id: BaFile.c 5874 2026-08-25 14:55:54Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2021
  *
@@ -277,10 +277,13 @@ DirIter_read(DirIntfPtr super)
    DirIter* o = (DirIter*)super;
    int status;
 #ifdef USE_READDIR_R
-   if( ! readdir_r(o->dp,(struct dirent *)o->direntbuf,&o->ep) && o->ep)
+   status = readdir_r(o->dp,(struct dirent *)o->direntbuf,&o->ep);
 #else
-   if((o->ep = readdir(o->dp)) != 0)
+   errno=0;
+   o->ep = readdir(o->dp);
+   status=errno;
 #endif
+   if( ! status && o->ep)
    {
 #ifdef BA_VXWORKS
       o->fname=strrchr(o->ep->d_name, '/');
@@ -291,6 +294,9 @@ DirIter_read(DirIntfPtr super)
       return 0; /* OK */
    }
    o->fname=0;
+   if( ! status)
+      return IOINTF_NOTFOUND;
+   errno=status;
    setErrCode(&status, 0);
    return status;
 }

@@ -60751,6 +60751,7 @@ HttpServer_getStatusCode(int guestconfig2)
       case 413: return "\064\061\063\040\122\145\161\165\145\163\164\040\105\156\164\151\164\171\040\124\157\157\040\114\141\162\147\145";
       case 414: return "\064\061\064\040\122\145\161\165\145\163\164\055\125\122\111\040\124\157\157\040\114\157\156\147";
       case 415: return "\064\061\065\040\125\156\163\165\160\160\157\162\164\145\144\040\115\145\144\151\141\040\124\171\160\145";
+      case 422: return "\064\062\062\040\125\156\160\162\157\143\145\163\163\141\142\154\145\040\103\157\156\164\145\156\164";
       case 423: return "\064\062\063\040\114\157\143\153\145\144";
       case 501: return "\065\060\061\040\116\157\164\040\111\155\160\154\145\155\145\156\164\145\144";
       case 502: return "\065\060\062\040\102\141\144\040\107\141\164\145\167\141\171";
@@ -70315,7 +70316,7 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    SharkSslCertParam certParam;
    SharkSslCertKey privKeyInfo, caKeyInfo;
    SharkSslASN1Create fixupconfig;
-   int l, v, sffsdrnandflash;
+   int l, v, sffsdrnandflash, certLenAligned;
    static const U8 switcherattrs[1] = {2};
 
    inputdevice = 0;
@@ -70477,18 +70478,36 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
 
    
    #if SHARKSSL_ENABLE_RSA
-   if (machinekexec(caKeyInfo.expLen))
+   if (machinekexec(certParam.certKey.expLen))
    {
       sffsdrnandflash += 8;
-      sffsdrnandflash += 2 * supportedvector(caKeyInfo.modLen);
-      sffsdrnandflash += mousethresh(caKeyInfo.expLen);
+      sffsdrnandflash += supportedvector(certParam.certKey.modLen);
+      sffsdrnandflash += mousethresh(certParam.certKey.expLen);
+   }
+   else
+   #endif
+   #if SHARKSSL_USE_ECC
+   if (machinereboot(certParam.certKey.expLen))
+   {
+      sffsdrnandflash += (U16)(2 * attachdevice(certParam.certKey.modLen));
+   }
+   else
+   #endif
+   {
+      return -1;
+   }
+
+   
+   #if SHARKSSL_ENABLE_RSA
+   if (machinekexec(caKeyInfo.expLen))
+   {
+      sffsdrnandflash += supportedvector(caKeyInfo.modLen);
    }
    else
    #endif
    #if SHARKSSL_USE_ECC
    if (machinereboot(caKeyInfo.expLen))
    {
-      sffsdrnandflash += (U16)(2 * attachdevice(caKeyInfo.modLen));
       sffsdrnandflash += relocationchain(&caKeyInfo);
    }
    else
@@ -70603,6 +70622,12 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    if ( !sffsdrnandflash )
    {
       sffsdrnandflash = SharkSslASN1Create_getDataLen(&fixupconfig, &extPtr);
+      certLenAligned = (sffsdrnandflash + 0x3) & ~0x3;
+      if ((sffsdrnandflash > l) || (certLenAligned > l) || (v > (l - certLenAligned)))
+      {
+         sffsdrnandflash = -4;  
+         goto _sharkssl_signCSR_err;
+      }
       memmove((U8*)*unlockirqrestore, extPtr, sffsdrnandflash);
       extPtr = (U8*)*unlockirqrestore + sffsdrnandflash;
       while (sffsdrnandflash & 0x03)  
@@ -70621,15 +70646,15 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
       }
       extPtr += v;
       sffsdrnandflash += v;
+      if (((sffsdrnandflash + 0x7) & ~0x7) > l)
+      {
+         sffsdrnandflash = -4;  
+         goto _sharkssl_signCSR_err;
+      }
       while (sffsdrnandflash & 0x07)  
       {
          *extPtr++ = 0xFF;
          sffsdrnandflash++;
-      }
-      if (sffsdrnandflash > l)
-      {
-         sffsdrnandflash = -4;  
-         goto _sharkssl_signCSR_err;
       }
       memset(extPtr, 0, (l - sffsdrnandflash));
    }
@@ -116542,7 +116567,7 @@ skcipherreqsize(lua_State *L)
    }
    serial = luaL_checkinteger(L, keyIx+3);
    if(enetswplatform > (keyIx+3))
-      configwrite = mcspi1hwmod(L, luaL_checkstring(L, keyIx+3), keyIx+3);
+      configwrite = mcspi1hwmod(L, luaL_checkstring(L, keyIx+4), keyIx+4);
    else
       configwrite = SHARKSSL_HASHID_SHA256;
    sffsdrnandflash=SharkSslCert_signCSR(
