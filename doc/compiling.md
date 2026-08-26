@@ -1,20 +1,16 @@
 # Compiling Mako Server and Xedge
 
-This guide explains how to build the two BAS-based reference hosts included in this repository: Mako Server for high-level operating systems and Xedge for RTOS and embedded firmware. It also covers the shared BAS source, porting layers, feature macros, and cross-compilation details needed by those hosts.
+This guide explains how to build the two Barracuda App Server (BAS) reference hosts included in this repository: Mako Server for high-level operating systems (HLOS) and Xedge for real-time operating systems (RTOS) and embedded firmware. It covers the shared BAS source, porting layers, feature macros, generated resources, and cross-compilation details required by those hosts.
 
-If you plan to use BAS, the fastest path is usually the BAS download page:
+## Choose Your Build Path
 
-https://realtimelogic.com/downloads/bas/
+| Goal | Start here |
+| --- | --- |
+| Evaluate BAS or use a precompiled package | Select your platform on the [BAS download page](https://realtimelogic.com/downloads/bas/). |
+| Build or customize Mako Server for an HLOS | See [Mako Server (HLOS)](#mako-server-hlos). |
+| Integrate Xedge into an RTOS or firmware | See [Xedge (RTOS)](#xedge-rtos), [RTOS Build Examples](#rtos-build-examples), and [Porting Layers](#porting-layers). |
 
-That page includes a drop-down menu for selected operating systems and opens purpose-built instructions for each platform, including precompiled packages and platform-specific build options. Use this guide when building or customizing the repository's Mako Server or Xedge source directly.
-
-For the native BWS, REST, WebSocket, and Modern C++ examples, start with the example chooser in the repository [README](../README.md#ai-assisted-development). See the same README for licensing.
-
-## Choose Your Host
-
-- **BAS, quickest path:** Use https://realtimelogic.com/downloads/bas/ and select your operating system. The platform pages are easier to follow than these generic instructions when your target is listed.
-- **BAS on a high-level operating system:** See [Mako Server (HLOS)](#mako-server-hlos).
-- **BAS on RTOS or embedded firmware:** See [Xedge (RTOS)](#xedge-rtos), [RTOS Build Examples](#rtos-build-examples), and [Porting Layers](#porting-layers).
+For native Barracuda Embedded Web Server (BWS), REST, WebSocket, and Modern C++ projects, use the example chooser in the repository [README](../README.md#examples). The README also explains the available licenses.
 
 ## Shared BAS Foundation
 
@@ -23,11 +19,11 @@ Mako Server and Xedge both compile `src/BAS.c`, the amalgamated Barracuda App Se
 - **Mako Server** adds HLOS startup, command-line/service behavior, disk resources, and optional native modules around BAS.
 - **Xedge** adds the embedded application environment, resource package, target startup integration, and optional hardware/native bindings around BAS.
 
-BAS includes the BWS C APIs and adds Lua, [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/), and higher-level web and IoT APIs. Application logic can be written in Lua while performance-critical or hardware-specific modules remain in C or C++.
+BAS includes the BWS C APIs and adds Lua, [Lua Server Pages (LSP)](https://realtimelogic.com/products/lua-server-pages/), and higher-level web and IoT APIs. Application logic can be written in Lua while performance-critical or hardware-specific modules remain in C or C++.
 
 > See [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
-If you already use Lua, you can exclude the bundled Lua source by compiling with `-DUSE_BA_LUA=0` and linking BAS with your Lua version.
+If you already use a compatible Lua 5.5 build, you can exclude the bundled Lua source by compiling with `-DUSE_BA_LUA=0`. Link BAS with that Lua build and verify that its configuration and application binary interface (ABI) match the BAS headers.
 
 ## C Code Components
 
@@ -66,7 +62,7 @@ The amalgamated source can be compiled from the command line or added to an IDE,
 
 ## Mako Server (HLOS)
 
-The [Mako Server example](https://realtimelogic.com/ba/doc/en/Mako.html) can be compiled for high-level operating systems such as Windows, embedded Linux, QNX, and VxWorks.
+The [Mako Server example](https://realtimelogic.com/ba/doc/en/Mako.html) is the reference host for high-level operating systems such as Windows, embedded Linux, and QNX. Mako Server can also be adapted to environments such as VxWorks 7, but Xedge is the normal starting point for RTOS and firmware integration.
 
 ![Mako Server Build Process](https://realtimelogic.com/ba/doc/en/examples/MakoServer/Build-Mako-Diagram.svg)
 
@@ -100,10 +96,10 @@ bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/Raspbe
 
 ### Generic HLOS Build
 
-The following example builds Mako Server without SQLite for a high-level operating system. It works for GCC and derivatives, including cross-compiling for embedded Linux, QNX, and VxWorks 7. Replace `gcc` with the applicable compiler.
+The following example builds Mako Server without SQLite for a high-level operating system. It works with GCC and compatible compilers, including cross-compilers for embedded Linux and QNX. Replace `gcc` with the compiler for your target. See [VxWorks](#vxworks) for the RTOS-specific example.
 
 ```sh
-gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
+gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO -DUSE_SQL=0\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
@@ -114,28 +110,13 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 See the [Mako Server build documentation](https://realtimelogic.com/ba/examples/MakoServer/readme.html) for details on macros and other build options. The amalgamated version in this repository differs from the standard SDK layout.
 
-After running the compilation command and [building `mako.zip`](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build), start the server:
-
-```text
-$examples/MakoServer/mako
-
-Mako Server. Version 3.7
-BAS lib 4920. Build date: Dec  2 2021
-Copyright (c) Real Time Logic.
-
-Mounting /tmp/BAS/examples/MakoServer/mako.zip
-Server listening on IPv6 port 9357
-Server listening on IPv4 port 9357
-Loading certificate MakoServer
-SharkSSL server listening on IPv6 port 9443
-SharkSSL server listening on IPv4 port 9443
-```
+After running the compilation command, [build `mako.zip`](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build) and place it beside the executable in `examples/MakoServer`. Start the server from that directory. A successful startup reports that `mako.zip` was mounted and that the configured HTTP and HTTPS listeners are active. Version numbers, addresses, and ports depend on the build and configuration.
 
 ### Windows Command-Line Build
 
 The following example compiles and links Mako Server as a 64-bit Windows application using the Visual Studio command-line compiler. It includes two additional files that make it possible to run the server as a Windows service.
 
-The [precompiled Mako Server for Windows](https://makoserver.net/download/windows/) is compiled as a 32-bit application.
+See the [current Mako Server for Windows page](https://makoserver.net/download/windows/) for Microsoft Store, ZIP, and source-build alternatives.
 
 ```bat
 cl /O2^
@@ -149,14 +130,14 @@ cl /O2^
  /link /machine:X64 /OUT:examples/MakoServer/mako.exe
 ```
 
-This command requires the [64-bit Visual C++ toolset command line](https://docs.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170).
+This command requires the [64-bit Visual C++ toolset command line](https://learn.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170).
 
 ### Including SQLite
 
 Mako Server can optionally be linked with SQLite and the [Lua SQLite bindings](https://realtimelogic.com/ba/doc/en/lua/luasql.html). Before running the command below, [download SQLite](https://www.sqlite.org/download.html) and copy `sqlite3.c` and `sqlite3.h` to `src`.
 
 ```sh
-gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
+gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
@@ -168,10 +149,9 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -O3 -Os\
 
 ## Xedge (RTOS)
 
-Xedge is a Lua foundation and interactive development environment for developing Lua code directly on an embedded device. After development, Xedge provides several release options for final products. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for details.
+Xedge is the BAS-based host for developing and running Lua and LSP applications on RTOS and firmware targets. It includes a browser-based development environment and supports packaging applications for deployment. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for application development and release options.
 
-**Xedge in Developer Mode (video)**
-[![Xedge](https://realtimelogic.com/images/xedge/v1/Xedge.png)](https://simplemq.com/videos/Xedge-IDE-intro.mp4)
+[![Xedge in Developer Mode](https://realtimelogic.com/images/xedge/v1/Xedge.png)](https://simplemq.com/videos/Xedge-IDE-intro.mp4)
 
 See the [Xedge product page](https://realtimelogic.com/products/xedge/) for details.
 
@@ -182,7 +162,7 @@ The Xedge IDE includes a single-page web application and supporting server-side 
 
 ![Xedge Build Process](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
 
-The compilation process below is an example. BAS can support the deployment strategy required by your target. For a quick overview, see [Rapid Firmware Development with the Barracuda App Server](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server). The tutorial uses an ESP32, but the same method applies to other CPUs.
+The compilation process below shows the general integration pattern. For an ESP32-based walkthrough, see [Rapid Firmware Development with the Barracuda App Server](https://realtimelogic.com/articles/Rapid-Firmware-Development-with-the-Barracuda-App-Server). Other targets require their own startup code, porting layers, resource configuration, and build settings.
 
 Fetch the repositories and build the resource ZIP file:
 
@@ -197,7 +177,7 @@ git clone https://github.com/RealTimeLogic/BAS-Resources.git
 cd BAS-Resources/build/
 
 # Run the build script. If on Windows, use Xedge.cmd.
-# When prompted, initially select n for OPC-UA, s for small cacert.shark,
+# When prompted, initially select n for OPC UA, s for small cacert.shark,
 # and n for compressing the files.
 . Xedge.sh
 
@@ -211,8 +191,9 @@ cd ../../BAS
 
 To compile Xedge, include:
 
-- **Required:** `BAS.c`, `xedge.c`, Xedge startup code such as `Main.c` and `HostInit.c`, `XedgeZip.c`, `ThreadLib.c`, `SoDisp.c`, and `dlmalloc.c` for most RTOS builds.
-- **Optional:** `BaFile.c` and `led.c`.
+- **Required for every target:** `src/BAS.c`, `examples/xedge/src/xedge.c`, `examples/xedge/XedgeZip.c`, the target's `ThreadLib.c`, and the matching `SoDisp.c`.
+- **Host test builds:** `examples/HostInit/Main.c` and `examples/HostInit/HostInit.c` provide HLOS startup scaffolding. Replace them with target-specific startup code for RTOS and firmware builds.
+- **Target-dependent:** Add an allocator such as `src/dlmalloc.c` if the target does not provide a suitable allocator. Add `BaFile.c` for supported file systems and `led.c` for the example Lua bindings.
 
 The following example uses Linux to compile Xedge as a standalone application. For embedded devices, include the relevant source files in your build system instead.
 
@@ -226,30 +207,30 @@ gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     examples/xedge/XedgeZip.c -lpthread -lm -ldl
 ```
 
-Important integration notes:
+Integration notes:
 
 - `Main.c` and `HostInit.c` are designed for a non-embedded host build. For an RTOS build, study these files and set up similar startup code for your environment.
 - At minimum, your RTOS build needs a dedicated thread that runs `barracuda(void)`, which does not return. Use stack size `BA_STACKSZ` bytes.
 - `xedge.c` is the Xedge C startup code.
 - `led.c` includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP) for device control. If you do not need these examples, define `-DNO_XEDGE_AUX` or remove the `xedgeOpenAUX()` call in `xedge.c`.
 - For embedded builds, consider testing without file system support first. Remove `BaFile.c` from your build and compile with `-DNO_BAIO_DISK`, which is used by `xedge.c`.
-- If you get a link error that mentions `dlmalloc`, include `src/dlmalloc.c` and initialize the allocator as shown in `examples/HostInit/Main.c`.
+- If the target does not provide a suitable allocator, include `src/dlmalloc.c` and initialize it using the pattern in `examples/HostInit/Main.c`. Use the target's allocator instead when its behavior and integration requirements are known.
 
 These Xedge instructions are excerpted from the [Xedge full SDK build guide](https://realtimelogic.com/ba/examples/xedge/readme.html), which includes additional release-build details. File locations differ slightly in this repository.
 
 ### Cross-Compiling Xedge
 
-Include the files listed above in your IDE or Makefile. Most embedded systems require an efficient allocator, and `dlmalloc` is included for this purpose. See the [FreeRTOS readme](../src/arch/FreeRTOS/README.txt) for an example of how to set up the required components. Most embedded RTOS ports use the same pattern.
+Include the files listed above in your IDE or Makefile. If the target does not provide a suitable allocator, BAS includes `src/dlmalloc.c` as one option. See the [FreeRTOS readme](../src/arch/FreeRTOS/README.txt) for an example of how to assemble the required components. Adapt the startup, allocator, and porting layers to the selected RTOS and network stack.
 
 For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if your final target uses another RTOS or device. The ESP32 is a practical learning target. Use the [precompiled ESP32 Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/).
 
 ## Enabling and Disabling Features
 
-`src/BAS.c` includes optional features that are not compiled by default. Enable features with the following macros. Unless stated otherwise, the macros can be used on any platform, including RTOS targets.
+Feature selection is controlled by the build, the target's `TargConfig.h`, and macros used by `src/BAS.c` and the host sources. Defaults vary by platform, so verify the effective configuration before adding or removing a macro.
 
 - `USE_DBGMON=1`: Include [Lua debugger support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
-- `USE_REVCON=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/). Xedge and Mako Server include the Let's Encrypt plugins `acmebot` and `acmedns`.
-- `USE_OPCUA=1`: Enable OPC-UA support. The OPC-UA stack is implemented in Lua and is found in `mako.zip/.lua/opcua`. It requires a C module.
+- `USE_REVCON=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/).
+- `USE_OPCUA=1`: Enable OPC UA support when the build also includes the required OPC UA Lua resources and C module.
 - `USE_FORKPTY=1`: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), available for Linux and QNX. This API is required for the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) and the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
 - `USE_REDIRECTOR=1`: Enable the [reverse proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy).
 - `USE_UBJSON=1`: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson).
@@ -258,17 +239,18 @@ For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if y
 ### Mako Server Macros
 
 - `NO_SHARKTRUST`: Do not include `tokengen.c`; disables the built-in SharkTrustX key.
-- `USE_LUAINTF`: Enables loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When using source builds, you can alternatively integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly into your build.
+- `USE_LUAINTF`: Enable loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When using source builds, you can alternatively integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly into your build.
 
 ### Xedge Macros
 
 - `NO_SHARKTRUST`: Disable SharkTrustX integration.
-- `NO_ENCRYPTIONKEY`: Do not include `NewEncryptionKey.h`; disables the soft TPM.
+- `NO_ENCRYPTIONKEY`: Exclude the encryption-key support used by the software Trusted Platform Module (softTPM). Without this macro, Xedge includes `EncryptionKey.h` or a generated `NewEncryptionKey.h`, depending on the build configuration.
+- `NO_BAIO_DISK`: Build Xedge without the local file system integration. Use this for targets without a file system or for an initial minimal port.
 - `NO_XEDGE_AUX`: Do not call `xedgeOpenAUX()`, which is where you typically register your own Lua bindings.
 
 ## Porting Layers
 
-[Contact Real Time Logic](https://realtimelogic.com/contactus/) if you have a problem with a porting layer on your target APIs.
+[Contact Real Time Logic](https://realtimelogic.com/contactus/) if an existing porting layer does not match your target operating system, network stack, or SDK.
 
 | OS + TCP | Include directories | Source files |
 | --- | --- | --- |
@@ -288,10 +270,10 @@ For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if y
 | Azure RTOS | `inc/arch/ThreadX` | `src/arch/ThreadX/ThreadLib.c` `src/arch/ThreadX/SoDisp.c` |
 | VxWorks | `inc/arch/VxWorks` | `src/arch/VxWorks/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | Windows | `inc/arch/NET/Windows` `inc/arch/Windows` | `src/arch/Windows/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
-| Windows CE | `inc/arch/NET/CE` `inc/arch/Windows` | `src/arch/Windows/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
+| Windows CE | `inc/arch/NET/CE` `inc/arch/Windows` | `src/arch/ce/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | Zephyr | `inc/arch/Zephyr` | `src/arch/Zephyr/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 
-The generic `inc` directory must also be in the include path.
+The generic `inc` directory must also be in the include path. The presence of a porting directory does not prove compatibility with every version of the target SDK. Compile against the actual SDK and confirm its configuration and networking APIs.
 
 ## HLOS Build Examples
 
@@ -301,13 +283,13 @@ See the [Mako Server download page](https://makoserver.net/download/overview/) f
 
 ### Zephyr
 
-Zephyr RTOS, with the Xedge port, provides a lightweight real-time environment for IoT and edge computing. Xedge adds support for networking, secure communication, and remote device management. See the [Xedge Zephyr documentation](https://github.com/RealTimeLogic/Xedge4Zephyr) for details.
+For Xedge on Zephyr, use the [Xedge4Zephyr project](https://github.com/RealTimeLogic/Xedge4Zephyr), which provides the Zephyr-specific build and integration files.
 
 [![Zephyr](https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Zephyr_RTOS_logo_2015.svg/500px-Zephyr_RTOS_logo_2015.svg.png)](https://github.com/RealTimeLogic/Xedge4Zephyr)
 
 ### NuttX
 
-NuttX is a standards-compliant RTOS with a small footprint, scalable from 8-bit to 64-bit MCUs. With POSIX/ANSI APIs and familiar Unix/VxWorks extensions, it brings powerful functionality to deeply embedded systems. Paired with Xedge, NuttX provides a foundation for secure, connected IoT devices. See the [Xedge NuttX documentation](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html) for details.
+NuttX includes an Xedge demonstration in its application examples. See the [Xedge NuttX documentation](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html) for the current build and configuration steps.
 
 [![NuttX](https://nuttx.apache.org/assets/themes/apache/img/logo.png)](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html)
 
@@ -327,17 +309,17 @@ ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
     examples/HostInit/Main.c examples/HostInit/HostInit.c\
     examples/xedge/src/xedge.c\
     examples/xedge/XedgeZip.c\
-    examples/xedge/src/xedgeInitDiskIo.c\
+    examples/xedge/src/XedgeInitDiskIo.c\
     examples/xedge/src/led.c\
     -lnet -livfs -lsocket\
 ```
 
 ### VxWorks
 
-Xedge is recommended for VxWorks. The following example shows how to compile Mako Server for VxWorks. See the [Barracuda App Server VxWorks build page](https://realtimelogic.com/downloads/bas/VxWorks/) for details.
+Xedge is the recommended starting point for new VxWorks integrations. The following example builds Mako Server for projects that require its standalone process-style host. See the [Barracuda App Server VxWorks build page](https://realtimelogic.com/downloads/bas/VxWorks/) for details.
 
 ```sh
-wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
+wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -Os\
     -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_HAS_ANSI_IO -DMAKO -DUSE_SQL=0\
     -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
     src/BAS.c\
@@ -350,7 +332,7 @@ wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -O3 -Os\
 
 #### i.MX RT1020
 
-[Download](https://realtimelogic.com/downloads/bas/?target=RT1020) a ready-to-compile and ready-to-run project for [i.MX RT1020](https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt1020-evaluation-kit:MIMXRT1020-EVK).
+Download a ready-to-compile and ready-to-run project for [i.MX RT1020](https://realtimelogic.com/downloads/bas/rt1020/).
 
 #### ESP32
 
