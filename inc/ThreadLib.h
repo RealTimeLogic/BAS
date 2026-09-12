@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: ThreadLib.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2008
  *
@@ -35,6 +35,8 @@
  *
  */
 
+/** @file ThreadLib.h */
+
 #ifndef ThreadLib_hpp
 
 #include <TargConfig.h>
@@ -46,7 +48,8 @@
    @{
  */
 
-/** Thread priority list.
+/** Portable priority choices, mapped to the target operating system.
+    Actual scheduling policy and supported priority differences are port-specific.
     You can set 1 of 5 priorities: 
    ThreadPrioLowest, 
    ThreadPrioLow, 
@@ -70,7 +73,10 @@ struct ThreadMutex;
 struct Thread;
 #endif
 
-/** Prototype for the thread run method.
+/** Entry point invoked in the new thread after Thread::start.
+ * @param[in,out] th Borrowed originating Thread object, valid until execution
+ * has finished. Returning finishes the entry point; it does not free th.
+ * The dispatcher mutex is not automatically held on entry.
  */
 typedef void (*Thread_Run)(struct Thread* th);
 
@@ -108,16 +114,20 @@ struct ThreadReleaseLock;
     }
    \endcode
 
-   This is a C++ class only.
+   This is a C++ class only. Use a named local variable so it lives for the
+   intended scope. Do not copy a lock object or acquire a mutex recursively;
+   recursive acquisition is not portable across ThreadLib implementations.
 
    \sa ThreadMutex ThreadReleaseLock
 */
 struct ThreadLock
 {
-      /** Lock a region of code. */
+      /** Acquire the mutex until scope exit.
+       * @param[in,out] m Borrowed initialized mutex, valid for the lock lifetime. */
       ThreadLock(ThreadMutex& m);
 
-      /** Lock a region of code. */
+      /** Acquire the mutex until scope exit.
+       * @param[in,out] m Required non-NULL borrowed initialized mutex. */
       ThreadLock(ThreadMutex* m);
 
       /** Unlock the mutex. */
@@ -133,34 +143,34 @@ struct ThreadLock
     class ThreadLock.
 
     \code
-    void // An HttpPage service function
-    myPagePage::service(HttpPage* page,
-                         HttpRequest* request,
-                         HttpResponse* response)
+    // Inside a request handler entered with the dispatcher mutex held:
     {
-       //Normal web-server calls here
-       { ThreadReleaseLock rlock(req);
-            //Non web-server calls here
-       }
-       //Normal web-server calls here
-    }
+       ThreadReleaseLock rlock(request);
+       // Perform blocking application work here, without calling BAS APIs
+       // or accessing shared BAS objects while their mutex is released.
+    } // The same mutex is acquired again before BAS work resumes.
     \endcode
 
    \sa ThreadMutex ThreadLock
 */
 struct ThreadReleaseLock
 {
-      /** Temporarily unlock a locked mutex from within a resource. */
+      /** Temporarily release the owned mutex; reacquire at scope exit.
+       * @param[in,out] req Required live request whose dispatcher mutex the current thread owns. */
       ThreadReleaseLock(struct HttpRequest* req);
-      /** Temporarily unlock a locked mutex. */
+      /** Temporarily release the owned mutex; reacquire at scope exit.
+       * @param[in,out] m Borrowed initialized mutex currently owned by this thread. */
       ThreadReleaseLock(ThreadMutex& m);
-      /** Temporarily unlock a locked mutex. */
+      /** Temporarily release the owned mutex; reacquire at scope exit.
+       * @param[in,out] m Required non-NULL initialized mutex owned by this thread. */
       ThreadReleaseLock(ThreadMutex* m);
-      /** Temporarily unlock a locked mutex. */
+      /** Temporarily release the owned mutex; reacquire at scope exit.
+       * @param[in,out] tl Borrowed active lock object, valid until this release guard ends. */
       ThreadReleaseLock(ThreadLock& tl);
-      /** Temporarily unlock a locked mutex. */
+      /** Temporarily release the owned mutex; reacquire at scope exit.
+       * @param[in,out] tl Required non-NULL active lock object, valid until this guard ends. */
       ThreadReleaseLock(ThreadLock* tl);
-      /** Lock the temporarily unlock mutex. */
+      /** Reacquire the same mutex before leaving scope. Do not copy this guard. */
       ~ThreadReleaseLock();
    private:
       struct ThreadMutex* mutex;
@@ -189,16 +199,21 @@ struct ThreadMutex : public ThreadMutexBase
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
 
-      /** Create a mutex. */
+      /** Initialize target mutex resources (C: ThreadMutex_constructor).
+       * Resource-failure handling is port-specific; no status is returned. */
       ThreadMutex() { ThreadMutex_constructor(this); }
-      /** Destroy a mutex. */
+      /** Release target resources after all owners and waiters have stopped
+       * (C: ThreadMutex_destructor). Do not destroy a locked/in-use mutex. */
       ~ThreadMutex() { ThreadMutex_destructor(this); }
-      /** Lock the mutex. */
+      /** Wait until the mutex can be acquired (C: ThreadMutex_set).
+       * Do not recursively acquire it; portability requires one matching release. */
       void set() { ThreadMutex_set(this); }
-      /** Release the mutex. */
+      /** Release a mutex owned by this thread (C: ThreadMutex_release).
+       * Calling from another thread or without acquisition is incorrect usage. */
       void release() { ThreadMutex_release(this); }
-      /** Returns true if the mutex is locked and the current thread
-          is the owner.
+      /** @return True if the current thread owns the mutex, false otherwise.
+          C equivalent: ThreadMutex_isOwner. This is an ownership check,
+          not a test that another thread can safely acquire the mutex.
       */
       bool isOwner() { return ThreadMutex_isOwner(this)?true:false; }
 };
@@ -216,18 +231,23 @@ struct ThreadSemaphore : public ThreadSemaphoreBase
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
 
-      /** Create a semaphore and set the counter to zero.
+      /** Create an initially unsignaled notification object
+       * (C: ThreadSemaphore_constructor). No construction status is returned.
        */
       ThreadSemaphore(){ ThreadSemaphore_constructor(this); }
-      /** destroy the semaphore
+      /** Release target resources only after signalers and waiters have stopped
+       * (C: ThreadSemaphore_destructor).
        */
       ~ThreadSemaphore(void) { ThreadSemaphore_destructor(this); }
 
-      /** Wait (block) for another thread to signal (start) the thread.
+      /** Block until a notification can be consumed (C: ThreadSemaphore_wait).
+       * This call has no timeout parameter and returns no status.
        */
       void wait() { ThreadSemaphore_wait(this); }
 
-      /** Signal a waiting (blocking) thread.
+      /** Signal a waiter or make a notification available for a later wait
+       * (C: ThreadSemaphore_signal). Queued-notification capacity and whether
+       * repeated signals accumulate are port-specific. Returns no status.
        */
       void signal() { ThreadSemaphore_signal(this); }
 };
@@ -239,6 +259,7 @@ struct ThreadSemaphore : public ThreadSemaphoreBase
 */
 struct Thread : public ThreadBase
 {
+      /** Uninitialized storage; call Thread_constructor before use/destruction. */
       Thread() {}
       void *operator new(size_t s) { return ::baMalloc(s); }
       void operator delete(void* d) { if(d) ::baFree(d); }
@@ -246,18 +267,31 @@ struct Thread : public ThreadBase
       void operator delete(void*, void *) { }
 
       /** Create a thread.
-          \param r a pointer to the thread run method.
-          \param priority the thread priority.
-          \param stackSize the thread stack size.
+          \param r Required entry-point callback invoked after start. Keep the
+          Thread object and callback dependencies alive until execution finishes.
+          \param priority One of the five ThreadPriority values, mapped by the port.
+          \param stackSize Requested stack allocation in bytes, a positive value
+          large enough for the callback and its libraries. Ports can round up
+          or add overhead; this is not a portable exact stack-size guarantee.
+          Construction creates thread resources but start releases the entry
+          point to run. No failure status is returned; major ports call baFatalE
+          for creation failures. C equivalent: Thread_constructor.
       */
       Thread(Thread_Run r, ThreadPriority priority, int stackSize) {
          Thread_constructor(this, r, priority, stackSize); }
+      /** Release platform thread resources (C: Thread_destructor).
+       * This is not a portable join or cancellation API. Arrange completion
+       * before destroying storage used by a running thread. */
       ~Thread() { Thread_destructor(this); }
-      /** Start the thread.
+      /** Release the constructed thread to run its entry point once
+       * (C: Thread_start). Call only once; does not wait for completion.
        */
       void start() {  Thread_start(this); }
 
-      /** Suspend the current thread for n milliseconds.
+      /** Delay the calling thread (C: Thread_sleep).
+       * @param[in] milliseconds Requested delay in milliseconds. Resolution,
+       * rounding and zero-delay behavior are platform-specific. Does not
+       * release an application mutex; scheduler delays can extend the wait.
        */
       static void sleep(unsigned int milliseconds) {
          Thread_sleep(milliseconds); }

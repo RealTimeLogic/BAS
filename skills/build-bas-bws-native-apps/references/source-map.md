@@ -50,9 +50,11 @@ Use `inc/barracuda.h` as a convenience umbrella, but open the owning header befo
 | BAS/Lua host | `balua.h`, `lua.h`, `lauxlib.h`, `lualib.h` |
 | Errors, tracing, buffers, allocators | `BaErrorCodes.h`, `HttpTrace.h`, `BufPrint.h`, `DynBuffer.h`, `AllocatorIntf.h` |
 
-Confirm C callback typedefs and C++ inline wrappers in the same header. C++ wrappers are thin frontends over the C ABI and do not change ownership.
+Confirm C callback typedefs and C++ inline wrappers in the same header. C++ wrappers are thin frontends over the C ABI. Check the inline body: a wrapper may discard a C return value or expose different arguments. Do not infer error reporting or automatic cleanup from its C++ spelling.
 
 ## Documentation routing
+
+Use [Native API usage](api-usage.md) for task selection and call-contract checks. Prefer locally generated Doxygen matching the active SDK; the published reference may describe a different release.
 
 Use the documentation present in the active checkout:
 

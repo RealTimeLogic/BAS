@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResRdr.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpResRdr.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -36,6 +36,8 @@
  *
  */
 
+/** @file HttpResRdr.h */
+
 #ifndef _HttpResRdr_h
 #define _HttpResRdr_h
 
@@ -45,6 +47,15 @@
 
 
 struct HttpRdFilter;
+/** Process a resource selected by a reader's file-extension filter.
+    @param o Required installed filter object.
+    @param name Borrowed NUL-terminated path relative to the reader's IoIntf.
+    @param st Borrowed metadata for the resource, valid only during this call.
+    @param cmd Required current request/response container. Handle the response
+    in this callback; no status is returned to request another filter.
+    No argument ownership transfers. The callback must not retain temporary
+    path/metadata pointers or destroy the reader during dispatch.
+ */
 typedef void (*HttpRdFilter_Service)(struct HttpRdFilter* o,
                                      const char* name,
                                      IoStat* st,
@@ -60,9 +71,19 @@ typedef struct HttpRdFilter
       const char* ext; /* File Extension */
 } HttpRdFilter;
 
+/** Initialize a filter without installing it.
+    @param o Required filter storage.
+    @param ext Required borrowed extension without a leading dot, for example
+    "lsp". Matching is case-sensitive; retain it while installed.
+    @param serviceFp Required callback, callable while installed.
+ */
 BA_API void HttpRdFilter_constructor(
    HttpRdFilter* o, const char* ext, HttpRdFilter_Service serviceFp);
 
+/** Unlink a filter from its reader if installed.
+    @param o Required initialized filter. Does not free the object or extension.
+    Stop callback users before destroying its storage.
+ */
 BA_API void HttpRdFilter_destructor(HttpRdFilter* o);
 
 /* Designed for LSP function dir:header(table)
@@ -142,15 +163,16 @@ typedef struct HttpResRdr
 #ifdef __cplusplus
 : public HttpDir
 {
+      /** Uninitialized storage; call a C constructor before use. */
       HttpResRdr() {}
       /** Initializes a HttpResRdr.
-          \param io is a IoIntf implementation such as ZipIo.
+          \param io Required borrowed IoIntf implementation, which must outlive the reader.
           \param dirName is the HttpDir name. You must allocate
           persistent memory for this string if not constant.
           See \ref HttpDirVolatileMem "HttpDir" for an example.
-          \param alloc is the allocator used for allocating temporary
-          string objects.
-          \param priority is the HttpDir priority.
+          \param alloc Borrowed allocator for temporary strings; NULL selects
+          AllocatorIntf_getDefault(). Retain it until reader destruction.
+          \param priority Signed 8-bit HttpDir priority; the default is zero.
       */
       HttpResRdr(IoIntf* io, const char* dirName,
                   AllocatorIntf* alloc=0, S8 priority=0);
@@ -169,8 +191,9 @@ typedef struct HttpResRdr
           string 'domain' and 'p404' if not constant.
           See \ref HttpDirVolatileMem "HttpDir" for an example.
 
-          \param io is a IoIntf implementation such as ZipIo.
-          \param domain is the domain name for this HttpResRdr instance.
+          \param io Required borrowed IoIntf implementation, which must outlive the reader.
+          \param domain Required borrowed NUL-terminated domain. The current
+          implementation compares it exactly with the parsed request domain.
           \param p404 is the path to a 404 resource. The HttpResRdr
           instance automatically forwards the request to this resource if
           the resource requested for this domain was not found. You
@@ -179,9 +202,9 @@ typedef struct HttpResRdr
           same domain or in a resource that accepts any domain. The
           404 resource can be a CSP page, an LSP page, a static HTML
           page, etc..
-          \param alloc is the allocator used for allocating temporary
-          string objects.
-          \param priority is the HttpDir priority.
+          \param alloc Borrowed allocator for temporary strings; NULL selects
+          AllocatorIntf_getDefault(). Retain it until reader destruction.
+          \param priority Signed 8-bit HttpDir priority; the default is zero.
 
        */
       HttpResRdr(IoIntf* io, const char* domain, const char* p404,
@@ -190,7 +213,7 @@ typedef struct HttpResRdr
       /** Insert a prologue HttpDir.
          prologue directories are activated (called) before the
          HttpResRdr service function is run, but after
-         authentication. The the HttpResRdr service function is not
+         authentication. The HttpResRdr service function is not
          activated if a prologue directory finds the
          resource. Epilogue directories can be inserted by using
          method HttpDir::insertDir. prologue and epilogue directories
@@ -198,38 +221,52 @@ typedef struct HttpResRdr
          directory name for the added directories is NULL.  The
          priorities for subdirectories and chained directories
          are: prologue > HttpResRdr > epilogue.
+          @param dir Required initialized directory, not already installed elsewhere.
+    It remains subject to HttpDir ownership and destruction rules.
+    @return Zero on successful insertion, E_MALLOC if the prologue root cannot
+    be allocated, or the error returned by HttpDir::insertDir.
       */
       int insertPrologDir(HttpDir* dir);
 
-      /* Terminate a HttpResRdr instance */
+      /** Detach and destroy directory state, including the prologue root and
+          owned custom-header storage. Filters are unlinked, not freed. Borrowed
+          IoIntf, allocator, and configuration strings are not destroyed. Stop
+          active users first; inherited HttpDir cleanup rules also apply. */
       ~HttpResRdr();
 
-      /** Install a filter. The HttpRdFilter Documentation is not complete.
-       */
+      /** Install a file-extension filter.
+    @param filter Required initialized, currently unlinked filter. Borrowed until
+    it is unlinked or the reader is destroyed; never installed in two readers.
+    @return Zero on success, -1 when that exact extension is already installed.
+    Recognized built-in MIME types take precedence over filters for direct files.
+    Filters also supply candidate index extensions after index.html/index.htm.
+ */
       int installFilter(HttpRdFilter* filter);
 
-      /** Makes the HttpResRdr instance set the HTTP header
-          "Cache-Control: max-age" for all resources. See
-          HttpResponse::setMaxAge for more information.
-      */
+      /** Configure Cache-Control max-age for ordinary static resources.
+    @param maxAge Lifetime in seconds. Zero (default) disables this reader's
+    automatic max-age header. Filter responses and includes do not receive this
+    setting automatically. See HttpResponse::setMaxAge.
+ */
       void  setMaxAge(BaTime maxAge);
 
-      /** Send resource to a client.
-
-      The sendFile method is internally used by the HttpResRdr when
-      sending a resource to a client. The method automatically handles
-      caching and HTTP method type handling as explained above.
-
-      The method is made public as it may be useful for specialized
-      HttpDir implementations.  The method cannot be used with
-      HttpResponse:include calls or if data is committed. No data can
-      be sent on the response object prior to calling this method.
-      */
+      /** Send an IoIntf resource through the current response.
+    @param io Required borrowed filesystem containing name.
+    @param name Required NUL-terminated path relative to io, valid during this call.
+    @param st Required current metadata from a successful IoIntf::stat for name.
+    @param cmd Required request/response container. For ordinary output, do not
+    send body data or commit headers before calling. Includes use a separate
+    internal streaming path; forwards are handled as resource output.
+    Handles ordinary GET/HEAD/OPTIONS, caching, and supported range requests.
+    No status is returned. I/O failures are handled through the response and can
+    terminate the connection; already-sent bytes cannot be retracted.
+ */
       static void sendFile(
          IoIntf* io,const char* name, IoStat* st, HttpCommand* cmd);
 
-      /** Returns the IoIntf used by the HttpResRdr.
-       */
+      /** Access the filesystem supplied at construction.
+    @return Non-NULL borrowed IoIntf pointer; ownership does not change.
+ */
       IoIntf* getIo();
 #if 0
 }
@@ -254,19 +291,46 @@ typedef struct HttpResRdr
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpResRdr::HttpResRdr(IoIntf*,const char*,AllocatorIntf*,S8)
+    @param o Required storage to initialize.
+ */
 BA_API void HttpResRdr_constructor(
    HttpResRdr* o, IoIntf* io, const char* dirName,
    AllocatorIntf* alloc, S8 priority);
+/** @copydoc HttpResRdr::HttpResRdr(IoIntf*,const char*,const char*,AllocatorIntf*,S8)
+    @param o Required storage to initialize.
+ */
 BA_API void HttpResRdr_constructor2(
    HttpResRdr* o,IoIntf* io,const char* domain,
    const char* p404,AllocatorIntf* alloc,
    S8 priority);
+/** @copydoc HttpResRdr::insertPrologDir
+    @param o Required initialized reader.
+ */
 BA_API int HttpResRdr_insertPrologDir(HttpResRdr* o, HttpDir* dir);
+/** @copydoc HttpResRdr::~HttpResRdr
+    @param o Required initialized reader.
+ */
 BA_API void HttpResRdr_destructor(HttpResRdr* o);
+/** @copydoc HttpResRdr::installFilter
+    @param o Required initialized reader.
+ */
 BA_API int HttpResRdr_installFilter(HttpResRdr* o, HttpRdFilter* filter);
+/** C form of HttpResRdr::setMaxAge.
+    @param o Required initialized reader.
+    @param maxAgeMA Lifetime in seconds; zero disables the automatic header.
+ */
 #define HttpResRdr_setMaxAge(o, maxAgeMA) (o)->maxAge=maxAgeMA
+/** Configure inherited authentication and authorization.
+    @param o Required initialized reader.
+    @param authenticator Borrowed AuthenticatorIntf pointer, or NULL.
+    @param realm Borrowed AuthorizerIntf pointer, or NULL; despite the historical
+    macro name this argument is not a realm string. See HttpDir::setAuthenticator.
+ */
 #define HttpResRdr_setAuthenticator(o, authenticator, realm) \
    HttpDir_setAuthenticator((HttpDir*)o, authenticator, realm)
+/** @copydoc HttpResRdr::sendFile
+ */
 BA_API void HttpResRdr_sendFile(IoIntf* io,const char* name,
    IoStat* st,HttpCommand* cmd);
 BA_API void set_deflategzip(IoIntf_DeflateGzip ptr);
@@ -274,6 +338,9 @@ BA_API IoIntf_DeflateGzip get_deflategzip(void);
 BA_API void HttpResRdr_setHeader(HttpResRdr* o, HttpResRdrHeader* headers);
 
 
+/** @copydoc HttpResRdr::getIo
+    @param o Required initialized reader.
+ */
 #define HttpResRdr_getIo(o) (o)->io
 #ifdef __cplusplus
 }

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: FixedSizeAllocator.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: FixedSizeAllocator.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2005-2008
  *
@@ -34,6 +34,8 @@
  *
  */
 
+/** @file FixedSizeAllocator.h */
+
 #ifndef __FixedSizeAllocator_h
 #define __FixedSizeAllocator_h
 
@@ -50,19 +52,28 @@
     equally sized chunks. Allocating memory larger than the chunk size
     or using realloc results in an error; i.e., NULL returned. One can
     allocate a smaller size than the chunk size, but the size will be
-    adjusted to the chunk size.
+    adjusted to the chunk size. A zero-size request or exhausted pool returns
+    NULL and sets the requested size to zero. Free only live blocks returned by
+    this allocator, once each; NULL is not accepted. The backing buffer remains
+    owned by the caller and must outlive the allocator and all allocated blocks.
+    This allocator does not lock access; callers must serialize concurrent use.
 */
 typedef struct FixedSizeAllocator
 #ifdef __cplusplus
 : public AllocatorIntf
 {
+      /** Leave storage uninitialized; call FixedSizeAllocator_constructor before use. */
       FixedSizeAllocator() {}
 
-      /** Create a fixed size allocator.
-          \param buffer a pointer to the memory location for the fixed
-          size allocator.
-          \param bufSize the size of the buffer. The size should be n*blockSize.
-          \param blockSize the size of the chunks.
+      /** Initialize a fixed-size allocation pool without allocating memory.
+       * @param[in,out] buffer Writable backing storage, aligned for SingleLink
+       * and for the objects to be allocated from it. Initialization writes free
+       * list links into the buffer.
+       * @param[in] bufSize Available bytes. Only complete blocks are used;
+       * trailing bytes smaller than blockSize are unused.
+       * @param[in] blockSize Positive bytes per block, at least sizeof(SingleLink)
+       * and a multiple of the required alignment. The buffer-size arithmetic
+       * must fit in size_t. No argument-validation status is returned.
        */
       FixedSizeAllocator(void* buffer, size_t bufSize, size_t blockSize);
       
@@ -78,6 +89,13 @@ typedef struct FixedSizeAllocator
 #ifdef __cplusplus
 extern "C" {
 #endif 
+/** Initialize a fixed-size allocator in caller-provided storage.
+ * @param[out] o Allocator object to initialize.
+ * @param[in,out] buffer Writable, suitably aligned backing buffer retained by o.
+ * @param[in] bufSize Byte size of buffer; incomplete trailing blocks are unused.
+ * @param[in] blockSize Positive block size. See
+ * FixedSizeAllocator::FixedSizeAllocator(void*,size_t,size_t) for alignment,
+ * minimum-size and lifetime requirements. */
 BA_API void FixedSizeAllocator_constructor(FixedSizeAllocator* o,
                                     void* buffer,
                                     size_t bufSize,

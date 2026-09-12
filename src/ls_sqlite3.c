@@ -3,7 +3,7 @@
 ** Author: Tiago Dionizio, Eduardo Quintao
 ** See Copyright Notice in license.html
 
-** $Id: ls_sqlite3.c 5434 2023-05-03 01:35:55Z wini $
+** $Id: ls_sqlite3.c 5971 2026-09-11 10:01:39Z wini $
 */
 
 #ifdef _WIN32
@@ -90,6 +90,7 @@ typedef struct
 typedef struct
 {
       short       closed;
+      short       pending;            /* first sqlite3_step result, or zero */
       int         conn;               /* reference to connection */
       int         numcols;            /* number of columns */
       int         colnames, coltypes; /* reference to column information tables */
@@ -222,6 +223,8 @@ doSqliteExec(lua_State *L, connl_data *conn, const char* sql)
          Do a full GC as an attempt to close lingering objects
       */
       tryAgain=FALSE;
+      sqlite3_free(errmsg);
+      errmsg = NULL;
       lua_gc(L, LUA_GCCOLLECT, 0);
       goto L_tryAgain;
    }
@@ -244,15 +247,13 @@ doSqliteExec(lua_State *L, connl_data *conn, const char* sql)
 */
 static int finalize(lua_State *L, cur_data *cur)
 {
-   const char *errmsg;
-   int res;
-   if (cur->sql_vm && sqlite3_finalize(cur->sql_vm) != SQLITE_OK) {
-      errmsg = sqlite3_errmsg(sqlite3_db_handle(cur->sql_vm));
-      res    = sqlite3_errcode(sqlite3_db_handle(cur->sql_vm));
+   if (cur->sql_vm) {
+      sqlite3* db = sqlite3_db_handle(cur->sql_vm);
+      int res = sqlite3_finalize(cur->sql_vm);
       cur->sql_vm = NULL;
-      return pusherr(L, res, errmsg);
+      if (res != SQLITE_OK)
+         return pusherr(L, res, sqlite3_errmsg(db));
    }
-   cur->sql_vm = NULL;
    lua_pushnil(L);
    return 1;
 }
@@ -285,9 +286,13 @@ static int cur_fetch (lua_State *L) {
    if (vm == NULL)
       return 0;
 
-   balua_releasemutex(m); 
-   res = sqlite3_step(vm);
-   balua_setmutex(m);
+   res = cur->pending;
+   cur->pending = 0;
+   if (!res) {
+      balua_releasemutex(m);
+      res = sqlite3_step(vm);
+      balua_setmutex(m);
+   }
    if(cur->closed)
       return luaL_error(L,LUASQL_PREFIX"cur closed");
 
@@ -345,6 +350,7 @@ static int cur_fetch (lua_State *L) {
 static int cur_close(lua_State *L)
 {
    connl_data *conn;
+   int rc = SQLITE_OK;
    cur_data *cur = (cur_data *)luaL_checkudata(L, 1, LUASQL_CURSOR_SQLITE);
 
    luaL_argcheck(L, cur != NULL, 1, LUASQL_PREFIX"cursor expected");
@@ -356,7 +362,7 @@ static int cur_close(lua_State *L)
    /* Nullify structure fields. */
    cur->closed = 1;
    if (cur->sql_vm)
-      sqlite3_finalize(cur->sql_vm);
+      rc = sqlite3_finalize(cur->sql_vm);
 
    cur->sql_vm = NULL;
 
@@ -382,6 +388,8 @@ static int cur_close(lua_State *L)
    if (cur->coltypes >= 0)
       LUASQL_UNREF(L,  cur->coltypes);
 
+   if (rc != SQLITE_OK)
+      return pusherr(L, rc, sqlite3_errstr(rc));
    lua_pushboolean(L, 1);
    return 1;
 }
@@ -428,6 +436,7 @@ static cur_data* init_cursor(lua_State *L, int o, connl_data *conn,
 
    /* fill in structure */
    cur->closed = 0;
+   cur->pending = 0;
    cur->numcols = -1;
    cur->colnames = LUA_NOREF;
    cur->coltypes = LUA_NOREF;
@@ -466,42 +475,29 @@ static void create_namesntypes(lua_State *L, /* userdata cur is TOS */
 ** Create a new Cursor object and push it on top of the stack.
 */
 static int create_cursor(lua_State *L, int o, connl_data *conn,
-                         sqlite3_stmt *sql_vm, int numcols)
+                         sqlite3_stmt *sql_vm, int numcols, int res)
 {
    cur_data *cur = (cur_data*)init_cursor(L, o, conn, sql_vm);
+   cur->pending = (short)res;
    create_namesntypes(L, sql_vm, numcols, cur);
    return 1;
 }
 
-#if 0
-/*
-** Collect a Connection object.
-*/
+/* GC cannot retry. SQLite releases the connection after its children close. */
 static int conn_gc(lua_State *L)
 {
-   connl_data *conn = (connl_data *)luaL_checkudata(L, 1, LUASQL_CONNECTION_SQLITE);
-   luaL_argcheck (L, conn != NULL, 1, LUASQL_PREFIX"connection expected");
-   if (conn->closed) {
-      lua_pushboolean(L, 0);
-      return 1;
+   connl_data *conn=(connl_data *)luaL_checkudata(L,1,LUASQL_CONNECTION_SQLITE);
+   GET_BAMUTEX;
+   if (!conn->closed) {
+      balua_releasemutex(m);
+      sqlite3_close_v2(conn->sql_conn);
+      balua_setmutex(m);
+      conn->closed = 1;
+      LUASQL_UNREF(L, conn->env);
    }
-
-   if (conn->cur_counter > 0){
-      /* return luaL_error (L, LUASQL_PREFIX"there are open cursors"); */
-      lua_pushboolean(L, 0);
-      return 1;
-   }
-
-   /* Nullify structure fields. */
-   conn->closed = 1;
-   LUASQL_UNREF(L, conn->env);
-   balua_releasemutex(m); 
-   sqlite3_close(conn->sql_conn);
-   balua_setmutex(m);
-   lua_pushboolean(L, 1);
-   return 1;
+   return 0;
 }
-#endif
+
 
 /*
 ** Close a Connection object.
@@ -526,26 +522,27 @@ static int conn_close(lua_State *L)
       /* uses 'key' (at index -2) and 'value' (at index -1) */
       lua_pushvalue(L, -3); /* the closure */
       lua_pushvalue(L, -3); /* the key - (userdata) */
-      lua_pcall(L, 1, 0, 0);
+      if (lua_pcall(L, 1, 3, 0))
+         return lua_error(L);
+      if (lua_isnil(L, -3))
+         return 3;
       lua_settop(L,envix + 1);
    }
    lua_settop(L,envix - 1);
 
-   /* if this happens in a GC then we are in trouble because
-      Lua has collected the object and we have no way of
-      calling close again. Also the sqlite3_close will also
-      fail and return SQLITE_BUSY.
-   */
    if (conn->cur_counter > 0)
       return luaL_error (L, LUASQL_PREFIX"there are open cursors");
 
-   /* Nullify structure fields. */
-   conn->closed = 1;
-   LUASQL_UNREF(L, conn->env);
-   balua_releasemutex(m); 
+   conn->closed = 1; /* Prevent use while the mutex is released. */
+   balua_releasemutex(m);
    rc = sqlite3_close(conn->sql_conn);
    balua_setmutex(m);
-   lua_pushboolean(L, rc == SQLITE_OK ? 1 : 0);
+   if (rc != SQLITE_OK) {
+      conn->closed = 0;
+      return pusherr(L, rc, sqlite3_errmsg(conn->sql_conn));
+   }
+   LUASQL_UNREF(L, conn->env);
+   lua_pushboolean(L, 1);
    return 1;
 }
 
@@ -570,6 +567,7 @@ static int conn_prepare(lua_State *L)
       return pusherr(L, res,
                      sqlite3_errmsg(conn->sql_conn));
 
+   luaL_argcheck(L, vm != NULL, 2, "SQL statement expected");
    init_cursor(L, 1, conn, vm);
    return 1;
 }
@@ -594,6 +592,7 @@ static int stmt_bind(lua_State *L)
    luaL_checktype(L, 2, LUA_TTABLE);
 
    sqlite3_reset(vm);
+   cur->pending = 0;
 
    cur->numcols = -1;
    if (cur->colnames != LUA_NOREF) {
@@ -607,6 +606,7 @@ static int stmt_bind(lua_State *L)
 
    for (i=1; i <= bcount; ++i) {
       const char* tp;
+      int rc;
 
       lua_rawgeti(L,2, i);
       luaL_checktype(L, -1, LUA_TTABLE);
@@ -617,38 +617,41 @@ static int stmt_bind(lua_State *L)
 
       tp = lua_tostring(L, -2);
       if (strcmp("BLOB",tp) == 0) {
-         if (lua_isnumber(L,-1)) { /* treat as zero blob */
-            int n = (int)lua_tointeger(L, -1);
-            sqlite3_bind_zeroblob(vm, i, n);
+         if (lua_type(L,-1) == LUA_TNUMBER) { /* treat as zero blob */
+            lua_Integer n = luaL_checkinteger(L, -1);
+            luaL_argcheck(L, n >= 0 && n <= INT_MAX, 2, "invalid BLOB size");
+            rc = sqlite3_bind_zeroblob(vm, i, (int)n);
          }
          else {
             size_t l;
-            const void* val = lua_tolstring(L, -1, &l);
-            sqlite3_bind_blob(vm, i, val, (int)l, SQLITE_TRANSIENT);
+            const void* val = luaL_checklstring(L, -1, &l);
+            rc = sqlite3_bind_blob(vm, i, val, (int)l, SQLITE_TRANSIENT);
          }
       }
       else if (strcmp("TEXT",tp) == 0) {
          size_t l;
-         const char* val = lua_tolstring(L, -1, &l);
-         sqlite3_bind_text(vm, i, val, (int)l, SQLITE_TRANSIENT);
+         const char* val = luaL_checklstring(L, -1, &l);
+         rc = sqlite3_bind_text(vm, i, val, (int)l, SQLITE_TRANSIENT);
       }
       else if (strcmp("INTEGER",tp) == 0) {
-         lua_Integer val = lua_tointeger(L, -1);
-         sqlite3_bind_int64(vm, i, (sqlite3_int64)val);
+         lua_Integer val = luaL_checkinteger(L, -1);
+         rc = sqlite3_bind_int64(vm, i, (sqlite3_int64)val);
       }
 #ifndef SQLITE_OMIT_FLOATING_POINT
       else if (strcmp("FLOAT",tp) == 0) {
-         lua_Number val = lua_tonumber(L, -1);
-         sqlite3_bind_double(vm, i, val);
+         lua_Number val = luaL_checknumber(L, -1);
+         rc = sqlite3_bind_double(vm, i, val);
       }
 #endif
       else if (strcmp("NULL",tp) == 0) {
-         sqlite3_bind_null(vm, i);
+         rc = sqlite3_bind_null(vm, i);
       }
       else {
-         luaL_error(L, "invalid bind type parameter #u",i);
+         luaL_error(L, "invalid bind type parameter #%d",i);
          return 0;
       }
+      if (rc != SQLITE_OK)
+         return pusherr(L, rc, sqlite3_errmsg(sqlite3_db_handle(vm)));
       lua_pop(L,2);
    }
    lua_settop(L,1);
@@ -685,15 +688,17 @@ static int stmt_execute(lua_State *L)
    LUASQL_GETREF(L, cur->conn);
    conn = lua_touserdata (L, -1);
 
-   balua_releasemutex(m); 
-   /* process first reirst result to retrive query information and type */
+   cur->pending = 0;
+   balua_releasemutex(m);
+   sqlite3_reset(vm);
+   /* Process the first result once, retaining it for fetch(). */
    res = sqlite3_step(vm);
    numcols = sqlite3_column_count(vm);
    balua_setmutex(m);
 
    /* real query? if empty, must have numcols!=0 */
    if ((res == SQLITE_ROW) || ((res == SQLITE_DONE) && numcols)) {
-      sqlite3_reset(vm);
+      cur->pending = (short)res;
       create_namesntypes(L, vm, numcols, cur);
       lua_pushvalue(L,1);
       return 1;
@@ -739,6 +744,7 @@ static int conn_execute(lua_State *L)
    {
       return pusherr(L, res, sqlite3_errmsg(conn->sql_conn));
    }
+   luaL_argcheck(L, vm != NULL, 2, "SQL statement expected");
    balua_releasemutex(m); 
    /* process first result to retrive query information and type */
    res = sqlite3_step(vm);
@@ -748,8 +754,7 @@ static int conn_execute(lua_State *L)
    /* real query? if empty, must have numcols!=0 */
    if ((res == SQLITE_ROW) || ((res == SQLITE_DONE) && numcols))
    {
-      sqlite3_reset(vm);
-      return create_cursor(L, 1, conn, vm, numcols);
+      return create_cursor(L, 1, conn, vm, numcols, res);
    }
 
    if (res == SQLITE_DONE) /* and numcols==0, INSERT,UPDATE,DELETE statement */
@@ -881,9 +886,9 @@ static int conn_getlastautoid(lua_State *L)
 static int conn_setbusytimeout(lua_State *L)
 {
    connl_data *conn = getconnection(L);
-   int ms = (int)(luaL_checknumber(L,2));
-   luaL_argcheck(L, ms >= 0, 2, "invalid timeout (secs)");
-   sqlite3_busy_timeout(conn->sql_conn, ms);
+   lua_Number ms = luaL_checknumber(L,2);
+   luaL_argcheck(L, ms >= 0 && (double)ms <= INT_MAX, 2, "invalid timeout (ms)");
+   sqlite3_busy_timeout(conn->sql_conn, (int)ms);
    return 0;
 }
 
@@ -908,14 +913,17 @@ static int conn_tablelist(lua_State *L) {
    if (vm == NULL)  return 0;
 
    for(;;) {
-      res = sqlite3_step(vm);
+      res = cur->pending;
+      cur->pending = 0;
+      if (!res) res = sqlite3_step(vm);
       /* no more results? */
       if (res == SQLITE_DONE)  break;
       if (res != SQLITE_ROW)   break;
       lua_pushstring(L, (char*)sqlite3_column_text(vm, 0));
       lua_rawseti(L, 2, ++i);
    }
-   cur_close(L);
+   rc = cur_close(L);
+   if (rc != 1) return rc;
    lua_settop(L,2);
    return 1;
 }
@@ -963,7 +971,9 @@ static int blob_close(lua_State* L)
    blob->sql_blob = NULL;
 
    rc = sqlite3_blob_close(sql_blob);
-   lua_pushboolean(L, rc == SQLITE_OK ? 1 : 0);
+   if (rc != SQLITE_OK)
+      return pusherr(L, rc, sqlite3_errstr(rc));
+   lua_pushboolean(L, 1);
    return 1;
 }
 
@@ -974,14 +984,16 @@ static int blob_write(lua_State* L)
    sqlite3_blob* sql_blob;
    size_t l;
    const char* p = luaL_checklstring(L,2,&l);
-   int bofs = (int)luaL_optinteger(L,3,0);
+   lua_Integer bofs = luaL_optinteger(L,3,0);
+   luaL_argcheck(L, l <= INT_MAX, 2, "invalid BLOB size");
+   luaL_argcheck(L, bofs >= 0 && bofs <= INT_MAX, 3, "invalid BLOB offset");
 
    luaL_argcheck (L, blob != NULL&& blob->sql_blob != NULL, 1,
                   LUASQL_PREFIX"blob expected");
 
    sql_blob = blob->sql_blob;
 
-   rc = sqlite3_blob_write(sql_blob, p, (int)l, bofs);
+   rc = sqlite3_blob_write(sql_blob, p, (int)l, (int)bofs);
 
    if (rc != SQLITE_OK) {
       lua_settop(L,2);
@@ -999,20 +1011,22 @@ static int blob_read(lua_State* L)
    int rc;
    sqlite3_blob* sql_blob;
    luaL_Buffer b;
-   size_t n = (size_t)luaL_checkinteger(L,2);  /* how much to read */
-   size_t bofs = (size_t)luaL_checkinteger(L,3);  /* where to read */
+   lua_Integer n = luaL_checkinteger(L,2);  /* how much to read */
+   lua_Integer bofs = luaL_checkinteger(L,3);  /* where to read */
    size_t rlen = LUAL_BUFFERSIZE;  /* try to read that much each time */
 
    luaL_argcheck (L, blob != NULL&& blob->sql_blob != NULL, 1,
                   LUASQL_PREFIX"blob expected");
 
+   luaL_argcheck(L, n >= 0 && n <= INT_MAX, 2, "invalid BLOB size");
+   luaL_argcheck(L, bofs >= 0 && bofs <= INT_MAX, 3, "invalid BLOB offset");
    luaL_buffinit(L, &b);
 
    sql_blob = blob->sql_blob;
 
    do {
       char *p = luaL_prepbuffer(&b);
-      if (rlen > n) rlen = n;  /* cannot read more than asked */
+      if (rlen > (size_t)n) rlen = (size_t)n;  /* cannot read more than asked */
       rc =  sqlite3_blob_read(sql_blob, p, (int)rlen, (int)bofs);
       if (rc != SQLITE_OK) {
          lua_settop(L,2);
@@ -1042,14 +1056,15 @@ static int conn_blobzero(lua_State* L)
    const char *table=luaL_checkstring(L,2);
    const char *col=luaL_checkstring(L,3);
    sqlite3_int64 row = luaL_checkinteger(L,4);
-   size_t sz  = (size_t)luaL_checkinteger(L,5);
+   lua_Integer sz = luaL_checkinteger(L,5);
    sqlite3_stmt *vm;
    const char *errmsg;
    const char *tail;
    int rc;
    char* stmt;
 
-   stmt = sqlite3_mprintf("update %Q set %Q = ? where _ROWID_ = %llu;",
+   luaL_argcheck(L, sz >= 0 && sz <= INT_MAX, 5, "invalid BLOB size");
+   stmt = sqlite3_mprintf("update %Q set %Q = ? where _ROWID_ = %lld;",
                           table, col, row);
 
    rc = sqlite3_prepare_v2(conn->sql_conn, stmt, -1, &vm, &tail);
@@ -1166,7 +1181,7 @@ static int env_connect(lua_State *L)
    else if (strcmp(p2,"NOCREATE") == 0)
       flags = SQLITE_OPEN_READWRITE;
    else {
-      luaL_argerror(L,2, "Invalid open option");
+      luaL_argerror(L,3, "Invalid open option");
       return 0;
    }
 
@@ -1236,7 +1251,7 @@ static void create_metatables(lua_State *L)
       {NULL, NULL},
    };
    struct luaL_Reg connection_methods[] = {
-      {"__gc", conn_close},
+      {"__gc", conn_gc},
       {"close", conn_close},
       {"__close", conn_close},
       {"execute", conn_execute},

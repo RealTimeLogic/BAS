@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjson.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: ubjson.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2023
  *
@@ -37,6 +37,8 @@
  Core API and parser
 
 */
+
+/** @file ubjson.h */
 
 #ifndef __ubjson_h
 #define __ubjson_h
@@ -94,7 +96,7 @@ typedef enum {
    UBJPStatus_DoneEOS=1,
 
    /** The parser completed parsing a new UBJSON object, but found the
-       start of a new object in the provided buffer.
+       unread bytes in the supplied buffer, not yet validated as another container.
     */
    UBJPStatus_Done,
 
@@ -119,7 +121,7 @@ typedef struct {
    /** The value type is controlled by type (t) */
    union {
       U8 uint8;  /**< Use when 't' is \ref UBJT_Uint8 or \ref UBJT_Boolean */
-      S8 int8;   /**< Use when 't' is \ref UBJT_Uint8 */
+      S8 int8;   /**< Use when 't' is \ref UBJT_Int8 */
       char ch;   /**< Use when 't' is  \ref UBJT_Char */
       S16 int16; /**< Use when 't' is \ref UBJT_Int16 */
       S32 int32; /**< Use when 't' is \ref UBJT_Int32 */
@@ -128,7 +130,7 @@ typedef struct {
       double float64; /**< Use when 't' is \ref UBJT_Float64 */
       float float32; /**< Use when 't' is \ref UBJT_Float32 */
 #endif
-      const char* string; /**< Use when 't' is \ref UBJT_String */
+      const char* string; /**< Borrowed chunk for String/HNumber; not NUL-terminated. Use len and x. */
    } u;
 
    /** When t=UBJT_Count: container len, When t=UBJT_String: string chunk len */
@@ -152,6 +154,10 @@ extern "C" {
 /* Sets the value type (t) and the union (u) to the smallest number
    representation for 'in'
 */
+/** Choose the smallest supported integer representation.
+    @param o Required output record; sets t and its selected union member only.
+    @param in Signed 64-bit input value. Other record fields remain unchanged.
+ */
 void UBJVal_setMinInteger(UBJVal* o, S64 in);
 
 #ifdef __cplusplus
@@ -173,11 +179,16 @@ typedef struct
 
 struct UBJPIntf;
 
-/** Parser callback function used by interface class UBJPIntf
-    \param o the interface object
-    \param v the parsed value
-    \param recLevel goes from 0 to N and represents object nesting level
-*/
+/** Receive a parsed UBJSON event synchronously.
+    @param o Required callback interface.
+    @param v Borrowed value event; inspect t before its union. Strings/HNumber are
+    delivered in chunks: len is this chunk's bytes and x is bytes remaining.
+    Neither chunk data nor member-name storage may be retained without copying.
+    @param recLevel Top-level begin/end depth is zero; primitive children use
+    one greater than their containing level. Count events use the container level.
+    @return Zero to continue, nonzero to stop with UBJPStatus_IntfErr. Do not
+    destroy the parser during its callback.
+ */
 typedef int (*UBJPIntf_Service)(struct UBJPIntf* o, UBJVal* v, int recLevel);
 
 
@@ -189,7 +200,7 @@ typedef struct UBJPIntf
 {
 #ifdef __cplusplus
    /** Create the callback interface object.
-       \param s the parser service callback function.
+       \param s Required callback, callable while installed.
     */
    UBJPIntf(UBJPIntf_Service s);
    ~UBJPIntf();
@@ -213,6 +224,9 @@ inline UBJPIntf::~UBJPIntf() {
 
 /** The UBJSON parser parses a binary UBJSON stream and calls the UBJPIntf
     callback interface for each parsed object/primitive type.
+    @note This implementation may not match the latest UBJSON specification.
+    Specification compatibility is reserved for a separate review. The contracts
+    here describe the current implementation, not a conformance certification.
 
     \sa UBJVal
     \sa JParser
@@ -221,50 +235,57 @@ typedef struct UBJParser
 {
 #ifdef __cplusplus
    /** Create the callback interface object.
-       \param intf the callback interface object.
+       \param intf Required borrowed interface with a non-NULL callback.
        \param name is a buffer used for storing an object member name
-       during parsing.
+       during parsing. Required writable storage retained for the parser lifetime.
        \param memberNameLen is the length of the object member name
        buffer. The length must be no less than the largest member name
-       expected.
+       expected, plus one byte for its NUL terminator. Empty member names
+       are not supported by the current name-tracking logic.
        \param extraStackLen informs the parser that it can use a stack
-       larger than the default depth of 3. The memory for the
+       larger than the default depth of 3. Use zero for an ordinary object.
+       Positive values require the additional writable storage shown below and
+       must fit the integer stack-length representation. The memory for the
        UBJParser object must be constructed as follows:
        malloc(sizeof(UBJParser) + extraStackLen *
        sizeof(UBJPStackNode))
    */
    UBJParser(UBJPIntf* intf,char* name,int memberNameLen,int extraStackLen=0);
 
-   /** Parse a UBJSON chunk.
-       \param buf a pointer to the UBJSON chunk.
-       \param size is the buffer length.
-       \returns
-       \li 0: Needs more data. The UBJSON chunk parsed was only a
-       partial object.
-       \li > 0: A complete UBJSON object is assembled.
-       \li < 0: Parse error.
-       \sa getStatus
-   */ 
+   /** Feed or resume parsing a top-level UBJSON object/array.
+    @param buf Borrowed binary input chunk. Supply new input after DoneEOS or
+    NeedMoreData. After Done, this argument is ignored while the parser consumes
+    unread bytes retained from the previous chunk; keep that storage valid.
+    @param size New chunk byte count, ignored during continuation after Done.
+    @return 0 needs more bytes, 1 completed one container, -1 reports a parse,
+    callback, or capacity error. Inspect getStatus(). NeedMoreData at actual end
+    of input means incomplete input. No whole-document allocation is made.
+    After failure, reinitialize before reuse. Callback effects are not rolled back.
+    A complete first container does not validate trailing bytes or another document.
+ */ 
    int parse(const U8* buf, U32 size);
 
-   /** Destructor */
+   /** No-op destructor. Input, name storage, and callback interface are borrowed
+    and never freed by the parser. Stop using the parser before releasing them.
+ */
    ~UBJParser();
 
-   /** Returns the current container index position when parsing an
-    [optimized container](http://ubjson.org/type-reference/container-types/#optimized-format).
-    */
+   /** Query the current optimized-container position.
+    @return Zero-based current index when a count is active, otherwise -1.
+    Intended for callbacks while the container is active; do not interpret stale
+    stack state after completion/error as a current position.
+ */
    int getIndex();
 
-   /** Returns the length of the
-       [optimized container](http://ubjson.org/type-reference/container-types/#optimized-format)
-       when type (t) is \ref UBJT_Count
-    */
+   /** Query the current container's declared count.
+    @return Nonnegative count for an optimized container, otherwise -1.
+    Meaningful only while the container is active, typically during a callback.
+ */
    int getCount();
 
-   /** Returns the parser status. Typically used when method parse
-       returns a value less than zero.
-       \sa parse
-   */
+   /** @return Current UBJPStatus as an int, initially DoneEOS. This query does
+    not advance parsing or clear the status.
+ */
    int getStatus();
 
 #endif
@@ -288,12 +309,30 @@ typedef struct UBJParser
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc UBJParser::UBJParser
+    @param o Required storage to initialize.
+ */
 void UBJParser_constructor(UBJParser* o, UBJPIntf* intf, char* name,
                            int memberNameLen, int extraStackLen);
+/** @copydoc UBJParser::~UBJParser
+    @param o Required initialized parser.
+ */
 #define UBJParser_destructor(o)
+/** @copydoc UBJParser::parse
+    @param o Required initialized parser.
+ */
 int UBJParser_parse(UBJParser* o, const U8* buf, U32 size);
+/** @copydoc UBJParser::getIndex
+    @param o Required initialized parser.
+ */
 #define UBJParser_getIndex(o)  (o)->stack[(o)->stackIx].ix
+/** @copydoc UBJParser::getCount
+    @param o Required initialized parser.
+ */
 #define UBJParser_getCount(o)  (o)->stack[(o)->stackIx].count
+/** @copydoc UBJParser::getStatus
+    @param o Required initialized parser.
+ */
 #define UBJParser_getStatus(o) (o)->status
 #ifdef __cplusplus
 }
@@ -320,12 +359,13 @@ inline int UBJParser::getStatus() {
 
 struct UBJEBuf;
 
-/** UBJSON Encoder buffer callback can be used for flushing the
-    buffer or for expanding the buffer. The callback must set the
-    cursor position to zero if the buffer is flushed.
-    \param o UBJEBuf
-    \param sizeRequired is the extra size required by the buffer (if
-    expanding the buffer).
+/** Make room in an encoder buffer by flushing or expanding it.
+    @param o Required borrowed buffer object. Preserve unflushed bytes when growing.
+    After flushing, reset cursor to zero; when growing, update data and dlen.
+    @param sizeRequired Additional capacity requested in bytes.
+    @return Zero after providing usable space, nonzero on failure. A successful
+    callback must leave writable capacity; the encoder does not retry indefinitely.
+    Buffer ownership remains with the application, and prior output is not rolled back.
  */
 typedef int (*UBJEBuf_FlushCB)(struct UBJEBuf* o, int sizeRequired);
 
@@ -334,11 +374,14 @@ typedef struct UBJEBuf
 {
 #ifdef __cplusplus
    /** Initialize the UBJSON Encoder buffer.
-       \param cb the expand or flush callback.
-       \param buf the (initial) encoder buffer
-       \param bufLen is length of buffer (min 14 bytes)
+       \param cb Required expansion/flush callback; remains callable while used.
+       \param buf Required borrowed writable encoder buffer, retained while used.
+       \param bufLen Positive buffer capacity in bytes, at least 14. No storage is
+       allocated and the initial cursor is zero.
    */
    UBJEBuf(UBJEBuf_FlushCB cb, U8* buf, S32 bufLen);
+/** No-op destructor; neither flushes nor frees application buffer storage.
+ */
    ~UBJEBuf();
 #endif
    UBJEBuf_FlushCB flushCB;
@@ -388,8 +431,11 @@ typedef enum
 
 /** UBJSON Encoder.
     The encoder performs limited error checking and you can produce
-    incorrect UBJSON data if you incorrectly use the methods in this
-    class.
+    incorrect UBJSON data if used incorrectly. Supply matching containers and
+    exact optimized counts. Output is incremental, and an error can leave partial
+    data. Final buffered bytes must be consumed/flushed by the application; the
+    destructor does not flush. The current implementation has not been verified
+    against the latest UBJSON specification.
  */
 typedef struct UBJEncoder
 {
@@ -398,50 +444,99 @@ typedef struct UBJEncoder
    /** Create/initialize an UBJEncoder instance.
        \param buf a buffer that either buffers all produced UBJSON
        data or small chunks, which are then flushed out to a stream
-       when the buffer is full.
+       when the buffer is full. Required borrowed initialized UBJEBuf,
+       which must outlive the encoder.
     */
    UBJEncoder(UBJEBuf* buf);
 
-   /** Destructor
-    */
+   /** No-op destructor; does not flush output or free the borrowed buffer.
+ */
    ~UBJEncoder();
 
-   /** Set member name. This function must be called for objects, but
-       must not be called for arrays.
-    */
+   /** Store a name for the next object value; do not use for array elements.
+    @param n Borrowed NUL-terminated name retained until the next value is emitted.
+    @return The C macro yields the assigned pointer, not a status code.
+    @warning The C++ wrapper declares int but returns that pointer expression;
+    it requires a separate source correction. No output is produced by the setter.
+ */
    int setName(const char* n);
 
-   /** Set UBJSON NULL */
+   /** Emit UBJSON null.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int null();
 
-   /** Set boolean */
+   /** Emit one boolean value.
+    @param b Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int boolean(bool b);
 
-   /** Set uint8 */
+   /** Emit one uint8 value.
+    @param v Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int uint8(U8 v);
 
-   /** Set int8 */
+   /** Emit one int8 value.
+    @param v Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int int8(S8 v);
 
-   /** Set 'char' */
+   /** Emit one character value.
+    @param v Value copied into output. Supply a protocol-valid single-byte character.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int character(char v);
 
-   /** Set int16 */
+   /** Emit one int16 value.
+    @param v Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int int16(S16 v);
 
-   /** Set int32 */
+   /** Emit one int32 value.
+    @param v Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int int32(S32 v);
 
-   /** Set int64 */
+   /** Emit one int64 value.
+    @param v Value copied into output.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int int64(S64 v);
 
-   /** Set float64 */
+   /** Emit one float64 value.
+    @param v Value copied into output. Requires floating-point support.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int float64(double v);
 
-   /** Set float32 */
+   /** Emit one float32 value.
+    @param v Value copied into output. Requires floating-point support.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int float32(float v);
 
-   /** Set string */
+   /** Emit a length-delimited string.
+    @param s Readable UTF-8 bytes borrowed for this call, required for positive len.
+    @param len Nonnegative byte count, excluding a terminator. The encoder does
+    not validate UTF-8. Embedded NUL bytes are included.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int string(const char* s, S32 len);
 
    /** Begin formatting an array. Use the default values for the two
@@ -455,6 +550,12 @@ typedef struct UBJEncoder
        \param type must be set to the type of the optimized array if
        formatting a strongly typed array, or to UBJT_InvalidType if
        not used.
+    
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+    Count must equal the number of values/members emitted; the encoder does not
+    count them for you. Keep nesting within 63 containers. General nested
+    strongly typed combinations need separate compatibility verification.
     */
    int beginArray(S32 count=-1, UBJT type=UBJT_InvalidType);
 
@@ -469,24 +570,48 @@ typedef struct UBJEncoder
        \param type must be set to the type of the optimized object if
        formatting a strongly typed object, or to UBJT_InvalidType if
        not used.
+    
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+    Count must equal the number of values/members emitted; the encoder does not
+    count them for you. Keep nesting within 63 containers. General nested
+    strongly typed combinations need separate compatibility verification.
     */
    int beginObject(S32 count=-1, UBJT type=UBJT_InvalidType);
 
-   /** End of array */
+   /** Close the matching current container. A counted container omits its
+    end marker from the wire, but this call is still required for encoder state.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int endArray();
 
-   /** End of object */
+   /** Close the matching current container. A counted container omits its
+    end marker from the wire, but this call is still required for encoder state.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int endObject();
 
-   /** Resets the UBJEBuf cursor (the buffer provided in the constructor) */
+   /** Discard buffered bytes and clear status and the pending member name.
+    This does not flush output or reset nesting/strongly-typed state. Use only
+    after a balanced complete value. Reinitialize to recover from a partial container.
+ */
    void reset();
 
-   /** See UBJEncoder:set for details */
+   /** Emit formatted values as for set(), advancing the format cursor.
+    @param fmt Required pointer to a NUL-terminated format cursor.
+    @param argList Required pointer to a matching initialized va_list, consumed.
+    @param isObj True consumes a member-name argument before each value; false
+    emits unnamed values. Use the matching container context.
+    @return Zero on success, negative UBJEStatus on a detected error. The error
+    remains in status and blocks later value output until reset/reinitialization.
+ */
    int vset(const char** fmt, va_list* argList, bool isObj);
 
    /** Encode/serialize C structs/data to UBJSON using formatted output.
 
-      The set method works in a similar fashion to the ANSII C
+      The set method works in a similar fashion to the ANSI C
       function printf; thus, it performs formatted output conversion.
 
       The method internally uses the 'setXXX' methods in this class
@@ -511,7 +636,14 @@ typedef struct UBJEncoder
 
       \sa UBJE_MEMBER
       \sa UBJDecoder::get
-    */
+          Format braces/brackets describe ordinary containers. Each object member
+      takes a const char* name before its value. S takes a non-NULL NUL-terminated
+      string. Arguments must follow C variadic promotions and the exact expected
+      type; use primitive methods when avoiding variadic conversions.
+      @return Zero on success, a negative status on detected format/output errors.
+      @warning The current d (float32) variadic path reads float instead of the
+      C-promoted double. Use the primitive float32() method for this value type.
+      */
    int set(const char* fmt, ...);
 #endif
 
@@ -532,9 +664,21 @@ typedef struct UBJEncoder
  */
 #define UBJE_MEMBER(o, m) #m, (o)->m
 
+/** Initialize the encoder; no allocation, flush, or return value.
+    @param o Required encoder storage.
+    @param ubjsBuf Required borrowed initialized UBJEBuf.
+ */
 #define UBJEncoder_constructor(o, ubjsBuf)      \
    memset(o,0,sizeof(UBJEncoder)),(o)->buf=ubjsBuf
+/** No-op; does not flush or free buffers.
+    @param o Required initialized encoder.
+    
+ */
 #define UBJEncoder_destructor(o)
+/** Discard buffered bytes and clear status/name. Nesting state is not reset. Returns 0.
+    @param o Required initialized encoder.
+    
+ */
 #define UBJEncoder_reset(o) ((o)->status=0,(o)->val.name=0,o->buf->cursor=0,0)
 
 #ifdef __cplusplus
@@ -542,41 +686,144 @@ extern "C" {
 #endif
 int UBJEncoder_setStatus(UBJEncoder* o, UBJEStatus s);
 int UBJEncoder_val(UBJEncoder* o);
+/** @copydoc UBJEncoder::vset
+    @param o Required initialized encoder.
+ */
 int UBJEncoder_vset(UBJEncoder* o,const char** fmt,va_list* argList,int isObj);
+/** @copydoc UBJEncoder::set
+    @param o Required initialized encoder.
+ */
 int UBJEncoder_set(UBJEncoder* o, const char* fmt, ...);
 #ifdef __cplusplus
 }
 #endif
 
+/** Set the pending member name. Returns the assigned char pointer (not a status).
+    @param o Required initialized encoder.
+    @param v Borrowed NUL-terminated member name, valid until the next value.
+ */
 #define UBJEncoder_setName(o,v) ((o)->val.name=(char*)v)
+/** Encode null.
+    @param o Required initialized encoder.
+    
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_null(o) ((o)->val.t=UBJT_Null,UBJEncoder_val(o))
+/** Encode a boolean.
+    @param o Required initialized encoder.
+    @param v Boolean value; zero false, nonzero true.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_boolean(o,v)                                         \
    ((o)->val.t=UBJT_Boolean,(o)->val.u.uint8=v,UBJEncoder_val(o))
+/** Encode a U8 value.
+    @param o Required initialized encoder.
+    @param v Value representable in U8.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_uint8(o,v)                                   \
    ((o)->val.t=UBJT_Uint8,(o)->val.u.uint8=v,UBJEncoder_val(o))
+/** Encode a S8 value.
+    @param o Required initialized encoder.
+    @param v Value representable in S8.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_int8(o,v)                                    \
    ((o)->val.t=UBJT_Int8,(o)->val.u.int8=v,UBJEncoder_val(o))
+/** Encode a char value.
+    @param o Required initialized encoder.
+    @param v Value representable in char.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_character(o,v)                               \
    ((o)->val.t=UBJT_Char,(o)->val.u.int8=v,UBJEncoder_val(o))
+/** Encode a S16 value.
+    @param o Required initialized encoder.
+    @param v Value representable in S16.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_int16(o,v)                                   \
    ((o)->val.t=UBJT_Int16,(o)->val.u.int16=v,UBJEncoder_val(o))
+/** Encode a S32 value.
+    @param o Required initialized encoder.
+    @param v Value representable in S32.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_int32(o,v)                                   \
    ((o)->val.t=UBJT_Int32,(o)->val.u.int32=v,UBJEncoder_val(o))
+/** Encode a S64 value.
+    @param o Required initialized encoder.
+    @param v Value representable in S64.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_int64(o,v)                                   \
    ((o)->val.t=UBJT_Int64,(o)->val.u.int64=v,UBJEncoder_val(o))
+/** Encode a double value.
+    @param o Required initialized encoder.
+    @param v Value representable in double.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_float64(o,v)                                         \
    ((o)->val.t=UBJT_Float64,(o)->val.u.float64=v,UBJEncoder_val(o))
+/** Encode a float value.
+    @param o Required initialized encoder.
+    @param v Value representable in float.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_float32(o,v)                                         \
    ((o)->val.t=UBJT_Float32,(o)->val.u.float32=v,UBJEncoder_val(o))
+/** Encode string bytes without requiring NUL termination.
+    @param o Required initialized encoder.
+    @param v Required readable string bytes, borrowed for the call.
+    @param l Nonnegative byte count, excluding any optional NUL.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_string(o,v,l)                                        \
    ((o)->val.t=UBJT_String,(o)->val.u.string=v,(o)->val.len=l,UBJEncoder_val(o))
+/** Begin an array; emit exactly count children when count is nonnegative.
+    @param o Required initialized encoder.
+    @param count Number of children, or -1 for an uncounted array.
+    @param sType Strong element type, or UBJT_InvalidType for mixed types.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_beginArray(o,count, sType)           \
    ((o)->val.t=UBJT_BeginArray,(o)->val.len=count,      \
     (o)->val.x=sType,UBJEncoder_val(o))
+/** Begin an object; emit exactly count named members when count is nonnegative.
+    @param o Required initialized encoder.
+    @param count Number of members, or -1 for an uncounted object.
+    @param sType Strong member-value type, or UBJT_InvalidType for mixed types.
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_beginObject(o,count, sType)          \
    ((o)->val.t=UBJT_BeginObject,(o)->val.len=count,     \
     (o)->val.x=sType,UBJEncoder_val(o))
+/** End the current array.
+    @param o Required initialized encoder.
+    
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_endArray(o) ((o)->val.t=UBJT_EndArray,UBJEncoder_val(o))
+/** End the current object.
+    @param o Required initialized encoder.
+    
+    @return 0 on success, negative encoder/output status on failure.
+    Partial output is possible. See the corresponding UBJEncoder method.
+ */
 #define UBJEncoder_endObject(o) ((o)->val.t=UBJT_EndObject,UBJEncoder_val(o))
 
 #ifdef __cplusplus

@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 5971 2026-09-11 10:01:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -46,6 +46,8 @@
 #include <windows.h>
 #include <ThreadLib.h>
 #include <process.h>
+#include <errno.h>
+#include <BaErrorCodes.h>
 
 void
 _baClckGettime(BaTimeEx* spec)
@@ -99,6 +101,7 @@ Thread_constructor(
   else {
     o->id = (HANDLE)-1;
     o->runnable = NULL;
+    baFatalE(FE_THREAD_LIB, errno);
   }
 }
 

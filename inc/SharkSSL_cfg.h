@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5858 2026-08-22 14:40:42Z gianluca $
+ *   $Id: SharkSSL_cfg.h 5991 2026-09-12 08:49:46Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -194,6 +194,18 @@
 #endif
 
 
+/**
+ * Select 1 to enable TLS 1.3 KeyUpdate support (RFC 8446 section 4.6.3).
+ * Note: with the default define below, it is enabled whenever TLS 1.3 is.
+ * Disabling this option reduces the per-connection RAM and code footprint,
+ * but a TLS 1.3 peer KeyUpdate is not supported and the resulting constrained
+ * profile is not fully RFC 8446 conformant.
+ */
+#ifndef SHARKSSL_ENABLE_KEY_UPDATE
+#define SHARKSSL_ENABLE_KEY_UPDATE                       SHARKSSL_TLS_1_3
+#endif
+
+
 /** Select 1 to enable CLIENT side TLS
  */
 #ifndef SHARKSSL_SSL_CLIENT_CODE
@@ -249,12 +261,12 @@
 #endif
 
 
-/** Select 1 to enable DHE_RSA ciphersuites
- *  Note: with the default define below, it is enabled
- *  whenever TLS 1.2 is
+/** Enable legacy TLS 1.2 DHE_RSA ciphersuites.
+ *  RFC 10015 requires clients not to offer and servers not to select
+ *  these ciphersuites. Keep disabled for RFC 10015 compliance.
  */
 #ifndef SHARKSSL_ENABLE_DHE_RSA
-#define SHARKSSL_ENABLE_DHE_RSA                          SHARKSSL_TLS_1_2
+#define SHARKSSL_ENABLE_DHE_RSA                          0
 #endif
 
 
@@ -504,11 +516,12 @@
 #endif
 
 
-/** Select 1 to enable generation and verification of
- *  Edwards elliptic curve digital signatures (RFC 8032)
+/**
+ * Reserved for future Edwards-curve digital signature support (RFC 8032).
+ * EdDSA is not implemented.
  */
 #ifndef SHARKSSL_ENABLE_EDDSA
-#define SHARKSSL_ENABLE_EDDSA                            1
+#define SHARKSSL_ENABLE_EDDSA                            0
 #endif
 
 
@@ -626,21 +639,20 @@
 #endif
 
 
-/** Setting this macro to 1 enables TINYMT32 and disables other RNG's
- *  Please notice that the TinyMT is not recommended for cryptographic applications
- *  The SharkSSL implementation passed anyway the bbattery_FIPS_140_2 test
- *  of TestU01 (http://simul.iro.umontreal.ca/testu01/tu01.html)
- *  http://simul.iro.umontreal.ca/testu01/tu01.html
+/** Setting this macro to 1 enables TinyMT32 and disables other RNGs.
+ *  TinyMT32 is not suitable for cryptographic applications. The SharkSSL
+ *  implementation passes TestU01's bbattery_FIPS_140_2 statistical test,
+ *  but that result does not make the generator cryptographically secure.
  */
 #ifndef SHARKSSL_USE_RNG_TINYMT
 #define SHARKSSL_USE_RNG_TINYMT                          0
 #endif
 
-/** Setting this macro to 1 enables Fortuna RNG's
- *  Suitable to cryptographic applications
- *  SHARKSSL_USE_RNG_TINYMT must be disabled
- *  AES 256 and SHA 256 must be enabled
- *  The SharkSSL implementation passed the bbattery_FIPS_140_2 test
+/** Setting this macro to 1 enables the Fortuna RNG.
+ *  It is suitable for cryptographic applications.
+ *  SHARKSSL_USE_RNG_TINYMT must be disabled.
+ *  AES-256 and SHA-256 must be enabled.
+ *  The SharkSSL implementation passes the bbattery_FIPS_140_2 test
  *  of TestU01 (http://simul.iro.umontreal.ca/testu01/tu01.html)
  */
 #ifndef SHARKSSL_USE_RNG_FORTUNA
@@ -692,6 +704,11 @@
 
 /** TLS 1.3 sanity #defines
  */
+#if ((!SHARKSSL_TLS_1_3) && SHARKSSL_ENABLE_KEY_UPDATE)
+#undef  SHARKSSL_ENABLE_KEY_UPDATE
+#define SHARKSSL_ENABLE_KEY_UPDATE                       0
+#endif
+
 #if SHARKSSL_TLS_1_3
 #if SHARKSSL_ENABLE_RSA
 #undef  SHARKSSL_ENABLE_RSASSA_PSS

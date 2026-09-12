@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslSCMgr.h 5853 2026-08-17 09:48:31Z gianluca $
+ *   $Id: SharkSslSCMgr.h 5904 2026-09-01 07:23:35Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2026
  *
@@ -52,10 +52,10 @@
 @{
 */
 
-/** The handle returned by #SharkSslSCMgr_get and passed into
-    #SharkSslSCMgr_save. The handle will be NULL when SharkSslSCMgr_get
-    does not have a saved session. The null pointer must be passed into
-    SharkSslSCMgr_save.
+/** The handle returned by #SharkSslSCMgr_get. Pass a non-NULL handle to
+    #SharkSslSCMgr_replace when a resumed TLS 1.3 connection receives a
+    fresh session ticket. Call #SharkSslSCMgr_save when the returned
+    handle is NULL.
  */
 typedef struct
 {
@@ -103,6 +103,18 @@ SHARKSSL_API void SharkSslSCMgr_constructor(
 */
 SHARKSSL_API SharkSslSCMgrNode* SharkSslSCMgr_get(
    SharkSslSCMgr* o,SharkSslCon* scon,const char* host,U16 port);
+
+/** Replace the saved session after a resumed TLS 1.3 connection receives
+    a fresh session ticket. The saved session remains unchanged if the
+    replacement cannot be acquired.
+
+    \param o an initialized SharkSslSCMgr object.
+    \param n the non-NULL handle returned by #SharkSslSCMgr_get.
+    \param scon a valid SharkSslCon object.
+    \return 0 if the session was replaced, otherwise -1 is returned.
+ */
+SHARKSSL_API int SharkSslSCMgr_replace(
+   SharkSslSCMgr* o, SharkSslSCMgrNode* n, SharkSslCon* scon);
 
 /** Save the session when #SharkSslSCMgr_get returns NULL. It is an
     error calling this method if #SharkSslSCMgr_get returns a

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: NetIo.h 5392 2023-02-21 15:56:50Z wini $
+ *   $Id: NetIo.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2020
  *               http://www.realtimelogic.com
@@ -34,6 +34,8 @@
  *               http://www.realtimelogic.com 
  ****************************************************************************
  */
+/** @file NetIo.h */
+
 #ifndef __NetIo_h
 #define __NetIo_h
 
@@ -58,15 +60,16 @@ struct HttpClient;
     resources are locally on the device.
 
     It is recommended to increase the size of the Web server's default
-    HTTP response buffer if the NetIo is configured as the I/O for a
+    HTTP response buffer if NetIo is configured as the I/O for a
     HttpResRdr, HttpResMgr, or a WebDAV instance. A size of 8Kbytes
-    decreases the number of HTTP connections initiated when reading
-    from the NetIo by a factor of 6. See
+    can reduce remote read requests compared with a small buffer; the benefit
+    depends on the resources and access pattern. See
     HttpServerConfig::setResponseData for more information.
 
     The NetIo code, which can be found in xrc/misc/NetIo.c, is
     delivered as example code. You must therefore include this code in
-    your build if you intend to use the NetIo.
+    your build if you intend to use NetIo. Serialize configuration changes
+    with file operations; the internal I/O mutex does not protect all setters.
  */
 typedef struct NetIo
 #ifdef __cplusplus
@@ -79,7 +82,8 @@ typedef struct NetIo
       /** The NetIo constructor.
           A NetIo instance cannot be used before it is initialized by
           calling NetIo::setRootDir.
-          \param disp is an optional parameter that makes the
+          \param disp Borrowed dispatcher (default NULL), valid throughout use.
+          This optional parameter that makes the
           integrated NetIo HTTP client release the dispatcher mutex
           when reading from or writing to the socket. The 'disp'
           parameter is typically set if the NetIo class is used by a
@@ -87,15 +91,17 @@ typedef struct NetIo
       */
       NetIo(struct SoDisp* disp=0);
 
-      /** The NetIo destructor.
+      /** Close the cached HTTP client and free copied configuration and its
+       mutex. Close open resources/iterators and stop callers first. Does not
+       destroy the borrowed dispatcher or TLS client.
        */
       ~NetIo();
 
       /** Initialize/set the URL to the far side Barracuda server.
 
-      The URL must be to either the root of a HttpResRdr or to a
-      sub-directory within a HttpResRdr instance. As an example, a far
-      side Barracuda server, with a HttpResRdr instance installed in
+      The URL must identify the root of a HttpResMgr or a
+      subdirectory within a HttpResMgr instance. As an example, a far
+      side Barracuda server, with a HttpResMgr instance installed in
       the Virtual File System at URI /drive/ can be initialized as
       follows:
 
@@ -113,36 +119,63 @@ typedef struct NetIo
       accepts Basic authentication. In other words, the far side
       authenticator must be BasicAuthenticator or Authenticator.
 
-      \param url the URL to the far side HttpResMgr.
-      Example: http://192.168.1.100/fs/
+      \param url Required NUL-terminated HTTP(S) URL to the remote HttpResMgr
+      directory, copied and normalized with a trailing slash. Example:
+      http://192.168.1.100/fs/. Configure authentication and TLS first.
+      @return Zero after the remote stat confirms a directory; E_INVALID_URL
+      for an invalid URL, E_MALLOC for allocation failure, IOINTF_ENOENT for a
+      nondirectory, or another I/O/network status. This operation performs
+      network I/O. The previous root is discarded even if the change fails;
+      a failed instance must receive a valid root before normal file operations.
       */
       int setRootDir(const char* url);
 
-      /** Set HTTP basic authentication username and password.
+      /** Set HTTP Basic authentication credentials and discard the cached client.
+       * @param[in] user NUL-terminated username, or NULL to clear credentials.
+       * @param[in] password NUL-terminated password; if NULL, user must contain
+       * the complete user:password string. Strings are copied.
+       * @return Zero success, E_MALLOC allocation failure. Old credentials
+       * are discarded before allocation, so failure is not a rollback.
        */
       int setUser(const char* user, const char* password);
 
       /** Set proxy.
-          \param proxy is the proxy IP address or hostname.
-          \param portNo is the proxy listen port number.
-          \param useSocksProxy if false, use HTTPS proxy, otherwise use SOCKS5.
+          \param proxy Copied NUL-terminated proxy hostname/address, or NULL to disable.
+          \param portNo Proxy TCP port in host byte order, 1..65535 when enabled.
+          \param useSocksProxy FALSE selects the HTTP CONNECT proxy path; TRUE
+          selects SOCKS5. This is a proxy protocol choice, not a promise of
+          encrypted communication with the proxy itself.
+          @return Zero success, E_MALLOC allocation failure. Discards the cached
+          client and changes proxy mode before allocating the new address.
        */
       int setProxy(const char* proxy, U16 portNo, BaBool useSocksProxy);
 
-      /** Set proxy username.
+      /** Set copied proxy authentication credentials; discard the cached client.
+       * @param[in] user NUL-terminated username, or NULL to clear credentials.
+       * @param[in] password NUL-terminated password, or NULL when user already
+       * contains user:password. Configure before opening remote resources.
+       * @return Zero success, E_MALLOC allocation failure; old credentials are
+       * discarded before allocation.
        */
       int setProxyUser(const char* user, const char* password);
       
-      /** When connection, bind to intfName.
+      /** Select the local interface for future HTTP clients.
+       * @param[in] intfName Copied NUL-terminated platform interface/address,
+       * or NULL to use the default. Does not replace an already cached client.
+       * @return Zero success, E_MALLOC allocation failure. Old value is discarded.
        */
       int setIntfName(const char* intfName);
 
-      /** Use IPv6, default is IPv4.
+      /** Select the address family and discard the cached client.
+       * @param[in] enable True selects IPv6, false IPv4 (initial default).
        */
       void setIPv6(bool enable);
 
-      /* Enable secure connections. The SharkSsl instance must have
-         been initialized as a SharkSsl_Client.
+      /** Configure TLS for future HTTP clients.
+       * @param[in] sharkSslClient Borrowed initialized SharkSsl_Client, valid
+       * until NetIo and its HTTP clients are destroyed; NULL disables TLS setup.
+       * Configure before setRootDir for HTTPS. Does not replace a cached client
+       * or transfer ownership. Certificate policy belongs to the TLS setup.
       */
       void setSSL(struct SharkSsl* sharkSslClient);
 #if 0
@@ -177,17 +210,39 @@ typedef struct NetIo
 extern "C" {
 #endif
 
+/** @copydoc NetIo::NetIo
+ * @param[in,out] o Caller-owned NetIo instance. */
 void NetIo_constructor(NetIo* o, struct SoDisp* disp);
+/** @copydoc NetIo::~NetIo
+ * @param[in,out] o Caller-owned NetIo instance. */
 void NetIo_destructor(NetIo* o);
+/** @copydoc NetIo::setRootDir
+ * @param[in,out] o Caller-owned NetIo instance. */
 int NetIo_setRootDir(NetIo* o, const char* url);
 
 
+/** @copydoc NetIo::setUser
+ * @param[in,out] o Caller-owned NetIo instance. */
 int NetIo_setUser(NetIo* o, const char* user, const char* password);
+/** @copydoc NetIo::setProxy
+ * @param[in,out] o Caller-owned NetIo instance. */
 int NetIo_setProxy(
    NetIo* o, const char* proxy, U16 portNo, BaBool useSocksProxy);
+/** @copydoc NetIo::setProxyUser
+ * @param[in,out] o Caller-owned NetIo instance. */
 int NetIo_setProxyUser(NetIo* o, const char* user, const char* password);
+/** @copydoc NetIo::setIntfName
+ * @param[in,out] o Caller-owned NetIo instance. */
 int NetIo_setIntfName(NetIo* o, const char* intfName);
+/** Select the family for subsequent connections and discard the cached client.
+ * @param[in,out] o Initialized NetIo.
+ * @param[in] enable TRUE selects IPv6, FALSE IPv4.
+ * @return Always zero. The C++ wrapper returns no value. */
 int NetIo_setIPv6(NetIo* o, BaBool enable);
+/** Assign TLS configuration for future clients without changing the cached client.
+ * @param[in,out] o Initialized NetIo.
+ * @param[in] ssl Borrowed initialized SharkSsl_Client or NULL, valid throughout use.
+ * @sa NetIo::setSSL */
 #define NetIo_setSSL(o, ssl) (o)->sharkSslClient=ssl
 
 

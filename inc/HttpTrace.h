@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpTrace.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpTrace.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2021
  *
@@ -36,6 +36,8 @@
  */
 
 
+/** @file HttpTrace.h */
+
 #ifndef __HttpTrace_h
 #define __HttpTrace_h
 
@@ -59,67 +61,34 @@
 #define HttpTrace_doReqBufOverflowMask   0x20
 
 
+/** Consume buffered trace output synchronously.
+ * @param[in,out] buf Borrowed trace buffer, valid only during the callback.
+ * The callback may write a NUL at buf[bufLen], but must not retain or free buf.
+ * @param[in] bufLen Number of payload bytes; the buffer has room for one more
+ * byte. Data need not be NUL-terminated on entry. The callback runs while the
+ * trace mutex is held; do not call trace output or writer-lock APIs from it.
+ */
 typedef void (*HttpTrace_Flush)(char* buf, int bufLen);
 
-/** Trace the communication between a client and the server.  This
-    class is enabled if the Barracuda Web-Server library is compiled
-    with macro HTTP_TRACE enabled. The methods in this class have no
-    effect if the trace functionality is not enabled by macro
-    HTTP_TRACE. You must also provide a console callback function
-    before the trace functionality is activated. See
-    HttpTrace::setFLushCallback for more information.
-
-    Most user functions in the web-server return 0 on success and an
-    error number if any of the parameters were incorrect. The web-server also
-    prints the error to the trace buffer, and it is for this reason
-    recommended that you always provide a trace callback function when
-    doing development.
-
-    The trace library is typically used by your code when
-    debugging. The printf and write member functions take the message
-    priority as argument. You can, therefore, design the code such that
-    more important functions use a higher priority. See
-    HttpTrace::setPrio for more information.
-
-    The web-server is using the trace library to write information
-    about user requests and response data. This is by default
-    disabled. If enabled, the web-server writes the data to the trace
-    buffer by using priority 5. See the setXXX functions for more
-    information.
-
-    The trace callback function can write to internal memory, your
-    screen (if you have one) or use an SMTP library.
-
-    Here is a trace callback function example that is using the SMTP library:
-    \code
-    //The flushTrace function is called by HttpTrace when trace buffer is full.
-    static void flushTrace(char* buf, int bufLen)
-    {
-       const char* from = "device1@realtimelogic.com";
-       const char* to = "bill@mycompany.com";
-       const char* subject = "DEVICE 1 TRACE DATA";
-       const char* smtpServer = "192.168.0.1";
-       SMTP smtp(from, to, subject, smtpServer);
-       smtp.write(buf, bufLen);
-    }
-
-    //This function should be called at startup
-    void myInit(void)
-    {
-       // The default HttpTrace buffer is 80 bytes,
-       // which would lead to a lot of emails.
-       HttpTrace::setBufSize(2000);
-       HttpTrace::setFLushCallback(flushTrace);
-       //By default, print all web-server access to the trace buffer.
-       HttpTrace::setRequest(true);
-    }
-    \endcode
-
-    The methods in the HttpTrace class are re-entrant, except for
-    HttpTrace::setFLushCallback and HttpTrace::setBufSize. These two
-    functions, if used, must be called at system startup.
-
-*/
+/** Buffered diagnostic output and optional HTTP protocol tracing.
+ * Install a flush callback at startup to enable output. If the library is
+ * built without HTTP_TRACE, output functions have no effect. This header
+ * enables HTTP_TRACE by default unless NO_HTTP_TRACE is defined.
+ *
+ * Priority zero is highest. A message is emitted when its priority is less
+ * than or equal to the configured filter (initially 5). Optional HTTP trace
+ * categories are initially disabled and use priority 5 when enabled.
+ *
+ * Output is flushed when the buffer fills, after a write that leaves a
+ * newline in the buffer, or by an explicit flush(). Partial lines may remain
+ * buffered. The default payload buffer is approximately 80 bytes.
+ *
+ * Configure the callback and buffer size at startup, before concurrent use.
+ * Do not change or close the trace while a writer is locked. Output functions
+ * serialize access with the trace mutex; the callback executes under that
+ * mutex and must not call back into trace output.
+ * @see HttpTrace::setFLushCallback
+ */
 typedef struct HttpTrace
 {
 #ifdef __cplusplus
@@ -147,10 +116,8 @@ typedef struct HttpTrace
       HttpTrace_setFLushCallback(flush2Console);
       \endcode
 
-      Please note that data written to the trace is not
-      automatically flushed. It may be a good idea to run the
-      web-server in poll mode and flush the data manually after the
-      web-server is run.
+      Newline-terminated output is flushed automatically. To deliver partial
+      lines promptly, flush explicitly, for example after a dispatcher poll.
 
       \code
       for(;;)
@@ -160,6 +127,9 @@ typedef struct HttpTrace
       }
       \endcode
       */
+      /** @param[in] fcb Callback retained until replaced, or NULL to disable
+       * output. Allocation failure during initialization leaves tracing
+       * disabled; HttpTrace_getFLushCallback returns NULL in that case. */
       static void setFLushCallback(HttpTrace_Flush fcb);
 
       /** Write data to the trace buffer.
@@ -180,28 +150,33 @@ typedef struct HttpTrace
 
       /** Write data to the trace buffer.
           \param prio See HttpTrace::setPrio.
-          \param buf a pointer to the buffer/string.
-          \param len is optional, not needed for strings.
+          \param buf Required input buffer, borrowed for the duration of the call.
+          \param len Byte count; any negative value uses strlen(buf), requiring
+          a NUL-terminated string. Zero writes no bytes.
        */
       static void write(int prio, const char* buf, int len = -1);
 
       /** Set the trace message priority filter. Priority 0 is the
           highest priority.  Setting the priority to say 10 means that
-          only trace messages with a priority greater than or equal to
+          only trace messages with a priority less than or equal to
           10 will be printed to the trace buffer.
 
-	  \param prio The priority [default=5]
+	  \param prio Maximum message priority to emit; use 0-255 [default=5]
           \return previous priority.
       */
       static int setPrio(int prio);
 
       /** Get and lock the trace BufPrint object.
+          @return Borrowed locked writer, or NULL when tracing is disabled.
+          Call releaseWriter exactly once only after a non-NULL result. Writing
+          through this object bypasses the priority filter. Do not free it.
           \sa releaseWriter
           \sa HttpTraceWriteLock
        */
       static BufPrint* getWriter();
 
-      /** Release the trace. Use in combination with getWriter.
+      /** Release a writer lock obtained by a successful getWriter call.
+          Flushes pending output containing a newline before unlocking.
           \sa HttpTraceWriteLock
       */
       static void releaseWriter(void);
@@ -263,24 +238,23 @@ typedef struct HttpTrace
           Connection 56c290 3944 trans: Running -> Connected
           \endcode
       */
+      /** @param[in] cmd TRUE enables this trace category; FALSE disables it. */
       static void setHttp11State(bool cmd);
 
-      /** Prints "ReqBufOverflow" if enabled and the HttpRequest
-          buffer overflows. A buffer overflow occurs if the client
-          request stream overflows the request buffer. This could
-          potentially be an indication of a Buffer Overflow
-          Attack. Buffer Overflow Attacks are very common against
-          web servers. Barracuda is immune to Buffer Overflow
-          Attacks. See HttpServerConfig::setRequest for more
-          information.
+      /** Report when an HTTP request exceeds the configured request buffer.
+       * @param[in] cmd TRUE enables reporting; FALSE disables it.
+       * @see HttpServerConfig::setRequest
        */
       static void setReqBufOverflow(bool cmd);
 
       /** Set trace buffer size. The default buffer is 80 characters long.
       This function is not re-entrant, and you should therefore call
       this function at system startup.
-      \param size New trace buffer size in bytes.
-      \return 0 on success or a negative error code.
+      \param size Positive buffer allocation size in bytes; use at least 81.
+      The payload capacity can be one byte smaller. Existing buffered data is
+      discarded when replacing the buffer. Call only during startup.
+      \return 0 on success, -1 on allocation failure (which disables tracing).
+      Without HTTP_TRACE, the stub returns 0 without allocating storage.
        */
       static int setBufSize(int size);
 
@@ -313,33 +287,56 @@ typedef struct HttpTrace
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpTrace::setPrio */
 BA_API int HttpTrace_setPrio(int prio);
+/** @copydoc HttpTrace::setFLushCallback */
 BA_API void HttpTrace_setFLushCallback(HttpTrace_Flush fcb);
+/** @return Currently installed callback, or NULL when tracing is disabled.
+ * Inspect during startup; this function does not acquire the trace mutex. */
 BA_API HttpTrace_Flush HttpTrace_getFLushCallback(void);
+/** @copydoc HttpTrace::vprintf */
 BA_API void HttpTrace_vprintf(int prio, const char* fmt, va_list argList);
+/** @copydoc HttpTrace::printf */
 BA_API void HttpTrace_printf(int prio, const char* fmt, ...);
+/** @copydoc HttpTrace::write */
 BA_API void HttpTrace_write(int prio, const char* buf, int len);
+/** @copydoc HttpTrace::flush */
 BA_API void HttpTrace_flush(void);
 
+/** @copydoc HttpTrace::setRequest */
 BA_API void HttpTrace_setRequest(BaBool cmd);
+/** @copydoc HttpTrace::setRequestHeaders */
 BA_API void HttpTrace_setRequestHeaders(BaBool cmd);
+/** @copydoc HttpTrace::setResponseHeaders */
 BA_API void HttpTrace_setResponseHeaders(BaBool cmd);
+/** @copydoc HttpTrace::setResponseBody */
 BA_API void HttpTrace_setResponseBody(BaBool cmd);
+/** @copydoc HttpTrace::setHttp11State */
 BA_API void HttpTrace_setHttp11State(BaBool cmd);
+/** @copydoc HttpTrace::setReqBufOverflow */
 BA_API void HttpTrace_setReqBufOverflow(BaBool cmd);
+/** @copydoc HttpTrace::setBufSize */
 BA_API int HttpTrace_setBufSize(int size);
+/** Release the trace buffer and disable output without flushing pending
+ * bytes. Call at shutdown after all trace users and writer locks have stopped.
+ * No output or error status is returned. */
 BA_API void HttpTrace_close(void);
 
 /* Internal funtion. Used by macros below */
 BA_API U8 HttpTrace_getTraceCmds(void);
+/** @return TRUE when this trace category is enabled, otherwise FALSE. */
 #define HttpTrace_isRequestSet() \
   (HttpTrace_getTraceCmds() & HttpTrace_doRequestMask ? TRUE : FALSE)
+/** @return TRUE when this trace category is enabled, otherwise FALSE. */
 #define HttpTrace_isRequestHeadersSet() \
   (HttpTrace_getTraceCmds() & HttpTrace_doRequestHeadersMask ? TRUE : FALSE)
+/** @return TRUE when this trace category is enabled, otherwise FALSE. */
 #define HttpTrace_isResponseHeadersSet() \
   (HttpTrace_getTraceCmds() & HttpTrace_doResponseHeadersMask ? TRUE : FALSE)
+/** @return TRUE when this trace category is enabled, otherwise FALSE. */
 #define HttpTrace_isResponseBodySet() \
   (HttpTrace_getTraceCmds() & HttpTrace_doResponseBodyMask ? TRUE : FALSE)
+/** @return TRUE when this trace category is enabled, otherwise FALSE. */
 #define HttpTrace_isHttp11StateSet() \
   (HttpTrace_getTraceCmds() & HttpTrace_doHttp11StateMask ? TRUE : FALSE)
 
@@ -364,7 +361,9 @@ BA_API HttpTrace* HttpTrace_get(void);
   (HttpTrace_get()->traceCmds & HttpTrace_doHttp11StateMask)
 #define HttpTrace_doReqBufOverflow() \
   (HttpTrace_get()->traceCmds & HttpTrace_doReqBufOverflowMask)
+/** @copydoc HttpTrace::getWriter */
 BA_API BufPrint* HttpTrace_getWriter(void);
+/** @copydoc HttpTrace::releaseWriter */
 BA_API void HttpTrace_releaseWriter(void);
 #ifdef __cplusplus
 }
@@ -430,9 +429,11 @@ inline bool HttpTrace::isHttp11StateSet() {
  */
 struct HttpTraceWriteLock
 {
+      /** Attempt to acquire the trace writer; conversion returns NULL if disabled. */
       HttpTraceWriteLock() {
          _bufPrint = HttpTrace_getWriter();
       }
+      /** Release any held writer lock. */
       ~HttpTraceWriteLock() {
          release();
       }
@@ -447,11 +448,12 @@ struct HttpTraceWriteLock
          if(!_bufPrint) {_bufPrint = HttpTrace_getWriter(); }
       }
 
-      /** Operator that returns the BufPrint object.
+      /** @return Borrowed writer while locked, or NULL when disabled or released.
        */
       operator BufPrint*() { return _bufPrint; }
 
-      /** Operator that makes it possible to do myLock->printf("hi");
+      /** @return Borrowed writer while locked. Check conversion to BufPrint* for
+       * NULL before dereferencing; no writer exists when tracing is disabled.
        */
       BufPrint* operator -> () { return _bufPrint; }
    private:

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: CspRunTm.h 5670 2025-10-06 21:06:24Z wini $
+ *   $Id: CspRunTm.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2023
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+/** @file CspRunTm.h */
+
 #ifndef __CspRunTm_h
 #define __CspRunTm_h
 
@@ -95,14 +97,20 @@ struct CspReader;
 
 /** Prototype for the CspReader callback function.
     @ingroup CSP
-\param o CspReader
-\param data a pointer to the data area where the data read should be
-copied.
-\param offset the offset position into the "dat" file.
-\param size number of bytes to read.
+\param o Required initialized reader; upcast to the implementation object.
+\param data Required writable buffer with room for size bytes. Copy the
+requested binary data here; no NUL termination is implied.
+\param offset Absolute byte offset into the CSP data file (or ZIP archive
+when this interface is used by ZipReader).
+\param size Exact number of bytes to read. The caller supplies an in-range
+offset/size pair for the backing data.
 \param blockStart TRUE if this is the beginning of a block. All blocks
 are protected by a magic number. The httpDiskRead function can use
-this for integrity check.
+this for an integrity check. For CSP blocks the marker precedes offset by
+four bytes; ZIP readers ignore this argument.
+@return Zero only when all requested bytes were copied; a negative implementation
+error on failure, including a short read. No partial count is returned.
+All storage is borrowed for this synchronous call.
  */
 typedef  int (*CspReader_Read)(
    struct CspReader* o, void* data, U32 offset, U32 size, int blockStart);
@@ -122,9 +130,20 @@ typedef struct CspReader
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
 
-      /** Returns true if the reader object is valid */
+      /** @return True when readCB is non-NULL and the initialization marker is set.
+          This checks object initialization, not whether a file remains open or
+          readable. Derived readers must manage their resource state. */
       bool isValid();
+      /** Invoke the installed CspReader_Read callback synchronously.
+          @param data Writable destination for size bytes.
+          @param offset Absolute byte offset in the backing data.
+          @param size Exact byte count.
+          @param blockStart True identifies the start of a CSP data block.
+          @return Zero on a complete read, negative on failure; no partial count.
+          The reader must be initialized with a non-NULL callback. */
       int read(void* data, U32 offset, U32 size, bool blockStart);
+      /** Mark the implementation initialized after opening/checking its data.
+          This does not install a callback or validate the backing file. */
       void setIsValid() { validFlag=CspReader_validFlag; }
    private:
 #endif
@@ -135,14 +154,28 @@ typedef struct CspReader
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Initialize an invalid reader interface; does not open a file.
+    @param o Required storage to initialize.
+    @param httpDiskRead Required CspReader_Read callback, retained for future calls.
+    Call setIsValid() only after the derived implementation initializes successfully.
+ */
 #define CspReader_constructor(o, httpDiskRead) do {\
         (o)->readCB = httpDiskRead; \
         (o)->validFlag = (U16)~CspReader_validFlag; \
 }while(0)
 
+/** @copydoc CspReader::isValid
+    @param o Required initialized reader.
+ */
 #define CspReader_isValid(o) (((CspReader*)o)->readCB != 0 && \
                              ((CspReader*)o)->validFlag == CspReader_validFlag)
+/** @copydoc CspReader::setIsValid
+    @param o Required initialized reader.
+ */
 #define CspReader_setIsValid(o) ((CspReader*)o)->validFlag=CspReader_validFlag
+/** @copydoc CspReader::read
+    @param httpData Required initialized reader with a non-NULL callback.
+ */
 #define CspReader_read(httpData, data, offset, size, blockStart) \
   (*((CspReader*)httpData)->readCB)((CspReader*)httpData, data, \
                                  offset, size, blockStart)

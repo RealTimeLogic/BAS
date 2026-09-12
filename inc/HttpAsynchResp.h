@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpAsynchResp.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpAsynchResp.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2022
  *
@@ -33,6 +33,8 @@
  ****************************************************************************
  *
  */
+
+/** @file HttpAsynchResp.h */
 
 #ifndef __HttpAsynchResp_h
 #define __HttpAsynchResp_h
@@ -75,8 +77,10 @@ example code
 \code
 while(sendData)
 {
-   ThreadLock(myAsynchResp->getMutex());
-   myAsynchResp->getWriter()->printf("Hi client");
+   ThreadLock lock(myAsynchResp->getMutex()); // Keep the lock until scope exit.
+   BufPrint* writer = myAsynchResp->getWriter();
+   if(!writer || writer->printf("Hi client") < 0)
+      break; // Stop producing output after a failure.
 } 
 \endcode
 
@@ -113,31 +117,42 @@ typedef struct HttpAsynchResp
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
 
+      /** Uninitialized storage; initialize before use or destruction. */
       HttpAsynchResp() {}
 
       /** Initiate a HttpAsynchResp from a HttpRequest object.
-          \param buf the output buffer. Minimum value is 255 bytes.
-          \param size the output buffer size.
-          \param req the active connection object is moved from HttpRequest to
-          this object.
+          \param buf Required borrowed writable output buffer, valid until close.
+          It is not freed by the response.
+          \param size Output capacity in bytes. Use at least 256 (the internal
+          minimum check is 200). For chunked writer output, usable payload
+          capacity (size minus 8) must not exceed 65535.
+          \param req Required current request with an uncommitted response. Its
+          active connection is moved to this object; do not use the original
+          response afterward. Check isValid after construction.
       */
       HttpAsynchResp(char* buf, int size, HttpRequest* req);
 
       /** Initiate a HttpAsynchResp from a HttpConnection object.
-          \param buf the output buffer. Minimum value is 255 bytes.
-          \param size the output buffer size.
-          \param con the active connection object is moved from
-          HttpConnection to this object.
+          \param buf Required borrowed writable output buffer, valid until close.
+          It is not freed by the response.
+          \param size Output capacity in bytes. Use at least 256 (the internal
+          minimum check is 200). For chunked writer output, usable payload
+          capacity (size minus 8) must not exceed 65535.
+          \param con Source connection whose active socket is moved to this
+          object. NULL creates no active socket. Check isValid before output.
+          For HttpAsynchReq, obtain the source with its getCon handoff method.
       */
       HttpAsynchResp(char* buf,int size,HttpConnection* con);
 
-      /** Returns true if the HttpConnection object is valid -- i.e., if
-          the socket connection is alive.
-       */
+      /** Check the installed buffer and connection.
+ * @return True if storage is installed and the connection currently reports
+ * valid, false otherwise. This cannot guarantee that a later send succeeds. */
+
       bool isValid();
 
       /** Set in asynchronous thread mode so you can call the methods in
-      this class without having to lock the dispatcher mutex. You must
+      this class using its worker-thread send path. This does not serialize
+      multiple application threads accessing the same response; use one owner. You must
       not call this method if you are calling the methods in this
       class from within a callback originating from the socket
       dispatcher SoDisp -- i.e., if the mutex is already locked.
@@ -153,11 +168,16 @@ typedef struct HttpAsynchResp
       back into the Web-server's HTTP 1.1 HttpConnection pool such
       that the connection can be recycled.  A non-persistent HTTP
       connection such as an HTTP 1.0 connection is terminated.
+      Completes the final chunk for writer mode. This void operation does not
+      report flush/close failure; check preceding output results. It does not
+      free borrowed storage. No further output is allowed after close.
       */
       void close();
 
       /** Get the dispatcher lock. This is the only method in this
           class that can be called without locking the dispatcher.
+          @return Borrowed dispatcher mutex; NULL when the server has no mutex.
+          Requires a properly initialized connection/dispatcher association.
        */
       ThreadMutex* getMutex();
 
@@ -165,57 +185,65 @@ typedef struct HttpAsynchResp
       A persistent HTTP 1.1 connection is recycled and sent back to
       the connection pool in the web-server when the HttpAsynchResp
       object is done. Calling this method makes sure the connection
-      closes when the HttpAsynchResp object is done. You should call
+      closes when the HttpAsynchResp object is done.
+      @return Zero (the assigned keep-alive flag), not a delivery status. You should call
       this method if you stream data such as audio.
        */
       int setConClose();
 
-      /** Used if a resource must close an active HttpAsynchReq and data
-          is pending.
+      /** Request connection closure.
+ * @return Zero, as for setConClose.
+ * @warning The current C++ wrapper calls setConClose and does not enable the
+ * lingering-close queue. When unread incoming data requires a lingering close,
+ * use the C macro HttpAsynchResp_setLingeringClose(thisResponse) before headers
+ * are sent. The macro and this wrapper currently have different behavior. */
 
-          If a server closes the input side of the connection while
-          the client is sending data (or is planning to send data),
-          then the server's TCP stack will signal an RST (reset) back
-          to the client. This forces a disconnect before client can
-          read response data.
-
-          Please note that Barracuda is not implementing this by using
-          SO_LINGER, but is instead using a lingering close queue.
-       */
       int setLingeringClose();
 
 
-      /** Set the response status code. The default return code is 200.
-          \param statusCode The
-           <a href="http://www.w3.org/Protocols/HTTP/HTRESP.html">
-           HTTP status code</a>
-           \param protocol set the protocol version. The protocol is
-           set to "1.1" if this parameter is NULL.
-       */
+      /** Append the HTTP status line and standard Date/Server headers.
+ * @param[in] statusCode Code recognized by HttpServer_getStatusCode; unknown
+ * codes produce its fallback text rather than a valid numeric status line.
+ * @param[in] protocol Borrowed NUL-terminated HTTP version for this call,
+ * normally "1.1" (also selected by NULL); do not include "HTTP/" or line breaks.
+ * @return Zero on success; -200 missing buffer, -100 status already selected,
+ * -11 formatting/output failure. Partial headers may already have been sent.
+ * Set status before any header or body output. The default is 200. */
+
       int setStatus(int statusCode, const char* protocol=0);
 
-      /** Sets a 
-          <a href="http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html">
-          HTTP response header</a> with the given name and value.
-          \param name the name of the header to set.
-          \param value the header value.
-      */
+      /** Append a response header before starting the body.
+ * @param[in] name Required NUL-terminated HTTP field name, used during this call.
+ * @param[in] value Required NUL-terminated field value, used during this call.
+ * Neither string may contain CR or LF. Validation is the caller's responsibility.
+ * @return Zero on success; -110 after headers have ended, -2 output failure,
+ * or a negative setStatus error when emitting the default 200 status.
+ * Repeated calls append fields rather than replacing earlier fields. Leave
+ * Content-Length, Transfer-Encoding and Connection framing to this response API. */
+
       int setHeader(const char *name, const char *value);
 
-      /** Send data of known size to client.
-          \param data the data to send.
-          \param pktSize The size of the data to send.
-          \param chunkSize the size of parameter 'data'. Set this
-          parameter to pktSize if all data is sent in the sendData
-          call.  Otherwise, set chunkSize to the size of the chunk being
-          sent, and then call method sendNextChunk.
-      */
+      /** Begin a fixed-length response body.
+ * @param[in] data Borrowed source for this call, or NULL to send headers only.
+ * @param[in] pktSize Nonnegative total body length in bytes, fitting int.
+ * @param[in] chunkSize Initial byte count, between zero and pktSize; provide
+ * this many readable bytes when data is non-NULL.
+ * @return Zero on success, negative on header/send failure (-3 length-header
+ * formatting, -4 body send, or a propagated header error). If body mode was
+ * already selected, the call returns zero without sending anything.
+ * Call once, then sendNextChunk until exactly pktSize bytes have been supplied.
+ * Total length is the caller's responsibility; the implementation does not
+ * track remaining bytes. Do not combine this mode with getWriter. */
+
       int sendData(const void* data, int pktSize, int chunkSize);
 
-      /** Send next chunk if not all data was sent with sendData.
-          \param data the data to send.
-          \param chunkSize the size of parameter 'data'.
-      */
+      /** Continue the fixed-length body begun with sendData.
+ * @param[in] data Borrowed source containing chunkSize readable bytes.
+ * @param[in] chunkSize Nonnegative byte count; cumulative output must not exceed
+ * the pktSize declared by sendData. This is not HTTP chunked transfer coding.
+ * @return -1 if fixed-length mode has not started; otherwise the connection's
+ * send status (zero success, negative failure). No partial count is provided. */
+
       int sendNextChunk(const void* data,int chunkSize);
 
       /** BufPrint is used when sending data of unknown length. For a
@@ -225,6 +253,11 @@ typedef struct HttpAsynchResp
 
           This method returns NULL if HttpAsynchResp::sendData was called
           prior to this method.
+          @return Borrowed embedded writer, or NULL if headers cannot be sent,
+          fixed-length mode was selected, or the response is closed.
+          Its storage is not separately owned. Check every writer operation.
+          Obtaining the writer sends headers and selects body mode; it is not
+          a read-only accessor. close finishes the response.
        */
       BufPrint* getWriter();
 #else
@@ -244,31 +277,85 @@ typedef struct HttpAsynchResp
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Initialize from a request and take over its connection.
+ * @param[out] o Caller-owned response storage.
+ * @param[in] buf Required borrowed writable buffer, valid until close.
+ * @param[in] size Capacity in bytes; use at least 256. See the C++ constructor
+ * for the chunked-writer capacity limit.
+ * @param[in,out] req Current request with an uncommitted response.
+ * Check HttpAsynchResp_isValid after construction. */
 BA_API void HttpAsynchResp_constructor(
    HttpAsynchResp* o, char* buf, int size, HttpRequest* req);
+/** Initialize from a connection and take over its socket.
+ * @param[out] o Caller-owned response storage.
+ * @param[in] buf Required borrowed writable buffer, valid until close.
+ * @param[in] size Capacity in bytes; use at least 256. See the C++ constructor
+ * for the chunked-writer capacity limit.
+ * @param[in,out] con Source connection, or NULL for no active socket.
+ * Check HttpAsynchResp_isValid after construction. */
 BA_API void HttpAsynchResp_constructor2(
    HttpAsynchResp* o, char* buf, int size, HttpConnection* con);
+/** Initialize the response half of a combined request/response object.
+ * Prefer HttpAsynchReqResp_start to configure both halves together.
+ * @param[out] o Caller-owned response storage.
+ * @param[in] buf Required borrowed writable buffer, valid until close.
+ * @param[in] size Capacity in bytes; use at least 256 and respect the
+ * chunked-writer limit documented by HttpAsynchResp.
+ * @param[in,out] con Required borrowed receive connection, valid until close;
+ * this initializer shares it instead of moving its socket. */
 BA_API void HttpAsynchResp_ReqRespInit(
    HttpAsynchResp* o, char* buf, int size, HttpConnection* con);
+/** @copydoc HttpAsynchResp::isValid
+ * @param[in,out] o Initialized response. */
 BA_API BaBool HttpAsynchResp_isValid(HttpAsynchResp* o);
+/** Select worker-thread send behavior; see HttpAsynchResp::asynchThreadMode.
+ * @param[in,out] o Initialized response, used by one application thread. */
 #define HttpAsynchResp_asynchThreadMode(o) \
    ((o)->mutex=HttpAsynchResp_getMutex(o))
+/** @copydoc HttpAsynchResp::close
+ * @param[in,out] o Initialized response. */
 BA_API void HttpAsynchResp_close(HttpAsynchResp* o);
+/** Close the response; no status is returned.
+ * @param[in,out] o Initialized response. Does not free o or borrowed storage.
+ * @sa HttpAsynchResp::close */
 #define HttpAsynchResp_destructor(o) HttpAsynchResp_close(o)
+/** @param[in] o Response with an initialized dispatcher association.
+ * @return Borrowed dispatcher mutex, possibly NULL; does not acquire it. */
 #define HttpAsynchResp_getMutex(o) \
    SoDisp_getMutex(HttpConnection_getDispatcher((HttpConnection*)(o)))
+/** Disable persistent connection reuse before sending headers.
+ * @param[in,out] o Initialized standalone response.
+ * @return Zero (assigned flag), not an I/O status. */
 #define HttpAsynchResp_setConClose(o)\
    HttpConnection_clearKeepAlive((HttpConnection*)(o))
+/** Enable the lingering-close queue before sending headers.
+ * Use when terminating an upload that still has unread incoming bytes.
+ * @param[in,out] o Initialized response.
+ * @return TRUE (assigned flag), not an I/O status. Unlike the current C++
+ * wrapper, this macro sets the lingering-close flag. */
 #define HttpAsynchResp_setLingeringClose(o) (o)->doLingeringClose=TRUE
+/** @copydoc HttpAsynchResp::setStatus
+ * @param[in,out] o Initialized response. */
 BA_API int HttpAsynchResp_setStatus(
    HttpAsynchResp* o, int statusCode, const char* protocol);
+/** @copydoc HttpAsynchResp::setHeader
+ * @param[in,out] o Initialized response. */
 BA_API int HttpAsynchResp_setHeader(
    HttpAsynchResp* o,const char *name,const char *value);
+/** @copydoc HttpAsynchResp::sendData
+ * @param[in,out] o Initialized response. */
 BA_API int HttpAsynchResp_sendData(
    HttpAsynchResp* o, const void* data, int pktSize, int chunkSize);
+/** @copydoc HttpAsynchResp::sendNextChunk
+ * @param[in,out] o Initialized response. */
 BA_API int HttpAsynchResp_sendNextChunk(
    HttpAsynchResp* o,const void* data,int chunkSize);
+/** @copydoc HttpAsynchResp::getWriter
+ * @param[in,out] o Initialized response. */
 BA_API BufPrint* HttpAsynchResp_getWriter(HttpAsynchResp* o);
+/** @param[in] o Initialized response.
+ * @return TRUE when a worker-thread mutex pointer has been installed,
+ * FALSE otherwise (including a server with no mutex). */
 #define HttpAsynchResp_isAsynchThreadMode(o) ((o)->mutex ? TRUE : FALSE)
 #ifdef __cplusplus
 }

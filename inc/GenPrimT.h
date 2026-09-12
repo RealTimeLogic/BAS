@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: GenPrimT.h 5069 2022-02-03 13:58:42Z wini $
+ *   $Id: GenPrimT.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2022
  *
@@ -39,6 +39,8 @@
  *  The header file is included by the architecture dependent header file
  *  TargConfig.h for most of the supported platforms.
  */
+
+/** @file GenPrimT.h */
 
 #ifndef _TargConfig_h
 #include <TargConfig.h>
@@ -75,17 +77,25 @@
  ***********************************************************************/
 
 /* Define Barracuda's legacy types */
+/** Signed 8-bit integer. */
 typedef int8_t  S8;
+/** Signed 16-bit integer. */
 typedef int16_t S16;
+/** Signed 32-bit integer. */
 typedef int32_t S32;
+/** Signed 64-bit integer. */
 typedef int64_t S64;
+/** Unsigned 8-bit integer. */
 typedef uint8_t  U8;
+/** Unsigned 16-bit integer. */
 typedef uint16_t U16;
+/** Unsigned 32-bit integer. */
 typedef uint32_t U32;
+/** Unsigned 64-bit integer. */
 typedef uint64_t U64;
 
 /** An arithmetic type representing calendar time
-    with epoch of 1970-01-01 00:00:10 GMT -- i.e.
+    with epoch of 1970-01-01 00:00:00 UTC, that is,
     +/- number of seconds since the epoch of 1970-01-01
     \sa baTime2tm
     \sa baTm2Time
@@ -93,17 +103,18 @@ typedef uint64_t U64;
 typedef S64 BaTime;
 
 
-/** Extended BaTime with nano-seconds and timezone offset in minutes.
+/** UTC timestamp with a fractional second and an explicit timezone offset.
  */
 typedef struct {
-   /** epoch */
+   /** Signed seconds since 1970-01-01 00:00:00 UTC, independent of offset. */
    BaTime sec;
    /** Nanoseconds, valid range: 0 to 999999999 */
    S32 nsec;
-   /** Offset from UTC in minutes, valid range: -1439 to 1439 */
+   /** Minutes east of UTC, from -1439 to 1439; negative values are west. */
    S16 offset;
 } BaTimeEx;
 
+/** Boolean stored in an unsigned byte; FALSE is zero and TRUE is one. */
 typedef U8 BaBool;
 #ifndef TRUE
 #define TRUE 1
@@ -113,13 +124,17 @@ typedef U8 BaBool;
 #define S64_getMsw(o) ((S32)(0xFFFFFFFF & ((o) >> 32) ))
 
 #ifdef BA_FILESIZE64
+/** Unsigned file size or position in bytes; 64 bits with BA_FILESIZE64. */
 typedef U64 BaFileSize;
+/** Signed file-size value in bytes; 64 bits with BA_FILESIZE64. */
 typedef S64 SBaFileSize;
 /* Unsigned and Signed baprintf FileSize format flags */
 #define BA_UFSF "llu"
 #define BA_SFSF "lld"
 #else
+/** Unsigned file size or position in bytes; 32 bits without BA_FILESIZE64. */
 typedef U32 BaFileSize;
+/** Signed file-size value in bytes; 32 bits without BA_FILESIZE64. */
 typedef S32 SBaFileSize;
 #define BA_UFSF "lu"
 #define BA_SFSF "ld"

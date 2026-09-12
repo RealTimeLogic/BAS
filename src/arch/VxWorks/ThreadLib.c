@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 5971 2026-09-11 10:01:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2007 - 2019
+ *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -40,16 +40,20 @@
 #include <HttpCfg.h>
 
 #ifdef UseVxWorksGethostbyname
+#include <netdb.h>
 void HttpSockaddr_gethostbynameF(
    HttpSockaddr* o, const char* host, BaBool useIp6, int* status) 
 {
+   *status=0;
+   o->isIp6=useIp6;
    if(host)
    {
       struct addrinfo hints;
       struct addrinfo * retAddrInfoPtr;
+      memset(&hints, 0, sizeof(hints));
       hints.ai_flags = AI_ALL;
       hints.ai_family = useIp6 ? AF_INET6 : AF_INET;
-      if(ipcom_getaddrinfo(host, 0, &hints, &retAddrInfoPtr) == 0)
+      if(getaddrinfo(host, 0, &hints, &retAddrInfoPtr) == 0)
       {
          struct addrinfo * addrInfoPtr;
          addrInfoPtr = retAddrInfoPtr;
@@ -59,7 +63,7 @@ void HttpSockaddr_gethostbynameF(
                (struct sockaddr_in*)addrInfoPtr->ai_addr;
             *((U32*)o->addr) = tempSockInPtr->sin_addr.s_addr;
          }
-         else if(useIp6)
+         else if(addrInfoPtr->ai_family == AF_INET6 && useIp6)
          {
             struct sockaddr_in6 * tempSockIn6Ptr =
                (struct sockaddr_in6*)addrInfoPtr->ai_addr;
@@ -67,6 +71,7 @@ void HttpSockaddr_gethostbynameF(
          }
          else
             *status=-1;
+         freeaddrinfo(retAddrInfoPtr);
       }
       else
          *status=-1;

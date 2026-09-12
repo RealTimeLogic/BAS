@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDisp.h 5078 2022-02-10 22:52:48Z wini $
+ *   $Id: SoDisp.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2002-2021
  *
@@ -36,6 +36,8 @@
  *
  */
 
+/** @file SoDisp.h */
+
 #ifndef _SoDisp_h
 #define _SoDisp_h
 
@@ -59,7 +61,7 @@ code running from other threads or from the thread running the
 dispatcher itself must explicitly set this lock prior to calling any
 Barracuda functions.
 
-\sa ThreadMutex, SoDisp::getLock, SoDisp::mutexSet,
+\sa ThreadMutex, SoDisp::getMutex, SoDisp::mutexSet,
 SoDisp::mutexRelease,
 HttpServer::getDispatcher, HttpRequest::getServer,
 HttpResponse::getRequest, SoDispCon::getDispatcher,
@@ -78,7 +80,10 @@ HttpResponse::getRequest, SoDispCon::getDispatcher,
  * </p>
  * <p>
  * The SoDisp class is platform dependent and may be implemented
- * differently for various operating systems. The "generic SoDisp" is
+ * differently for various operating systems. Keep registered connection
+ * objects alive until they have been deactivated and removed. Registration
+ * transfers no allocation ownership. Hold the dispatcher mutex when changing
+ * connection registration or event state from another thread. The "generic SoDisp" is
  * using "socket select" and waits in a loop for the next active
  * socket connection.</p>
  */
@@ -92,51 +97,73 @@ typedef struct SoDisp
       void operator delete(void*, void *) { }
 
       /** The constructor.
-          \param mutex is protecting the web-server code.
+          \param mutex Borrowed initialized mutex protecting the server, valid
+          throughout dispatcher use. Use a real mutex for multithreaded builds;
+          NULL is only suitable for ports/configurations supporting no mutex.
        */
       SoDisp(ThreadMutex* mutex);
 
       /** Lock the dispatcher thread.  This function protects the
        * web-server with a mutex and makes it possible for threads to
        * call functions in the web-server.  One mutexSet call must be
-       * followed by one HttpServer::mutexRelease call.
+       * followed by one SoDisp::mutexRelease call.
        */
       void mutexSet();
 
-      /** Releases the mutex if this is the last 'pop'.
+      /** Release the mutex currently owned by this thread.
+       * Recursive acquisition/release is not portable across ThreadLib ports.
        * Releases the mutex set with function SoDisp::mutexSet.
        */
       void mutexRelease();
 
-      /** Returns the SoDisp mutex.
+      /** @return Borrowed configured mutex, possibly NULL in a no-mutex setup.
+       * Does not acquire it.
        */
       ThreadMutex* getMutex();
 
+      /** Register a connection without enabling events.
+       * @param[in,out] con Borrowed initialized connection associated with this
+       * dispatcher, not already registered. Call activateRec/activateSend next. */
       void addConnection(SoDispCon* con);
+      /** Enable receive events.
+       * @param[in,out] con Registered connection whose receive events are
+       * currently inactive. Callback storage must remain valid while enabled. */
       void activateRec(SoDispCon* con);
+      /** Disable receive events without closing or unregistering the connection.
+       * @param[in,out] con Registered connection with receive events active. */
       void deactivateRec(SoDispCon* con);
+      /** Enable send-ready events.
+       * @param[in,out] con Registered valid connection with a send callback and
+       * send events currently inactive. No operation in NO_ASYNCH_RESP builds. */
       void activateSend(SoDispCon* con);
+      /** Disable send-ready events without closing or unregistering the connection.
+       * @param[in,out] con Connection with send events active. No operation in
+       * NO_ASYNCH_RESP builds. */
       void deactivateSend(SoDispCon* con);
+      /** Unregister a connection without closing or freeing it.
+       * @param[in,out] con Registered connection. Deactivate both receive and
+       * send events before removal; repeated removal is incorrect usage. */
       void removeConnection(SoDispCon* con);
 
-      /** The callbacks can force the dispatcher to exit the run method.
+      /** Request that the current run loop exits after it regains control.
+       * Does not interrupt a running callback or necessarily wake a socket
+       * wait. The generic dispatcher clears this flag when run starts, so
+       * setting it before run does not cancel that future call.
        */
       void setExit();
 
-      /** Call the socket dispatcher loop, which dispatches HTTP requests.
-          The default argument for C++ is to set timeout=-1, which makes
-          the function block, i.e. never return. C code must always provide
-          an argument, which is normally -1. The function can be used with a
-          polled-based system by setting the timeout value.
-          \code
-          for(;;)
-          {
-             printf("Execute SoDisp::run\n");
-             dispatcher->run(1100); //Set poll frequency to 1.1 second.
-          }
-          \endcode
-          This method is used with the generic dispatcher.
-      */
+      /** Run the generic socket dispatcher loop.
+       * @param[in] timeout Per-wait timeout in milliseconds. Negative values
+       * (default -1) keep dispatching until setExit. Nonnegative values allow
+       * return after a wait without events, but repeated activity can extend
+       * the call indefinitely. Zero polls available events when sockets exist.
+       * With no monitored sockets, the generic port sleeps for its internal
+       * poll delay even when timeout is zero. This is not a total time budget.
+       * Call from one dispatcher thread, without already owning its mutex.
+       * The loop acquires the mutex for callbacks and releases it while waiting.
+       * This void interface reports no select error; scheduling behavior differs
+       * in non-generic dispatcher implementations.
+       */
       void run(S32 timeout=-1);
 #endif
       DISPATCHER_DATA;
@@ -148,28 +175,52 @@ typedef struct SoDisp
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc SoDisp::SoDisp
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_constructor(SoDisp* o, ThreadMutex* mutex);
 #ifndef SoDisp_destructor
 #define SoDisp_destructor(o)
 #endif
+/** @copydoc SoDisp::addConnection
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_addConnection(SoDisp* o, struct SoDispCon* con);
+/** @copydoc SoDisp::activateRec
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_activateRec(SoDisp* o, struct SoDispCon* con);
+/** @copydoc SoDisp::deactivateRec
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_deactivateRec(SoDisp* o, struct SoDispCon* con);
 #ifdef NO_ASYNCH_RESP
 #define SoDisp_activateSend(o, con)
 #define SoDisp_deactivateSend(o, con)
 #else
+/** @copydoc SoDisp::activateSend
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_activateSend(SoDisp* o, struct SoDispCon* con);
+/** @copydoc SoDisp::deactivateSend
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_deactivateSend(SoDisp* o, struct SoDispCon* con);
 #endif
+/** @copydoc SoDisp::removeConnection
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_removeConnection(SoDisp* o, struct SoDispCon* con);
+/** @copydoc SoDisp::run
+ * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_run(SoDisp* o, S32 timeout);
 #ifdef OSE
 union SIGNAL* SoDisp_receive(SoDisp* o, S32 time, SIGSELECT* sel);
 #endif
+/** @param[in] o Dispatcher, or NULL.
+ * @return Borrowed configured mutex, or NULL for no dispatcher/mutex. */
 #define SoDisp_getMutex(o) ((o) ? ((o)->mutex) : 0)
+/** Acquire the configured mutex; do not acquire recursively.
+ * @param[in,out] o Initialized dispatcher with a usable mutex. */
 #define SoDisp_mutexSet(o) ThreadMutex_set((o)->mutex)
+/** Release the configured mutex owned by this thread.
+ * @param[in,out] o Initialized dispatcher. */
 #define SoDisp_mutexRelease(o) ThreadMutex_release((o)->mutex)
+/** @copydetails SoDisp::setExit
+ * @param[in,out] o Dispatcher whose active run loop should exit. */
 #define SoDisp_setExit(o) (o)->doExit=TRUE
 
 BA_API void SoDisp_newCon(SoDisp*, struct SoDispCon*);

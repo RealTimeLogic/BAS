@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 5853 2026-08-17 09:48:31Z gianluca $
+ *   $Id: SharkSslCrypto.h 5944 2026-09-08 12:55:35Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -391,7 +391,7 @@ SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx*, const U8 *data, U32 
 */
 SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx*, U8 *HMAC);
 
-#define SharkSslHMACCtx_destructor(o) memset(o, 0, sizeof(SharkSslHMACCtx))
+#define SharkSslHMACCtx_destructor(o) sharkssl_clear(o, sizeof(SharkSslHMACCtx))
 
 /** HMAC
     \ingroup RayCryptoHMAC
@@ -407,6 +407,7 @@ SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx*, U8 *HMAC);
 SHARKSSL_API int sharkssl_HMAC(const U8 hashID, const U8 *data, U32 len, const U8 *key, U16 keyLen, U8 *digest);
 #endif
 
+void sharkssl_clear(void *data, U32 len);
 U16 sharkssl_getHashLen(U8 hashID);
 int sharkssl_hash(U8 *digest, U8 *data, U32 len, U8 hashID);
 
@@ -420,7 +421,7 @@ int sharkssl_hash(U8 *digest, U8 *data, U32 len, U8 hashID);
 */
 SHARKSSL_API void  SharkSslPoly1305Ctx_constructor(SharkSslPoly1305Ctx *ctx, const U8 key[32]);
 
-#define SharkSslPoly1305Ctx_destructor(o) memset(o, 0, sizeof(SharkSslPoly1305Ctx))
+#define SharkSslPoly1305Ctx_destructor(o) sharkssl_clear(o, sizeof(SharkSslPoly1305Ctx))
 
 /** append
     \ingroup RayCryptoPOLY1305
@@ -449,7 +450,7 @@ SHARKSSL_API int   sharkssl_poly1305(const U8 *data, U32 len, U8 *digest, const 
 SHARKSSL_API void SharkSslChaChaCtx_constructor(SharkSslChaChaCtx *ctx,
                                                 const U8 *key, U8 keyLen);
 
-#define SharkSslChaChaCtx_destructor(ctx) memset(ctx, 0, sizeof(SharkSslChaChaCtx))
+#define SharkSslChaChaCtx_destructor(ctx) sharkssl_clear(ctx, sizeof(SharkSslChaChaCtx))
 
 /** Initialize
     \ingroup RayCryptoCHACHA20
@@ -479,7 +480,7 @@ SHARKSSL_API void  SharkSslChaChaCtx_crypt(
 SHARKSSL_API void  SharkSslAesCtx_constructor(SharkSslAesCtx *ctx,
                                               SharkSslAesCtx_Type type,
                                               const U8 *key, U8 keyLen);
-#define SharkSslAesCtx_destructor(ctx) memset(ctx, 0, sizeof(SharkSslAesCtx))
+#define SharkSslAesCtx_destructor(ctx) sharkssl_clear(ctx, sizeof(SharkSslAesCtx))
 
 #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
 /** Decrypt
@@ -525,8 +526,7 @@ SHARKSSL_API void  SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
 SHARKSSL_API void  SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *ctx,
                                                  const U8 *key, U8 keyLen);
 
-#define SharkSslAesGcmCtx_destructor(ctx) \
-   memset(ctx, 0, sizeof(SharkSslAesGcmCtx))
+#define SharkSslAesGcmCtx_destructor(ctx) sharkssl_clear(ctx, sizeof(SharkSslAesGcmCtx))
 
 /** Encrypt data or a chunk of a large data set.
     \ingroup RayCryptoAesGcm
@@ -594,7 +594,7 @@ SHARKSSL_API int   SharkSslAesGcmCtx_decrypt(SharkSslAesGcmCtx *ctx,
 SHARKSSL_API void  SharkSslAesCcmCtx_constructor(SharkSslAesCcmCtx *ctx,
                                                  const U8 *key, U8 keyLen, U8 tagLen);
 
-#define SharkSslAesCcmCtx_destructor(ctx) memset(ctx, 0, sizeof(SharkSslAesCcmCtx))
+#define SharkSslAesCcmCtx_destructor(ctx) sharkssl_clear(ctx, sizeof(SharkSslAesCcmCtx))
 
 /** Encrypt
     \ingroup RayCryptoAesCcm

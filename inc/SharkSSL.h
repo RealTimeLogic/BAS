@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5868 2026-08-23 10:09:50Z wini $
+ *   $Id: SharkSSL.h 5991 2026-09-12 08:49:46Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -54,9 +54,7 @@
 #endif
 
 #include "SharkSSL_cfg.h"    /* SharkSSL configuration */
-#ifdef __cplusplus
-#include <stddef.h>          /* size_t for new, delete */
-#endif
+#include <stddef.h>          /* size_t */
 
 #include "SharkSslCrypto.h"  /* Crypto API */
 
@@ -561,6 +559,14 @@ typedef struct SharkSslIntf
 typedef struct SharkSslCon SharkSslCon;
 
 
+#ifdef __cplusplus
+extern "C" {
+SHARKSSL_API void *sharkssl_mallocObject(size_t size);
+SHARKSSL_API void sharkssl_freeObject(void *object);
+}
+#endif
+
+
 /** A SharkSsl object is the coordinator for managing #SharkSslCon
     objects (See #SharkSsl_constructor for details).
 */
@@ -568,8 +574,8 @@ typedef struct
 SharkSsl
 {
 #ifdef __cplusplus
-   void *operator new(size_t s) { return ::baMalloc(s); }
-   void operator delete(void *d) { if(d) ::baFree(d); }
+   void *operator new(size_t s) { return sharkssl_mallocObject(s); }
+   void operator delete(void *d) { sharkssl_freeObject(d); }
    void *operator new(size_t, void *place) { return place; }
    void operator delete(void*, void *) { }
 
@@ -1101,6 +1107,49 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 readLen);
 SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 maxLen);
 
 
+#if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
+/**
+ * Updates the local write keys without requesting a reciprocal update of the
+ * peer's write keys. The peer still updates its read keys when it receives
+ * the KeyUpdate. This value is also used when replying to a peer that sent
+ * #SHARKSSL_KEY_UPDATE_REQUESTED, preventing an endless KeyUpdate exchange.
+ */
+#define SHARKSSL_KEY_UPDATE_NOT_REQUESTED          0
+
+/**
+ * Updates the local write keys and requests a reciprocal update of the peer's
+ * write keys. The peer must reply with a KeyUpdate containing
+ * #SHARKSSL_KEY_UPDATE_NOT_REQUESTED before sending its next application data.
+ */
+#define SHARKSSL_KEY_UPDATE_REQUESTED              1
+
+/**
+ * Creates a TLS 1.3 KeyUpdate message and advances the local write keys.
+ *
+ * Every KeyUpdate rotates the sending direction from the caller to the peer.
+ * #SHARKSSL_KEY_UPDATE_NOT_REQUESTED rotates only caller-to-peer traffic and
+ * requires no response. #SHARKSSL_KEY_UPDATE_REQUESTED also asks the peer to
+ * respond with #SHARKSSL_KEY_UPDATE_NOT_REQUESTED, thereby rotating both
+ * traffic directions.
+ *
+ * The encrypted handshake data must be sent using
+ * #SharkSslCon_getHandshakeData and acknowledged using
+ * #SharkSslCon_setHandshakeDataSent before encrypting application data.
+ *
+ * \param o the SharkSslCon object returned by function #SharkSsl_createCon.
+ * \param requestUpdate must be #SHARKSSL_KEY_UPDATE_NOT_REQUESTED to rotate
+ * only the local sending direction, or #SHARKSSL_KEY_UPDATE_REQUESTED to ask
+ * the peer to rotate its sending direction as well. Both values rotate the
+ * local write keys.
+ *
+ * \return TRUE (1) if the request is accepted. Returns FALSE (0) if TLS 1.3
+ * is not active, the handshake has not completed, output is pending, or the
+ * request value is invalid.
+ */
+SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 requestUpdate);
+#endif
+
+
 /** Returns the following values:
     \li 0: The TLS handshake has not completed.
     \li 1: The TLS handshake has completed.
@@ -1454,29 +1503,19 @@ U8  SharkSslCon_isCAListEmpty(SharkSslCon *o);
 #endif  /* SHARKSSL_ENABLE_CA_LIST */
 
 #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_RSA)
-/** Description to be added.
- */
-
-/* to be used as 'flag' param */
+/** Enable RSA preference in SharkSslCon_favorRSA. */
 #define SHARKSSL_SET_FAVOR_RSA      1  
+/** Disable RSA preference in SharkSslCon_favorRSA. */
 #define SHARKSSL_CLEAR_FAVOR_RSA    0
 
-/** A SharkSSL server can have multiple certificates, such as RSA
-    certificates with various strengths, and Elliptic Curve
-    Certificates (ECC). A SharkSSL server connection will select the
-    strongest cipher combination supported by the server and the
-    client. In general, the ECC certificate will be preferred by the
-    server connection, if supported by the client. Most browsers today
-    support ECC, however, Certificate Authorities do not typically
-    support ECC.
-
-    The purpose with function SharkSslCon_favorRSA is to favor RSA
-    certificates over ECC when a client such as browser supports both
-    ECC and RSA. An M2M device can then force the use of ECC by
-    calling function SharkSslCon_selectCiphersuite, or at compile time
-    by removing RSA support. This enables devices to use ECC, with
-    self signed Certificate Authority certificates and browsers to use
-    RSA certificates signed by well known Certificate Authorities.
+/**
+ * Configures TLS 1.2 cipher-suite selection to favor RSA-authenticated
+ * suites when both RSA and ECDSA certificates are available. This setting
+ * does not affect TLS 1.3 certificate selection.
+ * \param o connection to configure before the initial or renegotiation
+ * handshake starts.
+ * \param flag #SHARKSSL_SET_FAVOR_RSA or #SHARKSSL_CLEAR_FAVOR_RSA.
+ * \return 1 if the preference was updated; otherwise 0.
  */
 U8  SharkSslCon_favorRSA(SharkSslCon *o, U8 flag);
 #endif  /* SHARKSSL_SSL_SERVER_CODE */

@@ -10,7 +10,7 @@
  * or redistributing this file.
  *
  * MIT License:
- * Copyright (c) 2025 Real Time Logic
+ * Copyright (c) 2025 - 2026 Real Time Logic
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -280,6 +280,8 @@ static void checkTimeThread(Thread* th)
             Thread_sleep(500);
          /* Initiate executing the Lua func _XedgeEvent("sntp") */
          ThreadJob* job=ThreadJob_lcreate(sizeof(ThreadJob), executeXedgeEvent);
+         if(!job)
+            baFatalE(FE_MALLOC, sizeof(ThreadJob));
          ThreadMutex_set(soDispMutex);
          LThreadMgr_run(&ltMgr, job);
          ThreadMutex_release(soDispMutex);

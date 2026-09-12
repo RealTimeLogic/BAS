@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: FormAuthenticator.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: FormAuthenticator.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2017
  *
@@ -33,6 +33,8 @@
  ****************************************************************************
  *
  */
+
+/** @file FormAuthenticator.h */
 
 #ifndef __FormAuthenticator_h
 #define __FormAuthenticator_h
@@ -65,28 +67,28 @@ typedef struct FormAuthenticator
 #ifdef __cplusplus
 : public AuthenticatorIntf
 {
+      /** Leave storage uninitialized; call FormAuthenticator_constructor before use. */
       FormAuthenticator(){}
-      /**
-         \param userDbIntf is a reference to a user database you must
-         provide/implement.
-         \param realm is required when using HA1 password hashes.
-         \param sendLogin must be an implementation of LoginRespIntf.
-      */
+      /** Construct an authenticator using application-provided user lookup.
+        @param userDbIntf Required borrowed user database interface; keep it alive
+        while this authenticator is used.
+        @param realm Copied NUL-terminated realm. NULL selects an empty realm;
+        supply the matching realm when the database stores HA1 password hashes.
+        @param sendLogin Required borrowed login-response interface, which must
+        outlive authentication calls.
+        Constructors have no error return; realm allocation failure cannot be
+        reported through the constructor signature. Detach the authenticator from
+        directories and stop its users before calling FormAuthenticator_destructor().
+        The C++ interface has no destructor that performs this cleanup automatically.
+       */
       FormAuthenticator(
          UserIntf* userDbIntf, const char* realm, LoginRespIntf* sendLogin);
 
-      /** Prevent dictionary attacks.
-
-      An interesting feature of the FormAuthenticator is that the form
-      authenticator makes it difficult to perform dictionary attacks
-      even without using the LoginTracker. The FormAuthenticator will
-      make it extremely difficult to distinguish between valid and
-      invalid login attempts, since the form authenticator sends HTTP
-      200 OK response messages instead of the numerous 400 type
-      errors.
-    
-          \param tracker the IP address tracker.
-      */
+      /** Configure login-attempt tracking.
+        @param tracker Borrowed tracker, or NULL to disable tracking (the default).
+        Keep the tracker alive while configured. This setter does not allocate
+        or destroy it.
+       */
       void setLoginTracker(LoginTracker* tracker);
 
       /** Set the authenticator into secure mode and accept only SSL/TLS connections.
@@ -113,21 +115,38 @@ typedef struct FormAuthenticator
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** C form of FormAuthenticator::FormAuthenticator.
+    @param o Required storage to initialize.
+    @param userDbIntf Required borrowed user database.
+    @param realm Copied realm string; see the C++ constructor for NULL handling.
+    @param login Required borrowed login-response interface.
+ */
 BA_API void FormAuthenticator_constructor(
    FormAuthenticator* o,
    UserIntf* userDbIntf,
    const char* realm,
    LoginRespIntf* login);
 
+/** Release authenticator-owned realm storage after detaching all users.
+    @param o Required initialized authenticator. Borrowed dependencies are not freed.
+ */
 #define FormAuthenticator_destructor(o) do { \
       if((o)->realm)                            \
          baFree((o)->realm);                    \
       (o)->realm=0;                             \
    } while(0)
 
+/** C form of FormAuthenticator::setLoginTracker.
+    @param o Required initialized authenticator.
+    @param loginTracker Borrowed tracker, or NULL to disable.
+ */
 #define FormAuthenticator_setLoginTracker(o,loginTracker) \
    (o)->tracker=loginTracker
 
+/** C form of FormAuthenticator::setSecure.
+    @param o Required initialized authenticator. The flag is initially FALSE;
+    this setter enables it permanently for the lifetime of this initialization.
+ */
 #define FormAuthenticator_setSecure(o) (o)->secure=TRUE
 
 #ifdef __cplusplus

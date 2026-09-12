@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: Authenticator.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: Authenticator.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2005-2008
  *
@@ -33,6 +33,8 @@
  ****************************************************************************
  *
  */
+
+/** @file Authenticator.h */
 
 #ifndef __Authenticator_h
 #define __Authenticator_h
@@ -59,34 +61,46 @@ typedef struct Authenticator
 #ifdef __cplusplus
    : public AuthenticatorIntf
 {
-      /**
-         \param userDbIntf is a reference to a user database you must
-         provide/implement.
-
-         \param realm is the name of the Basic Authenticator realm.
-
-         \param sendLogin must be an implementation of LoginRespIntf.
-
-      */
+      /** Construct an authenticator using application-provided user lookup.
+        @param userDbIntf Required borrowed user database interface; keep it alive
+        while this authenticator is used.
+        @param realm Required NUL-terminated realm string, copied during
+        construction. It identifies the authentication realm sent to clients.
+        @param sendLogin Required borrowed login-response interface, which must
+        outlive authentication calls.
+        Constructors have no error return; realm allocation failure cannot be
+        reported through the constructor signature. Detach the authenticator from
+        directories and stop its users before calling Authenticator_destructor().
+        The C++ interface has no destructor that performs this cleanup automatically.
+       */
       Authenticator(UserIntf* userDbIntf,
                     const char* realm,
                     LoginRespIntf* sendLogin);
 
 
-      /** Prevent dictionary attacks.
-          \param tracker the IP address tracker.
-      */
+      /** Configure login-attempt tracking.
+        @param tracker Borrowed tracker, or NULL to disable tracking (the default).
+        Keep the tracker alive while configured. This setter does not allocate
+        or destroy it.
+        Applies to all embedded authentication mechanisms.
+       */
       void setLoginTracker(LoginTracker* tracker);
 
-      /** Get the internal BasicAuthenticator.
+      /** Access the embedded Basic authenticator.
+        @return Non-NULL borrowed pointer with the parent's lifetime. Use it to
+        configure that mechanism; do not destroy or free it independently.
        */
       BasicAuthenticator* getBasicAuthenticator();
 
-      /** Get the internal DigestAuthenticator.
+      /** Access the embedded Digest authenticator.
+        @return Non-NULL borrowed pointer with the parent's lifetime. Use it to
+        configure that mechanism; do not destroy or free it independently.
        */
       DigestAuthenticator* getDigestAuthenticator();
 
-      /** Get the internal FormAuthenticator.
+      /** Access the embedded Form authenticator.
+        @return Non-NULL borrowed pointer with the parent's lifetime. Use it to
+        configure that mechanism; do not destroy or free it independently.
        */
       FormAuthenticator* getFormAuthenticator();
 #else
@@ -103,17 +117,41 @@ typedef struct Authenticator
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** C form of Authenticator::Authenticator.
+    @param o Required storage to initialize.
+    @param userDbIntf Required borrowed user database.
+    @param realm Copied realm string; see the C++ constructor for NULL handling.
+    @param sendLogin Required borrowed login-response interface.
+ */
 BA_API void Authenticator_constructor(Authenticator* o,
                                UserIntf* userDbIntf,
                                const char* realm,
                                LoginRespIntf* sendLogin);
+/** Release authenticator-owned realm storage after detaching all users.
+    @param o Required initialized authenticator. Borrowed dependencies are not freed.
+    @note The current composite destructor omits its Digest realm cleanup.
+    This limitation is recorded for a separate implementation repair.
+ */
 BA_API void Authenticator_destructor(Authenticator* o);
+/** C form of Authenticator::setLoginTracker.
+    @param o Required initialized authenticator.
+    @param loginTracker Borrowed tracker, or NULL to disable.
+ */
 #define Authenticator_setLoginTracker(o, loginTracker)\
    BasicAuthenticator_setLoginTracker(&(o)->basicAuth, loginTracker),\
    DigestAuthenticator_setLoginTracker(&(o)->digestAuth, loginTracker),\
    FormAuthenticator_setLoginTracker(&(o)->formAuth, loginTracker)
+/** @copydoc Authenticator::getBasicAuthenticator
+    @param o Required initialized parent authenticator.
+ */
 #define Authenticator_getBasicAuthenticator(o) (&(o)->basicAuth)
+/** @copydoc Authenticator::getDigestAuthenticator
+    @param o Required initialized parent authenticator.
+ */
 #define Authenticator_getDigestAuthenticator(o) (&(o)->digestAuth)
+/** @copydoc Authenticator::getFormAuthenticator
+    @param o Required initialized parent authenticator.
+ */
 #define Authenticator_getFormAuthenticator(o) (&(o)->formAuth)
 #ifdef __cplusplus
 }

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: MultipartUpload.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: MultipartUpload.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+
+/** @file MultipartUpload.h */
 
 #ifndef __HttpMultipartUpload_h
 #define __HttpMultipartUpload_h
@@ -69,11 +71,11 @@ typedef enum
 struct MultipartUpload;
 #endif
 
-/** Executed by MultipartUpload when a multipart upload is completed.
-    \return This function must return 0 on success. Any other value
-    signals an error condition to the MultiPartUpload class.  This
-    method must call the MultipartUpload destructor or call
-    MultipartUpload::getCon
+/** Report the final multipart boundary.
+    @param o Parser whose request has completed. This callback returns no value.
+    In asynchronous mode, destroy the parser or call MultipartUpload_getCon() to
+    detach it and transfer the connection. In synchronous run() mode, leave the
+    object alive until run() returns; getCon() is unavailable in that mode.
  */
 typedef void (*MultipartUpload_EndOfReq)(
    struct MultipartUpload* o);
@@ -91,6 +93,11 @@ typedef void (*MultipartUpload_EndOfReq)(
     signals an error condition to the MultiPartUpload class.  This
     method must call the MultipartUpload destructor or call
     MultipartUpload::getCon if returning a non zero value.
+     All strings/data are borrowed and valid only during the callback. Copy data
+    that must be retained. In synchronous run() mode, do not free the parser in
+    a callback; return nonzero to stop and clean up after run() returns.
+    A nonzero callback result becomes MultipartUpload_UserRetErr internally;
+    it is not passed to onError as an additional notification.
  */
 typedef int (*MultipartUpload_FormData)(
    struct MultipartUpload* o,
@@ -105,13 +112,19 @@ typedef int (*MultipartUpload_FormData)(
     user. The path separator is platform dependent.
     \param contentType is the content mime type such as "text/plain".
     This parameter is NULL if not specified in the multipart data stream.
-    \param contentTransferEncoding is the transfer encoding such as "gzip".
+    \param contentTransferEncoding is the part's Content-Transfer-Encoding
+    header value. The parser does not decode this encoding.
     This parameter is NULL if not specified in the multipart data stream.
     \return This function must return 0 on success. Any other value
     signals an error condition to the MultiPartUpload class.
     This method must call the MultipartUpload destructor or call
     MultipartUpload::getCon if returning
     a non zero value.
+     All strings/data are borrowed and valid only during the callback. Copy data
+    that must be retained. In synchronous run() mode, do not free the parser in
+    a callback; return nonzero to stop and clean up after run() returns.
+    A nonzero callback result becomes MultipartUpload_UserRetErr internally;
+    it is not passed to onError as an additional notification.
  */
 typedef int (*MultipartUpload_FileBegin)(
    struct MultipartUpload* o,
@@ -126,11 +139,17 @@ typedef int (*MultipartUpload_FileBegin)(
     by setting the two input parameters to 0.
     \param o the object
     \param data a pointer to the received data.
-    \param len length of the data chunk.
+    \param len Byte count, at most 65535. data=NULL and len=0 mark the end
+    of the current file, not the end of the complete request.
     \return This function must return 0 on success. Any other value
     signals an error condition to the MultiPartUpload class.  This
     method must call the MultipartUpload destructor or call
     MultipartUpload::getCon if returning a non zero value.
+     All strings/data are borrowed and valid only during the callback. Copy data
+    that must be retained. In synchronous run() mode, do not free the parser in
+    a callback; return nonzero to stop and clean up after run() returns.
+    A nonzero callback result becomes MultipartUpload_UserRetErr internally;
+    it is not passed to onError as an additional notification.
  */
 typedef int (*MultipartUpload_FileData)(
    struct MultipartUpload* o,
@@ -142,6 +161,9 @@ typedef int (*MultipartUpload_FileData)(
     MultipartUpload destructor or call MultipartUpload::getCon.
     \param o the object
     \param e is the error code.
+     The callback returns no value. In synchronous run() mode, leave the object
+    alive and let run() return before freeing it. Not every initialization failure
+    invokes onError; always check the start()/run() result as well.
  */
 typedef void (*MultipartUpload_Error)(
    struct MultipartUpload* o,
@@ -157,40 +179,27 @@ typedef enum {
 } MultipartUpload_States;
 
 
-/** The MultipartUpload, which is an abstract base class, implements
-    the functionality as specified in <a
-    href="http://www.faqs.org/rfcs/rfc1867.html">RFC 1867</a>. A HTTP
-    POST in multipart mode uses a rather complex scheme for
-    transferring data, and we do not recommend using this class unless
-    you use a browser for uploading data or need to send a stream of
-    binary files and application/x-www-form-urlencoded data to the
-    server. Transferring files from a client to the server is easier
-    with HTTP PUT, but a browser can, unfortunately, not upload data
-    using HTTP PUT.
+/** Parser for multipart/form-data POST requests.
+    Each field is delivered through formData; files are delivered through
+    fileBegin and fileData callbacks. File bytes are streamed rather than stored
+    as one complete file. Field values must fit in the parser's working storage.
+    The parser does not create files or decode Content-Transfer-Encoding values.
 
-    You must subclass the MultipartUpload class and implement a number
-    of 'onEvent' callback methods. The 'onEvent' methods are called as
-    the MultipartUpload decodes the stream of data uploaded from the
-    client.
-
-    The MultipartUpload class is designed such that any error detected
-    in the 'onEvent' methods must make sure the MultipartUpload
-    destructor or call MultipartUpload::getCon is called before
-    returning a non-zero value. You may also have to release the
-    memory associated with the MultipartUpload instance -- i.e. with the
-    instance of the class sub-classing MultipartUpload. The
-    MultipartUpload class is designed such that it allows the callback
-    to destroy the object itself; that is, the MultipartUpload logic makes
-    sure no data, except for stack variables, are used when the
-    callback returns an error code.
+    Use start() for dispatcher-driven input or run() for blocking input. All five
+    callbacks are required. Callback cleanup rules differ between these modes:
+    asynchronous completion/error must detach or destroy the parser; synchronous
+    callbacks must keep its storage alive until run() returns. Do not reuse one
+    parser concurrently or switch a completed blocking instance to asynchronous mode.
 */
 typedef struct MultipartUpload
 {
 #ifdef __cplusplus
+     /** Uninitialized storage; call MultipartUpload_constructor before use. */
      MultipartUpload() {}
  
       /**
-         \param server is the Web-Server object.
+         \param server Required borrowed server; it and its dispatcher must
+         outlive the parser.
 
          \param onEndOfReq is called when the multipart upload is completed.
          See \ref MultipartUpload_EndOfReq.
@@ -209,15 +218,16 @@ typedef struct MultipartUpload
          the input stream.
          See \ref MultipartUpload_Error.
 
-         \param bufferSize is the size of the internal buffer used
-         when parsing the received data stream. This size must be, at
-         a minimum, the size of the largest form submitted. This size
-         should probably be > 10K.
+         \param bufferSize Initial buffer size and growth increment in bytes.
+         Initialization uses at least 1024 bytes and may grow to hold buffered
+         request data. Zero disables later growth. Growth increments above 50000
+         are not used by the current implementation. This is working storage,
+         not a total file-upload size limit.
 
-         \param allocator An allocator used for various small string
-          allocations needed when parsing the incoming data stream
-          and for allocating the internal buffer. The size of the
-          internal buffer is set with parameter 'bufferSize'.
+         \param allocator Borrowed allocator with allocation, reallocation, and
+         free support. NULL selects AllocatorIntf_getDefault(). Keep it alive
+         until parser destruction. The input buffer is allocated by start()/run(),
+         not by this constructor.
       */
       MultipartUpload(HttpServer* server,
                       MultipartUpload_EndOfReq onEndOfReq,
@@ -228,42 +238,52 @@ typedef struct MultipartUpload
                       U32 bufferSize,
                       AllocatorIntf* allocator = 0);
 
-      /** Release buffers used while parsing the multipart stream. */
+      /** Detach from the dispatcher, free parsing storage, and close the embedded
+    asynchronous connection if still owned. In blocking mode the request retains
+    its separate connection. The server and allocator are borrowed and not freed.
+ */
       ~MultipartUpload();
 
-      /** Start receiving data asynchronously.
-      The active socket object is detached from the web-server and
-      moved into the MultipartUpload object. The MultipartUpload object is
-      inserted into the SoDisp object, thus causing the socket
-      dispatcher to fire receive events directly to the MultipartUpload
-      object. The event methods are called: when the buffer is
-      full, receiving form data, etc.
-      */
+      /** Start asynchronous multipart input, taking the request connection.
+    @param req Required uncommitted POST multipart/form-data request with a live
+    connection. The parser enables keep-alive and can send 100 Continue.
+    @return Zero when initialized or when buffered-input processing has already
+    invoked a completion/error callback. Negative initialization results include
+    -1 committed response, -2 invalid connection, -3 wrong method/content type,
+    -4 boundary setup failure, -5 buffer allocation failure, and E_MALLOC for
+    request-data pushback failure. A callback may already have handled cleanup.
+    Callbacks can run before this function returns. Do not assume a zero result
+    means the object is still alive or the upload succeeded.
+ */
       int start(HttpRequest *req);
 
 
-      /** Run multipart parsing synchronously for data already owned by the request.
-          \param req The active HTTP request.
-          \param setKeepAlive TRUE to preserve keep-alive handling when possible.
-       */
+      /** Parse multipart input synchronously, blocking for additional bytes.
+    @param req Required current POST multipart/form-data request.
+    @param setKeepAlive True (default) enables keep-alive when possible; false
+    does not enable it. This does not force a close or override later errors.
+    @return Zero on completion while the connection remains valid; negative
+    initialization errors as for start(), or -1 for later processing/connection
+    failure. Callbacks receive data during this call and must not free the parser.
+    The request retains the connection; getCon() returns NULL in this mode.
+ */
       int run(HttpRequest *req, bool setKeepAlive=true);
 
-      /** Returns the internal active connection object.
-
-      This method is typically called from within the onEndOfReq event
-      method when all data is received and you are moving the active
-      connection object to an HttpAsynchResp object.
-
-      C code example:
-      \code
-      HttpAsynchResp_constructor2(
-         resp, buf, bufSize, MultipartUpload_getCon(req));
-      \endcode
-      */
+      /** Detach the asynchronous parser and release parsing buffers for a handoff.
+    @param o Unused argument retained by the C++ wrapper; the operation acts on this.
+    @return Borrowed embedded connection after detachment, or NULL in blocking
+    mode. Move the returned connection into its new owner before destroying this
+    parser. Detachment alone does not close or free that connection.
+    @code
+    // In an asynchronous callback, transfer the connection to a response object.
+    HttpAsynchResp_constructor2(resp, buf, bufSize, MultipartUpload_getCon(upload));
+    @endcode
+ */
       HttpConnection* getCon(MultipartUpload* o);
  
-      /** Get the HttpServer instance.
-       */
+      /** Get the server supplied to the constructor.
+    @return Non-NULL borrowed server pointer; ownership does not change.
+ */
       HttpServer* getServer();
 
    private:
@@ -301,6 +321,17 @@ typedef struct MultipartUpload
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Construct a parser as described by MultipartUpload::MultipartUpload.
+    @param o Required storage to initialize.
+    @param server Required borrowed server.
+    @param endOfReq Required completion callback.
+    @param formData Required form-field callback.
+    @param fileBegin Required file-header callback.
+    @param fileData Required file-data callback.
+    @param onError Required error callback.
+    @param bufferSize Initial working-buffer size and growth increment in bytes.
+    @param allocator Borrowed allocator, or NULL for the default allocator.
+ */
 void
 BA_API MultipartUpload_constructor(
    MultipartUpload* o,
@@ -312,11 +343,27 @@ BA_API MultipartUpload_constructor(
    MultipartUpload_Error onError,
    U32 bufferSize,
    AllocatorIntf* allocator);
+/** @copydoc MultipartUpload::~MultipartUpload
+    @param o Required initialized parser.
+ */
 BA_API void MultipartUpload_destructor(MultipartUpload* o);
+/** @copydoc MultipartUpload::start
+    @param o Required initialized parser.
+ */
 BA_API int MultipartUpload_start(MultipartUpload* o, HttpRequest *req);
+/** @copydoc MultipartUpload::run
+    @param o Required initialized parser.
+ */
 BA_API int MultipartUpload_run(
    MultipartUpload* o, HttpRequest *req, BaBool setKeepAlive);
+/** Detach and prepare an asynchronous connection handoff.
+    @param o Required initialized parser on which to act.
+    @return Borrowed embedded connection, or NULL in blocking mode; see MultipartUpload::getCon.
+ */
 BA_API HttpConnection* MultipartUpload_getCon(MultipartUpload* o); 
+/** @copydoc MultipartUpload::getServer
+    @param o Required initialized parser.
+ */
 #define MultipartUpload_getServer(o) \
    HttpConnection_getServer((HttpConnection*)(o))
 #ifdef __cplusplus

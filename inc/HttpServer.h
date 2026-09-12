@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpServer.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5887
+#define BASLIB_VER_NO 5993
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5887)
+#define BASLIB_VER BASLIB_VER_M(5993)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -71,6 +71,8 @@ HttpPage, HttpResRdr, AuthenticateDir, EvDir or any class derived
 from HttpPage or HttpDir.
 */
 
+
+/** @file HttpServer.h */
 
 #ifndef __HttpServer_h
 #define __HttpServer_h
@@ -132,24 +134,43 @@ extern "C" {
 #endif
 BA_API struct AuthenticatedUser* AuthenticatedUser_get2(
    struct HttpSession* session);
-/** Formats the pointer 'buf' with date/time according to RFC 1123
+/** Format an HTTP date in GMT.
+    @param buf Required writable output storage.
+    @param bufLen Capacity including NUL; use at least 30 bytes for a four-digit year.
+    @param t Unix time in seconds.
+    No length/status is returned; an insufficient buffer truncates the text.
  */
 BA_API void httpFmtDate(char* buf, U16 bufLen, BaTime t);
 
-/** strict %xx only */
+/** Decode URL escapes in place. See httpUnescapeInternal for errors.
+    @param s Required writable NUL-terminated string.
+    @return Last decoded character, or NULL on rejection; not the terminating NUL.
+ */
 #define httpUnescape(s) httpUnescapeInternal(s,FALSE)
 
-/** strict %xx + '+' => ' ' */
+/** Decode form escapes in place, also replacing plus with space.
+    @param s Required writable NUL-terminated string.
+    @return Last decoded character, or NULL on rejection. See httpUnescapeInternal.
+ */
 #define httpFormUnescape(s) httpUnescapeInternal(s,TRUE)
 
-/** Common decoder core used by macros httpUnescape and httpFormUnescap.
-    Decodes a string containing %[hex][hex].
-    Returns the last character -- i.e. the character before \0.
-*/
+/** Decode percent followed by two hex digits in place.
+    @param from Required writable NUL-terminated input/output string.
+    @param isForm Nonzero converts plus to space and permits percent-encoded
+    control characters except NUL. Zero leaves plus unchanged and rejects them.
+    Raw control characters, encoded NUL, and malformed escapes are rejected.
+    @return Last character before the NUL terminator on success, or NULL on
+    error; input can already be partly changed on error. Empty output has no
+    last character: do not dereference or use that result as a buffer address.
+ */
 BA_API char* httpUnescapeInternal(char* from, BaBool isForm);
 
 /** Encodes characters that cannot be in a http URL.
- * "out" should be 3 times the size of "in"
+ * @param out Required writable buffer of at least 3*strlen(in)+1 bytes.
+ * @param in Required NUL-terminated source; do not overlap output storage.
+ * @return Pointer to the output's terminating NUL. No error/size check occurs.
+ * Only the implementation's reserved-character set is encoded; this is not
+ * general Unicode URL normalization.
  */
 BA_API char* httpEscape(char* out, const char* in);
 #ifdef __cplusplus
@@ -317,24 +338,26 @@ inline S32 HttpInData::getBufSize() {
     \code
     HttpParameter* param=
       HttpParameter_clone(
-         baMalloc(HttpParameter_calculateSize(request)),
+         baMalloc(HttpParameter_calculateSize(request) + sizeof(HttpParameter)),
          request);
     if(param)
-       //OK
-    else
-      // baMalloc failed
+    {
+       // Use the copied parameters, then release their allocation.
+       baFree(param);
+    }
     \endcode
 
     C++ example:
     \code
     HttpParameter* param=
       HttpParameter::clone(
-         baMalloc(HttpParameter::calculateSize(request)),
+         baMalloc(HttpParameter::calculateSize(request) + sizeof(HttpParameter)),
          request);
     if(param)
-       //OK
-    else
-      // baMalloc failed
+    {
+       // Use the copied parameters, then release their allocation.
+       baFree(param);
+    }
     \endcode
 
     All parameters are contained within one memory unit and one can
@@ -346,7 +369,7 @@ inline S32 HttpInData::getBufSize() {
     \code
     HttpParameterIterator i;
     HttpParameter* param=
-      HttpParameter_clone(baMalloc(HttpParameter_calculateSize(req)), req);
+      HttpParameter_clone(baMalloc(HttpParameter_calculateSize(req) + sizeof(HttpParameter)), req);
     if(param)
     {
        HttpParameterIterator_constructor2(&i, param);
@@ -366,11 +389,20 @@ typedef struct HttpParameter
 {
 #ifdef __cplusplus
       /** Calculate the HttpParameter size.
-       */
+       @param req Required live request.
+          @return Bytes for a clone, or zero when no parameters exist. For an
+          empty clone, still provide at least sizeof(HttpParameter) bytes.
+      */
       static U32 calculateSize(struct HttpRequest* req);
 
       /** Copy HTTP parameters to buf and return as a HttpParameter
           object.
+      @param buf Writable, suitably aligned storage of at least calculateSize(req)
+          bytes, and at least sizeof(HttpParameter) even for an empty request.
+          NULL is accepted and returns NULL; no allocation occurs here.
+          @param req Required live request; strings are copied.
+          @return buf as a container pointer, or NULL for NULL buf. The clone is
+          independent of the request. The caller retains allocation ownership.
       */
       static HttpParameter* clone(void* buf, struct HttpRequest* req);
 
@@ -381,6 +413,9 @@ typedef struct HttpParameter
 
           If you use this method with a multivalued parameter, the value
           returned is equal to the first value in a HttpParameterIterator.
+      @param paramName Required NUL-terminated, case-sensitive parameter name.
+          @return Borrowed value in this container, or NULL when absent; valid
+          until the container storage is released.
       */
       const char* getParameter(const char* paramName);
 
@@ -394,8 +429,17 @@ typedef struct HttpParameter
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpParameter::calculateSize
+    
+ */
 BA_API U32 HttpParameter_calculateSize(struct HttpRequest* req);
+/** @copydoc HttpParameter::clone
+    
+ */
 BA_API HttpParameter* HttpParameter_clone(void* buf, struct HttpRequest* req);
+/** @copydoc HttpParameter::getParameter
+    @param o Required cloned parameter container.
+ */
 BA_API const char* HttpParameter_getParameter(
    HttpParameter* o,const char* paramName);
 
@@ -452,13 +496,14 @@ typedef struct HttpParameterIterator
       */
       HttpParameterIterator(HttpParameter* param);
 
-      /** Advance to the next element */
+      /** Advance to the next element. At the end, name and value become NULL.
+          Call hasMoreElements() before accessing the current entry. */
       void nextElement();
       /** Returns true if more elements. */
       bool hasMoreElements();
-      /** Return the form name */
+      /** Return the borrowed current name, or NULL at the end. */
       const char* getName() const { return name; }
-      /** Returns the form value */
+      /** Return the borrowed current value, or NULL at the end. */
       const char* getValue() const { return value; }
    private:
 #endif
@@ -475,8 +520,22 @@ typedef struct HttpParameterIterator
 extern "C" {
 #endif
 
+/** Initialize an iterator and select its first element.
+    @param o Required iterator storage.
+    @param req Required live request; borrowed through iteration.
+    @return Number of parameters, zero for an empty collection. The C++
+    constructor does not return this count. Names/values remain owned by the
+    source; no iterator destructor is needed.
+ */
 BA_API int HttpParameterIterator_constructor(
    HttpParameterIterator* o, struct HttpRequest* req);
+/** Initialize an iterator and select its first element.
+    @param o Required iterator storage.
+    @param param Required cloned parameter container; borrowed through iteration.
+    @return Number of parameters, zero for an empty collection. The C++
+    constructor does not return this count. Names/values remain owned by the
+    source; no iterator destructor is needed.
+ */
 BA_API int HttpParameterIterator_constructor2(HttpParameterIterator* o,
                                               HttpParameter* param);
 BA_API void HttpParameterIterator_nextElement(HttpParameterIterator* o);
@@ -521,6 +580,11 @@ inline void HttpParameterIterator::nextElement() {
  * baAssert(cookie == request->getCookie("myCookie"));
  * \endcode
  */
+/** Cookie objects and getter strings are owned by the request/response and
+    expire with it. Do not destroy or free a cookie obtained from the server.
+    String setters copy input; a successful replacement invalidates the old
+    getter pointer. Activate before committing to emit a Set-Cookie header.
+ */
 typedef struct HttpCookie
 {
 #ifdef __cplusplus
@@ -558,11 +622,17 @@ typedef struct HttpCookie
       /** Returns the value of the cookie. */
       const char* getValue()   const { return value; }
 
-      /** Specifies a comment that describes a cookie's purpose. */
-      void setComment(const char* purpose);
+      /** Specifies a comment that describes a cookie's purpose.
+       * Returns 0 on success or E_MALLOC on allocation failure, preserving
+       * the old comment on failure. NULL clears the comment. @param purpose Purpose text as a NUL-terminated string, or NULL to clear.
+      */
+      int setComment(const char* purpose);
 
-      /** Specifies the domain within which this cookie should be presented. */
-      void setDomain(const char* pattern);
+      /** Specifies the domain within which this cookie should be presented.
+       * Returns 0 on success or E_MALLOC on allocation failure, preserving
+       * the old domain on failure. NULL clears the domain. @param pattern Domain attribute as a NUL-terminated string, or NULL to clear.
+      */
+      int setDomain(const char* pattern);
 
       /** Sets the maximum age of the cookie in seconds.
           The cookie is by default not stored persistently and will be
@@ -570,6 +640,9 @@ typedef struct HttpCookie
           cookie into a persistent cookie, which the browser keeps in
           its cookie container. A persistent cookie can later be
           deleted with function HttpCookie::deleteCookie.
+      @param expiry Lifetime in seconds; a positive value makes the cookie
+          persistent. Zero explicitly requests deletion. A freshly created
+          cookie's default zero instead means no lifetime attribute was set.
       */
       void setMaxAge(BaTime expiry);
       /** Specifies a path for the cookie to which the client should
@@ -582,12 +655,16 @@ typedef struct HttpCookie
        */
       void deleteCookie();
 
-      /** Set the cookie path */
-      void setPath(const char* uri);
+      /** Set the cookie path.
+       * Returns 0 on success or E_MALLOC on allocation failure, preserving
+       * the old path on failure. NULL clears the path. @param uri Path attribute as a NUL-terminated string, or NULL to clear.
+      */
+      int setPath(const char* uri);
 
       /** Inform the browser whether the cookie should be
        * sent only using a secure protocol such as HTTPS -- i.e. using SSL.
-       */
+       @param flag true adds Secure; false removes it. Default false.
+      */
       void setSecure(bool flag);
 
    /** Marks or unmarks this Cookie as HttpOnly.
@@ -598,11 +675,15 @@ typedef struct HttpCookie
        HttpOnly cookies are not supposed to be exposed to client-side
        scripting code, and may therefore help mitigate certain kinds
        of cross-site scripting attacks.
-       */
+       @param flag true adds HttpOnly; false removes it. Default false.
+      */
       void setHttpOnly(bool flag);
 
-      /** Assigns a new value to a cookie after the cookie is created. */
-      void setValue(const char* newValue);
+      /** Assigns a new value to a cookie after the cookie is created.
+       * Returns 0 on success or E_MALLOC on allocation failure, preserving
+       * the old value on failure. NULL clears the value. @param newValue Cookie value as a NUL-terminated string, or NULL to clear.
+      */
+      int setValue(const char* newValue);
 
 #if 0
       /** Returns the version of the protocol this cookie complies with. */
@@ -639,49 +720,97 @@ typedef struct HttpCookie
 extern "C" {
 #endif
 BA_API void HttpCookie_destructor(HttpCookie* o);
+/** @copydoc HttpCookie::getComment
+    @param o Required live cookie.
+ */
 BA_API const char* HttpCookie_getComment(HttpCookie* o);
+/** @copydoc HttpCookie::getDomain
+    @param o Required live cookie.
+ */
 BA_API const char* HttpCookie_getDomain(HttpCookie* o);
+/** @copydoc HttpCookie::getMaxAge
+    @param o Required live cookie.
+ */
 BA_API BaTime HttpCookie_getMaxAge(HttpCookie* o);
+/** @copydoc HttpCookie::getName
+    @param o Required live cookie.
+ */
 BA_API const char* HttpCookie_getName(HttpCookie* o);
+/** @copydoc HttpCookie::getPath
+    @param o Required live cookie.
+ */
 BA_API const char* HttpCookie_getPath(HttpCookie* o);
+/** @copydoc HttpCookie::getSecure
+    @param o Required live cookie.
+ */
 BA_API BaBool HttpCookie_getSecure(HttpCookie* o);
+/** @copydoc HttpCookie::getHttpOnly
+    @param o Required live cookie.
+ */
 BA_API BaBool HttpCookie_getHttpOnly(HttpCookie* o);
+/** @copydoc HttpCookie::getValue
+    @param o Required live cookie.
+ */
 BA_API const char* HttpCookie_getValue(HttpCookie* o);
-BA_API void HttpCookie_setComment(HttpCookie* o, const char* purpose);
-BA_API void HttpCookie_setDomain(HttpCookie* o, const char* pattern);
+/** @copydoc HttpCookie::setComment
+    @param o Required live cookie.
+ */
+BA_API int HttpCookie_setComment(HttpCookie* o, const char* purpose);
+/** @copydoc HttpCookie::setDomain
+    @param o Required live cookie.
+ */
+BA_API int HttpCookie_setDomain(HttpCookie* o, const char* pattern);
+/** @copydoc HttpCookie::setMaxAge
+    @param o Required live cookie.
+ */
 BA_API void HttpCookie_setMaxAge(HttpCookie* o, BaTime expiry);
 #define HttpCookie_deleteCookie(o) (o)->deleteCookieFlag = TRUE;
-BA_API void HttpCookie_setPath(HttpCookie* o, const char* uri);
+/** @copydoc HttpCookie::setPath
+    @param o Required live cookie.
+ */
+BA_API int HttpCookie_setPath(HttpCookie* o, const char* uri);
+/** @copydoc HttpCookie::setSecure
+    @param o Required live cookie.
+ */
 BA_API void HttpCookie_setSecure(HttpCookie* o, BaBool flag);
+/** @copydoc HttpCookie::setHttpOnly
+    @param o Required live cookie.
+ */
 BA_API void HttpCookie_setHttpOnly(HttpCookie* o, BaBool flag);
-BA_API void HttpCookie_setValue(HttpCookie* o, const char* newValue);
+/** @copydoc HttpCookie::setValue
+    @param o Required live cookie.
+ */
+BA_API int HttpCookie_setValue(HttpCookie* o, const char* newValue);
 
 #if 0
 int HttpCookie_getVersion(HttpCookie* o);
 void HttpCookie_setVersion(HttpCookie* o, int v);
 #endif
 
+/** @copydoc HttpCookie::activate
+    @param o Required live cookie.
+ */
 BA_API void HttpCookie_activate(HttpCookie* o);
 #ifdef __cplusplus
 }
 inline HttpCookie::HttpCookie() { baAssert(0); }
 inline HttpCookie::~HttpCookie() { HttpCookie_destructor(this); }
-inline void HttpCookie::setComment(const char* purpose) {
-   HttpCookie_setComment(this, purpose); }
-inline void HttpCookie::setDomain(const char* pattern) {
-   HttpCookie_setDomain(this, pattern); }
+inline int HttpCookie::setComment(const char* purpose) {
+   return HttpCookie_setComment(this, purpose); }
+inline int HttpCookie::setDomain(const char* pattern) {
+   return HttpCookie_setDomain(this, pattern); }
 inline void HttpCookie::setMaxAge(BaTime expiry) {
    HttpCookie_setMaxAge(this, expiry); }
 inline void HttpCookie::deleteCookie() {
    HttpCookie_deleteCookie(this); }
-inline void HttpCookie::setPath(const char* uri) {
-   HttpCookie_setPath(this, uri); }
+inline int HttpCookie::setPath(const char* uri) {
+   return HttpCookie_setPath(this, uri); }
 inline void HttpCookie::setSecure(bool flag) {
    HttpCookie_setSecure(this, flag ? TRUE : FALSE); }
 inline void HttpCookie::setHttpOnly(bool flag) {
    HttpCookie_setHttpOnly(this, flag ? TRUE : FALSE); }
-inline void HttpCookie::setValue(const char* newValue) {
-   HttpCookie_setValue(this, newValue); }
+inline int HttpCookie::setValue(const char* newValue) {
+   return HttpCookie_setValue(this, newValue); }
 #if 0
 inline void HttpCookie::setVersion(int v) {
    HttpCookie_setVersion(this, v); }
@@ -813,6 +942,10 @@ BA_API HttpMethod HttpMethod_a2m(const char* str);
  *  a client request. The object is passed in as the first argument to the
  *  HttpPage service function.
  */
+/** Request-owned pointers (headers, parameters, cookies, URI, and associated
+    command objects) must not be freed or retained beyond request completion.
+    Access requires the server mutex. Copy data needed by asynchronous work.
+ */
 typedef struct HttpRequest
 {
 #ifdef __cplusplus
@@ -820,7 +953,7 @@ typedef struct HttpRequest
       /** Checks the HTTP method type and sends a response message if
           condition met.
 
-          RFC26216 specifies that each resource in a web-server can
+          RFC 2616 specifies that each resource in a web-server can
           have its own set of allowed HTTP methods.
 
           The checkMethod method checks if the requested HTTP method
@@ -864,7 +997,7 @@ typedef struct HttpRequest
           by using character |.
 
           \param addDefault set to true if you would like to add
-          OPTION and HEADER.
+          OPTIONS and HEAD.
 
           \sa HttpRequest::getMethodType
        */
@@ -873,7 +1006,7 @@ typedef struct HttpRequest
       /** Parses and checks if the "If-Modified-Since" time is equal or greater
          than "time".
          <p>
-         Sends a "304 Not modified" response and returns true if the condition
+         Prepares a "304 Not modified" response and returns true if the condition
          is true; otherwise, false is returned.
          </p>
          <p><b>
@@ -881,6 +1014,9 @@ typedef struct HttpRequest
          </b></p>
          \param resp the response object is used if sending a 304 response.
          \param time is the GMT time.
+      @return TRUE if the cached time condition matches and response setup
+         was attempted; FALSE otherwise. This is not a network delivery result.
+         time is Unix time in seconds; call before committing the response.
       */
       BaBool checkTime(struct HttpResponse* resp, BaTime time);
 
@@ -903,7 +1039,11 @@ typedef struct HttpRequest
           connection and HTTPS for a secure connection.
 
           \sa HttpResponse::forceHttps
-       */
+       @return Borrowed URL or NULL on allocation failure. Valid until another
+          request/redirect URL encoding call or request completion. Host normally
+          comes from the request Host header; without it the implementation
+          uses the peer address. Do not treat this as the server's configured URL.
+      */
       const char* getRequestURL(bool forceHttps=false);
 
       /** Returns an object containing standard HTTP headers.
@@ -954,6 +1094,8 @@ typedef struct HttpRequest
           If you use this method with a multivalued parameter, the value
           returned is equal to the first value in a HttpParameterIterator.
 
+          @param paramName Required NUL-terminated, case-sensitive name.
+          Returned values are borrowed for the request lifetime.
           \sa HttpParameterIterator HttpParameter
        */
       const char* getParameter(const char* paramName);
@@ -978,7 +1120,10 @@ typedef struct HttpRequest
                              hIter->value(request));
          }
           \endcode
-       */
+       @param len Required output pointer receiving the number of entries.
+          @return Borrowed array of len entries; use each with this same request.
+          The array and its name/value strings expire with the request.
+      */
       HttpHeader* getHeaders(int* len);
 
 
@@ -1000,7 +1145,10 @@ typedef struct HttpRequest
         necessary; FALSE to return NULL if there is no current session.
 
         \return the HttpSession associated with this request or null
-        if create is false and the request has no valid session.
+        if there is no session and create is false, creation fails, the response
+        is already committed, or the current session has termination pending.
+        The pointer is borrowed; hold a session reference if retaining it beyond
+        this request. See HttpSession::incrRefCntr.
 
 
         <B>Typical C++ usage:</B>
@@ -1008,6 +1156,7 @@ typedef struct HttpRequest
         MyPage::service(HttpRequest* request, HttpResponse* response)
         {
            HttpSession* session = request->getSession(true);
+           if(!session) return; // Allocation, limit, or committed response.
            ShoppingCart* sc = (ShoppingCart*)session->getAttribute("Cart");
            if ( ! sc )
            {// User has no shopping cart, create one.
@@ -1064,6 +1213,9 @@ typedef struct HttpRequest
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpRequest::checkMethods
+    @param o Required live request.
+ */
 BA_API int HttpRequest_checkMethods(HttpRequest* o, struct HttpResponse* resp,
                                     U32 methods, BaBool addDefault);
 BA_API int HttpRequest_checkOptions(
@@ -1077,26 +1229,56 @@ BA_API const char* HttpRequest_getMethod2(HttpMethod method);
 #define HttpRequest_getServer(o) (o)->server
 #define HttpRequest_getResponse(o) (&HttpRequest_getCommand(o)->response)
 BA_API struct HttpCommand* HttpRequest_getCommand(HttpRequest*);
+/** @copydoc HttpRequest::checkTime
+    @param o Required live request.
+ */
 BA_API BaBool HttpRequest_checkTime(
    HttpRequest* o, struct HttpResponse* resp, BaTime time);
+/** @copydoc HttpRequest::getRequestURI
+    @param o Required live request.
+ */
 BA_API const char* HttpRequest_getRequestURI(HttpRequest* o);
+/** @copydoc HttpRequest::getRequestURL
+    @param o Required live request.
+ */
 BA_API const char* HttpRequest_getRequestURL(HttpRequest* o,BaBool forceHttps);
 #define HttpRequest_getStdHeaders(o) (&(o)->stdH)
+/** @copydoc HttpRequest::getVersion
+    @param o Required live request.
+ */
 BA_API const char* HttpRequest_getVersion(HttpRequest* o);
+/** @copydoc HttpRequest::getHeaderValue
+    @param o Required live request.
+ */
 BA_API const char* HttpRequest_getHeaderValue(HttpRequest* o,const char* name);
 #define HttpRequest_getNoOfParameters(o) (o)->formLen
+/** @copydoc HttpRequest::getCookie
+    @param o Required live request.
+ */
 BA_API HttpCookie* HttpRequest_getCookie(HttpRequest* o, const char* name);
 #define HttpRequest_getUserObj(o) (o)->userObj
 BA_API int HttpRequest_setUserObj(
    HttpRequest* o, void* userObj, BaBool overwrite);
 #define HttpRequest_getBuffer(o) (&(o)->inData)
+/** @copydoc HttpRequest::getParameter
+    @param o Required live request.
+ */
 BA_API const char* HttpRequest_getParameter(
    HttpRequest* o, const char* paramName);
+/** @copydoc HttpRequest::getHeaders
+    @param o Required live request.
+ */
 BA_API HttpHeader* HttpRequest_getHeaders(HttpRequest* o, int* len);
+/** @copydoc HttpRequest::wsUpgrade
+    @param o Required live request.
+ */
 BA_API int HttpRequest_wsUpgrade(HttpRequest* o);
 BA_API BaBool HttpRequest_enableKeepAlive(HttpRequest* o);
 BA_API int HttpRequest_pushBackData(HttpRequest* o);
 #ifndef NO_HTTP_SESSION
+/** @copydoc HttpRequest::getSession
+    @param o Required live request.
+ */
 BA_API struct HttpSession* HttpRequest_getSession(
    HttpRequest* o, BaBool create);
 BA_API struct HttpSession* HttpRequest_session(
@@ -1194,6 +1376,8 @@ typedef struct HttpResponse
 
       /** Create a cookie.
        * \param name the name of the cookie.
+       * Returns an existing cookie with the same name, or a new cookie.
+       * Returns NULL if the cookie or its name cannot be allocated.
        */
       HttpCookie* createCookie(const char* name);
 
@@ -1241,6 +1425,8 @@ typedef struct HttpResponse
       /** Forces any content in the buffer to be written to the client.
           A call to this method automatically commits the response, meaning
           the status code and headers will be written.
+      @return 0 on success or the writer/transport error. Buffered output may
+          already have been partly sent on failure; no byte count is returned.
       */
       int flush();
 
@@ -1309,8 +1495,9 @@ typedef struct HttpResponse
 
           <p>The HttpResponse object's path elements and parameters
           remain unchanged from the caller's values. The included
-          servlet cannot change the response status code or set
-          headers; any attempt to make a change is ignored.</p>
+          servlet cannot change the response status code. Ordinary setHeader
+          calls can change headers before commitment; fmtHeader rejects include
+          contexts. Do not assume included code cannot modify headers.</p>
 
           \param path is the path to the resource to include. The path is
           assumed to be an absolute path value on the server if the string
@@ -1411,7 +1598,7 @@ typedef struct HttpResponse
          response->sendRedirect("start.html");
          \endcode
          \code
-         response->sendRedirect("https://127.0.0.1:9357/intro/start.html"));
+         response->sendRedirect("https://127.0.0.1:9357/intro/start.html");
          \endcode
          \sa HttpResponse::encodeRedirectURL
          \sa HttpResponse::encodeRedirectURLWithParam
@@ -1419,13 +1606,16 @@ typedef struct HttpResponse
        */
       int sendRedirect(const char* url);
 
-      /** Converts the URL to HTTPS and sends a redirect
-          (301) response to the client if this is a non-secure
-          connection. This function fails if the response is committed.
+      /** Prepares an HTTPS redirect (301) for a non-secure connection.
+          A Host with an explicit port selects a 403 error response instead.
+          Bracketed IPv6 hosts without an explicit port are accepted.
+          Call before committing the response. An already-secure connection
+          returns 0 without changing the response.
 
           \returns 0 if the connection is secure and nothing is
-          sent. Returns 1 if a 301 HTTP response is sent. Returns < 0
-          if the command fails.
+          prepared. Returns 1 when preparing the 301 or 403 response succeeds.
+          Returns < 0 if the command fails. Success does not establish that
+          the client received the response.
 
           \sa HttpRequest::getRequestURL
           \sa HttpResponse::sendRedirect
@@ -1436,13 +1626,18 @@ typedef struct HttpResponse
         has already been set, the new value overwrites the previous
         one. The HttpResponse::containsHeader method can be used to
         test for the presence of a header before setting its value.
-       */
+       @param len Nonnegative body byte count. The caller must send exactly this
+          amount; this call sets framing, not a body-size enforcement limit.
+          @return 0 on success, E_IS_COMMITTED or allocation error on failure.
+      */
       int setContentLength(BaFileSize len);
 
       /** Sets the "Content-Type" parameter value.  If the header has
         already been set, the new value overwrites the previous
         one. The HttpResponse::containsHeader method can be used to
         test for the presence of a header before setting its value.
+      @param type NUL-terminated media type, copied; NULL or empty clears it.
+          @return 0 on success, E_IS_COMMITTED or allocation error on failure.
       */
       int setContentType(const char* type);
 
@@ -1473,7 +1668,13 @@ typedef struct HttpResponse
 
       \param name the name of the header to set.
       \param value the header value. Set to NULL if you want to erase
-      any previous value, if any.
+      any previous value, if any. An empty string also erases the header.
+      Removing Content-Length preserves buffered body data, removes
+      Transfer-Encoding, and immediately restores automatic framing.
+      The default writer enables chunking for keep-alive responses other
+      than HEAD. Custom writers retain responsibility for their output.
+      Restoring chunking can return an allocation error; do not continue
+      sending the response after this failure.
       \param replace set to false if you do not want to overwrite any
       previous value, if any.
       */
@@ -1483,7 +1684,10 @@ typedef struct HttpResponse
        *  Can, for example, be used by CSP code to overide the
        *  default headers inserted by the CSP compiler.
        *  See HttpResponse::setDefaultHeaders for more information.
-       */
+       @param seconds Nonnegative cache lifetime in seconds, representable as U32.
+          @return 0 on success (also for an include no-op), E_IS_COMMITTED or
+          E_MALLOC on failure.
+      */
       int setMaxAge(BaTime seconds);
 
 
@@ -1518,6 +1722,10 @@ typedef struct HttpResponse
           \param name the name of the header to set.
           \param valueLen the length of the memory area returned by fmtHeader.
           \param replace the parameter if already set.
+      @return Borrowed writable value storage, or NULL for invalid name/length,
+          include context, committed response, or allocation failure. Write a
+          NUL-terminated value before any response operation that uses headers.
+          Returned storage may be invalidated by later header changes/reset.
       */
       char* fmtHeader(const char* name, int valueLen, bool replace=true);
 
@@ -1530,7 +1738,9 @@ typedef struct HttpResponse
           setStatus should be called before the response has been
           committed to the client (before response body output has
           been flushed). If the response already has been committed,
-          this method returns a non-zero value.
+          the C function returns E_IS_COMMITTED; this void C++ wrapper discards it.
+
+          Included resources cannot change the status.
 
           \param statusCode The
            <a href="http://www.w3.org/Protocols/HTTP/HTRESP.html">
@@ -1540,6 +1750,8 @@ typedef struct HttpResponse
 
       /** printf is used for sending formatted data to the client.
           \param fmt See BufPrint::printf
+      @return BufPrint status, normally 0 on success and negative on output
+          failure, not the number of characters. Output can be partial.
       */
       int printf(const char* fmt, ...);
 
@@ -1548,6 +1760,8 @@ typedef struct HttpResponse
 
           The BufPrint object is also used implicitly when using
           method HttpResponse::printf or HttpResponse::write.
+      @return Borrowed active writer, valid during the request. This initializes
+          output framing but does not expose a framing-initialization error.
       */
       BufPrint* getWriter();
 
@@ -1558,7 +1772,12 @@ typedef struct HttpResponse
           object should buffer the data before sending it to the client.
           The buffer will be automatically flushed when full.
           \sa BufPrint::write
-       */
+       len is a byte count; negative uses strlen and therefore requires text.
+          Data is borrowed only during the call. A custom writer is always used
+          regardless of useBuffering.
+          @return 0 on success, nonzero on initialization/output failure. Partial
+          output is possible, but no partial byte count is provided.
+      */
       int write(const void* data, int len, int useBuffering=TRUE);
 
       /** Used for sending a zero terminated string to the client.
@@ -1573,7 +1792,13 @@ typedef struct HttpResponse
       /** Used when sending raw data to the client.
        * This function is typically used when sending binary data to the
        * client.
-       */
+       @param data Required readable bytes, borrowed for the call.
+          @param len Nonnegative byte count.
+          Set response framing first; this raw path does not add chunk framing
+          or pass through a custom writer. Do not mix with buffered body output.
+          @return 0 on success, E_MIXING_WRITE_SEND when buffered data remains,
+          or a header/connection error. HEAD counts bytes without sending a body.
+      */
       int send(const void* data, int len);
 
       /** Sets the most common header values in servlet and CSP files.
@@ -1602,11 +1827,19 @@ typedef struct HttpResponse
         \param useDefBuffer The parameter buf and bufSize in struct
         BufPrint is set to the internal web-server buffer if this
         variable is set to true.
-       */
+       buf is borrowed until restored or request completion. Its flush callback
+          must be initialized. No ownership of the BufPrint or its storage transfers.
+          @return 0 on success, E_IS_COMMITTED when output/buffer state prevents
+          installation. Passing the already active custom buffer restores the
+          default writer in the implementation's restore path.
+      */
       int setResponseBuf(BufPrint* buf, bool useDefBuffer=true);
 
       /** Remove buffer set by using setResponseBuf.
           \sa setResponseBuf
+      @return 0 after restoring the default writer and resetting headers, or
+          -1 when already committed or no custom writer is active. Custom
+          buffered data is not flushed by this operation.
       */
       int removeResponseBuf();
 
@@ -1635,12 +1868,22 @@ typedef struct HttpResponse
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpResponse::createCookie
+    @param o Required live response.
+ */
 BA_API HttpCookie* HttpResponse_createCookie(
    struct HttpResponse* o,const char* name);
+/** @copydoc HttpResponse::containsHeader
+    @param o Required live response.
+    @param name Required NUL-terminated header name; comparison is case-insensitive.
+ */
 BA_API const char* HttpResponse_containsHeader(
    HttpResponse* o, const char* name);
 BA_API int HttpResponse_dataAdded(HttpResponse* o, U32 size);
 #define HttpResponse_byteCount(o) ((o)->msgLen + (o)->bodyPrint->cursor)
+/** @copydoc HttpResponse::encodeRedirectURL
+    @param o Required live response.
+ */
 BA_API const char* HttpResponse_encodeRedirectURL(
    HttpResponse* o, const char* pathName);
 BA_API const char* HttpResponse_encodeRedirectURLWithParamOrSessionURL(
@@ -1649,7 +1892,16 @@ BA_API const char* HttpResponse_encodeRedirectURLWithParamOrSessionURL(
    HttpResponse_encodeRedirectURLWithParamOrSessionURL(o, path, FALSE)
 #define HttpResponse_encodeSessionURL(o, path) \
    HttpResponse_encodeRedirectURLWithParamOrSessionURL(o, path, TRUE)
+/** @copydoc HttpResponse::encodeUrl
+    @param o Required live response.
+    @param path Required NUL-terminated URL path.
+    @return Borrowed encoded string or NULL on allocation/encoding failure;
+    valid until the next encodeUrl call or request completion.
+ */
 BA_API const char* HttpResponse_encodeUrl(HttpResponse* o, const char* path);
+/** @copydoc HttpResponse::flush
+    @param o Required live response.
+ */
 BA_API int HttpResponse_flush(HttpResponse* o);
 #define HttpResponse_forward(o,path) HttpResponse_incOrForward(o,path,FALSE)
 #define HttpResponse_getConnection(o) HttpResponse_getCommand(o)->con
@@ -1664,6 +1916,9 @@ BA_API struct HttpCommand* HttpResponse_getCommand(HttpResponse*);
 #define HttpResponse_getUserObj(o) (o)->userObj
 BA_API int HttpResponse_incOrForward(
    HttpResponse* o, const char* path, BaBool isInc);
+/** @copydoc HttpResponse::redirect
+    @param o Required live response.
+ */
 BA_API int HttpResponse_redirect(HttpResponse* o, const char* path);
 #define HttpResponse_include(o,path) HttpResponse_incOrForward(o,path,TRUE)
 #define HttpResponse_isChunkTransfer(o) (o)->useChunkTransfer
@@ -1672,15 +1927,33 @@ BA_API int HttpResponse_redirect(HttpResponse* o, const char* path);
 #define HttpResponse_isInclude(o) ((o)->includeCounter != 0)
 #define HttpResponse_initial(o) (!HttpResponse_isForward(o) && \
                                  !HttpResponse_isInclude(o))
+/** @copydoc HttpResponse::setResponseBuf
+    @param o Required live response.
+ */
 BA_API int HttpResponse_setResponseBuf(
    HttpResponse* o,BufPrint* buf,BaBool useDefBuffer);
+/** @copydoc HttpResponse::removeResponseBuf
+    @param o Required live response.
+ */
 BA_API int HttpResponse_removeResponseBuf(HttpResponse* o);
 
+/** @copydoc HttpResponse::resetHeaders
+    @param o Required live response.
+ */
 BA_API int HttpResponse_resetHeaders(HttpResponse* o);
+/** @copydoc HttpResponse::resetBuffer
+    @param o Required live response.
+ */
 BA_API int HttpResponse_resetBuffer(HttpResponse* o);
 BA_API int HttpResponse_sendError1(HttpResponse* o, int eCode);
 BA_API int HttpResponse_sendError2(HttpResponse* o,int eCode,const char* msg);
+/** @copydoc HttpResponse::sendBufAsError
+    @param o Required live response.
+ */
 BA_API int HttpResponse_sendBufAsError(HttpResponse* o,int eCode);
+/** @copydoc HttpResponse::sendBufAsTxtError
+    @param o Required live response.
+ */
 BA_API int HttpResponse_sendBufAsTxtError(HttpResponse* o,int eCode);
 BA_API int HttpResponse_fmtVError(
    HttpResponse* response,
@@ -1691,31 +1964,74 @@ BA_API int HttpResponse_fmtError(
    HttpResponse* response,
    int eCode,
    const char* fmt, ...);
+/** @copydoc HttpResponse::sendRedirect
+    @param o Required live response.
+ */
 BA_API int HttpResponse_sendRedirect(HttpResponse* o, const char* url);
 BA_API int HttpResponse_sendRedirectI(
    HttpResponse* o, const char* url, int status);
+/** @copydoc HttpResponse::redirect2TLS
+    @param o Required live response.
+ */
 BA_API int HttpResponse_redirect2TLS(HttpResponse* o);
 #define HttpResponse_forceHttps HttpResponse_redirect2TLS /* Backw. comp. */
 
 #define HttpResponse_setBufPos(o, pos) (o)->bodyPrint->cursor = pos
+/** @copydoc HttpResponse::setContentLength
+    @param o Required live response.
+ */
 BA_API int HttpResponse_setContentLength(HttpResponse* o, BaFileSize len);
+/** @copydoc HttpResponse::setContentType
+    @param o Required live response.
+ */
 BA_API int HttpResponse_setContentType(HttpResponse* o, const char* type);
 BA_API int HttpResponse_checkContentType(HttpResponse* o, const char* type);
+/** Set a copied date header; call before response commitment.
+    @param o Required live response.
+    @param name Required NUL-terminated header name.
+    @param t Unix time in seconds, formatted as an HTTP date.
+    @return 0 on success, or E_MALLOC on allocation failure. This C path does
+    not reject a committed response, but changing stored headers is then too late.
+ */
 BA_API int HttpResponse_setDateHeader(
    HttpResponse* o, const char* name, BaTime t);
+/** @copydoc HttpResponse::setHeader
+    @param o Required live response.
+ */
 BA_API int HttpResponse_setHeader(
    HttpResponse* o,const char* name,const char* value, BaBool replace);
+/** @copydoc HttpResponse::setMaxAge
+    @param response Required live response.
+ */
 BA_API int HttpResponse_setMaxAge(HttpResponse* response, BaTime seconds);
+/** @copydoc HttpResponse::fmtHeader
+    @param o Required live response.
+ */
 BA_API char* HttpResponse_fmtHeader(
    HttpResponse* o, const char* name, int valueLen, BaBool replace);
 BA_API int HttpResponse_setStatus(HttpResponse* o, int eCode);
 BA_API int HttpResponse_vprintf(
    HttpResponse* o, const char* fmt, va_list argList);
+/** @copydoc HttpResponse::printf
+    @param o Required live response.
+ */
 BA_API int HttpResponse_printf(HttpResponse* o, const char* fmt, ...);
+/** @copydoc HttpResponse::write(const void*,int,int)
+    @param o Required live response.
+ */
 BA_API int HttpResponse_write(HttpResponse* o, const void* data, int len,
                               int useBuffering);
+/** @copydoc HttpResponse::getWriter
+    @param o Required live response.
+ */
 BA_API BufPrint* HttpResponse_getWriter(HttpResponse* o);
+/** @copydoc HttpResponse::send
+    @param o Required live response.
+ */
 BA_API int HttpResponse_send(HttpResponse* o, const void* data, int len);
+/** @copydoc HttpResponse::setDefaultHeaders
+    @param o Required live response.
+ */
 BA_API int HttpResponse_setDefaultHeaders(HttpResponse* o);
 BA_API int HttpResponse_downgrade(HttpResponse* o);
 BA_API int HttpResponse_setUserObj(
@@ -1883,7 +2199,9 @@ struct HttpSessionContainer;
     This function is called when the session object times out. The
     callback function should release the memory to the session
     attribute.
-    \param o the session object. Typically upcasted to the derived class.
+    \param o The attribute object, typically cast to its containing application type.
+    Also called when explicitly removing an attribute. Release application-owned
+    payload/allocation here; do not call HttpSessionAttribute_destructor again.
 */
 typedef void (*HttpSessionAttribute_Destructor)(
    struct HttpSessionAttribute* o);
@@ -1909,7 +2227,7 @@ typedef void (*HttpSessionAttribute_Destructor)(
  *       static void destructor(HttpSessionAttribute* o);
  * };
  *
- * MyAttribute::destructor(HttpSessionAttribute* o)
+ * void MyAttribute::destructor(HttpSessionAttribute* o)
  * {
  *    delete ((MyAttribute*)o); // Run destructor and free memory.
  * }
@@ -1940,10 +2258,21 @@ typedef struct HttpSessionAttribute
 extern "C" {
 #endif
 
+/** Initialize a session attribute.
+    @param o Required caller-owned storage.
+    @param name Required NUL-terminated name, copied. If allocation fails, name
+    is NULL and later setAttribute returns -3; construction has no return status.
+    @param d Cleanup callback, or NULL. The framework frees the copied name
+    after invoking d; d is responsible for payload/allocation cleanup.
+ */
 BA_API void HttpSessionAttribute_constructor(
    HttpSessionAttribute* o,
    const char* name,
    HttpSessionAttribute_Destructor d);
+/** Terminate an unattached attribute and release its copied name.
+    @param o Required initialized attribute. Its callback may free this storage.
+    Normally invoked by session cleanup; use removeAttribute for attached data.
+ */
 BA_API void HttpSessionAttribute_destructor(HttpSessionAttribute* o);
 #define HttpSessionAttribute_getSession(o) (o)->session
 #ifdef __cplusplus
@@ -1989,7 +2318,10 @@ typedef struct HttpSession
 
       /** Returns the object bound with the specified name in this session,
        * or null if no object is bound under the name.
-       */
+       @param name Required case-sensitive NUL-terminated name.
+          @return Borrowed attribute or NULL. Its termination callback controls
+          lifetime; do not free it while attached.
+      */
       HttpSessionAttribute* getAttribute(const char* name);
 
       /** Returns the time when this session was created, measured in seconds
@@ -2012,16 +2344,25 @@ typedef struct HttpSession
       HttpServer* getServer();
 
       /** Removes the object bound with the specified name from this session.
-       */
+       @param name Required case-sensitive NUL-terminated name.
+          @return 0 when found and its termination callback ran, -1 when absent.
+          This is a destroying removal, not a transfer to the caller.
+      */
       int removeAttribute(const char* name);
 
       /** Binds an object to this session, using the name specified.
-       */
+       @param value Required initialized, unattached attribute with a non-NULL
+          name. On success the session arranges its termination callback.
+          @return 0 on success; -1 for a duplicate name, -2 for non-NULL next
+          linkage, -3 for a NULL name. This does not replace an existing attribute.
+      */
       int setAttribute(HttpSessionAttribute* value);
 
       /** Specifies the time, in seconds, between client requests before the
        * session container will invalidate this session.
-       */
+       @param interval Inactivity threshold in seconds. Zero is an immediate
+          threshold, not an unlimited lifetime; expiry is checked periodically.
+      */
       void setMaxInactiveInterval(BaTime interval);
 
       /** Increments the session reference counter.
@@ -2035,6 +2376,8 @@ typedef struct HttpSession
 
           This method is used together with method
           incrRefCntr. See HttpSession for more information.
+      A matching outstanding reference is required. This can immediately destroy
+          a termination-pending session; do not access it afterward.
       */
       void decrRefCntr();
 
@@ -2078,24 +2421,60 @@ typedef struct HttpSession
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpSession::getAttribute
+    @param o Required live session.
+ */
 BA_API HttpSessionAttribute* HttpSession_getAttribute(HttpSession* o,
                                                       const char* name);
+/** @copydoc HttpSession::getCreationTime
+    @param o Required live session.
+ */
 BA_API BaTime HttpSession_getCreationTime(HttpSession* o);
+/** @copydoc HttpSession::getLastAccessedTime
+    @param o Required live session.
+ */
 BA_API BaTime HttpSession_getLastAccessedTime(HttpSession* o);
+/** @copydoc HttpSession::getMaxInactiveInterval
+    @param o Required live session.
+ */
 BA_API BaTime HttpSession_getMaxInactiveInterval(HttpSession* o);
+/** @copydoc HttpSession::getServer
+    @param o Required live session.
+ */
 BA_API struct HttpServer* HttpSession_getServer(HttpSession* o);
+/** @copydoc HttpSession::terminate
+    @param o Required live session.
+ */
 BA_API void HttpSession_terminate(HttpSession* o);
 BA_API BaBool HttpSession_isNew(HttpSession* o);
+/** @copydoc HttpSession::removeAttribute
+    @param o Required live session.
+ */
 BA_API int HttpSession_removeAttribute(HttpSession* o, const char* name);
+/** @copydoc HttpSession::setAttribute
+    @param o Required live session.
+ */
 BA_API int HttpSession_setAttribute(HttpSession* o,
                                     HttpSessionAttribute* value);
+/** @copydoc HttpSession::setMaxInactiveInterval
+    @param o Required live session.
+ */
 BA_API void HttpSession_setMaxInactiveInterval(HttpSession* o,BaTime interval);
 #define HttpSession_incrRefCntr(o) (o)->refCounter++
+/** @copydoc HttpSession::decrRefCntr
+    @param o Required live session.
+ */
 BA_API void HttpSession_decrRefCntr(HttpSession* o);
 #define HttpSession_incrementLock(o) (o)->lockCounter++
 #define HttpSession_decrementLock(o) do {\
       baAssert((o)->lockCounter > 0);\
       (o)->lockCounter--; } while(0)
+/** Format the full session token as hexadecimal text.
+    @param o Required live session.
+    @param buf Required writable output.
+    @param bufSize Capacity in bytes, at least 25.
+    @return 24 (text length) on success, -1 without writing when too small.
+ */
 BA_API int HttpSession_fmtSessionId(HttpSession* o, U8* buf, size_t bufSize);
 #define HttpSession_getId(o) \
    ((U32)((ptrdiff_t)SplayTreeNode_getKey((SplayTreeNode*)(o))))
@@ -2192,7 +2571,10 @@ inline void HttpSessionContainer::setMaxSessions(int max) {
    \param page a pointer to the page object. This object can be typecasted
    to the overloaded type.
    \param request A pointer to the request object created by HttpServer.
-   \param response A pointer to the response object created by HttpServer.
+   \param response Borrowed response during service; NULL for destruction.
+   request is also NULL for destruction. Test this before using either pointer.
+   The callback returns no value. On destruction, release derived resources
+   according to their ownership; ordinary requests borrow all three objects.
  */
 typedef void (*HttpPage_Service)(struct HttpPage* page,
                                  HttpRequest* request,
@@ -2241,16 +2623,17 @@ typedef struct HttpPageNode
                        HttpRequest* request,
                        HttpResponse* response)
    {
-      MyPage* o = (MyPage*)page;
+      struct MyPage* o = (struct MyPage*)page;
+      if(!request) return; // This example uses caller-owned page storage.
       o->myData++;
       HttpResponse_printf(response,
                           "<html><body>"
                           "Number of visits: %d"
                           "</body></html>",
-                          myData);
+                          o->myData);
    }
 
-   MyPage_constructor(MyPage* o, const char* name)
+   void MyPage_constructor(struct MyPage* o, const char* name)
    {
       HttpPage_constructor(&o->page, MyPage_service, name);
       o->myData = 0;
@@ -2309,11 +2692,20 @@ typedef struct HttpPage
 extern "C" {
 #endif
 void
+/** @copydoc HttpPage::HttpPage(HttpPage_Service,const char*)
+    @param o Required storage to initialize.
+ */
 BA_API HttpPage_constructor(
    HttpPage* o, HttpPage_Service service, const char* name);
+/** @copydoc HttpPage::~HttpPage
+    @param o Required initialized object; its allocation remains caller-owned.
+ */
 BA_API void HttpPage_destructor(HttpPage* o);
 #define HttpPage_getName(o) (o)->name
 #define HttpPage_isLinked(o) ((HttpPageNode*)(o))->next
+/** @copydoc HttpPage::unlink
+    @param o Required initialized HttpPage instance.
+ */
 BA_API int HttpPage_unlink(HttpPage* o);
 #define HttpPage_service(o, request, response) \
   (o)->serviceCB(o, request, response)
@@ -2336,7 +2728,11 @@ inline void HttpPage::service(HttpRequest* request, HttpResponse* response) {
 /** The HttpDir service callback function.
     \param o the HttpDir instance
     \param relPath the relative path: absolute path - base path
-    \param cmd the request/response object
+    \param cmd Borrowed request/response command, or NULL for destruction.
+    relPath is borrowed during a request and NULL for destruction. Handle NULL
+    cmd before inspecting request data. Cleanup must release derived resources.
+    @return 0 if handled, nonzero to continue searching another directory.
+    Do not emit a response when returning "not handled". Cleanup returns zero.
  */
 typedef int (*HttpDir_Service)(struct HttpDir* o,
                                const char* relPath,
@@ -2383,27 +2779,40 @@ typedef struct HttpDir
           constructor does not duplicate the string, but only stores
           the pointer value. Note the name cannot be
           \ref HttpDirVolatileMem "volatile".
-          \param priority The priority is used when you have <a
-          href="../../CspTools.html#duplicateDir"> duplicate directory
-          names</a>.
+          \param priority The priority is used when you have duplicate directory
+          names.
           Zero is the default priority and a higher value gives higher
           priority. Two directory branches with the same name, but with
           different pages will never conflict. You only have a conflict if
           you have two pages with the same name, one page in each directory
           branch. Range: min <= priority <=max, where min=-14 and
           max=14.
-       */
+       NULL or an empty name creates an anonymous directory. Initialization
+          allocates no name storage. The ordinary constructor installs the
+          default service callback; replacing it must preserve cleanup handling.
+      */
       HttpDir(const char* name, S8 priority=0);
+      /** Unlink this directory and notify all child pages/directories through
+          their service callbacks with NULL request arguments. Release owned
+          directory metadata, but not this object's allocation or borrowed name.
+          Derived callbacks must implement their own allocation cleanup. */
       ~HttpDir();
 
       /** Insert a sub-directory.
        * \param dir the directory to insert.
-       */
+       dir must be initialized, with no parent and no sibling linkage.
+       * @return 0 on success, E_ALREADY_INSERTED if next is non-NULL. Parent
+       * ownership is also a precondition; it is only asserted, not a return check.
+       * The directory is linked by descending priority; its name is borrowed.
+      */
       int insertDir(HttpDir* dir);
 
       /** Insert a page in the directory.
        * \param page the page to insert.
-       */
+       page is required, initialized, and unlinked; its name remains borrowed.
+       * @return 0 on success, -1 when already linked. Cleanup later calls the
+       * page service callback with NULL request/response, not C++ delete.
+      */
       int insertPage(HttpPage* page);
 
       /** Returns the first page.
@@ -2415,11 +2824,13 @@ typedef struct HttpDir
       HttpDir* getFirstDir();
 
       /** Returns the first directory with the name given or NULL if not found.
-       */
+       @param name Required NUL-terminated exact, case-sensitive child name. Result is borrowed.
+      */
       HttpDir* getDir(const char* name);
 
       /** Returns the page with the name given or NULL if not found.
-       */
+       @param name Required NUL-terminated exact, case-sensitive page name. Result is borrowed.
+      */
       HttpPage* getPage(const char* name);
 
       /** Returns the next dir in the parent list. (next sibling)
@@ -2432,9 +2843,12 @@ typedef struct HttpDir
        * \return the page or NULL if not found.
        *<P><B>Typical usage:</B>
        * \code
-       * HttpPage* page = dir->findPage(dir->getFirstPage(), "pageName");
+       * HttpPage* page = dir->getPage("pageName"); // Also handles an empty directory.
        * \endcode
-       */
+       iter must be a valid page-list node, not NULL. Prefer getPage(name)
+       * when searching from the start, since getFirstPage() returns NULL for an
+       * empty list. name is a required case-sensitive NUL-terminated string.
+      */
       HttpPage* findPage(HttpPage* iter, const char* name);
 
       /** Searches for a sub-directory in this directory node.
@@ -2456,7 +2870,12 @@ typedef struct HttpDir
           \code
           HttpDir* mySubDir3 = myDir->createOrGet("sub1/sub2/sub3");
           \endcode
-       */
+       @param name NUL-terminated slash-separated path. NULL/empty returns
+          this directory; a leading slash is skipped, not resolved from the root.
+          @return Borrowed existing/new directory, or NULL on allocation failure.
+          Newly created nodes copy their path components and are owned by the
+          directory tree. Partial intermediate nodes can remain on failure.
+      */
       HttpDir* createOrGet(const char* name);
 
       /** Returns the directory name.
@@ -2488,6 +2907,8 @@ typedef struct HttpDir
           \param relPathLen length of relPath.
 
         \sa getRootPath
+      relPathLen must be a nonnegative byte count matching readable input.
+          @return Caller-owned NUL-terminated path, or NULL on allocation failure.
       */
       char* makeAbsPath(const char* relPath, int relPathLen);
 
@@ -2501,13 +2922,16 @@ typedef struct HttpDir
         caller must release the memory by using baFree.
 
         \sa makeAbsPath
+      @return Caller-owned NUL-terminated root path, or NULL on allocation failure.
       */
       char* getRootPath();
 
 
       /** Replace the original service function in HttpDir with your own.
        * \return the original service function.
-       */
+       @param s Required callback for an active directory, including handling
+       * cmd == NULL cleanup notifications. It must remain callable for its lifetime.
+      */
       HttpDir_Service setService(HttpDir_Service s);
 
       /** Set a 403 denied request handler.
@@ -2518,7 +2942,9 @@ typedef struct HttpDir
          \param p403 is the path to a page that can be accessed by
          response:forward. HttpDir makes a copy of the path provided
          and releases the path if/when the destructor is called.
-       */
+       p403 must be a NUL-terminated path. Allocation failure is not returned;
+          the old path is discarded before the new copy is attempted.
+      */
       void p403(const char* p403);
 
       /** Returns true if this directory node is installed into a
@@ -2527,12 +2953,16 @@ typedef struct HttpDir
       bool isLinked();
 
       /** Unlinks/removes the directory from the parent directory.
+          Returns 0 when unlinked, -1 if it had no parent. Does not destroy/free it.
        */
       int unlink();
 
       /** Set the optional authenticator and optional AuthorizerIntf.
           \param authenticator is one of the authenticator implementations.
           \param authorizer the authorizer.
+      Both pointers are borrowed, may be NULL, and must remain alive while
+          installed. An authorizer alone still requires an authenticated user;
+          NULL authenticator does not bypass an installed authorizer.
       */
       void setAuthenticator(
          struct AuthenticatorIntf* authenticator,
@@ -2554,7 +2984,8 @@ typedef struct HttpDir
       position in the virtual file system.
           
       \returns true if:
-      \li The authenticator argument is NULL.
+      \li Both authenticator and authorizer are NULL.
+      \li This is an include or forward request, or NO_HTTP_SESSION is configured.
       \li The user is authenticated and the realm argument is NULL.
       \li The user is authenticated and authorized.
       */
@@ -2578,33 +3009,75 @@ typedef struct HttpDir
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpDir::HttpDir(const char*,S8)
+    @param o Required storage to initialize.
+ */
 BA_API void HttpDir_constructor(HttpDir* o, const char* name, S8 priority);
+/** @copydoc HttpDir::~HttpDir
+    @param o Required initialized object; its allocation remains caller-owned.
+ */
 BA_API void HttpDir_destructor(HttpDir* o);
+/** @copydoc HttpDir::makeAbsPath
+    @param o Required initialized HttpDir instance.
+ */
 BA_API char* HttpDir_makeAbsPath(
    HttpDir* o, const char* relPath, int relPathLen);
 #define HttpDir_getRootPath(o) HttpDir_makeAbsPath(o,"",0)
+/** @copydoc HttpDir::insertDir
+    @param o Required initialized HttpDir instance.
+ */
 BA_API int HttpDir_insertDir(HttpDir* o, HttpDir* dir);
 #define HttpDir_getFirstPage(o) \
    (o)->pageList.next != &(o)->pageList ? ((HttpPage*)(o)->pageList.next) : 0
 #define HttpDir_getFirstDir(o) (o)->dirList
+/** @copydoc HttpDir::getDir
+    @param o Required initialized HttpDir instance.
+ */
 BA_API HttpDir* HttpDir_getDir(HttpDir* o, const char* name);
+/** @copydoc HttpDir::getPage
+    @param o Required initialized HttpDir instance.
+ */
 BA_API HttpPage* HttpDir_getPage(HttpDir* o, const char* name);
 #define HttpDir_getNext(o) (o)->next
 #define HttpDir_getName(o) (o)->name
 #define HttpDir_getParent(o) (o)->parent
+/** @copydoc HttpDir::insertPage
+    @param o Required initialized HttpDir instance.
+ */
 BA_API int HttpDir_insertPage(HttpDir* o, HttpPage* page);
+/** @copydoc HttpDir::findPage
+    @param o Required initialized HttpDir instance.
+ */
 BA_API HttpPage* HttpDir_findPage(
    HttpDir* o, HttpPage* iter, const char* name);
+/** @copydoc HttpDir::findDir
+    
+ */
 BA_API HttpDir* HttpDir_findDir(
    HttpDir* iter, const char* name,unsigned int nameLen);
+/** @copydoc HttpDir::createOrGet
+    @param o Required initialized HttpDir instance.
+ */
 BA_API HttpDir* HttpDir_createOrGet(HttpDir* o, const char* name);
+/** @copydoc HttpDir::p403
+    @param o Required initialized HttpDir instance.
+ */
 BA_API void HttpDir_p403(HttpDir* o, const char* p403);
 #define HttpDir_overloadService HttpDir_setService
+/** @copydoc HttpDir::setService
+    @param o Required initialized HttpDir instance.
+ */
 BA_API HttpDir_Service HttpDir_setService(HttpDir*o, HttpDir_Service s);
 #define HttpDir_isLinked(o) (o)->parent
+/** @copydoc HttpDir::unlink
+    @param o Required initialized HttpDir instance.
+ */
 BA_API int HttpDir_unlink(HttpDir* o);
 #define HttpDir_setAuthenticator(o,authenticatorMA,authorizerMA) \
    (o)->authenticator = authenticatorMA,(o)->realm = authorizerMA
+/** @copydoc HttpDir::authenticateAndAuthorize
+    @param o Required initialized HttpDir instance.
+ */
 BA_API int HttpDir_authenticateAndAuthorize(
    HttpDir* o,HttpCommand* cmd,const char* path);
 #define HttpDir_isAuthorized(o,user,method,path) \
@@ -2722,6 +3195,9 @@ typedef struct HttpServerConfig
           HttpTrace::setReqBufOverflow and the
           <a href="../../misc/HttpCmdThreadPool.html"> Http Command Thread
           Pool </a> documentation for more information.
+      @param min Initial bytes, 1024..32767.
+          @param max Maximum bytes, min..32767.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
       */
       int setRequest(S16 min, S16 max);
 
@@ -2735,7 +3211,10 @@ typedef struct HttpServerConfig
           Default values: min= 512, max= 1024. Set min = max if you do
           not want the buffer to dynamically grow if needed. The
           minimum value cannot be smaller than 512.
-       */
+       @param min Initial bytes, 512..32767.
+          @param max Maximum bytes, min..32767.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setResponseHeader(U16 min, U16 max);
 
       /** The HttpResponse object stores formatted data in the
@@ -2744,12 +3223,13 @@ typedef struct HttpServerConfig
           flushes the buffer automatically when full. It is sometimes
           convenient to have a large buffer if you implement rollback
           handling; i.e., you print response data, but later decide to
-          erase the data in the buffer. See HttpResponse::reset,
-          HttpResponse::resetBuffer and HttpResponse::committed for
+          erase the data in the buffer. See HttpResponse::resetBuffer and HttpResponse::committed for
           more information.
 
           Default value is 1400. The minimum value cannot be smaller than 512.
-       */
+       @param size Body-buffer bytes, 512..65535. Demo builds default to 8192.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setResponseData(U16 size);
 
       /** Set the size of the HTTP response commit buffer. This buffer
@@ -2759,12 +3239,14 @@ typedef struct HttpServerConfig
           buffer makes the web-server call socket send every time the
           buffer is full. This might deteriorate the performance of
           the web-server. See your TCP/IP stack for internal TCP
-          buffer and the "naggle" algorithm.
+          buffer and the Nagle algorithm.
 
           See HttpResponse::committed for more information.
 
           Default value is 512. The minimum value cannot be smaller than 128.
-       */
+       @param size Commit-buffer bytes, 128..65535.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setCommit(U16 size);
 
       /** The number of HttpCommand instances created by the
@@ -2778,7 +3260,10 @@ typedef struct HttpServerConfig
           buffers in an HttpCommand. M = Request buffer +
           ResponseHeader buffer + ResponseData buffer + Commit buffer
           + the size of HttpCommand.
-       */
+       @param size Positive command count. Keep size+3 representable as U16.
+          Increasing it also raises the connection count to at least size+3.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setNoOfHttpCommands(U16 size);
 
       /** Number of HttpConnection instances. An HttpConnection object
@@ -2790,7 +3275,7 @@ typedef struct HttpServerConfig
           object can also queue incoming requests if the
           HttpCmdThreadPool class is used.
 
-          The size of one HttpConnection object is roughly 40 bytes,
+          The size of an HttpConnection object depends on build configuration,
           but be aware that this object can potentially
           hold large amounts of data if the connection is secure. A
           secure SSL connection may have to buffer its data stream
@@ -2801,14 +3286,20 @@ typedef struct HttpServerConfig
 
           See the [HTTP Engine and Sockets](@ref MaxSockets) for more
           information on using this function.
-       */
+       @param size Connection count, at least noOfHttpCommands+3, at most 65535.
+          Increasing it also raises maxSessions if smaller.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setNoOfHttpConnections(U16 size);
 
       /** Maximum allowed active HttpSession objects. The size can
           also be changed during runtime with method
           HttpSessionContainer::setMaxSessions.
           Default value is set equal to NoOfHttpConnections.
-       */
+       @param size Active-session limit, 1..65535. Independent of connection
+          count after this setter; the connection setter may raise it again.
+          @return 0 on success; -1 for a rejected value, leaving this setting unchanged.
+      */
       int setMaxSessions(U16 size);
 #endif
       S16 minRequest;
@@ -2825,15 +3316,39 @@ typedef struct HttpServerConfig
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpServerConfig::HttpServerConfig
+    @param o Required configuration storage to initialize.
+ */
 BA_API void HttpServerConfig_constructor(HttpServerConfig* o);
+/** @copydoc HttpServerConfig::setRequest
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setRequest(HttpServerConfig* o, S16 min, S16 max);
+/** @copydoc HttpServerConfig::setResponseHeader
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setResponseHeader(
    HttpServerConfig* o, U16 min, U16 max);
+/** @copydoc HttpServerConfig::setResponseData
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setResponseData(HttpServerConfig* o, U16 size);
+/** @copydoc HttpServerConfig::setCommit
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setCommit(HttpServerConfig* o, U16 size);
+/** @copydoc HttpServerConfig::setNoOfHttpCommands
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setNoOfHttpCommands(HttpServerConfig* o, U16 size);
+/** @copydoc HttpServerConfig::setNoOfHttpConnections
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setNoOfHttpConnections(
    HttpServerConfig* o, U16 size);
+/** @copydoc HttpServerConfig::setMaxSessions
+    @param o Required initialized HttpServerConfig instance.
+ */
 BA_API int HttpServerConfig_setMaxSessions(HttpServerConfig* o, U16 size);
 #ifdef __cplusplus
 }
@@ -2876,9 +3391,17 @@ typedef struct HttpServer
          The SoDisp object is platform specific.
          \param cfg is an optional parameter, which you use to
          override the default web-server configurations.
-       */
+       dispatcher is required and borrowed for the server lifetime. cfg is read
+         during construction and its noOfHttpCommands field is decremented to
+         zero; reinitialize it before reuse. NULL selects defaults. Allocation
+         or platform-type failures invoke the fatal handler; no status is returned.
+      */
       HttpServer(SoDisp* dispatcher, HttpServerConfig* cfg=0);
 
+      /** Stop using the server before destruction. Terminates owned commands,
+          connections, sessions, and installed directory trees. Directory/page
+          cleanup callbacks run. The borrowed dispatcher remains caller-owned;
+          stop worker pools and retain callback dependencies through cleanup. */
       ~HttpServer();
 
       /** Insert a root directory node. A root directory node is a
@@ -2889,8 +3412,10 @@ typedef struct HttpServer
 
           \param dir the directory node to install. A root directory node
           does not need a name. See HttpDir::HttpDir for more information.
-          \return 0 on success or -1 if the directory is already installed
-          in the virtual file system.
+          \return 0 on success or E_ALREADY_INSERTED for detected next linkage.
+          The caller must supply an unlinked directory (including no parent).
+          Its service callback will receive a cleanup notification when the
+          installed tree is destroyed.
        */
       int insertRootDir(HttpDir* dir);
 
@@ -2914,6 +3439,10 @@ address}/start.html <b>(*)</b></td></tr>
 
           \param virtualDirRootPath start path in the virtual file system.
           \param dir the directory node to insert.
+      dir must be initialized and unlinked. Missing intermediate directories
+          are allocated; they can remain if a later allocation fails.
+          @return 0 on success, E_ALREADY_INSERTED for linked input detected by
+          HttpDir_insertDir, or E_MALLOC when the parent path cannot be created.
       */
       int insertDir(const char* virtualDirRootPath, HttpDir* dir);
 
@@ -2955,6 +3484,10 @@ address}/start.html <b>(*)</b></td></tr>
           FileCspReader reader("/home/webserver/CspPages.dat");
           httpInitGeneratedCode(&myRootDir, &reader);
          \endcode
+      cspInit is required. reader and its backing data must outlive installed
+         pages. The initializer is called synchronously with the created parent.
+         @return 0 after calling cspInit, or E_MALLOC creating the parent path.
+         This return does not report errors internal to the void initializer.
       */
       int insertCSP(CspInit cspInit,
                     const char* virtualDirRootPath,
@@ -2998,6 +3531,8 @@ address}/start.html <b>(*)</b></td></tr>
           friendly 404 page.
          \param page404 is a URL to your user friendly 404 page.
          Example "/myUserFriendly404Page.html"
+      The path is borrowed, not copied. Keep the NUL-terminated string alive
+          until replaced or server destruction; NULL selects the default handler.
       */
       void set404Page(const char* page404);
 
@@ -3020,7 +3555,7 @@ address}/start.html <b>(*)</b></td></tr>
        * handler.
        * \param e is the name of your error handler function.
        * The prototype for this function should be:
-       * void myError(BaErrorCodes ecode1,
+       * void myError(BaFatalErrorCodes ecode1,
        * unsigned int ecode2, const char* file, int line);
        */
       static void setErrHnd(UserDefinedErrHandler e);
@@ -3032,7 +3567,10 @@ address}/start.html <b>(*)</b></td></tr>
                             (void)init; (void)inflate; (void)end;
                             return 0;                         }
       /** Return a short description for common HTTP error codes.
-       */
+       @param code HTTP status integer recognized by the implementation.
+          @return Static string including the numeric code and reason phrase;
+          an unrecognized code returns "??? Server Error". Do not free.
+      */
       static const char* getStatusCode(int code);
 
 
@@ -3071,12 +3609,30 @@ void HttpServer_AsynchProcessDir(HttpServer* o,
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Initialize a server in caller-provided storage (first argument), using a
+    required borrowed dispatcher (second argument) and optional configuration
+    (third argument). See HttpServer::HttpServer for configuration mutation and
+    fatal-error behavior. No return value. */
 BA_API void HttpServer_constructor(HttpServer*,SoDisp*, HttpServerConfig*);
+/** @copydoc HttpServer::~HttpServer
+    @param o Required initialized object; its allocation remains caller-owned.
+ */
 BA_API void HttpServer_destructor(HttpServer* o);
+/** @copydoc HttpServer::insertRootDir
+    @param o Required initialized HttpServer instance.
+ */
 BA_API int HttpServer_insertRootDir(HttpServer* o, HttpDir* dir);
+/** @copydoc HttpServer::insertDir
+    @param o Required initialized HttpServer instance.
+    @param virtualDirRootPath NUL-terminated parent path; NULL/empty/slash selects root.
+    @param dir Required initialized, unlinked directory.
+ */
 BA_API int HttpServer_insertDir(HttpServer* o,
                                 const char* virtualDirRootPath,
                                 HttpDir* dir);
+/** @copydoc HttpServer::insertCSP
+    @param o Required initialized HttpServer instance.
+ */
 BA_API int HttpServer_insertCSP(HttpServer* o,
                                 CspInit cspInit,
                                 const char* virtualDirRootPath,
@@ -3089,12 +3645,20 @@ BA_API int HttpServer_insertCSP(HttpServer* o,
 #define HttpServer_getUserObj(o) (o)->userObj
 #define HttpServer_getSessionContainer(o) (&(o)->sessionContainer)
 #define HttpServer_getMutex(o) SoDisp_getMutex((o)->dispatcher)
+/** @copydoc HttpServer::getStatusCode
+    
+ */
 BA_API const char* HttpServer_getStatusCode(int code);
 void HttpServer_addCon2ConnectedList(HttpServer* o, HttpConnection* con);
 void HttpServer_doLingeringClose(
    HttpServer* o, HttpConnection* con, BaFileSize contLen);
 
 #ifndef NO_HTTP_SESSION
+/** @copydoc HttpServer::getSession
+    @param o Required initialized HttpServer instance.
+    @param id Session identifier returned by HttpSession_getId;
+    lookup does not acquire an extra session reference.
+ */
 BA_API HttpSession* HttpServer_getSession(HttpServer* o, U32 id);
 #endif
 BA_API HttpConnection* HttpServer_getFreeCon(HttpServer* o);
@@ -3103,6 +3667,9 @@ BA_API void HttpServer_installNewCon(HttpServer* o, HttpConnection* con);
 BA_API void HttpServer_setErrHnd(UserDefinedErrHandler e);
 void HttpServer_initStatic(void);
 int HttpServer_termOldestIdleCon(HttpServer* o);
+/** @copydoc HttpServer::set404Page
+    @param o Required initialized HttpServer instance.
+ */
 BA_API void HttpServer_set404Page(HttpServer*o, const char* page404);
 #define HttpServer_get404Page(o) (o)->rootDirContainer.page404
 BA_API int HttpServer_setUserObj(

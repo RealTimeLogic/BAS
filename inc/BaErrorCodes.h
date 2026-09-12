@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaErrorCodes.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: BaErrorCodes.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2021
  *
@@ -35,35 +35,41 @@
  *
  *
  */
+/** @file BaErrorCodes.h
+    BAS status codes and fatal-error reporting. */
 #ifndef __BaErrorCodes_h
 #define __BaErrorCodes_h
 
 
 
+/** Fatal conditions reported to UserDefinedErrHandler, not ordinary returns.
+    The secondary code is condition/platform dependent. Applications should
+    terminate or reset after a fatal callback; continued execution is not promised.
+ */
 typedef enum {
-   FE_MALLOC = HTTP_E_BASE, /* error code 2 = size needed */
-   FE_ASSERT,               /* error code 2 not used */
-   FE_NO_SERV_CON,          /* error code 2 not used */
-   FE_SOCKET,               /* error code 2 = errno */
-   FE_GETHOSTBYNAME,        /* error code 2 = errno */
-   FE_GETHOSTBYNAME2,       /* error code 2 = errno */
-   FE_BIND,                 /* error code 2 = errno */
-   FE_LISTEN,               /* error code 2 = errno */
-   FE_IOCTL,                /* error code 2 = errno */
-   FE_SETSOCKOPT,           /* error code 2 = errno */
-   FE_ACCEPT,               /* error code 2 = errno */
-   FE_NO_IPV6_SUPPORT,      /* error code 2 not used */
-   FE_INVALID_CSPREADER,    /* error code 2 not used */
-   FE_CANNOT_READ,          /* error code 2 is the offset position */
-   FE_MAGIC_NO,             /* error code 2 not used */
-   FE_THREAD_LIB,           /* See threadlib for error code 2 */
-   FE_SSL_ERROR,                 /* error code 2 not used */
-   FE_HTTPCON_INVALID_DISPEV,    /* error code 2 not used */
-   FE_BLUA_PANIC,                /* Lua panic: error 2 is code from exit() */
+   FE_MALLOC = HTTP_E_BASE, /**< error code 2 = size needed */
+   FE_ASSERT,               /**< error code 2 not used */
+   FE_NO_SERV_CON,          /**< error code 2 not used */
+   FE_SOCKET,               /**< error code 2 = errno */
+   FE_GETHOSTBYNAME,        /**< error code 2 = errno */
+   FE_GETHOSTBYNAME2,       /**< error code 2 = errno */
+   FE_BIND,                 /**< error code 2 = errno */
+   FE_LISTEN,               /**< error code 2 = errno */
+   FE_IOCTL,                /**< error code 2 = errno */
+   FE_SETSOCKOPT,           /**< error code 2 = errno */
+   FE_ACCEPT,               /**< error code 2 = errno */
+   FE_NO_IPV6_SUPPORT,      /**< error code 2 not used */
+   FE_INVALID_CSPREADER,    /**< error code 2 not used */
+   FE_CANNOT_READ,          /**< error code 2 is the offset position */
+   FE_MAGIC_NO,             /**< error code 2 not used */
+   FE_THREAD_LIB,           /**< See threadlib for error code 2 */
+   FE_SSL_ERROR,                 /**< error code 2 not used */
+   FE_HTTPCON_INVALID_DISPEV,    /**< error code 2 not used */
+   FE_BLUA_PANIC,                /**< Lua panic: error 2 is code from exit() */
    FE_EXIT,
    FE_INCORRECT_USE,
-   FE_TYPE_SIZE_ERROR, /* One of U8 to U32 are of incorrect size */
-   FE_WRONG_ENDIAN, /* Incorrect B_LITTLE_ENDIAN/B_BIG_ENDIAN macro */
+   FE_TYPE_SIZE_ERROR, /**< One of U8 to U32 are of incorrect size */
+   FE_WRONG_ENDIAN, /**< Incorrect B_LITTLE_ENDIAN/B_BIG_ENDIAN macro */
 
    FE_USER_ERROR_1 = HTTP_E_BASE+100,
    FE_USER_ERROR_2,
@@ -78,6 +84,10 @@ typedef enum {
 } BaFatalErrorCodes;
 
 
+/** Operation status codes. Zero means success where the calling API specifies
+    it; negative values identify failures or special states. E_PROXY_READY is
+    internal progress, not an error. Consult each API for its possible results;
+    these are not HTTP response status numbers. */
 typedef enum {
    E_NO_ERROR=0,
    E_INVALID_SOCKET_CON=-1000,
@@ -90,7 +100,7 @@ typedef enum {
    E_MALLOC,
    E_ALREADY_INSERTED,
    E_TOO_MUCH_DATA,
-   E_PAGE_NOT_FOUND, /* for HttpResponse include or forward */
+   E_PAGE_NOT_FOUND, /**< for HttpResponse include or forward */
    E_IS_COMMITTED,
    E_INVALID_PARAM,
    E_MIXING_WRITE_SEND,
@@ -103,42 +113,67 @@ typedef enum {
    E_INVALID_URL,
    E_INVALID_RESPONSE,
 
-   E_INCORRECT_USE,  /* The API is not used correctly */
+   E_INCORRECT_USE,  /**< The API is not used correctly */
 
    E_TLS_NOT_ENABLED = -400,
-   E_SHARK_ALERT_RECV, /* Call SharkSslCon_getAlertDescription */
+   E_SHARK_ALERT_RECV, /**< Call SharkSslCon_getAlertDescription */
    E_TLS_CRYPTOERR,
    E_TLS_HANDSHAKE,
-   E_NOT_TRUSTED, /* SSL certificate not trusted or domain mismatch */
-   E_TLS_CLOSE_NOTIFY, /* Peer is closing the connection */
+   E_NOT_TRUSTED, /**< SSL certificate not trusted or domain mismatch */
+   E_TLS_CLOSE_NOTIFY, /**< Peer is closing the connection */
 
-   E_PROXY_AUTH = -500, /* Authentication required or wrong credentials */
-   E_PROXY_GENERAL, /* general SOCKS server failure */
-   E_PROXY_NOT_ALLOWED, /* connection not allowed by ruleset */
-   E_PROXY_NETWORK, /* Network unreachable */
-   E_PROXY_HOST, /* Host unreachable */
-   E_PROXY_REFUSED, /* Connection refused */
-   E_PROXY_TTL, /* TTL expired */
-   E_PROXY_COMMAND_NOT_SUP, /* Command not supported */
-   E_PROXY_ADDRESS_NOT_SUP, /* Address type not supported */
-   E_PROXY_NOT_COMPATIBLE, /* Not a supported SOCKS version */
+   E_PROXY_AUTH = -500, /**< Authentication required or wrong credentials */
+   E_PROXY_GENERAL, /**< general SOCKS server failure */
+   E_PROXY_NOT_ALLOWED, /**< connection not allowed by ruleset */
+   E_PROXY_NETWORK, /**< Network unreachable */
+   E_PROXY_HOST, /**< Host unreachable */
+   E_PROXY_REFUSED, /**< Connection refused */
+   E_PROXY_TTL, /**< TTL expired */
+   E_PROXY_COMMAND_NOT_SUP, /**< Command not supported */
+   E_PROXY_ADDRESS_NOT_SUP, /**< Address type not supported */
+   E_PROXY_NOT_COMPATIBLE, /**< Not a supported SOCKS version */
    E_PROXY_READY,/*Set HttpClient, not an error: socket in state proxy ready*/
-   E_PROXY_UNKNOWN, /* Unknown SOCKS error */
+   E_PROXY_UNKNOWN, /**< Unknown SOCKS error */
 
-   E_SYS_SHUTDOWN = -600 /* Used by Mako Server (and others) when program exits */
+   E_SYS_SHUTDOWN = -600 /**< Used by Mako Server (and others) when program exits */
 } BaErrorCodes;
 
 
 
+/** Report a fatal condition with the current source file and line.
+    @param ecode1 BaFatalErrorCodes condition.
+    @param ecode2 Secondary code such as allocation byte count or OS error.
+    See baFatalEf for control-flow behavior. No value is returned.
+ */
 #define baFatalE(ecode1, ecode2) baFatalEf(ecode1, ecode2, __FILE__, __LINE__)
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Invoke platform fatal-error handling and the configured application handler.
+    @param ecode1 Fatal condition.
+    @param ecode2 Secondary condition/platform-specific detail.
+    @param file Borrowed NUL-terminated diagnostic source filename.
+    @param line Source line number.
+    Use baFatalE to capture the call site. Default ports wait indefinitely when
+    no handler is installed. Some ports permit a handler to return and others
+    continue waiting; do not rely on returning as a recovery mechanism.
+ */
 BA_API void baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
                  const char* file, int line);
 
+/** Convert an operation status to a short diagnostic string.
+    @param ecode BAS, I/O, ZIP, or other explicitly supported status.
+    @return Borrowed static NUL-terminated string; "unknown" for unmapped values.
+    Do not free. This is a diagnostic mapping, not a success/failure test.
+ */
 BA_API const char* baErr2Str(int ecode);
 
+/** Map selected I/O results to an HTTP response status.
+    @param ecode HTTP code 100..599 or I/O error code.
+    @return HTTP codes pass through unchanged. Selected I/O errors map to
+    400/403/404/405/409/423/501/503/507; all other values, including zero,
+    map to 500. Call only after determining that an operation failed.
+ */
 BA_API int baErr2HttpCode(int ecode);
 #ifdef __cplusplus
 }

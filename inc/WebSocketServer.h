@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: WebSocketServer.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2023
  *
@@ -36,6 +36,8 @@
  *
  */
 
+/** @file WebSocketServer.h */
+
 #ifndef _WebSocketServer_h
 #define _WebSocketServer_h
 
@@ -54,8 +56,9 @@
     <a href="../../../lua/SockLib.html#AsynchronousSockets">consult the Lua documentation</a>
     for an introduction to asynchronous sockets.
 
-    The library is limited to sending and receiving data less to or
-    equal 0xFFFF.
+    Each frame payload is limited to 65535 bytes. Fragmented messages are not
+    supported. Client frames must be masked. Hold the dispatcher mutex when
+    using this API from application threads; callbacks run under that mutex.
 
     ### Example:
 
@@ -63,7 +66,7 @@
      WebSocket library and a copy of the example
     [is available on GitHub](https://github.com/RealTimeLogic/BAS/tree/main/examples/C-WebSockets)
 
-    SDK example dir: examples/WebSocket-Chat/
+    SDK example directory: examples/C-WebSockets/
 
  *  @{
  */
@@ -73,39 +76,42 @@
 struct WSS;
 struct WSSCB;
 
-/** WebSocket callback: a WebSocket frame is received.
-    \param o the WSSCB interface instance.
-    \param wss the WebSocket server instance.
-    \param data the data received. The data is conveniently zero
-    terminated for strings.
-    \param len data length.
-    \param text a boolean value set to TRUE for text frames and FALSE
-    for binary frames.
+/** Receive a complete unfragmented text or binary frame.
+    @param o Required borrowed callback interface.
+    @param wss Connection delivering this callback.
+    @param data Borrowed payload with a temporary trailing NUL, including for
+    binary frames. Embedded NUL bytes are possible; use len.
+    @param len Payload byte count, 0 through 65535, excluding the added NUL.
+    @param text TRUE for text, FALSE for binary. The parser does not validate UTF-8.
+    Copy data needed after return. Do not destroy wss or reuse its receive buffer
+    from this callback; the parser continues using them afterward.
  */
 typedef void (*WSSCB_Frame)(
    struct WSSCB* o,struct WSS* wss,void* data,int len,int text);
 
 
-/** Optional webSocket callback: the function is called when the
-    client sends a ping message. A Pong message is sent automatically.
-    \param o the WSSCB interface instance.
-    \param wss the WebSocket server instance.
-    \param data a ping message may include payload data.
-    \param len data length.
-*/
+/** Optional notification after the internal pong send attempt succeeds.
+    @param o Required borrowed callback interface.
+    @param wss Connection delivering this callback.
+    @param data Borrowed ping payload, or NULL for an empty ping. Not guaranteed
+    NUL-terminated. Copy data needed after return.
+    @param len Payload byte count, 0 through 125.
+    Do not destroy wss or reuse its receive buffer during this callback.
+    @warning The current automatic pong path does not correctly reproduce a
+    nonempty ping payload. This implementation limitation is pending source repair.
+ */
 typedef void (*WSSCB_Ping)(struct WSSCB* o,struct WSS* wss,void* data,int len);
 
 
-/** WebSocket callback: the client closed the connection or the
-    connection closed unexpectedly.
-    \param o the WSSCB interface instance.
-    \param wss the WebSocket server instance.
-    \param status A positive value means that the client sent a
-    graceful close message to the server. The value 1000 and 1001
-    indicates normal closure. Any other value sent by the client
-    indicates an error condition. See RFC6455:7.4.1 for details. A
-    negative error means the socket connection unexpectedly dropped.
-*/
+/** Notify closure after the underlying connection has been closed.
+    @param o Required borrowed callback interface.
+    @param wss Closed WebSocket object. Its storage still belongs to the application;
+    this callback may arrange destruction/cleanup.
+    @param status Peer close code when supplied, zero for a close without a usable
+    code, a locally generated protocol close code, or a negative transport/allocation
+    error. A positive value is not proof that the peer initiated a graceful close.
+    Explicit WSS::close() and destruction do not invoke this callback.
+ */
 typedef void (*WSSCB_Close)(struct WSSCB* o,struct WSS* wss,int status);
 
 /** WebSocket Server Connection Callback Interface: provides an
@@ -117,9 +123,9 @@ typedef struct WSSCB
 {
 #ifdef __cplusplus
    /** Provide your callback event functions.
-       \param frameFp called when a complete frame has been received.
-       \param closeFp called when connection closes.
-       \param pingFp called when client sends a ping message (optional).
+       \param frameFp Required callback for a complete text/binary frame.
+       \param closeFp Required closure callback.
+       \param pingFp Optional ping callback; NULL disables notification.
     */
    WSSCB(WSSCB_Frame frameFp, WSSCB_Close closeFp, WSSCB_Ping pingFp=0);
 #endif 
@@ -129,6 +135,12 @@ typedef struct WSSCB
 } WSSCB;
 
 
+/** Initialize callback storage.
+    @param o Required writable interface.
+    @param frame Required WSSCB_Frame callback.
+    @param close Required WSSCB_Close callback.
+    @param ping Optional WSSCB_Ping callback, or NULL.
+ */
 #define WSSCB_constructor(o, frame, close, ping) \
    (o)->frameFp=frame,(o)->closeFp=close,(o)->pingFp=ping
 
@@ -145,58 +157,61 @@ inline WSSCB::WSSCB(
 typedef struct WSS
 {
 #ifdef __cplusplus
-   /** Create and initialize a WebSocket Server instance.
-      \param cb your callback interface
-      \param disp the server's socket dispatcher
-      \param startSize received data is buffered internally until a
-      complete WebSocket frame is received. This data is buffered in a
-      #DynBuffer. The startSize and expandSize is used by the DynBuffer
-      and enables a frame to dynamically grow from startSize and then
-      at intervals of expandSize.
-      \param expandSize see startSize for information.
-    */
+   /** Initialize an unconnected WebSocket object.
+    @param cb Required borrowed interface with non-NULL frame and close callbacks.
+    @param disp Required borrowed dispatcher. Both dependencies must outlive wss.
+    @param startSize Positive initial receive-buffer capacity in bytes.
+    @param expandSize Positive growth increment in bytes; raised to startSize if
+    smaller. The buffer grows to retain an entire frame before invoking frameFp.
+    Storage is allocated as input arrives. Receive allocation failure reports
+    E_MALLOC through closeFp.
+ */
    WSS(WSSCB* cb, SoDisp* disp, int startSize, int expandSize);
 
-   /** destructor.
-    */
+   /** Close the transport and free receive storage, without a WebSocket close
+    handshake or close callback. Stop other users first; borrowed cb/disp remain alive.
+ */
    ~WSS();
 
-   /** Upgrades an HTTP server request to a persistent WebSocket
-       connection. This method is typically called from within an
-       HttpPage or HttpDir service function. The function performs a
-       WebSocket handshake by calling HttpRequest::wsUpgrade. The
-       function then calls WSS::connect if the WebSocket handshake was
-       successful.
-       \param req method HttpRequest::getConnection returns the
-       connection object used as a parameter for this method.
-       \returns 0 on success and a negative value on error.
-    */
+   /** Perform the server handshake and take over the request's connection.
+    @param req Required current uncommitted WebSocket upgrade request.
+    @return Zero on successful handoff, -1 on handshake or invalid-connection
+    failure. A rejected handshake attempts an HTTP 400 response. On success,
+    further I/O belongs to WSS; do not continue ordinary HTTP response output.
+ */
    int upgrade(HttpRequest* req);
 
-   /** Upgrades (morphs) an HTTP request to a persistent WebSocket
-       connection. You must complete the WebSocket handshake by calling
-       HttpRequest::wsUpgrade prior to calling this method.
-
-       \returns 0 on success and a negative value on error.
-    */
+   /** Take an HTTP connection after its WebSocket handshake is complete.
+    @param con Required live connection to move into this object. Ownership of
+    the socket transfers, leaving con without it. An existing WSS socket is closed.
+    @return Zero on success, -1 if con has no valid socket. This call does not
+    perform or verify the handshake; use upgrade() for normal request handling.
+ */
    int connect(HttpConnection* con);
 
-   /** Write/send a WebSocket frame.
-       \param data the data to send
-       \param len data length
-       \param isTxt set to true for text frames and false for binary frames.
-   */
+   /** Send one complete, unmasked server frame using blocking transport writes.
+    @param data Readable payload buffer for this call; required for positive len.
+    @param len Payload byte count, 0 through 65535. The caller must enforce this range.
+    @param isTxt True for UTF-8 text supplied by the application; false for binary.
+    @return Zero when sent, negative on transport failure. No partial byte count
+    is returned. This call does not itself deliver the receive-side close callback.
+ */
    int write(const void* data, int len, bool isTxt);
 
-   /** Gracefully close the WebSocket connection by sending WebSocket
-       status code N to the client prior to closing the active socket
-       connection.
-       See https://tools.ietf.org/html/rfc6455#section-7.4
-    */
+   /** Attempt to send a close frame, then close the transport immediately.
+    @param statusCode WebSocket close status valid for transmission; defaults to
+    1000. Nonpositive values are also replaced with 1000. The caller supplies a
+    valid 16-bit protocol value; this function does not validate it.
+    @return Zero if the socket was valid and is now closed, -1 if already invalid.
+    Zero does not confirm that the close frame was sent or acknowledged; send
+    errors are not returned. The close callback is not invoked.
+ */
    int close(int statusCode=1000);
 
-      /** Returns true if the WebSocket connection is valid.
-       */
+      /** Check the local transport handle.
+    @return True while a socket is locally valid, false after it is closed.
+    True does not prove that the peer is still reachable or that a write will succeed.
+ */
       bool isValid();
 
 #endif 
@@ -210,14 +225,45 @@ typedef struct WSS
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc WSS::WSS
+    @param o Required storage to initialize.
+ */
 BA_API void WSS_constructor(
    WSS* o, WSSCB* cb, SoDisp* disp, int startSize, int expandSize);
+/** @copydoc WSS::~WSS
+    @param o Required initialized WebSocket.
+ */
 BA_API void WSS_destructor(WSS* o);
+/** @copydoc WSS::upgrade
+    @param o Required initialized WebSocket.
+ */
 BA_API int WSS_upgrade(WSS* o, HttpRequest* req);
+/** @copydoc WSS::connect
+    @param o Required initialized WebSocket.
+ */
 BA_API int WSS_connect(WSS* o, HttpConnection* con);
+/** Send one final server frame with a caller-selected opcode.
+    @param o Required connected WebSocket.
+    @param data Readable payload buffer, required when len is positive.
+    @param len Byte count, 0 through 65535 for text/binary or 0 through 125 for
+    control frames. The caller validates length and payload semantics.
+    @param opCode Valid WebSocket opcode, normally 1 text, 2 binary, 8 close,
+    9 ping, or 10 pong. The FIN bit is always set; no mask is added.
+    @return Zero on success, negative transport error. No partial count is returned.
+    This low-level call performs no opcode, length, or UTF-8 validation.
+ */
 BA_API int WSS_rawWrite(WSS* o, const void* data, int len, int opCode);
+/** @copydoc WSS::write
+    @param o Required connected WebSocket.
+ */
 #define WSS_write(o, data, len, isTxt) WSS_rawWrite(o, data, len, isTxt?1:2)
+/** @copydoc WSS::close
+    @param o Required initialized WebSocket.
+ */
 BA_API int WSS_close(WSS* o, int statusCode);
+/** @copydoc WSS::isValid
+    @param o Required initialized WebSocket.
+ */
 #define WSS_isValid(o) SoDispCon_isValid((SoDispCon*)o)
 #ifdef __cplusplus
 }

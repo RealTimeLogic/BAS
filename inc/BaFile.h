@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaFile.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: BaFile.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+/** @file BaFile.h */
+
 #ifndef __BaFile_h
 #define __BaFile_h
 
@@ -57,44 +59,77 @@
 extern "C" {
 #endif
 
-/** Opens a directory for reading. Sub-directories may include '.' and '..'
+/** Open a directory through the platform's default DiskIo.
+ * @param[in] dirname NUL-terminated directory path. Path syntax and the
+ * starting directory depend on the selected platform implementation.
+ * @param[out] status Required status pointer: zero on success, otherwise an
+ * IOINTF error code.
+ * @param[out] ecode Optional pointer for a borrowed platform error description;
+ * may be NULL. Inspect it only on failure; do not free the returned string.
+ * @return Owned directory iterator, or NULL on failure. Close it with
+ * baCloseDir. Entries may include '.' and '..' on some platforms.
  */
 BA_API DirIntfPtr baOpenDir(const char* dirname, int* status, const char** ecode);
 
-/** Close a BaDir object.
-*/
+/** Close a directory iterator.
+ * @param[in,out] dirIntf Required pointer to a live iterator returned by
+ * baOpenDir. The iterator is released and *dirIntf is set to NULL.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baCloseDir(DirIntfPtr* dirIntf);
 
-/** Get information for a directory or file.
-*/
+/** Read file or directory metadata.
+ * @param[in] name NUL-terminated path using the platform's default DiskIo.
+ * @param[out] st Required metadata buffer, valid only on success.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baStat(const char* name, IoStat* st);
 
-
-/** Open a file for binary read.
-*/
+/** Open a binary file for reading or writing.
+ * @param[in] name NUL-terminated path using the platform's default DiskIo.
+ * @param[in] mode OpenRes_READ, OpenRes_WRITE or a supported combination with
+ * OpenRes_APPEND. See IoIntf_OpenRes for the mode table and portability limits.
+ * Write mode without append can truncate an existing file.
+ * @param[out] status Required status pointer: zero on success, otherwise an
+ * IOINTF error code.
+ * @param[out] ecode Optional pointer for a borrowed platform error description;
+ * may be NULL. Inspect only on failure and do not free it.
+ * @return Owned resource handle, or NULL on failure. Close it with baCloseRes.
+ */
 BA_API ResIntfPtr baOpenRes(const char* name,U32 mode,int* status,const char** ecode);
 
-/** Close a file descriptor.
-*/
+/** Close a resource handle, including when the underlying close reports failure.
+ * @param[in,out] fp Required pointer to a live handle returned by baOpenRes.
+ * The handle is consumed and *fp is set to NULL; do not retry with that handle.
+ * @return Zero on success, otherwise the resource's close error code. */
 BA_API int baCloseRes(ResIntfPtr* fp);
 
-
-/** Create directory.
- */ 
+/** Create a directory.
+ * @param[in] dname NUL-terminated directory path.
+ * @param[out] ecode Optional borrowed platform error description on failure;
+ * may be NULL. Do not free it.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baMkDir(const char* dname, const char** ecode);
 
-/** Remove empty directory.
- */
+/** Remove an empty directory.
+ * @param[in] dname NUL-terminated directory path.
+ * @param[out] ecode Optional borrowed platform error description on failure;
+ * may be NULL. Do not free it.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baRmdDir(const char* dname, const char** ecode);
 
-
-/** Remove file.
- */
+/** Remove a file.
+ * @param[in] fname NUL-terminated file path.
+ * @param[out] ecode Optional borrowed platform error description on failure;
+ * may be NULL. Do not free it.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baRemove(const char* fname, const char** ecode);
 
-
-/* Rename file or directory.
- */
+/** Rename a file or directory.
+ * @param[in] from NUL-terminated existing path.
+ * @param[in] to NUL-terminated destination path. Replacement and cross-device
+ * behavior depend on the platform's DiskIo implementation.
+ * @param[out] ecode Optional borrowed platform error description on failure;
+ * may be NULL. Do not free it.
+ * @return Zero on success, otherwise an IOINTF error code. */
 BA_API int baRename(const char* from, const char* to, const char** ecode);
 
 #ifdef __cplusplus

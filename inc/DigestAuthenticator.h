@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: DigestAuthenticator.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: DigestAuthenticator.h 5978 2026-09-11 16:13:48Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003-2013
+ *   COPYRIGHT:  Real Time Logic LLC, 2003-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -34,6 +34,8 @@
  *
  */
 
+/** @file DigestAuthenticator.h */
+
 #ifndef __DigestAuthenticator_h
 #define __DigestAuthenticator_h
 
@@ -53,34 +55,52 @@ typedef struct DigestAuthenticator
 #ifdef __cplusplus
 : public AuthenticatorIntf
 {
+      /** Leave storage uninitialized; call DigestAuthenticator_constructor before use. */
       DigestAuthenticator(){}
 
-      /**
-         \param userDbIntf is a reference to a user database you must
-         provide/implement.
-         \param realm is the name displayed in the browser's pop-up window.
-         \param sendLogin must be an implementation of LoginRespIntf.
-      */
+      /** Construct an authenticator using application-provided user lookup.
+        @param userDbIntf Required borrowed user database interface; keep it alive
+        while this authenticator is used.
+        @param realm Required NUL-terminated realm string, copied during
+        construction. It identifies the authentication realm sent to clients.
+        @param sendLogin Required borrowed login-response interface, which must
+        outlive authentication calls.
+        Constructors have no error return; realm allocation failure cannot be
+        reported through the constructor signature. Detach the authenticator from
+        directories and stop its users before calling DigestAuthenticator_destructor().
+        The C++ interface has no destructor that performs this cleanup automatically.
+       */
       DigestAuthenticator(UserIntf* userDbIntf,
                           const char* realm,
                           LoginRespIntf* sendLogin);
 
-      /** Prevent dictionary attacks.
-          \param tracker the IP address tracker.
-      */
+      /** Configure login-attempt tracking.
+        @param tracker Borrowed tracker, or NULL to disable tracking (the default).
+        Keep the tracker alive while configured. This setter does not allocate
+        or destroy it.
+       */
       void setLoginTracker(LoginTracker* tracker);
 
       /** Sets an HTTP Digest authentication challenge and status code
           401. This method can be used to design logic for invalidating
           the user and password saved by a browser.
-          \param realm Realm name sent in the authentication challenge.
-          \param response Response object receiving the 401 challenge.
+          \param realm Required NUL-terminated realm used in the challenge;
+          supply a value suitable for an HTTP quoted string.
+          \param response Required response receiving the 401 challenge.
+          The response retains its own header value.
+          \return 0 on success, including an ignored call during inclusion;
+          E_MALLOC if header storage fails; E_IS_COMMITTED if already committed
+          outside inclusion. Failure leaves the status code unchanged.
        */
-      static void setAutHeader(const char* realm, HttpResponse* response);
+      static int setAutHeader(const char* realm, HttpResponse* response);
 
-      /** Enable strict RFC-compatible Digest mode.
-          Few browsers support strict Digest mode.
-          \param enableStrictMode Set to TRUE to enable strict mode.
+      /** Control repeated Digest validation for an authenticated session.
+        @param enableStrictMode True validates subsequent matching Digest headers;
+        false (the initial state and C++ default argument) accepts the authenticated
+        session without repeating that validation. With strict mode enabled, a
+        missing header for a Digest session produces a new challenge. Other
+        authentication types and headers for a different realm bypass this check.
+        This setting is not a general claim of complete RFC conformance.
        */
       void setStrictMode(bool enableStrictMode=false);
 
@@ -100,18 +120,45 @@ typedef struct DigestAuthenticator
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** C form of DigestAuthenticator::DigestAuthenticator.
+    @param o Required storage to initialize.
+    @param userDbIntf Required borrowed user database.
+    @param realm Copied realm string; see the C++ constructor for NULL handling.
+    @param sendLogin Required borrowed login-response interface.
+ */
 BA_API void DigestAuthenticator_constructor(
    DigestAuthenticator* o,
    UserIntf* userDbIntf,
    const char* realm,
    LoginRespIntf* sendLogin);
+/** Release authenticator-owned realm storage after detaching all users.
+    @param o Required initialized authenticator. Borrowed dependencies are not freed.
+ */
 BA_API void DigestAuthenticator_destructor(DigestAuthenticator* o);
+/** C form of DigestAuthenticator::setLoginTracker.
+    @param o Required initialized authenticator.
+    @param loginTracker Borrowed tracker, or NULL to disable.
+ */
 #define DigestAuthenticator_setLoginTracker(o,loginTracker) \
   (o)->tracker=loginTracker
+/** Select user-name domain-prefix filtering (initially FALSE).
+    @param o Required initialized authenticator.
+    @param state TRUE removes the prefix through the first backslash before user
+    lookup; FALSE uses the complete supplied user name.
+ */
 #define DigestAuthenticator_setFilterMsDomain(o, state) \
   (o)->filterMsDomain=state
-BA_API void DigestAuthenticator_setAutHeader(
+/* Returns 0 on success (including an ignored include), E_MALLOC when header
+ * storage fails, or E_IS_COMMITTED. Failure does not set status 401. */
+/** C form of DigestAuthenticator::setAutHeader. The first argument is the
+    required realm string; the second is the required response.
+    @return Zero, E_MALLOC, or E_IS_COMMITTED as described by setAutHeader().
+ */
+BA_API int DigestAuthenticator_setAutHeader(
    const char*,HttpResponse*);
+/** @copydoc DigestAuthenticator::setStrictMode
+    @param o Required initialized authenticator.
+ */
 #define DigestAuthenticator_setStrictMode(o, enableStrictMode) \
   (o)->strictMode=enableStrictMode
 BA_API BaBool DigestAuthenticator_isDigest(AuthenticatedUser* user);
@@ -125,9 +172,9 @@ inline DigestAuthenticator::DigestAuthenticator(UserIntf* userDbIntf,
 inline void DigestAuthenticator::setLoginTracker(LoginTracker* tracker) {
    DigestAuthenticator_setLoginTracker(this, tracker);
 }
-inline void DigestAuthenticator::setAutHeader(
+inline int DigestAuthenticator::setAutHeader(
    const char* realm, HttpResponse* resp) {
-   DigestAuthenticator_setAutHeader(realm,resp); }
+   return DigestAuthenticator_setAutHeader(realm,resp); }
 inline void DigestAuthenticator::setStrictMode(bool enableStrictMode) {
    DigestAuthenticator_setStrictMode(this, enableStrictMode ? TRUE : FALSE);
 }

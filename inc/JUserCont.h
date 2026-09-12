@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JUserCont.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: JUserCont.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2007-2013
  *
@@ -34,6 +34,8 @@
  ****************************************************************************
  *
  */
+
+/** @file JUserCont.h */
 
 #ifndef __JUserCont_h
 #define __JUserCont_h
@@ -65,12 +67,43 @@ typedef struct
 } JRole;
 
 
+/** User database implementing UserIntf, loaded from a parsed JSON object.
+ * Object member names are usernames. Each user requires pwd and roles:
+ * @code{.json}
+ * {"operator":{"pwd":"replace-this-password","roles":["viewer"],"maxUsers":5}}
+ * @endcode
+ * pwd is a string, or an array whose first string is a 32-character HA1 value
+ * for the MD5 authentication variant. The remaining array elements are not
+ * used. roles is an array of role-name strings; an empty array or empty object
+ * means no roles. In JConstrCont, users without roles have super-user access.
+ *
+ * Optional maxUsers (also accepted as maxusers) is an integer, default 5,
+ * clamped to 0..65535; zero omits the user. inactive is a nonnegative integer
+ * timeout in seconds, default zero; negative values become zero. recycle is a
+ * boolean, default FALSE. Missing or wrong-type optional values use defaults.
+ * Passwords longer than 98 bytes are stored but cannot be returned through the
+ * current AuthInfo password buffer, so authentication will fail for that user.
+ *
+ * Updates replace the user list without rollback; role-name mappings persist
+ * until destruction. Serialize database updates with readers and authorizers.
+ */
 typedef struct JUserCont
 #ifdef __cplusplus
    : public UserIntf
 {
+      /** Initialize an empty database without copying the allocator.
+       * @param[in] alloc Borrowed allocator, or NULL for the default allocator.
+       * The allocator must outlive the database. */
       JUserCont(AllocatorIntf* alloc);
+      /** Release users and role mappings. Detach users of this UserIntf,
+       * including any JConstrCont, before destruction. */
       ~JUserCont();
+      /** Replace users from the JSON schema described by JUserCont.
+       * @param[in] usersVal Required parsed JVal object. Strings are copied,
+       * so the tree can be released after the call. Usernames must be unique.
+       * @param[in,out] err Required initialized JErr receiving reported format
+       * or allocation errors. Old users are removed first; failure can leave
+       * a partially populated database. No value is returned. */
       void setUserDb(JVal* usersVal, JErr* err);
 #else
 {
@@ -91,8 +124,18 @@ extern "C" {
   (JUser*)SplayTree_find(&(o)->userdb, uname)
 U16 JUserCont_role2Id(JUserCont* o, const char* roleName);
 U16* JUserCont_copyRoles(JUserCont* o,U16* roles,JVal* rolesVal,JErr* err);
+/** Initialize a user database.
+ * @param[out] o Caller-owned storage.
+ * @param[in] alloc Borrowed allocator, or NULL for the default allocator. */
 BA_API void JUserCont_constructor(JUserCont* o, AllocatorIntf* alloc);
+/** Release all users and role mappings.
+ * @param[in,out] o Initialized database, no longer referenced by authenticators
+ * or authorizers. Does not free the allocator itself. */
 BA_API void JUserCont_destructor(JUserCont* o);
+/** Replace the user database without rollback.
+ * @param[in,out] o Initialized database.
+ * @param[in] usersVal Parsed JSON object; see JUserCont::setUserDb.
+ * @param[in,out] err Required initialized JErr receiving reported failures. */
 BA_API void JUserCont_setUserDb(JUserCont* o, JVal* usersVal, JErr* err);
 #ifdef __cplusplus
 }

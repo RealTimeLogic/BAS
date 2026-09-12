@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpSharkSslServCon.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpSharkSslServCon.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2012
  *
@@ -36,6 +36,8 @@
  *             SharkSSL for Barracuda Embedded Web-Server
  *
  */
+/** @file HttpSharkSslServCon.h */
+
 #ifndef __HttpSharkSslServCon_h
 #define __HttpSharkSslServCon_h
 
@@ -68,25 +70,30 @@ typedef struct HttpSharkSslServCon
       void *operator new(size_t, void *place) { return place; }
       void operator delete(void*, void *) { }
 
-      // Default constructor is used as a dummy op with the C constructors
+      /** Uninitialized storage; use a C constructor before use or destruction. */
       HttpSharkSslServCon() {}
       
       /** Create a SharkSSL Server Connection.
 
       \param sharkSsl is the SharkSsl instance required for operating
        the server connection. You must make sure that this object is
-       valid for the lifetime of the HttpSharkSslServCon instance.
-      \param server is the web-server object.
-      \param dispatcher is SoDisp object.
-      \param port the server port; normally port 443
-      \param setIP6 Set protcol version. This parameter is ignored unless
+       valid for the lifetime of the listener and its accepted connections.
+       It must have role SharkSsl_Server and be configured before listening.
+       An incorrect role violates the constructor precondition.
+      \param server Required borrowed server, valid throughout listener use.
+      \param dispatcher Required borrowed dispatcher, valid throughout use.
+      \param port TCP listen port in host byte order, normally 443. Zero
+      initializes an inactive listener without opening a socket.
+      \param setIP6 TRUE selects IPv6, FALSE IPv4. This parameter is ignored unless
       the underlying TCP/IP stack is a dual IP V4 and IP V6 stack.
-      \param interfaceName the name of the interface used when binding the
-      server socket. If this is zero, any available interface will
-      be selected.
+      \param interfaceName Borrowed platform binding address/interface, used
+      during the call; normally a NUL-terminated address string. NULL binds the
+      wildcard address. Accepted representation is platform-specific.
       \param userDefinedAccept Same functionality as for HttpServCon,
       but this callback is for implementing secure servers.
-      See HttpServCon for more information.
+      The temporary-connection ownership rules of HttpServCon_AcceptNewCon
+      apply. The callback may run before the TLS handshake completes. It is
+      required in NO_BA_SERVER builds; otherwise NULL selects HTTP handling.
        */
       HttpSharkSslServCon(SharkSsl* sharkSsl,
                           HttpServer* server,
@@ -95,13 +102,24 @@ typedef struct HttpSharkSslServCon
                           bool setIP6=false,
                           const void* interfaceName=0,
                           HttpServCon_AcceptNewCon userDefinedAccept=0);
+      /** @return TRUE when the listening socket is valid, FALSE otherwise.
+       * Check after construction, which returns no status. */
       BaBool isValid();
 
-      /** Change the port number for the "listen" object.
+      /** Open a replacement listener, then close the old listener on success.
+       * @param[in] portNumber New TCP port in host byte order, 1..65535.
+       * @param[in] setIp6 True selects IPv6, false IPv4 (default).
+       * @param[in] interfaceName Borrowed platform binding address/interface,
+       * or NULL for wildcard; used during this call only.
+       * @return Zero on success, -1 on failure. The old listener is retained
+       * if replacement setup fails. Uses the associated server's dispatcher.
+       * Hold the dispatcher mutex during this operation.
        */
       int setPort(U16 portNumber, bool setIp6=false,
                   const void* interfaceName=0);
-      ~HttpSharkSslServCon();
+      /** Close the listener and every accepted TLS connection still tracked by it.
+    * Does not destroy the borrowed TLS configuration, server or dispatcher. */
+   ~HttpSharkSslServCon();
    private:
 #endif
       HttpServCon sCon;
@@ -115,6 +133,8 @@ typedef struct HttpSharkSslServCon
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpSharkSslServCon::HttpSharkSslServCon(SharkSsl*,HttpServer*,SoDisp*,U16,bool,const void*,HttpServCon_AcceptNewCon)
+ * @param[out] o Caller-owned listener storage. */
 SHARKSSL_API void HttpSharkSslServCon_constructor(
    HttpSharkSslServCon* o,
    SharkSsl* sharkSsl,
@@ -126,16 +146,32 @@ SHARKSSL_API void HttpSharkSslServCon_constructor(
    HttpServCon_AcceptNewCon userDefinedAccept);
 SHARKSSL_API int HttpServCon_setPort(HttpServCon* o, U16 portNumber,
                                BaBool setIp6, const void* interfaceName);
+/** @copydoc HttpSharkSslServCon::setPort
+ * @param[in,out] o Initialized listener. */
 SHARKSSL_API int HttpSharkSslServCon_setPort(HttpSharkSslServCon* o,
                                              U16 portNumber,
                                              BaBool setIp6,
                                              const void* interfaceName);
+/** @param[in] o Initialized listener.
+ * @return TRUE if its listening socket is valid, FALSE otherwise. */
 #define HttpSharkSslServCon_isValid(o) HttpServCon_isValid((HttpServCon*)o)
+/** Store the listener's client-certificate request flag.
+ * @param[in,out] o Initialized listener.
+ * @param[in] enable TRUE sets the flag, FALSE clears it.
+ * @warning The current accept implementation does not read this field. This
+ * macro alone does not request or require a client certificate. */
 #define HttpSharkSslServCon_requestClientCert(o,enable) \
         (o)->requestClientCert=enable
+/** Select the RSA certificate preference applied to newly accepted connections.
+ * @param[in,out] o Initialized listener.
+ * @param[in] enable TRUE favors RSA, FALSE keeps the default selection.
+ * Existing TLS connections are unchanged. Set while holding the dispatcher mutex.
+ * Availability and selection details depend on the configured TLS engine. */
 #define HttpSharkSslServCon_favorRSA(o,enable) \
         (o)->favorRSA=enable
 
+/** Close the listener and every accepted TLS connection still tracked by it.
+ * @param[in,out] o Initialized listener; no borrowed dependency is freed. */
 SHARKSSL_API void HttpSharkSslServCon_destructor(HttpSharkSslServCon* o);
 
 SHARKSSL_API int HttpSharkSslServCon_bindExec(

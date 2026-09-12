@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServCon.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpServCon.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2008
  *
@@ -36,6 +36,8 @@
  *
  */
 
+/** @file HttpServCon.h */
+
 #ifndef __HttpServCon_h
 #define __HttpServCon_h
 
@@ -46,6 +48,13 @@
 struct HttpServer;
 struct HttpServCon;
 
+/** Handle a newly accepted connection while the dispatcher mutex is held.
+ * @param[in] scon Borrowed listener that accepted the socket.
+ * @param[in,out] newcon Temporary connection, valid only during this callback.
+ * Move it with HttpConnection_moveCon into an initialized application-owned
+ * connection before returning to accept it. Otherwise its socket is closed.
+ * Do not memcpy the connection or retain the temporary pointer. A TLS listener
+ * can invoke this callback before the TLS handshake has completed. */
 typedef void (*HttpServCon_AcceptNewCon)(
    struct HttpServCon* scon, HttpConnection* newcon);
 
@@ -68,16 +77,19 @@ typedef struct HttpServCon
 
 
       /** Create a Server Connection.
-       \param server is the web-server object.
-       \param dispatcher is SoDisp object.
-       \param port the server port, normally port 80.
-       \param setIP6 Set protcol version. This parameter is ignored unless
+       \param server Borrowed server, valid throughout listener use. Required
+       for the default HTTP handler and for setPort.
+       \param dispatcher Required borrowed dispatcher, valid throughout use.
+       \param port TCP port in host byte order, default 80. Zero requests an
+       OS-assigned port if supported by the socket port.
+       \param setIP6 TRUE selects IPv6, FALSE IPv4 (default). This parameter is ignored unless
        the underlying TCP/IP stack is a dual IP V4 and IP V6 stack.
-       \param interfaceName the name of the interface used for binding the
-        server socket. If this is zero, any available interface will
-        be selected.
+       \param interfaceName Borrowed platform binding address/interface, used
+        during construction; normally a NUL-terminated textual address. NULL
+        binds the wildcard address. Accepted representation is port-specific.
        \param userDefinedAccept The default (argument is NULL) is to
-       do "accept calls" for the web-server.
+       accept connections for the web-server. A custom callback is required
+       in NO_BA_SERVER builds; omitting it calls baFatalE.
 
        A ServerConnection object is normally used for accepting new
        connections for the web-server. It is possible to
@@ -90,47 +102,43 @@ typedef struct HttpServCon
        new connection is established. The HttpConnection object passed
        in as the argument to the callback function is a temporary
        object that will be destroyed as soon as the callback function
-       returns. You must, therefore, copy the data in the connection
-       object.
+       returns. You must, therefore, move the connection into an initialized application object.
 
        Example C code:
 
        \code
-       //Dispatcher calls this function when new data on my connection obj.
-       static void MyHttpCon_dispatchData(MyHttpCon* o)
+       typedef struct { HttpConnection con; } MyHttpCon;
+
+       static void MyHttpCon_dispatchData(SoDispCon* socket)
        {
-          char buf[size];
-          HttpConnection* con = (HttpConnection*)o; // Down cast
-          int len = HttpConnection_readData(con, buf, size);
+          MyHttpCon* o = (MyHttpCon*)socket;
+          char buf[512];
+          int len = HttpConnection_readData(&o->con, buf, sizeof(buf));
           if(len < 0)
-          { // Socket closed
-             SoDisp_removeConnection(
-                HttpConnection_getDispatcher(con),con);
-             free(o);
-          }
-          if(len)
           {
-             // handle data
+             HttpConnection_destructor(&o->con); // Unregister and close.
+             baFree(o);
+             return;
+          }
+          if(len > 0)
+          {
+             // Consume exactly len bytes here; buf is not NUL-terminated.
           }
        }
-       // HttpServCon calls this function for all new connections
-       static void MyHttpCon_myAccept(HttpConnection* tmpCon)
-       {
-          MyHttpCon* o = // MyHttpCon inherit from HttpConnection
-             baMalloc(sizeof(MyHttpCon));
-          if(o)
-          {
-             HttpConnection* newCon = (HttpConnection*)o; // Down cast
 
-             HttpConnection_constructor(
-                newCon,
-                HttpConnection_getServer(tmpCon),
-                (SoDispCon_DispRecEv)MyHttpCon_dispatchData);
-              //Copy connection
-             HttpConnection_moveCon(tmpCon,(HttpConnection*)con);
-             SoDisp_addConnection(
-                HttpConnection_getDispatcher(newCon),newCon);
-          }
+       static void MyHttpCon_myAccept(HttpServCon* listener,
+                                      HttpConnection* temporary)
+       {
+          MyHttpCon* o = (MyHttpCon*)baMalloc(sizeof(MyHttpCon));
+          SoDisp* disp = HttpConnection_getDispatcher(temporary);
+          (void)listener;
+          if(!o) return; // The listener closes the unclaimed socket.
+          HttpConnection_constructor(&o->con,
+             HttpConnection_getServer(temporary), disp,
+             MyHttpCon_dispatchData);
+          HttpConnection_moveCon(temporary, &o->con);
+          SoDisp_addConnection(disp, (SoDispCon*)&o->con);
+          SoDisp_activateRec(disp, (SoDispCon*)&o->con);
        }
        \endcode
        */
@@ -141,18 +149,29 @@ typedef struct HttpServCon
                   const void* interfaceName=0,
                   HttpServCon_AcceptNewCon userDefinedAccept=0);
 
-      /** Returns true if the constructor successfully opened the
-          listen socket; otherwise, false is returned. Error messages
+      /** @return TRUE if the listen socket is currently valid, FALSE otherwise.
+          Check after construction, which returns no status. Error messages
           are printed to HttpTrace.
       */
       BaBool isValid();
       
-      /** Change the port number for the "listen" object.
+      /** Open a replacement listening endpoint before closing the old one.
+       * @param[in] portNumber New TCP port, in host byte order.
+       * @param[in] setIp6 True selects IPv6, false IPv4 (default).
+       * @param[in] interfaceName Platform binding address/interface, or NULL
+       * for wildcard; borrowed for this call only.
+       * @return Zero on success, -1 if creating/binding/listening fails. The
+       * old listener remains on failure. Requires a non-NULL server and uses
+       * that server's dispatcher. Existing accepted connections are unaffected.
+       * Perform listener changes while holding the dispatcher mutex.
        */
       int setPort(U16 portNumber, bool setIp6=false,
                   const void* interfaceName=0);
 
+      /** Close and unregister the listener; accepted connections are separate.
+       * Does not destroy the borrowed server or dispatcher. */
       ~HttpServCon();
+      /** Uninitialized storage; initialize before use or destruction. */
       HttpServCon() {}
    private:
 #endif
@@ -164,6 +183,8 @@ typedef struct HttpServCon
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpServCon::HttpServCon
+ * @param[in,out] o Caller-owned listener. */
 BA_API void HttpServCon_constructor(HttpServCon* o,
                              struct HttpServer* server,
                              struct SoDisp* dispatcher,
@@ -171,10 +192,16 @@ BA_API void HttpServCon_constructor(HttpServCon* o,
                              BaBool setIP6,
                              const void* interfaceName,
                              HttpServCon_AcceptNewCon userDefinedAccept);
+/** @param[in] o Initialized listener.
+ * @return TRUE if its socket is valid, FALSE otherwise. */
 #define HttpServCon_isValid(o) \
         SoDispCon_isValid((SoDispCon*)(o))
+/** @copydoc HttpServCon::setPort
+ * @param[in,out] o Caller-owned listener. */
 BA_API int HttpServCon_setPort(HttpServCon* o, U16 portNumber,
                                BaBool setIp6, const void* interfaceName);
+/** Close and unregister a listener; does not close its accepted connections.
+ * @param[in,out] o Initialized listener; its storage is not freed. */
 BA_API void HttpServCon_destructor(HttpServCon* o);
 BA_API int HttpServCon_init(
    HttpServCon* o,

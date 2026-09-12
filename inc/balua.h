@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: balua.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2025
  *
@@ -37,6 +37,8 @@
  */
 
  
+/** @file balua.h */
+
 #ifndef _balua_h
 #define _balua_h
 
@@ -63,6 +65,11 @@ extern "C" {
 
    balua.h provides the public C API for creating, destroying, and
    configuring a BAS Lua/LSP VM.
+
+   Access the VM only while holding its server mutex, including calls from
+   application C code. Lua-entered bindings already hold it. APIs that allocate
+   Lua objects may raise Lua errors; use protected Lua calls where required.
+   Shutdown must stop all users before destroying the VM and borrowed resources.
 
    Creating and initializing a BAS Lua VM consists of calling
    balua_create() and calling balua_loadconfig().
@@ -91,6 +98,12 @@ extern "C" {
 /** Create a BAS Lua VM.
     Use this macro instead of calling _balua_create() directly so the
     runtime can verify the BAS library version.
+    @param p Required pointer to initialized BaLua_param. The structure is copied;
+    referenced resources are borrowed. In a normal server build, set L to NULL
+    and provide vmio. NO_BA_SERVER instead requires an existing L.
+    @return Initialized Lua state, or NULL for invalid parameters/version or
+    initial allocation failure. Later VM initialization errors can invoke the
+    fatal handler. Release a successful VM with balua_close().
  */
 #define balua_create(p) _balua_create(p, BALUA_VERSION)
 
@@ -102,12 +115,20 @@ extern "C" {
 #define balua_newlib(L,l) \
   (luaL_newlibtable(L,l), balua_pushbatab(L), luaL_setfuncs(L,l,1))
 #define baluaENV_getmutex(L) baluaENV_getparam(L)->mutex
-/** Get the SoDisp mutex associated with the Lua VM. */
+/** Get the SoDisp mutex associated with the Lua VM.
+    @param L Required BAS Lua state.
+    @return Borrowed mutex pointer, or NULL for a VM without a server mutex.
+ */
 #define balua_getmutex(L) balua_getparam(L)->mutex
 #define GET_BAMUTEX ThreadMutex* m = baluaENV_getmutex(L)
-/** Release mutex \c m if it is not NULL. */
+/** Release mutex m if it is not NULL.
+    @param m Borrowed ThreadMutex pointer, currently owned by this thread, or NULL.
+    Reacquire before touching the Lua VM again.
+ */
 #define balua_releasemutex(m) if(m) ThreadMutex_release(m)
-/** Lock mutex \c m if it is not NULL. */
+/** Acquire mutex m, waiting if necessary.
+    @param m Borrowed ThreadMutex pointer, or NULL for no operation.
+ */
 #define balua_setmutex(m) if(m) ThreadMutex_set(m)
 
 #ifdef NDEBUG
@@ -155,17 +176,17 @@ struct LoginTracker;
 */
 typedef struct
 {
-   lua_State* L; /**< Lua state created or used by this VM. */
-   HttpServer* server; /**< Server associated with this VM. */
+   lua_State* L; /**< Input NULL in server builds; existing state in NO_BA_SERVER. Internal copy stores the active state. */
+   HttpServer* server; /**< Borrowed server, or NULL when server bindings are not needed. */
    struct BaTimer* timer; /**< Timer bindings activated if not NULL. */
    IoIntf* vmio; /**< Required VM I/O interface used for Lua resources. */
-   ThreadMutex* mutex; /**< Mutex used by the server's SoDisp. */
+   ThreadMutex* mutex; /**< Derived from server in normal builds; supplied directly in NO_BA_SERVER. */
    struct LoginTracker* tracker; /**< Optional login tracker. */
-   int errHndRef; /**< Internal: The ba.seterrh(func) ref */
-   const U8* zipPubKey;  /**< Set when zip signature check enabled */
-   const U8* zipBinPwd; /**< Set the binary password for all ZIP files */
-   U16 zipBinPwdLen; /**< Binary password length */
-   BaBool pwdRequired; /**< Set to true to enforce password on all files. */
+   int errHndRef; /**< Initialize to zero; internal ba.seterrh reference. */
+   const U8* zipPubKey;  /**< Borrowed SharkSSL ECC public key, or NULL to disable ZIP signature checks. */
+   const U8* zipBinPwd; /**< Borrowed password bytes, or NULL for no default ZIP password. */
+   U16 zipBinPwdLen; /**< Password byte count, matching zipBinPwd. */
+   BaBool pwdRequired; /**< Nonzero requires encryption on all files in ZIP I/O using this policy. */
 } BaLua_param;
 
 typedef struct
@@ -179,17 +200,26 @@ typedef struct
 BA_API void* baLMallocL(lua_State* L, size_t size,const char* file, int line);
 #define baLMalloc(L,size) baLMallocL(L,size,__FILE__,__LINE__)
 #else
-/** Allocate memory for Lua and run an emergency GC if baMalloc returns NULL. */
+/** Allocate application memory, retrying after a full Lua GC on allocation failure.
+    @param L Required live Lua state, with its mutex held.
+    @param size Requested number of bytes; use a positive size.
+    @return Caller-owned allocation to release with baFree, or NULL if both
+    attempts fail. This helper does not raise an allocation error itself.
+ */
 BA_API void* baLMalloc(lua_State* L, size_t size);
 #endif
 
-/** 
-    Create the BAS Lua VM.
-    Use macro balua_create(BaLua_param) instead of calling this function directly.
-*/
+/** @copydoc balua_create
+    @param version Compile-time BALUA_VERSION; use the macro to supply this.
+ */
 BA_API lua_State* _balua_create(const BaLua_param* p, int version);
 
-/* Close the Barracuda Lua VM */
+/** Close the BAS Lua VM, run finalizers, and free its copied parameters.
+    @param L Required main state returned by balua_create; consumed by this call.
+    Stop dispatching and terminate thread managers first. Hold the server mutex
+    and retain borrowed server, timer, I/O, and tracker resources through cleanup.
+    There is no return value and no subsequent Lua access is valid.
+ */
 BA_API void balua_close(lua_State* L);
 
 /** 
@@ -201,12 +231,19 @@ BA_API void balua_close(lua_State* L);
     \param maxNumberOfLogins how many login attempts before user (IP
     address) is banned
     \param banTime how long in seconds to ban an IP address
+    @return 0 when bindings were installed, -1 if a tracker already exists or
+    the ba table was unavailable. Allocation failures use Lua/native handling.
+    Use the main state during startup; the VM owns the installed tracker.
     \sa #LoginTracker #LoginTrackerIntf
 */
 BA_API int balua_usertracker_create(
    lua_State* L, U32 noOfLoginTrackerNodes, U32 maxNumberOfLogins,
    BaTime banTime);
 
+/** Get the main state without changing the stack.
+    @param L Required main state or coroutine belonging to the VM.
+    @return Borrowed main state; valid until VM shutdown.
+ */
 BA_API lua_State* balua_getmainthread(lua_State* L);
 BA_API int balua_typeerror(lua_State *L, int narg, const char *tname);
 #define balua_optboolean(L,narg,def) luaL_opt(L, balua_checkboolean, narg, def)
@@ -217,12 +254,27 @@ BA_API void baluaENV_register(
 BA_API void* baluaENV_newuserdata(lua_State *L, int mtid, size_t size);
 BA_API void* _baluaENV_isudtype(lua_State* L, int udIx, int mtid, int check);
 BA_API HttpCommand* baluaENV_checkcmd(lua_State* L, int ix);
+/** Get the VM's stored parameter copy without changing the stack.
+    @param L Required initialized BAS state.
+    @return Borrowed parameters, valid until balua_close; do not free.
+ */
 BA_API BaLua_param* balua_getparam(lua_State* L);
 BA_API BaLua_param* baluaENV_getparam(lua_State* L);
 BA_API int balua_errorhandler(lua_State* L);
 BA_API void balua_manageerr(
    lua_State* L,const char* ewhere,const char* emsg,HttpCommand* cmd);
 BA_API void balua_resumeerr(lua_State* L,const char* ewhere);
+/** Compile a Lua source or bytecode file without executing it.
+    @param L Required BAS state with its mutex held.
+    @param filename Required NUL-terminated I/O path; NULL returns a file error.
+    @param io Borrowed I/O interface; NULL returns a file error.
+    @param envix Absolute stack index of the environment to set as the first
+    upvalue, or zero to leave the chunk environment unchanged.
+    @return 0 with a compiled function pushed; Lua load error status or
+    LUA_ERRFILE with an error message pushed on failure. Returns -1 if the
+    requested environment cannot be assigned; that path also leaves the chunk.
+    The resource is closed before return; close errors are not reported.
+ */
 BA_API int balua_loadfile(
 	lua_State *L, const char *filename, struct IoIntf* io, int envix);
 
@@ -230,7 +282,10 @@ BA_API int balua_loadfile(
  *  full userdata at the given index. This function is similar to
  *  lua_getiuservalue(), but creates a table at the first user value
  *  if it does not exist. Note index must be absolute i.e. not < 0.
- *  A table is pushed on the stack when this function returns.
+ *  If the previous user value is non-nil, it is pushed unchanged.
+ * @param L Required BAS state.
+ * @param index Positive absolute index of full userdata with a first user-value
+ * slot. Keep that slot nil or a table if a table is required by the caller.
  */
 BA_API void
 balua_getuservalue(lua_State* L, int index);
@@ -249,14 +304,21 @@ balua_getuservalue(lua_State* L, int index);
 
 /** Creates and returns a reference in the weak table, for the object
     on the top of the stack (and pops the object).
-    \param L the state
+    \param L Required BAS state with a value on top.
+    @return Integer weak reference; it does not keep the value alive.
  */
 BA_API int balua_wkRef(lua_State* L);
 
+/** Create a weak reference without popping the referenced value.
+    @param L Required initialized BAS state.
+    @param index Negative stack index relative to the stack before the call.
+    @return Integer reference for balua_wkPush/balua_wkUnref. Stack is unchanged.
+    The reference does not prevent collection.
+ */
 BA_API int balua_wkRefIx(lua_State* L, int index);
 
 /** Pushes the value associated with the key 'index' on top of the
-    stack. Pushes null if reference is not found.
+    stack. Pushes Lua nil if the reference was removed or its value collected.
     \param L the state
     \param reference the reference returned by balua_wkRef
  */
@@ -278,6 +340,9 @@ BA_API void balua_wkUnref(lua_State* L, int reference);
     \param io the I/O interface to use when loading script 'filename'.
     \param filename the path+name of the Lua script. The name defaults
     to .config if this parameter is NULL.
+    @return 0 on success, or a Lua load/call status with an error message on top.
+    Success restores the original stack. The script receives its filename as
+    one argument. A missing .config is an error, not silently ignored.
  */
 BA_API int balua_loadconfig(
    lua_State* L, struct IoIntf* io, const char* filename);
@@ -294,7 +359,10 @@ BA_API int balua_loadconfig(
     \param io the I/O interface to use when loading script 'filename'.
     \param filename the path+name of the Lua script. The name defaults
     to .config if this parameter is NULL.
-    \param nresults value passed to lua_pcall
+    \param nresults Nonnegative number of results to leave on the stack, or
+    LUA_MULTRET for all results. The script receives its filename as one argument.
+    @return 0 on success; a Lua load/call status on failure with an error message
+    on top. With zero requested results, success restores the original stack.
  */
 BA_API int balua_loadconfigExt(
    lua_State* L, struct IoIntf* io, const char* filename, int nresults);
@@ -308,12 +376,24 @@ BA_API IoIntf* baluaENV_checkIoIntf(lua_State *L, int udIx);
 
     \param L the Lua state.
     \param name the name makes it possible to fetch the I/O using the
-    Lua function ba.openio(name).
+    Lua function ba.openio(name). Required NUL-terminated string; an empty
+    string selects "vm". Do not pass NULL.
     \param newio the IoIntf instance, such as DiskIo, ZipIo, NetIo, or
-    your own implementation.
+    your own implementation. NULL looks up the current registration.
+    A non-NULL interface is borrowed and replaces the named registration.
+    Keep every registered interface alive while Lua objects may still use it.
+    @return Registered interface, or NULL when a lookup has no match. Stack is
+    unchanged; this function neither destroys nor takes ownership of interfaces.
  */
 BA_API IoIntf* balua_iointf(
    lua_State* L, const char* name, struct IoIntf* newio);
+/** Push a Lua I/O userdata whose underlying interface is owned by Lua.
+    @param L Required BAS state with its mutex held.
+    @return Address of the userdata's initially NULL interface pointer. Assign
+    a constructed baMalloc-allocated IoIntf. The Lua finalizer calls its
+    destructor property and baFree. Keep the userdata reachable while using
+    this pointer; do not separately destroy/free the assigned interface.
+ */
 BA_API struct IoIntf** balua_createiointf(lua_State* L);
 BA_API HttpDir* baluaENV_toDir(lua_State* L, int ix);
 BA_API HttpDir* baluaENV_createDir(lua_State* L,int mtId,size_t dirSize);
@@ -405,7 +485,9 @@ typedef struct LHttpDir
 
 BA_API int LHttpResRdr_loadLsp(
    lua_State* L, IoIntf* io, const char* pathname, IoStat* st);
-/** Install the \ref UBJSONRef "UBJSON" Lua API. */
+/** Install the \ref UBJSONRef "UBJSON" Lua API.
+    @param L Required initialized BAS state with its mutex held. Returns no value.
+ */
 BA_API void balua_ubjson(lua_State* L);
 BA_API void balua_luaio(lua_State* L);
 BA_API void luaopen_ba_redirector(lua_State *L);
@@ -424,7 +506,10 @@ struct CspReader;
  * @param pubKey Pointer to the public key used for signature verification.
  * @param fileSize Size of the ZIP file in bytes.
  * @param reader Pointer to the CspReader structure used for reading the ZIP file.
- * @return 0 on success, or an error code on failure.
+ * @return 0 when verified, -1 for invalid pointers/callback or fewer than 512
+ * bytes, E_MALLOC for allocation failure, or E_TLS_CRYPTOERR for read/verification
+ * failure. No ownership transfers. pubKey uses SharkSSL ECC key encoding;
+ * this verifies the BAS signed-ZIP format, not arbitrary ZIP signatures.
  */
 BA_API int baCheckZipSignature(
    const U8* pubKey, U32 fileSize, struct CspReader* reader);
@@ -441,7 +526,9 @@ struct ZipReader;
  * @param L Pointer to the Lua state.
  * @param name Name under which the ZIP reader will be installed in
  * Lua and made available to ba.mkio(name)
- * @param reader Pointer to the ZipReader structure to be installed.
+ * @param reader Borrowed initialized ZipReader, kept alive with its backing
+ * storage for every Lua I/O opened from this registration. Registration is
+ * stack-neutral and does not itself validate or copy the archive.
  */
 BA_API void balua_installZIO(lua_State* L, const char* name, struct ZipReader* reader);
 

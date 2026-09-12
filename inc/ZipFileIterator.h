@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ZipFileIterator.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: ZipFileIterator.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2019
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+/** @file ZipFileIterator.h */
+
 #ifndef __ZipFileIterator_h
 #define __ZipFileIterator_h
 
@@ -70,7 +72,15 @@ typedef struct ZipReader
 #ifdef __cplusplus
 : public CspReader
 {
+      /** Uninitialized storage; call ZipReader_constructor before use. */
       ZipReader() {}
+/** Initialize a reader interface; no ZIP data is read yet.
+    @param r Required CspReader_Read callback, callable for the reader's lifetime.
+    @param zipFileSize Complete archive length in bytes, representable in U32.
+    The callback must support offset-based reads within that archive.
+    Construction leaves the inherited validity marker unset; the implementation
+    must call CspReader_setIsValid() after its backing data is ready.
+ */
       ZipReader(CspReader_Read r, U32 zipFileSize);
 #else
 { 
@@ -82,6 +92,9 @@ typedef struct ZipReader
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc ZipReader::ZipReader(CspReader_Read,U32)
+    @param o Required reader storage.
+ */
 BA_API void ZipReader_constructor(
    ZipReader* o, CspReader_Read r, U32 zipFileSize);
 #ifdef __cplusplus
@@ -91,16 +104,18 @@ inline ZipReader::ZipReader(CspReader_Read r, U32 zipFileSize) {
 #endif
 
 
+/** ZIP metadata parsing result; zero is success, negative values are failures. */
 typedef enum {
-   ZipErr_Buf = -2000, /* The buffer is too small. */
-   ZipErr_Reading, /* Reading failed. */
-   ZipErr_Spanned,  /* Spanned/Split archives not supported. */
-   ZipErr_Compression, /* Unsupported compr. Can be one of Stored or Deflated */
-   ZipErr_Incompatible, /* Unknown ZIP Central Directory Structure. */
+   ZipErr_Buf = -2000, /**< The buffer is too small. */
+   ZipErr_Reading, /**< Reading failed. */
+   ZipErr_Spanned,  /**< Spanned/Split archives not supported. */
+   ZipErr_Compression, /**< Unsupported compr. Can be one of Stored or Deflated */
+   ZipErr_Incompatible, /**< Unknown ZIP Central Directory Structure. */
    ZipErr_NoError = 0
 } ZipErr;
 
 
+/** ZIP compression-method identifiers used in entry metadata. */
 typedef enum {
    ZipComprMethod_Stored=0,
    ZipComprMethod_Deflated=8,
@@ -320,10 +335,35 @@ do { \
 typedef struct CentralDirIterator
 {
 #ifdef __cplusplus
+/** Initialize an iterator using the container's shared working buffer.
+    @param container Required successfully initialized container, which must
+    outlive iteration. Do not interleave another user of its shared buffer.
+ */
       CentralDirIterator(ZipContainer* container);
+/** Initialize an iterator with separate working storage.
+    @param container Required successfully initialized borrowed container.
+    @param buf Required writable buffer, retained throughout iteration.
+    @param bufSize Buffer capacity in bytes, at least 256 and large enough for
+    each entry's header, name, and extra fields. Separate buffers avoid shared
+    scratch storage but do not make the underlying reader thread-safe.
+ */
       CentralDirIterator(ZipContainer* container, U8* buf, U32 bufSize);
+/** Query the iterator's last parsing result.
+    @return ZipErr_NoError initially or after a successful getElement(), otherwise
+    a ZipErr failure. A too-small private buffer sets ZipErr_Buf at construction.
+ */
       ZipErr getECode();
+/** Read the current central-directory entry.
+    @return Borrowed header on success, or NULL on parsing/read failure; inspect
+    getECode(). Read its values before advancing or reusing the working buffer.
+    The file name is length-delimited, not NUL-terminated. Call only when a current
+    entry exists; this function does not itself test the entry count.
+ */
       ZipFileHeader* getElement();
+/** Advance after a successful getElement().
+    @return True when another directory entry is expected, false at the end.
+    This does not load or validate the next entry. Stop after false.
+ */
       bool nextElement();
    private:
 #endif
@@ -337,16 +377,31 @@ typedef struct CentralDirIterator
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc CentralDirIterator::getECode
+    @param o Required initialized iterator.
+ */
 #define CentralDirIterator_getECode(o) (o)->err
+/** @copydoc CentralDirIterator::CentralDirIterator(ZipContainer*)
+    @param o Required storage to initialize.
+ */
 BA_API void CentralDirIterator_constructor(CentralDirIterator* o,
                                     struct ZipContainer* container);
 /* Re-entrant version,
  * minimum size for buffer is 256
  */
+/** @copydoc CentralDirIterator::CentralDirIterator(ZipContainer*,U8*,U32)
+    @param o Required storage to initialize.
+ */
 BA_API void CentralDirIterator_constructorR(CentralDirIterator* o,
                                      struct ZipContainer* container,
                                      U8* buf, U32 bufSize);
+/** @copydoc CentralDirIterator::getElement
+    @param o Required initialized iterator.
+ */
 BA_API ZipFileHeader* CentralDirIterator_getElement(CentralDirIterator* o);
+/** @copydoc CentralDirIterator::nextElement
+    @param o Required initialized iterator.
+ */
 BA_API BaBool CentralDirIterator_nextElement(CentralDirIterator* o);
 #ifdef __cplusplus
 }
@@ -378,6 +433,7 @@ inline bool CentralDirIterator::nextElement() {
 typedef struct ZipContainer
 {
 #ifdef __cplusplus
+      /** Uninitialized storage; call ZipContainer_constructor before use. */
       ZipContainer(){}
       void *operator new(size_t s) { return ::baMalloc(s); }
       void operator delete(void* d) { if(d) ::baFree(d); }
@@ -385,13 +441,20 @@ typedef struct ZipContainer
       void operator delete(void*, void *) { }
  
       /** Create a ZipContainer instance.
-         \param reader a ZipReader instance.
+         \param reader Required valid borrowed ZipReader; keep it alive and its
+         archive unchanged while the container is used. An invalid CspReader
+         validity marker invokes baFatalE(FE_INVALID_CSPREADER, 0).
          \param buf is a buffer with minimum size 256 bytes.
          You must make sure that this buffer is valid during the lifetime
          of the class instance.
-         \param bufSize size of buffer.
+         \param bufSize Buffer capacity in bytes. The end-of-directory record
+         must fall within this many bytes of the end of the archive. Long ZIP
+         comments can require a larger buffer. Construction reads metadata;
+         check getECode() before creating an iterator. No ownership is transferred.
        */
       ZipContainer(ZipReader* reader, U8* buf, U32 bufSize);
+      /** @return ZipErr_NoError on successful construction, otherwise the
+          metadata/buffer/read error. This query performs no I/O. */
       ZipErr getECode();
    private:
 #endif
@@ -406,10 +469,16 @@ typedef struct ZipContainer
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc ZipContainer::ZipContainer(ZipReader*,U8*,U32)
+    @param o Required storage to initialize.
+ */
 BA_API void ZipContainer_constructor(ZipContainer* o,
                               ZipReader* reader,
                               U8* buf,
                               U32 bufSize);
+/** @copydoc ZipContainer::getECode
+    @param o Required initialized container.
+ */
 #define ZipContainer_getECode(o) (o)->errCode
 #ifdef __cplusplus
 }

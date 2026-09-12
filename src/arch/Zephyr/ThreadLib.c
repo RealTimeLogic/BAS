@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5676 2025-10-20 14:28:22Z wini $
+ *   $Id: ThreadLib.c 5971 2026-09-11 10:01:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022 - 2025
+ *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -63,10 +63,13 @@ BaTime baGetUnixTime(void)
 void HttpSockaddr_gethostbynameF(
    HttpSockaddr* o, const char* host, BaBool useIp6, int* status) 
 {
+   *status=0;
+   o->isIp6=useIp6;
    if(host)
    {
       struct zsock_addrinfo hints;
       struct zsock_addrinfo* retAddrInfoPtr;
+      memset(&hints, 0, sizeof(hints));
       hints.ai_flags = AI_ALL;
       hints.ai_family = useIp6 ? AF_INET6 : AF_INET;
       if(zsock_getaddrinfo(host, 0, &hints, &retAddrInfoPtr) == 0)
@@ -87,6 +90,7 @@ void HttpSockaddr_gethostbynameF(
          }
          else
             *status=-1;
+         zsock_freeaddrinfo(retAddrInfoPtr);
       }
       else
          *status=-1;

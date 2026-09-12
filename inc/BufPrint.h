@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BufPrint.h 5839 2026-07-29 13:27:22Z wini $
+ *   $Id: BufPrint.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
@@ -34,6 +34,8 @@
  *
  */
 
+/** @file BufPrint.h */
+
 #ifndef __BufPrint_h
 #define __BufPrint_h
 
@@ -52,24 +54,27 @@ struct BufPrint;
 extern "C" {
 #endif
 
-/** This function is similar to sprintf, but uses much less stack and
-    is more suitable for a real time operating system with limited
-    stack size.
+/** Format into caller-owned storage using BufPrint::printf conversions.
+ * @param[out] buf Writable buffer large enough for all output and NUL.
+ * No capacity check is possible with this interface.
+ * @param[in] fmt NUL-terminated format; following arguments must match it.
+ * @return Output byte count excluding NUL on success, or a negative error.
+ * Failure may leave partial output without a terminator.
+ */
 
-    \param buf The buffer to where the data is formatted.
-    \param fmt See BufPrint::printf
-*/
 BA_API int basprintf(char* buf, const char* fmt, ...);
 
-/** A safe version of sprintf.  This function is similar to
-    snprintf. The second argument specifies the buffer length and
-    basnprintf returns -1 if the buffer being formatted should exceed
-    that length.
+/** Format into a bounded caller-owned buffer.
+ * @param[out] buf Writable storage of at least len bytes.
+ * @param[in] len Positive capacity including space for the terminating NUL.
+ * @param[in] fmt NUL-terminated format; following arguments must match it.
+ * See BufPrint::printf for supported conversions.
+ * @return Output byte count excluding NUL on success; -1 on insufficient
+ * capacity or another formatting error. This is not the required length.
+ * Overflow can assert in debug builds. Failure does not guarantee a
+ * NUL-terminated result.
+ */
 
-    \param buf The buffer to where the data is formatted.
-    \param len length of the buffer.
-    \param fmt See BufPrint::printf
-*/
 BA_API int basnprintf(char* buf, int len, const char* fmt, ...);
 
 #ifdef __cplusplus
@@ -93,7 +98,7 @@ The following default callback is set if no callback is installed when
 calling the BufPrint constructor:
 
 \code
-BufPrint_defaultFlush(struct BufPrint* bp, int sizeRequired)
+static int BufPrint_defaultFlush(struct BufPrint* bp, int sizeRequired)
 {
    bp->cursor=0; // Reset
    baAssert(sizeRequired == 0); // Program error in code calling BufPrint_xxx
@@ -101,16 +106,21 @@ BufPrint_defaultFlush(struct BufPrint* bp, int sizeRequired)
 }
 \endcode
 
-\param o the object. BufPrint is typically upcasted to the derived object.
-\param sizeRequired the minimum size the buffer must expand. Note that
-sizeRequired will be zero when the callback is called via
-BufPrint::flush
+\param o Borrowed writer. Update its buffer, capacity and cursor when
+providing more space or consuming pending bytes.
+\param sizeRequired Additional space requested in bytes. Zero denotes
+an explicit flush, or initial buffer creation by printf/vprintf. A callback
+that grows storage must preserve pending bytes. A callback that sends data
+must reset the cursor and leave usable storage for continued output.
+\return Zero on success; a negative status on failure. Use negative errors
+consistently: some operations propagate the status, others return -1.
+Earlier bytes may already have been sent when a later operation fails.
 
 */
 typedef int (*BufPrint_Flush)(struct BufPrint* o, int sizeRequired);
 
-/** The BufPrint class, which implements an ANSI compatible printf
-    method, is a base class used by several other classes.
+/** The BufPrint class, which implements a compact printf-style
+    formatter, is a base class used by several other classes.
 
     This class does not allocate memory for the buffer. Thus, any
     class using BufPrint must provide a buffer BufPrint can use. The
@@ -125,124 +135,154 @@ typedef struct BufPrint
       /** BufPrint constructor. When using this constructor, make sure
           to also call setBuf(). C constructor name: BufPrint_constructor
 
-          \param userData an optional argument stored in the BufPrint
+          \param userData Optional borrowed pointer (default NULL) stored in the BufPrint
           object and accessible in the flush callback.
-          \param flush a pointer to the flush callback function. See
+          \param flush Optional callback; NULL selects the fixed-buffer callback. See
           #BufPrint_Flush for details.
 
           \sa setBuf(), getUserData()
       */
       BufPrint(void* userData=0, BufPrint_Flush flush=0);
 
-   /** BufPrint constructor. When using this constructor, make sure
-       to also call setBuf(). C constructor name: BufPrint_constructor2
+   /** Initialize a writer using caller-owned storage.
+       C constructor name: BufPrint_constructor2
        
-       \param buf the buffer
-       \param size the buffer size
-       \param userData an optional argument stored in the BufPrint
+       \param buf Borrowed writable storage; must remain valid while installed.
+       \param size Nonnegative capacity in bytes. Supply usable storage before writing.
+       \param userData Optional borrowed pointer (default NULL) stored in the BufPrint
        object and accessible in the flush callback.
-       \param flush a pointer to the flush callback function. See
+       \param flush Optional callback; NULL selects the fixed-buffer callback. See
        #BufPrint_Flush for details.
        
        \sa setBuf(), getUserData()
    */
    BufPrint(char* buf,int size,void* userData=0,BufPrint_Flush flush=0);
 
-      /** Returns the user data pointer set in the constructor.
+      /** @return Borrowed user data pointer set in the constructor, possibly NULL.
        */
       void* getUserData();
 
-      /** The printf function's format is identical to the standard
-          ANSI vprintf function. See BufPrint::printf for the format flags.
-          \param fmt See vprintf in the
-<a href="../clib.html#stdio.h">
-          C Standard Library</a> for more information.
-          \param argList See vprintf in the C Standard Library for
-          more information.
-      */
+      /** Format arguments into this writer.
+ * @param[in] fmt NUL-terminated format using printf's supported conversions.
+ * @param[in] argList Initialized argument list matching fmt. Its state after
+ * this call is platform dependent; use va_copy if it is needed again.
+ * @return Zero on success, negative status on failure; not a byte count.
+ * Output is not automatically NUL-terminated or flushed. Partial output may
+ * remain buffered or already have been sent on failure.
+ * @sa printf
+ */
+
       int vprintf(const char* fmt, va_list argList);
 
-      /** The printf function's format is identical to the standard
-          ANSI printf function, but with the following extensions:
+      /** Format values using the compact BAS formatter.
+ * Supports integer conversions %%d, %%i, %%u, %%o, %%x, %%X; %%p, %%c, %%s and %%;
+ * flags -, +, space, # and 0; width and precision (including *); and the
+ * h, l and ll integer length modifiers. %%lld and %%llu format S64 and U64.
+ * %%f, %%e, %%E, %%g and %%G require floating-point support in the build.
+ * This is not a complete implementation of the C library printf.
+ *
+ * %%j takes a NUL-terminated UTF-8 string and emits a quoted JSON string using
+ * jsonString. Precision limits input bytes and must not split a UTF-8 sequence.
+ * %%s and %%j require complete NUL-terminated input even with precision.
+ * NULL string pointers become "(null)" (%%j also adds JSON quotes).
+ * Avoid %%n: this implementation does not maintain an output byte count.
+ *
+ * @param[in] fmt Required NUL-terminated format. Following arguments must
+ * match the conversions and promoted C types. Keep widths and precisions
+ * within signed-short range; literal fields are limited by the parser.
+ * @return Zero on success, negative status on failure, not a byte count.
+ * Partial output can remain on failure. Does not append NUL or flush.
+ * @sa vprintf jsonString
+ */
 
-          \li %%lld is for printing S64 or a signed representation of a U64.
-          \li %%llu is for printing an unsigned U64.
-          \li %%j is similar to %%s, but the string is encoded by using
-          BufPrint::jsonString
-
-          \param fmt See vprintf in the
-          <a href="../clib.html#stdio.h">
-          C Standard Library</a> for more information.
-       */
       int printf(const char* fmt, ...);
 
-      /** print character (wrapper for BufPrint_putc) */
+      /** Append one byte (C function: BufPrint_putc).
+ * @param[in] c Character value converted to char.
+ * @return Zero on success, -1 if obtaining buffer space fails.
+ */
+
       int baputc(int c);
 
-      /** Write data to the buffer.
-       * \param data pointer to data.
-       * \param len size of data.
-       */
+      /** Append bytes, flushing or expanding through the callback as needed.
+ * @param[in] data Borrowed readable source; must not overlap destination
+ * storage. With negative len, supply a NUL-terminated string.
+ * @param[in] len Byte count, or a negative value to use strlen(data).
+ * Length and cursor arithmetic must fit int.
+ * @return Zero on success, negative callback status on failure. Earlier bytes
+ * may already have been buffered or sent. Does not append NUL.
+ */
+
       int write(const void* data, int len);
 
-      /** Used for sending a zero terminated string to the client.
-         C method name is BufPrint_write2.
-         \param buf a reference to the string.
-       */
+      /** Append a NUL-terminated string (C macro: BufPrint_write2).
+ * @param[in] buf Required readable string, not overlapping writer storage.
+ * Its length must fit int; the terminating NUL is not copied.
+ * @return Zero on success, negative callback status on failure. Partial output
+ * may already have been produced.
+ */
+
       int write(const char* buf);
 
 
-   /** Set the buffer used by BufPrint
-    \param buf the buffer
-    \param size the buffer size
+   /** Replace borrowed storage and reset the cursor, discarding pending data.
+    Neither the old nor new storage is freed by BufPrint.
+    \param buf Borrowed writable storage; must remain valid while installed.
+    \param size Nonnegative capacity in bytes. Supply usable storage before writing.
    */
    void setBuf(char* buf, int size);
 
 
       /** Returns a pointer to the internal buffer. Please note that
        * the buffer returned by this method is not zero terminated.
+       * @return Borrowed buffer pointer, possibly NULL before setup. The pointer
+       * can change when the callback replaces or reallocates storage.
        * \sa BufPrint::getBufSize
        */
       char* getBuf();
 
-      /** Returns current size of internal formatted data */
+      /** @return Pending byte count, not capacity or total bytes previously sent. */
       U32 getBufSize();
 
 
       /** resets the cursor, thus erasing the data in the buffer */
       void erase();
 
-      /** Flush buffer */
+      /** Deliver pending bytes to the callback with sizeRequired zero.
+       * @return Zero if empty; otherwise the callback status (zero success,
+       * negative failure). The cursor is reset even if the callback fails. */
       int flush();
 
-      /** Encode binary data as Base64.
-          \sa baB64Decode
-          \param data binary data or string to be encoded as B64.
-          \param slen the data size.
-      */
+      /** Append standard Base64 with = padding, without a NUL terminator.
+ * @param[in] data Borrowed source containing at least slen readable bytes.
+ * @param[in] slen Nonnegative source length in bytes; zero produces no output.
+ * @return Zero on success, -1 on output failure. Partial output is possible.
+ * @sa baB64Decode
+ */
+
       int b64Encode(const void* data, S32 slen);
 
-      /** Encode binary data as Base64url.
-          \sa baB64Decode
-          \param source binary data or string to be encoded as B64.
-          \param slen the data size.
-          \param padding add padding characters.
-      */
+      /** Append Base64url using - and _, without a NUL terminator.
+ * @param[in] source Borrowed source containing at least slen readable bytes.
+ * @param[in] slen Nonnegative source length in bytes; zero produces no output.
+ * @param[in] padding True appends = padding, false omits it.
+ * @return Zero on success, -1 on output failure. Partial output is possible.
+ * @sa baB64Decode
+ */
+
    int b64urlEncode(const void* source, S32 slen, bool padding);
 
-      /** Print and escape a string such that a browser can run the
-          JavaScript 'eval' function and produce a string identical to the
-          string the 'str' argument points to. The string must be ASCII or
-          UTF8. A UTF8 string is converted to JavaScript Unicode i.e. to
-          \\uxxxx.
+      /** Append a complete quoted JSON string.
+ * Escapes ASCII control characters, quotes, slash and backslash. UTF-8 is
+ * validated and encoded as \\uxxxx sequences, using surrogate pairs for
+ * characters outside the Basic Multilingual Plane. Does not append NUL.
+ * @param[in] str Borrowed ASCII or UTF-8 bytes. Embedded NUL bytes are escaped.
+ * @param[in] len Exact readable byte count; no NUL terminator is required.
+ * @return Zero on success; negative status on invalid UTF-8 or output failure.
+ * Failure can leave a partial quoted string in the buffer or output stream.
+ * @sa printf
+ */
 
-          The function can, for example, be used if the server generates a
-          <a href="http://json.org">JSON</a>
-          response or generates dynamic JavaScript in a CSP page.
-          \param str string data.
-          \param len string length.
-          \sa BufPrint::printf with format flag j
-      */
       int jsonString(const char* str, size_t len);
 #endif
       BufPrint_Flush flushCB;
@@ -264,26 +304,77 @@ typedef struct BufPrint
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @param[in] o Initialized writer.
+ * @return Borrowed callback context, possibly NULL. */
 #define BufPrint_getUserData(o) (o)->userData
+/** Discard pending bytes without flushing or releasing storage.
+ * @param[in,out] o Initialized writer. */
 #define BufPrint_erase(o) (o)->cursor=0
+/** @param[in] o Initialized writer.
+ * @return Borrowed buffer, possibly NULL; not automatically NUL-terminated.
+ * Replacing or expanding storage invalidates this pointer. */
 #define BufPrint_getBuf(o) (o)->buf
+/** Replace borrowed storage and discard pending bytes.
+ * @param[in,out] o Initialized writer.
+ * @param[in] b Writable buffer, valid while installed; not freed by BufPrint.
+ * @param[in] size Nonnegative capacity in bytes. */
 #define BufPrint_setBuf(o, b, size) (o)->buf=b,(o)->bufSize=size,(o)->cursor=0
+/** @param[in] o Initialized writer.
+ * @return Pending byte count, not capacity or previously sent bytes. */
 #define BufPrint_getBufSize(o) (o)->cursor
+/** Initialize a writer without storage; install a buffer before writing.
+ * @param[out] o Caller-owned writer.
+ * @param[in] userData Optional borrowed callback context, or NULL.
+ * @param[in] flush Callback or NULL for the default fixed-buffer callback.
+ * @sa BufPrint_Flush */
 BA_API void BufPrint_constructor(
    BufPrint* o,void* userData,BufPrint_Flush flush);
+/** Initialize a writer with borrowed storage.
+ * @param[out] o Caller-owned writer.
+ * @param[in] buf Writable buffer, valid while installed.
+ * @param[in] size Nonnegative buffer capacity in bytes.
+ * @param[in] userData Optional borrowed callback context, or NULL.
+ * @param[in] flush Callback or NULL for the default fixed-buffer callback.
+ * @sa BufPrint_Flush */
 BA_API void BufPrint_constructor2(
    BufPrint* o, char* buf,int size,void* userData,BufPrint_Flush flush);
+/** No operation: BufPrint does not own its storage or context.
+ * @param[in] o Writer being destroyed; release owned resources separately. */
 #define BufPrint_destructor(o)
+/** @copydoc BufPrint::vprintf
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_vprintf(BufPrint* o, const char* fmt, va_list argList);
+/** @copydoc BufPrint::printf
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_printf(BufPrint* o, const char* fmt, ...);
+/** @copydoc BufPrint::write(const void*, int)
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_write(BufPrint* o, const void* data, int len);
+/** @copydoc BufPrint::baputc
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_putc(BufPrint* o, int c);
+/** @copydoc BufPrint::flush
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_flush(BufPrint* o);
+/** Append a NUL-terminated string without copying its terminator.
+ * @param[in,out] o Initialized writer.
+ * @param[in] data Required string, length fitting int, not overlapping storage.
+ * @return Zero on success, negative callback error on failure; partial output
+ * may have been produced. See BufPrint::write(const char*). */
 #define BufPrint_write2(o, data) BufPrint_write(o, data, -1)
+/** Append padded standard Base64; see BufPrint::b64Encode.
+ * @param[in,out] o Initialized writer.
+ * @param[in] source Borrowed readable bytes.
+ * @param[in] slen Nonnegative source length in bytes.
+ * @return Zero on success, -1 on output failure. Partial output is possible. */
 BA_API int BufPrint_b64Encode(BufPrint* o, const void* source, S32 slen);
+/** @copydoc BufPrint::b64urlEncode
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_b64urlEncode(
    BufPrint* o, const void* source, S32 slen, BaBool padding);
 
+/** @copydoc BufPrint::jsonString
+ * @param[in,out] o Initialized writer. */
 BA_API int BufPrint_jsonString(BufPrint* o, const char* str, size_t len);
 #ifdef __cplusplus
 }

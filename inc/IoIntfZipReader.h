@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: IoIntfZipReader.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: IoIntfZipReader.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+/** @file IoIntfZipReader.h */
+
 #ifndef __IoIntfZipReader_h
 #define __IoIntfZipReader_h
 
@@ -50,23 +52,35 @@ typedef struct IoIntfZipReader
 #ifdef __cplusplus
 : public ZipReader
 {
+      /** Uninitialized storage; call IoIntfZipReader_constructor before use
+       * or destruction. */
       IoIntfZipReader() {}
 
    /** The IoIntfZipReader constructor opens the ZIP file for reading.
-       \param io the I/O interface to read from.
-       \param pathName the path+name to a ZIP file in the I/O interface. 
+       \param io Borrowed I/O interface. Keep it alive until the reader closes.
+       The interface must support seeking, or provide the seekAndRead property.
+       \param pathName Required NUL-terminated ZIP file path relative to io;
+       used during construction only. File size must fit U32 (no ZIP64).
+       Check getECode and inherited CspReader::isValid before use. 
    */
    IoIntfZipReader(IoIntf* io, const char* pathName);
       
-   /** The destructor closes the file connection.
+   /** Close any open resource, ignoring the close status.
+       Destroy dependent ZipIo objects and stop reads before destruction.
     */
    ~IoIntfZipReader();
 
-   /** Close the file connection.
+   /** Close and consume the underlying resource, even if closing fails.
+       Do not use a dependent ZipIo after this call.
+       @return Underlying close status (zero success, negative failure), or -1
+       if no resource is open. Does not update getECode.
+       The inherited isValid flag is not a current open/closed test.
     */
     int close();
 
-   /** Returns the last error code, if any.
+   /** @return Last construction or read status (zero success, otherwise an
+       I/O error). Short reads become IOINTF_IOERROR. Close errors and reads
+       attempted after close are not recorded here.
     */
    int getECode();
 
@@ -84,11 +98,25 @@ typedef struct IoIntfZipReader
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Initialize and open a ZIP reader; see IoIntfZipReader::IoIntfZipReader.
+ * @param[out] o Caller-owned object to initialize.
+ * @param[in] io Borrowed seekable I/O interface, valid until close.
+ * @param[in] pathName Required NUL-terminated path within io.
+ * Inspect IoIntfZipReader_getECode before use. */
 BA_API void IoIntfZipReader_constructor(IoIntfZipReader* o,
                                         IoIntf* io,
                                         const char* pathName);
+/** Close the reader; see IoIntfZipReader::close for lifetime requirements.
+ * @param[in,out] o Initialized reader, including one whose open failed.
+ * @return Zero success, underlying negative close error, or -1 if not open. */
 BA_API int IoIntfZipReader_close(IoIntfZipReader* o);
+/** Close without freeing the object itself.
+ * @param[in,out] o Initialized reader whose users have stopped.
+ * The C++ destructor discards the close result; use close to inspect it. */
 #define IoIntfZipReader_destructor(o) IoIntfZipReader_close(o);
+/** Read the stored construction/read status.
+ * @param[in] o Initialized reader.
+ * @return Zero or the last I/O error; see IoIntfZipReader::getECode. */
 #define IoIntfZipReader_getECode(o) (o)->lastECode
 #ifdef __cplusplus
 }

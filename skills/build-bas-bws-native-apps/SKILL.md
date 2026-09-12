@@ -7,6 +7,8 @@ description: Build, modify, review, port, and test native C or C++ applications 
 
 Create small, compilable native applications from the public BAS/BWS headers and exactly one amalgamated library. Verify signatures in the target checkout instead of recreating BAS types or callbacks from memory.
 
+Read [references/api-usage.md](references/api-usage.md) when selecting APIs or translating calls between C and C++. It maps tasks to headers, Doxygen, and the focused recipes below.
+
 ## Start With Evidence
 
 1. Locate the active BAS checkout and read its nearest `AGENTS.md`.

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JVal.h 5839 2026-07-29 13:27:22Z wini $
+ *   $Id: JVal.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
@@ -35,6 +35,8 @@
  *
  */
 
+/** @file JVal.h */
+
 #ifndef __JVal_h
 #define __JVal_h
 
@@ -56,11 +58,14 @@ Most methods in this class take a JErr as argument. The methods set
 an error code if the JVal is not of the expected type or any other
 errors occur.
 
-You can check for errors for each method called, but the methods are
-designed such that they abort the operation if the error flag in JErr
-is set. Some methods return NULL if an error is detected. You can
-check for NULL values, but all methods are designed such that they
-accept a NULL "this" pointer.
+Always check the supplied JErr as well as the returned value: zero/NULL can
+also be valid JSON results. Format extraction and add operations stop for an
+existing error, but individual accessors and setters do not uniformly do so.
+Some C functions accept NULL and record an error; direct accessor macros require
+non-NULL nodes. Never call a C++ member through a NULL pointer.
+
+Nodes, strings, and member names belong to their tree until explicitly detached.
+Use the matching node and data allocators when releasing detached storage.
 
 <h2>Examples:</h2>
 
@@ -72,12 +77,16 @@ See the JSON tutorial, section
 struct JVal
 {
 #ifdef __cplusplus
-      /** Returns the JSON type.
-       */
+      /** @return Stored JVType of this required live node; no conversion or validation.
+ */
       JVType getType();
 
-      /** Equivalent to get with variable argument list replaced by argList.
-       */
+      /** Extract values as for get(), using mutable format and argument cursors.
+    @param err Required initialized error container.
+    @param fmt Required pointer to a NUL-terminated format cursor, advanced by parsing.
+    @param argList Required pointer to a matching initialized va_list, consumed.
+    @return Remaining sibling pointer, possibly NULL on success; inspect err.
+ */
       JVal* vget(JErr* err,const char** fmt, va_list* argList);
 
       /** Get any type of value(s) from a JVal node or JVal tree.
@@ -113,7 +122,7 @@ struct JVal
       <td>JVal::getArray</td></tr>
       <tr><td>End array</td><td> ] </td><td>n/a</td>
       <td>n/a</td></tr>
-      <tr><td>JVal[size]</td><td> A </td><td>Array of JVal</td>
+      <tr><td>Array</td><td>A followed by b/d/l/f/s/J</td><td>typed output array pointer, int count</td>
       <td>All getXXX methods</td></tr>
       </table>
 
@@ -121,7 +130,7 @@ struct JVal
       [Using JParserValFact](@ref UsingJParserValFact)
       , for examples on how to use JVal.
 
-      \sa JDecoder::get
+      \sa JDecoderr::get
       \sa JEncoder::set
 
       <h2>Advanced C Example:</h2>
@@ -151,152 +160,226 @@ struct JVal
       }
    }
 \endcode
+             @param err Required initialized error container, preserved once set.
+      @param fmt Required NUL-terminated format. Supply a member name before each
+      object's output arguments. All output pointers must have the exact listed
+      types. A is followed by b/d/l/f/s/J and takes an output array pointer then an
+      int count. Extra source elements are ignored; output can be partially filled
+      before failure. The current empty-array path can leave outputs unchanged
+      without an error, so check the source length when requiring a fixed count.
+      Strings and JVal pointers returned in outputs remain borrowed from the tree.
+      @return Pointer to the next unconsumed sibling, or NULL at the end or on
+      failure. NULL alone is not an error test; inspect err.
        */
       JVal* get(JErr* err, const char* fmt, ...);
 
-      /** Returns the integer value for an integer JVal type or
-          attempts to convert the value to an integer. JErr is set if the
-          method cannot convert the value.
-       */
+      /** Convert a numeric, boolean, or null node to S32.
+    @param e Required initialized error container.
+    @return Converted value; null yields zero. Wrong types or a missing C node
+    record an error and return zero. Numeric conversion uses C casts; it is not
+    a range or integrality check. Floating input must be finite and representable
+    in the destination; fractional parts are discarded.
+ */
       S32 getInt(JErr* e);
 
-      /** Sets a new integer value or changes the JSON type and sets the
-          integer value.
-      */
+      /** Replace a scalar value and set its type.
+    @param e Required initialized error container receiving refusal details.
+    @param v New S32 value. No return value; inspect e.
+    Cannot replace an object/array or an attached string. Detach and release an
+    old string first. Requires a live non-NULL node; existing errors do not by
+    themselves prevent this setter from changing the node.
+ */
       void setInt(JErr* e,S32 v);
 
-      /** Returns the integer as a long value for an integer JVal type or
-          attempts to convert the value to a long integer. JErr is set if the
-          method cannot convert the value.
-       */
+      /** Convert a numeric, boolean, or null node to S64.
+    @param e Required initialized error container.
+    @return Converted value; null yields zero. Wrong types or a missing C node
+    record an error and return zero. Numeric conversion uses C casts; it is not
+    a range or integrality check. Floating input must be finite and representable
+    in the destination; fractional parts are discarded.
+ */
       S64 getLong(JErr* e);
 
-      /** Sets a new integer value or changes the JSON type and sets the
-          integer value.
-      */
+      /** Replace a scalar value and set its type.
+    @param e Required initialized error container receiving refusal details.
+    @param v New S64 value. No return value; inspect e.
+    Cannot replace an object/array or an attached string. Detach and release an
+    old string first. Requires a live non-NULL node; existing errors do not by
+    themselves prevent this setter from changing the node.
+ */
       void setLong(JErr* e,S64 v);
 
-      /** Returns the double value for a JVal float or
-          attempts to convert the value to a float. JErr is set if the
-          method cannot convert the value.
-       */
+      /** Convert a numeric, boolean, or null node to double.
+    @param e Required initialized error container.
+    @return Converted value; null yields zero. Wrong types or a missing C node
+    record an error and return zero. Numeric conversion uses C casts; it is not
+    a range or integrality check. Integer conversion can lose precision.
+ */
       double getDouble(JErr* e);
 
-      /** Sets a new float value or changes the JSON type to float and sets the
-          float value.
-      */
+      /** Replace a scalar value and set its type.
+    @param e Required initialized error container receiving refusal details.
+    @param v New double value. No return value; inspect e.
+    Cannot replace an object/array or an attached string. Detach and release an
+    old string first. Requires a live non-NULL node; existing errors do not by
+    themselves prevent this setter from changing the node.
+ */
       void setDouble(JErr* e,double v);
 
-      /** Returns the boolean value for a boolean JVal type or false if the
-          JVal is JVType_Null. JErr is set for all other types.
-      */
+      /** Read a boolean or null node.
+    @param e Required initialized error container.
+    @return Stored boolean, FALSE for JSON null, or FALSE with an error for other
+    types/missing C nodes. Numeric values are not treated as booleans.
+ */
       BaBool getBoolean(JErr* e);
 
-      /** Sets a new boolean value or changes the JSON type and sets the
-          boolean value.
-      */
+      /** Replace a scalar value and set its type.
+    @param e Required initialized error container receiving refusal details.
+    @param v New BaBool value. No return value; inspect e.
+    Cannot replace an object/array or an attached string. Detach and release an
+    old string first. Requires a live non-NULL node; existing errors do not by
+    themselves prevent this setter from changing the node.
+ */
       void setBoolean(JErr* e,BaBool v);
 
-      /** Changes the JSON type if not NULL.
-      */
+      /** Replace a scalar value with JSON null.
+    @param e Required initialized error container. Objects/arrays and attached
+    strings cannot be replaced; detach/release a string first. Requires a live
+    non-NULL node. No return value; inspect e.
+ */
       void setNull(JErr* e);
 
-      /** Returns the string as a const or returns NULL if the JVAL is
-          a NULL type. JErr is set for all other types.
-       */
+      /** Access a string without transferring ownership.
+    @param e Required initialized error container.
+    @return Borrowed NUL-terminated bytes for a string, NULL for JSON null, or NULL
+    with an error for other types/missing C nodes. Use getStringLen() to preserve
+    embedded NUL bytes. The pointer expires on replacement or tree destruction.
+ */
       const char* getString(JErr* e);
 
-      /** Returns the string length. */
+      /** @return Stored string byte length, excluding the terminator. Call on a
+    live string node; this direct accessor does not check the type.
+ */
       size_t getStringLen();
 
-      /** Sets a string value and changes the JSON type if needed. The
-          pointer is directly stored and not copied. The string must,
-          therefore, have been allocated with the dynamic allocator
-          used by the JVal tree. You cannot set a new string without
-          managing the old string.
-       */
+      /** Store a string pointer without copying it and set the node's type.
+    @param e Required initialized error container receiving refusal details.
+    @param v NUL-terminated string allocated compatibly with the tree's data
+    allocator, or NULL for an empty stored pointer. strlen determines its length.
+    On success the node takes ownership. On failure ownership stays with the caller.
+    Detach/release an old string first; object/array nodes cannot be replaced.
+    Requires a live node. No return value; inspect e.
+ */
       void setString(JErr* e, char* v);
 
-      /** Similar to getString, but you must manage the value as the
-          value is detached from the tree.
-       */
+      /** Detach a string's storage, leaving a String node with NULL data and zero length.
+    @param e Required initialized error container.
+    @return Previously owned string pointer, now caller-owned; release through the
+    original data allocator. NULL can mean no stored pointer or a type/missing-node
+    error; inspect e. JSON null is a type error for this operation.
+ */
       char* manageString(JErr* e);
 
-      /** Returns the member name if this value is part of a JSON object.
-       */
+      /** @return Borrowed member name, or NULL when absent. Use getNameLen() for
+    embedded NUL bytes. The C function also accepts a NULL node. No ownership transfers.
+ */
       const char* getName();
 
-      /** Returns the member-name length. */
+      /** @return Stored member-name byte length excluding the terminator. Requires
+    a live node; an empty name can still be an object member.
+ */
       size_t getNameLen();
 
-      /** Similar to getName, but you must manage the value as the
-          value is detached from the tree.
-       */
+      /** Detach the member name and clear its pointer/length in the node.
+    @return Caller-owned string to release through the original data allocator,
+    or NULL if absent. The C function accepts NULL. The node is no longer marked
+    as an object member after its name is detached.
+ */
       char* manageName();
 
-      /** Returns the next element if the parent is an object or an array.
-       */
+      /** @return Borrowed next sibling, or NULL at the end. Requires a live node.
+    This does not return a child or transfer ownership.
+ */
       JVal* getNextElem();
 
-      /** Returns the first child if an object. JErr is set for all
-          other types.
-       */
+      /** Access the first child of an object node.
+    @param e Required initialized error container.
+    @return Borrowed first child, NULL for an empty container, or NULL with an
+    error for the wrong type/missing C node. Inspect e to distinguish these cases.
+ */
       JVal* getObject(JErr* e);
 
-      /** Returns the first child if an array. JErr is set for all other types.
-       */
+      /** Access the first child of an array node.
+    @param e Required initialized error container.
+    @return Borrowed first child, NULL for an empty container, or NULL with an
+    error for the wrong type/missing C node. Inspect e to distinguish these cases.
+ */
       JVal* getArray(JErr* e);
 
-      /** Returns the first child if an array or object. JErr is set for all
-          other types.
-       */
+      /** Access the first child of an object or array node.
+    @param e Required initialized error container.
+    @return Borrowed first child, NULL for an empty container, or NULL with an
+    error for the wrong type/missing C node. Inspect e to distinguish these cases.
+ */
       JVal* getJ(JErr* e);
 
-      /** Similar to getJ, but you must manage the JVal as the
-          value is detached from the tree.
-       */
+      /** Detach all children from an object/array, leaving the container empty.
+    @param e Required initialized error container.
+    @return Caller-owned first child and its complete sibling chain, or NULL for
+    an empty container/error. Release using terminate() with the original allocators.
+    The parent node itself is not detached or destroyed.
+ */
       JVal* manageJ(JErr* e);
 
-      /** Returns the elements left in the list. Returns the number of
-          childs if called on the value returned by getObject,
-          getArray, or getJ.
-       */
+      /** Count immediate children of this object/array.
+    @param e Required initialized error container.
+    @return S32 child count, zero for an empty container or an error. Call on the
+    container itself, not the first child; this walks the child list.
+ */
       S32 getLength(JErr* e);
 
-      /** Returns true if this is a child element in an object.
-          Returns false if this is a child element in an array.
-      */
+      /** @return True if a member-name pointer is present (including an empty name),
+    false otherwise. Requires a live node; this does not inspect a parent pointer.
+ */
       bool isObjectMember();
 
-      /** Remove a child. Typically used together with method terminate.
-          \param child is the child to remove.
-       */
+      /** Remove one immediate child without destroying it.
+    @param child Required child to detach from this live object/array.
+    @return Zero when found and removed, -1 otherwise. Success clears child->next
+    and transfers that node/subtree to the caller; its member name is retained.
+ */
       int unlink(JVal* child);
 
-      /** Add a child to an object.
-          \param e the error container.
-          \param memberName is the object member name.
-          \param child is the element to add.
-          \param dAlloc is the allocator used for copying the memberName.
-      */
+      /** Prepend a child to an object.
+    @param e Required initialized error container.
+    @param memberName Required NUL-terminated name used only if child has no name.
+    An existing child name is retained; this does not rename it or check duplicates.
+    @param child Required detached node with next=NULL and no other owning parent.
+    @param dAlloc Allocator used to copy a missing member name. If NULL, the supplied
+    pointer is stored directly; its eventual release must still match tree ownership.
+    @return Zero on success, -1 on failure. Some linkage failures do not set e;
+    check the return. A copied name can remain on child after failure. Success
+    transfers child ownership to the tree and places it first, not last.
+ */
       int addMember(JErr* e, const char* memberName,
                     JVal* child, AllocatorIntf* dAlloc);
 
-      /** Add a child to an array.
-          \param e the error container.
-          \param child is the element to add.
-      */
+      /** Prepend a child to an array.
+    @param e Required initialized error container.
+    @param child Required detached node with next=NULL and no other owner. Use
+    an unnamed node for an array element. No copy or allocation is performed.
+    @return Zero with ownership transferred, -1 on failure. Check the return as
+    some linkage failures do not set e. Adds at the beginning of the array.
+ */
       int add(JErr* e, JVal* child);
 
-      /** Terminate the node and all sub nodes. The element to
-          terminate must be managed.
-          \param vAlloc is the allocator that was used for allocating
-          the nodes.
-          \param dAlloc is the allocator that was used for allocating
-          the strings.
-
-          \sa unlink manageJ JParserValFact::manageFirstVal
-       */
+      /** Free this node, all descendants, and all following siblings recursively.
+    @param vAlloc Required original allocator for node storage.
+    @param dAlloc Required original allocator for strings/member names.
+    Detach the chain from its owner before calling; every freed pointer becomes
+    invalid. Allocators must accept all storage being released. The C function
+    accepts NULL for an empty chain, but a C++ member call still requires a node.
+ */
       void terminate(AllocatorIntf* vAlloc, AllocatorIntf* dAlloc);
 #endif
       union
@@ -323,38 +406,141 @@ typedef struct JVal JVal;
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc JVal::getType
+    @param o Required live node.
+ */
 #define JVal_getType(o) (o)->type
+/** @copydoc JVal::vget
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_vget(JVal* o,JErr* err,const char** fmt, va_list* argList);
+/** @copydoc JVal::get
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_get(JVal* o, JErr* err, const char* fmt, ...);
+/** @copydoc JVal::getInt
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API S32 JVal_getInt(JVal* o, JErr* e);
+/** @copydoc JVal::getLong
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API S64 JVal_getLong(JVal* o, JErr* e);
+/** @copydoc JVal::getDouble
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API double JVal_getDouble(JVal* o, JErr* e);
+/** @copydoc JVal::getBoolean
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API BaBool JVal_getBoolean(JVal* o, JErr* e);
+/** @copydoc JVal::getString
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API const char* JVal_getString(JVal* o, JErr* e);
+/** @copydoc JVal::getStringLen
+    @param o Required live node.
+ */
 #define JVal_getStringLen(o) (o)->stringLen
+/** @copydoc JVal::manageString
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API char* JVal_manageString(JVal* o, JErr* e);
+/** @copydoc JVal::getName
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API const char* JVal_getName(JVal* o);
+/** @copydoc JVal::getNameLen
+    @param o Required live node.
+ */
 #define JVal_getNameLen(o) (o)->memberNameLen
+/** @copydoc JVal::manageName
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API char* JVal_manageName(JVal* o);
+/** @copydoc JVal::getNextElem
+    @param o Required live node.
+ */
 #define JVal_getNextElem(o) (o)->next
+/** @copydoc JVal::getObject
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_getObject(JVal* o, JErr* e);
+/** @copydoc JVal::getArray
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_getArray(JVal* o, JErr* e);
+/** @copydoc JVal::getJ
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_getJ(JVal* o, JErr* e);
+/** @copydoc JVal::manageJ
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API JVal* JVal_manageJ(JVal* o, JErr* e);
+/** @copydoc JVal::getLength
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API S32 JVal_getLength(struct JVal* o, JErr* e);
+/** @copydoc JVal::isObjectMember
+    @param o Required live node.
+ */
 #define JVal_isObjectMember(o) ((o)->memberName != 0) 
+/** @copydoc JVal::unlink
+    @param o Required live node.
+ */
 BA_API int JVal_unlink(JVal* o, JVal* child);
+/** @copydoc JVal::addMember
+    @param o Required live node.
+ */
 BA_API int JVal_addMember(JVal* o, JErr* e, const char* memberName,
                           JVal* child, AllocatorIntf* dAlloc);
+/** @copydoc JVal::add
+    @param o Required live node.
+ */
 BA_API int JVal_add(JVal* o, JErr* e, JVal* child);
+/** @copydoc JVal::terminate
+    @param o Node pointer; see the operation contract for NULL handling.
+ */
 BA_API void JVal_terminate(JVal* o, AllocatorIntf* vAlloc,
                            AllocatorIntf* dAlloc);
+/** @copydoc JVal::setInt
+    @param o Required live node.
+    The C macro requires v to be an addressable variable of the declared type.
+ */
 #define JVal_setInt(o, e, v) JVal_setX(o, e, JVType_Int, &v)
+/** @copydoc JVal::setLong
+    @param o Required live node.
+    The C macro requires v to be an addressable variable of the declared type.
+ */
 #define JVal_setLong(o, e, v) JVal_setX(o, e, JVType_Long, &v)
+/** @copydoc JVal::setDouble
+    @param o Required live node.
+    The C macro requires v to be an addressable variable of the declared type.
+ */
 #define JVal_setDouble(o, e, v) JVal_setX(o, e, JVType_Double, &v)
+/** @copydoc JVal::setBoolean
+    @param o Required live node.
+    The C macro requires v to be an addressable variable of the declared type.
+ */
 #define JVal_setBoolean(o, e, v) JVal_setX(o, e, JVType_Boolean, &v)
+/** @copydoc JVal::setNull
+    @param o Required live node.
+ */
 #define JVal_setNull(o, e) JVal_setX(o, e, JVType_Null, 0)
+/** @copydoc JVal::setString
+    @param o Required live node.
+ */
 #define JVal_setString(o, e, v) JVal_setX(o, e, JVType_String, v)
+/** Low-level scalar replacement used by the typed setter macros.
+    @param o Required live scalar node; objects/arrays cannot be replaced.
+    @param e Required initialized error container. An attached old string must
+    first be detached; failure is reported here, with no return value.
+    @param t New type: Int, Long, Double (when enabled), Boolean, String, or Null.
+    @param v Pointer to S32, S64, double, or BaBool storage matching t; for String
+    it is the string itself and ownership transfers on success. NULL is accepted
+    for Null and as a stored String pointer. See the typed setters for lifetime.
+ */
 BA_API void JVal_setX(JVal* o, JErr* e, JVType t, void* v);
 #ifdef __cplusplus
 }
@@ -454,35 +640,39 @@ typedef enum
     by calling JVal::manageJ on any of the children.
 
     \sa JValFact
-    \sa JDecode
+    \sa JDecoder
 */
 #ifdef __cplusplus
 typedef struct JParserValFact : public JParserIntf
 {
-      /** create a JParserValFact JVal factory instance.
-      \param vAlloc is used when allocating nodes.
-      \param dAlloc is used when allocating strings. The two
-      allocators can be the same.
-      */
+      /** Initialize a factory without allocating a tree.
+    @param vAlloc Required borrowed allocator for nodes.
+    @param dAlloc Required borrowed allocator for strings and factory stack.
+    Allocators may be the same and must outlive all storage they allocate.
+    NULL does not select a default. The factory owns its attached root.
+ */
       JParserValFact(AllocatorIntf* vAlloc, AllocatorIntf* dAlloc);
 
-      /** The destructor terminates all nodes not managed.
-       */
+      /** Free the attached root and all factory stack storage. Detached nodes
+    remain caller-owned. Borrowed allocators are not destroyed.
+ */
       ~JParserValFact();
 
-      /** Returns the root of the JVal syntax tree. 
-       */
+      /** @return Borrowed current root, or NULL when absent. After a parse failure
+    the tree may be partial; only treat it as complete after successful parsing.
+ */
       JVal* getFirstVal();
 
-      /** Similar to getFirstVal, but you must manage the JVal tree as the
-          value is detached from the JParserValFact.
-       */
+      /** Detach the current root and reset the node counter when a root exists.
+    @return Caller-owned root, or NULL if absent. Release with JVal::terminate
+    using the original allocators. The factory retains stack storage and status.
+ */
       JVal* manageFirstVal();
 
-      /** Terminate the syntax tree such that the JParserValFact
-          instance can be reused when the JParser instance parses the
-          next JSON object in a stream.
-       */
+      /** Free the attached tree and factory stack, preparing for another document.
+    Detached trees are unaffected. The stored status is not cleared; after a
+    failure, reinitialize the cleaned factory before reuse.
+ */
       void termFirstVal();
 #else
 typedef struct JParserValFact
@@ -494,18 +684,37 @@ typedef struct JParserValFact
       JVal** vStack;
       int vStackSize;
       U32 nodeCounter;
+      /** Node-count threshold, initially U32 maximum. Allocation is refused
+          when the incremented count reaches this value; it is an exclusive limit. */
       U32 maxNodes;
+      /** Factory status, initially OK; parse failures may set it. Terminating or
+          detaching the root does not clear this field. */
       JParserValFactStat status;
 } JParserValFact;
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc JParserValFact::JParserValFact
+    @param o Required storage to initialize.
+ */
 BA_API void JParserValFact_constructor(
    JParserValFact* o, AllocatorIntf* vAlloc, AllocatorIntf* dAlloc);
+/** @copydoc JParserValFact::getFirstVal
+    @param o Required initialized factory.
+ */
 #define JParserValFact_getFirstVal(o) \
    ((o)->vStack && *(o)->vStack ? *(o)->vStack : 0)
+/** @copydoc JParserValFact::manageFirstVal
+    @param o Required initialized factory.
+ */
 BA_API JVal* JParserValFact_manageFirstVal(JParserValFact* o);
+/** @copydoc JParserValFact::termFirstVal
+    @param o Required initialized factory.
+ */
 BA_API void JParserValFact_termFirstVal(JParserValFact* o);
+/** @copydoc JParserValFact::~JParserValFact
+    @param o Required initialized factory.
+ */
 BA_API void JParserValFact_destructor(JParserValFact* o);
 #ifdef __cplusplus
 }
@@ -536,43 +745,65 @@ inline JParserValFact::~JParserValFact() {
 typedef struct JValFact
 {
 #ifdef __cplusplus
-      /** create a JValFact JVal factory instance.
-      \param vAlloc is used when allocating nodes.
-      \param dAlloc is used when allocating strings. The two
-      allocators can be the same.
-      */
+      /** Initialize a factory without allocating a tree.
+    @param vAlloc Required borrowed allocator for nodes.
+    @param dAlloc Required borrowed allocator for strings.
+    Allocators may be the same and must outlive all storage they allocate.
+    NULL does not select a default. The caller owns created nodes; the factory does not track or free them.
+ */
       JValFact(AllocatorIntf* vAlloc, AllocatorIntf* dAlloc);
       
-      /** Make a string. Returns null if the allocators failed.
-       */
+      /** Create a detached string node.
+    @param v Required NUL-terminated string, copied with dAlloc.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkString(const char* v);
 
-      /** Make a float. Returns null if the allocator failed.
-       */
+      /** Create a detached double node.
+    @param v Value copied into the new node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkDouble(double v);
 
-      /** Make an integer. Returns null if the allocator failed.
-       */
+      /** Create a detached int node.
+    @param v Value copied into the new node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkInt(S32 v);
 
-      /** Make a long integer. Returns null if the allocator failed.
-       */
+      /** Create a detached long node.
+    @param v Value copied into the new node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkLong(S64 v);
 
-      /** Make a boolean. Returns null if the allocator failed.
-       */
+      /** Create a detached boolean node.
+    @param v Value copied into the new node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkBoolean(bool v);
 
-      /** Make a null value. Returns null if the allocator failed.
-       */
+      /** Create a detached null node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators.
+ */
       JVal* mkNull();
 
-      /** Make a JSON object. Returns null if the allocator failed.
-       */
+      /** Create a detached object node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators. The container starts empty.
+ */
       JVal* mkObject();
 
-      /** Make a JSON array. Returns null if the allocator failed.
-       */
+      /** Create a detached array node.
+    @return Caller-owned node, or NULL on allocation failure. Attach it to a tree
+    or release it with JVal::terminate and the factory's original allocators. The container starts empty.
+ */
       JVal* mkArray();
 #endif
       AllocatorIntf* dAlloc;
@@ -581,16 +812,56 @@ typedef struct JValFact
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc JValFact::mkString
+    @param o Required initialized factory.
+ */
 #define JValFact_mkString(o, v) JValFact_mkVal(o, JVType_String, v)
+/** @copydoc JValFact::mkDouble
+    @param o Required initialized factory.
+    The C macro requires v to be an addressable variable of its exact numeric type.
+ */
 #define JValFact_mkDouble(o, v) JValFact_mkVal(o, JVType_Double, &v)
+/** @copydoc JValFact::mkInt
+    @param o Required initialized factory.
+    The C macro requires v to be an addressable variable of its exact numeric type.
+ */
 #define JValFact_mkInt(o, v) JValFact_mkVal(o, JVType_Int, &v)
+/** @copydoc JValFact::mkLong
+    @param o Required initialized factory.
+    The C macro requires v to be an addressable variable of its exact numeric type.
+ */
 #define JValFact_mkLong(o, v) JValFact_mkVal(o, JVType_Long, &v)
+/** @copydoc JValFact::mkBoolean
+    @param o Required initialized factory.
+    The C macro requires v to be an addressable variable of its exact numeric type.
+ */
 #define JValFact_mkBoolean(o, v) JValFact_mkVal(o, JVType_Boolean, &v)
+/** @copydoc JValFact::mkNull
+    @param o Required initialized factory.
+ */
 #define JValFact_mkNull(o) JValFact_mkVal(o, JVType_Null, 0)
+/** @copydoc JValFact::mkObject
+    @param o Required initialized factory.
+ */
 #define JValFact_mkObject(o) JValFact_mkVal(o, JVType_Object, 0)
+/** @copydoc JValFact::mkArray
+    @param o Required initialized factory.
+ */
 #define JValFact_mkArray(o) JValFact_mkVal(o, JVType_Array, 0)
+/** @copydoc JValFact::JValFact
+    @param o Required storage to initialize.
+ */
 BA_API void JValFact_constructor(
    JValFact* o, AllocatorIntf* vAlloc, AllocatorIntf* dAlloc);
+/** Allocate a detached typed value.
+    @param o Required initialized factory.
+    @param t Supported JVType, excluding InvalidType; Double requires double support.
+    @param uv Pointer to the matching S32/S64/double/BaBool scalar, or the required
+    NUL-terminated string itself for String. Ignored for Null/Object/Array.
+    Values and strings are copied, not retained.
+    @return Caller-owned node, or NULL on allocation failure. Empty objects/arrays
+    have no children. Free with the factory's node and data allocators.
+ */
 BA_API JVal* JValFact_mkVal(JValFact* o, JVType t, const void* uv);
 #ifdef __cplusplus
 }

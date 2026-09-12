@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 5672 2025-10-17 00:14:58Z wini $
+ *   $Id: gBsdSock.h 5971 2026-09-11 10:01:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2025
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -683,6 +683,23 @@ typedef struct HttpSockaddr {
 #endif
 
 #ifndef HttpSockaddr_gethostbyname
+#ifdef USE_ADDRINFO
+#define HttpSockaddr_gethostbynameIp4(o, host, status) do { \
+   (o)->isIp6=FALSE; \
+   *(status)=0; \
+   if(host) { \
+      struct addrinfo hints, *result; \
+      memset(&hints, 0, sizeof(hints)); \
+      hints.ai_family=AF_INET; \
+      *(status)=getaddrinfo(host, 0, &hints, &result); \
+      if(!*(status)) { \
+         memcpy((o)->addr, &((struct sockaddr_in*)result->ai_addr)->sin_addr, 4); \
+         freeaddrinfo(result); \
+      } \
+   } \
+   else memset((o)->addr, 0, 4); \
+} while(0)
+#else
 #define HttpSockaddr_gethostbynameIp4(o, host, status)  do { \
    unsigned long ipAddr; \
    (o)->isIp6=FALSE; \
@@ -704,6 +721,8 @@ typedef struct HttpSockaddr {
    memcpy((o)->addr,&ipAddr, 4); \
 }while(0)
 
+
+#endif /* USE_ADDRINFO */
 
 #define HttpSockaddr_gethostbyname(o, host, useIp6, status) do { \
    if(useIp6) \

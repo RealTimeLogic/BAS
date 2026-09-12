@@ -28,13 +28,20 @@ Treat paths, headers, query/form parameters, cookies, bodies, frames, and peer d
 
 ## REST directory pattern
 
-Use a named `HttpDir` for a URL tree:
+Use a named `HttpDir` for a URL tree. This is a routing sketch; implement the indicated method/body validation and response before using it:
 
 ```c
 static int restService(HttpDir* dir, const char* rel, HttpCommand* cmd)
 {
    HttpRequest* req;
    HttpResponse* resp;
+
+   if(!cmd)
+   {
+      /* Static directory storage stays alive; clean up the base object. */
+      HttpDir_destructor(dir);
+      return 0;
+   }
 
    if(strncmp(rel, "users", 5) != 0 ||
       (rel[5] != 0 && rel[5] != '/'))

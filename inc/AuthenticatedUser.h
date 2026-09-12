@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: AuthenticatedUser.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+/** @file AuthenticatedUser.h */
+
 #ifndef __AuthenticatedUser_h
 #define __AuthenticatedUser_h
 
@@ -73,7 +75,7 @@ extern const char FormAuthUser_derivedType[];
     and authorizing users</a> for an introduction to the classes in
     the Authentication group.
 
-    \sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>
+    \sa <a href="../../index.html" target="top"> Barracuda Introduction </a>
 
    @{
  */
@@ -97,7 +99,8 @@ typedef enum {
 
     \param httpMethod The HTTP method type: From HttpRequest::getMethodType
 
-    \param path the path to the requested resource.
+    \param path Borrowed NUL-terminated relative resource path for this call.
+    @return TRUE to permit access, FALSE to deny. No ownership is transferred.
 */
 typedef BaBool (*AuthorizerIntf_Authorize)(
    struct AuthorizerIntf* intf,
@@ -114,7 +117,7 @@ typedef struct AuthorizerIntf
       AuthorizerIntf(){}
 
       /** The constructor
-          \param authorize Pointer to authorize method.
+          \param authorize Required callback; remains callable while this interface is used.
        */
       AuthorizerIntf(AuthorizerIntf_Authorize authorize);
 
@@ -131,7 +134,14 @@ typedef struct AuthorizerIntf
       AuthorizerIntf_Authorize authorizeFP;
 } AuthorizerIntf;
 
+/** Install the callback used by AuthorizerIntf.
+    @param authorize Required callback; remains callable while installed.
+    @param o Required storage to initialize.
+ */
 #define AuthorizerIntf_constructor(o, authorize) (o)->authorizeFP=authorize
+/** @copydoc AuthorizerIntf::authorize
+    @param o Required initialized interface.
+ */
 #define AuthorizerIntf_authorize(o, user, method, path) \
   (o)->authorizeFP(o, user, method, path)
 
@@ -166,6 +176,14 @@ AuthorizerIntf::authorize(struct AuthenticatedUser* user,
   The authenticator checks if the response is committed on return.
   The authenticator assumes the user is not authenticated if the
   response is committed.
+
+    @param intf Required application interface receiving this call.
+    @param info Required input/output authentication record. Read username/type/upwd
+    and fill password/ct and optional policy fields. All pointers are borrowed
+    for this synchronous call; do not retain the stack record.
+    @note A direct database lookup can supply NULL cmd and tracker and type Unknown.
+    Test cmd before using request/response APIs. Basic and Form permit ct=Valid
+    after a callback comparison; Digest requires password or HA1 data.
 */
 typedef void (*UserIntf_GetPwd)(struct UserIntf* intf,struct AuthInfo* info);
 
@@ -180,7 +198,7 @@ typedef struct UserIntf
       UserIntf() {}
       
       /** The UserIntf constructor.
-          \param getPwd a pointer to the get password callback function.
+          \param getPwd Required user-lookup callback; remains callable while installed.
       */
       UserIntf(UserIntf_GetPwd getPwd);
 
@@ -192,8 +210,16 @@ typedef struct UserIntf
 extern "C" {
 #endif
 
+/** Install the callback used by UserIntf.
+    @param getPwd Required callback; remains callable while installed.
+    @param o Required storage to initialize.
+ */
 #define UserIntf_constructor(o, getPwd) (o)->getPwdFp = getPwd
 
+/** Invoke UserIntf_GetPwd synchronously.
+    @param o Required initialized interface.
+    @param username Required AuthInfo pointer, despite this historical macro argument name; it is not a string.
+ */
 #define UserIntf_getPwd(o, username) (o)->getPwdFp(o, username)
 #ifdef __cplusplus
 }
@@ -246,85 +272,65 @@ typedef struct AuthenticatedUser
 {
 #ifdef __cplusplus
 
-      /** Returns a pointer to an instance of class AuthenticatedUser if
-          a session object exists and if the user is authenticated,
-          otherwise NULL is returned.
-
-          \code
-          AuthenticatedUser* user;
-          user = AuthenticatedUser::get(request);
-          \endcode
-
-          C name: AuthenticatedUser_get1
-      */ 
+      /** Find the authenticated user without creating a session.
+    @param request Required current request.
+    @return Borrowed user owned by the existing session, or NULL if unavailable.
+    Do not free it or retain it beyond logout/session destruction.
+    C equivalent: AuthenticatedUser_get1().
+ */ 
       static AuthenticatedUser* get(HttpRequest* request);
 
 
-      /** Returns a pointer to an instance of class AuthenticatedUser if
-          the user is authenticated, otherwise NULL is returned.
-
-          \code
-          AuthenticatedUser* user;
-          user = AuthenticatedUser::get(request->getSession(false));
-          \endcode
-
-          C name: AuthenticatedUser_get2
-
-          \sa HttpServer::getSession
-      */
+      /** Find the authenticated-user session attribute.
+    @param session Existing session, or NULL.
+    @return Borrowed authenticated user, or NULL when no such attribute exists.
+    C equivalent: AuthenticatedUser_get2().
+ */
       static AuthenticatedUser* get(HttpSession* session);
 
-      /** Get the session object associated with this authenticated user.
-
-      \sa HttpSession::getId
-       */
+      /** Get the containing session.
+    @return Borrowed session pointer, or NULL if not attached. Do not terminate
+    it directly to log out a user; use logout().
+ */
       HttpSession* getSession();
 
-      /** Returns the user's password or password hash as provided by the authenticator.
-       */
+      /** Access the stored credential representation.
+    @return Borrowed NUL-terminated password/hash, or NULL if unavailable. Basic
+    and Form callback-validated credentials can be represented by the placeholder
+    "?" rather than the original password. Copy before logout/session destruction.
+ */
       const char* getPassword();
 
-      /** Returns the authenticated user's name.
-       */
+      /** Access the authenticated name.
+    @return Borrowed NUL-terminated user name, or NULL if unavailable. It remains
+    valid only while the associated authentication record remains alive.
+ */
       const char* getName();
 
-      /** Logout user and terminate the session object. You should use
-        this method and not HttpSession:terminate when logging out a
-        user.
-
-        <b>Example</b>
-        \code
-        // The following code works if AuthenticatedUser::get returns NULL.
-        AuthenticatedUser::get(request)->logout();
-        \endcode
-
-        <b>Basic and Digest logout:</b>
-
-        With Basic and Digest authentication, the browser remembers
-        the user and password. This means that this method will not
-        have any effect with Basic and Digest since the user will be
-        automatically logged in as soon as the browser sends a request
-        to the server.
-
-        The only viable solution to logging out using Basic and Digest
-        is to terminate the browser client.
-
-        \param all Set to true if you want to terminate all of the
-        user's active sessions. A user may be logged in using more
-        than one client. One must typically set all=true when changing
-        password as all clients must be terminated or the clients may
-        get a 403 response.
-       */
+      /** Log out and terminate the associated session or sessions.
+    @param all False (default) terminates this session; true terminates the
+    sessions sharing this user record. Session destruction may be deferred while
+    in use, but the login slot is released immediately. Do not reuse the user pointer.
+    Basic/Digest clients can automatically log in again using cached credentials.
+    This call cannot erase credentials stored by the browser.
+    @code
+    AuthenticatedUser* user = AuthenticatedUser::get(request);
+    if(user) user->logout(); // Avoid calling a C++ member through NULL.
+    @endcode
+    The C function AuthenticatedUser_logout(NULL, FALSE) is a no-op.
+ */
       void logout(bool all=false);
 
-      /** Returns the authenticator type that was used to authenticate
-          this user.
-          \sa attribute type in AuthInfo.
-       */
+      /** Identify the authenticator that created this user.
+    @return Basic, Digest, Form, or Unknown from AuthenticatedUserType.
+    Unknown includes the shared anonymous object and unrecognized derived types.
+ */
       AuthenticatedUserType getType();
 
-      /** Returns the shared anonymous user object used internally.
-       */
+      /** Access the shared anonymous user.
+    @return Non-NULL borrowed static object named "anonymous", with type Unknown.
+    It is not a session login. Do not log it out, destroy, free, or modify it.
+ */
       static AuthenticatedUser* getAnonymous();
 #endif
       HttpSessionAttribute superClass; /*as if inherited */
@@ -343,19 +349,40 @@ AuthenticatedUser_constructor(AuthenticatedUser* o,
                               AuthUserList* list,
                               HttpSessionAttribute_Destructor destructor);
 BA_API void AuthenticatedUser_destructor(AuthenticatedUser* o);
+/** @copydoc AuthenticatedUser::get(HttpRequest*)
+ */
 BA_API AuthenticatedUser* AuthenticatedUser_get1(HttpRequest* request);
+/** @copydoc AuthenticatedUser::get(HttpSession*)
+ */
 BA_API AuthenticatedUser* AuthenticatedUser_get2(HttpSession* session);
+/** @copydoc AuthenticatedUser::getName
+    @param o User pointer, or NULL to return NULL.
+ */
 #define AuthenticatedUser_getName(o) \
   ((o) && (o)->authUserList && (o)->authUserList->username ? \
   (o)->authUserList->username : 0)
 #define AuthenticatedUser_getDerivedType(o) (o)->derivedType
+/** @copydoc AuthenticatedUser::getSession
+    @param o Required user.
+ */
 #define AuthenticatedUser_getSession(o) \
    HttpSessionAttribute_getSession((HttpSessionAttribute*)o)
+/** @copydoc AuthenticatedUser::getPassword
+    @param o User pointer, or NULL to return NULL.
+ */
 #define AuthenticatedUser_getPassword(o) \
    ((o) && (o)->authUserList && (o)->authUserList->password ? \
     (o)->authUserList->password : 0)
+/** @copydoc AuthenticatedUser::logout
+    @param o Session-owned authenticated user, or NULL for a no-op. Do not pass the anonymous object.
+ */
 BA_API void AuthenticatedUser_logout(AuthenticatedUser* o, BaBool all);
+/** @copydoc AuthenticatedUser::getType
+    @param o Required authenticated user.
+ */
 BA_API AuthenticatedUserType AuthenticatedUser_getType(AuthenticatedUser* o);
+/** @copydoc AuthenticatedUser::getAnonymous
+ */
 BA_API AuthenticatedUser* AuthenticatedUser_getAnonymous(void);
 #ifdef __cplusplus
 }
@@ -392,7 +419,7 @@ typedef AuthenticatedUser* (*AuthenticatorIntf_Authenticate)(
 
 
 /** Abstract interface class implemented by DigestAuthenticator,
- *  FormAuthenticator and DigestAuthenticator.
+ *  FormAuthenticator and BasicAuthenticator.
  */ 
 typedef struct AuthenticatorIntf
 {
@@ -400,12 +427,14 @@ typedef struct AuthenticatorIntf
       /*Only to be used as default constructor when sub-classing with C code*/
       AuthenticatorIntf(){}
 
-      /** The constructor is used by one of the BasicAuthenticator,
-       * DigestAuthenticator or FormAuthenticator constructors.
+      /** Install an authentication callback.
+          @param authenticate Required callback; remains callable while installed.
        */
       AuthenticatorIntf(AuthenticatorIntf_Authenticate authenticate);
 
       /** Authenticate the user.
+          @param relPath Borrowed NUL-terminated relative resource path.
+          @param cmd Required current request/response container.
           \return The AuthenticatedUser if authenticated, otherwise
           NULL is returned.
       */
@@ -418,9 +447,16 @@ typedef struct AuthenticatorIntf
 extern "C" {
 #endif
 
+/** @copydoc AuthenticatorIntf::authenticate
+    @param o Required initialized interface.
+ */
 #define AuthenticatorIntf_authenticate(o, relPath, cmd) \
   (o)->authenticateCB(o, relPath, cmd)
 
+/** Install the callback used by AuthenticatorIntf.
+    @param authenticate Required callback; remains callable while installed.
+    @param o Required storage to initialize.
+ */
 BA_API void AuthenticatorIntf_constructor(
    AuthenticatorIntf* o,
    AuthenticatorIntf_Authenticate authenticate);
@@ -447,7 +483,12 @@ inline AuthenticatedUser* AuthenticatorIntf::authenticate(
     detect the difference between sending the login page and the error
     page by checking info->username. This variable is NULL when the
     callback must send the login page.
- */
+ 
+    @param intf Required application login-response interface.
+    @param info Required borrowed authentication record for this call. Built-in
+    authenticator calls provide cmd for sending the response. The callback has
+    no return value; it communicates by writing the response.
+*/
 typedef void (*LoginRespIntf_Service)(struct LoginRespIntf* intf,
                                       struct AuthInfo* info);
 
@@ -463,7 +504,7 @@ typedef struct LoginRespIntf
 {
 #ifdef __cplusplus
       LoginRespIntf() {}
-      /** The UserIntf constructor.
+      /** Install the required login-response callback.
           \param service a pointer to the response service callback function.
       */
       LoginRespIntf(LoginRespIntf_Service service);
@@ -471,6 +512,10 @@ typedef struct LoginRespIntf
       LoginRespIntf_Service serviceFp;
 } LoginRespIntf;
 
+/** Install the callback used by LoginRespIntf.
+    @param service Required callback; remains callable while installed.
+    @param o Required storage to initialize.
+ */
 #define LoginRespIntf_constructor(o, service) (o)->serviceFp=service
 #ifdef __cplusplus
 inline LoginRespIntf::LoginRespIntf(LoginRespIntf_Service service) {
@@ -506,41 +551,28 @@ typedef enum {
 */
 typedef struct AuthInfo
 {
-   /** The tracker object if any. */
+   /** Borrowed optional tracker; NULL when tracking is disabled. */
    struct LoginTracker* tracker;
 
-   /** The request/response container object. */
+   /** Borrowed command for normal authentication. May be NULL for a direct user-database lookup; check before accessing HTTP state. */
    HttpCommand* cmd;
 
-   /** The user name if the client sends login information. */
+   /** Borrowed NUL-terminated input user name, or NULL when no login was supplied. Valid only during the callback flow. */
    const char* username;
 
-   /** The password provided by the user, if any. */
+   /** Borrowed supplied password when available for Basic/Form; NULL when unavailable, including Digest. Valid only during the callback flow. */
    const char* upwd;
 
-   /** The authenticated user object if the user is
-    * authenticated. */
+   /** Borrowed authenticated user when available, otherwise NULL. Initially NULL during database lookup. */
    AuthenticatedUser* user;
 
-   /** The AuthenticatedUser type. This is one of
-       AuthenticatedUserType_Basic, AuthenticatedUserType_Digest, or
-       AuthenticatedUserType_Form. You can use this type information
-       if you need to upcast the "user" variable.
-       \sa AuthenticatedUser::getType
-   */
+   /** Input authentication mechanism; Unknown is permitted for direct database lookup. Use this to interpret available credential fields. */
    AuthenticatedUserType type;
    
-   /** The ct parameter can optionally be set by the #UserIntf_GetPwd
-       function.  Must be set to AuthInfoCT_HA1 if *
-       AuthInfo::password is set to a HA1 hash or to AuthInfoCT_Valid
-       if the callback verifies (compares) the password *
-       AuthInfo::upwd with the stored password.
-   */
+   /** Credential interpretation selected by UserIntf_GetPwd. Initially AuthInfoCT_Password. HA1 requires a 32-character hexadecimal MD5 value in password. Valid/Invalid report a callback comparison for Basic/Form; they cannot replace Digest credential data. */
    AuthInfoCT ct;
 
-   /** An object that can be set by the callbacks for exchanging
-       information.
-   */
+   /** Application pointer shared between callbacks in this authentication flow; initially NULL. BAS neither owns nor frees it. */
    void* userObj;
 
    AuthUserList* authUserList;
@@ -558,43 +590,29 @@ typedef struct AuthInfo
    U32 seed;
    U32 seedKey;
 
-   /** Max number of concurrent logins for this user. This value
-    * defaults to 1. The UserIntf_GetPwd can change this
-    * value.
-    */
+   /** Maximum concurrent logins for the user; initially 3. UserIntf_GetPwd may set a positive value. Values less than 1 prevent a new login. */
    int maxUsers;
 
-   /** Shows the number of login attempts if the LoginTracker is active.
-       \sa denied
-   */
+   /** Tracker-derived login counter difference when access is denied; initially zero. It is not updated on every callback path. */
    int loginAttempts;
 
-   /** Flag set if the user is denied access by the LoginTracker.
-       \sa loginAttempts
-   */
+   /** Initially FALSE; set TRUE when the tracker validation callback denies a cached address. */
    BaBool denied;
 
-   /** Force another client to log out.
-       A user is normally prevented from logging in if the number of
-       connected clients is larger than 'maxUsers'. This flag can be
-       set by the UserIntf_GetPwd to force one of the other
-       clients to automatically log out.
-   */
+   /** Initially FALSE. UserIntf_GetPwd may set TRUE to permit removal of an existing unlocked session when the login limit is reached. This does not guarantee that an eligible session exists. */
    BaBool recycle;
 
-   /**  Must be set by UserIntf_GetPwd if the user is
-        found. This variable is by default set to '\\0' and should
-        not be changed by UserIntf_GetPwd if the user is not
-        found. The LoginRespIntf callback can from this variable
-        detect if the username is not found or if the password is
-        wrong. The LoginRespIntf callback can assume the password
-        provided by the user was wrong if this variable is set.
-        
-        Warning: max password length is 99 characters + '\\0'
-   */
+   /** Output credential storage, initially empty. For Password, copy a nonempty NUL-terminated password of at most 99 bytes. For HA1, store the 32 hexadecimal MD5 characters and a terminator. Leave empty for a missing user. Basic/Form ct=Valid can instead report a successful comparison without returning the stored password. Do not infer user existence solely from this buffer in every credential mode. */
    U8 password[100];
 } AuthInfo;
 
+/** Initialize an authentication record with zeroed optional fields.
+    @param o Required writable record.
+    @param trackerMA Borrowed tracker, or NULL.
+    @param cmdMA Borrowed command, or NULL for lookup without a request.
+    @param typeMA AuthenticatedUserType describing the lookup.
+    Sets maxUsers=3 and ct=AuthInfoCT_Password; stores no owned pointers.
+ */
 #define AuthInfo_constructor(o, trackerMA, cmdMA, typeMA) do {\
    memset(o, 0, sizeof(AuthInfo));\
    (o)->tracker=trackerMA;\
@@ -612,7 +630,13 @@ LoginTrackerNode and either accepts or denies the user. The method
 should return true if the request is accepted and false if the request
 is denied. Attribute info.denied is set by the LoginTracker if this
 method returns false.
- */
+ 
+    @param o Required callback interface.
+    @param info Required borrowed authentication input/output record.
+    @param node Required cached address node, borrowed for this call.
+    @return TRUE to permit the attempt, FALSE to deny it. This callback is called
+    only for an address already present in the cache.
+*/
 typedef BaBool (*LoginTrackerIntf_Validate)(
    struct LoginTrackerIntf* o,
    AuthInfo* info,
@@ -623,7 +647,7 @@ typedef BaBool (*LoginTrackerIntf_Validate)(
     The Login method is called when a user is authenticated.
     \param o the object
     \param info The AuthInfo container object.
-    \param node may be NULL if the object was recycled. This object
+    \param node is borrowed and may be NULL if the address is not cached. This object
     is automatically terminated as soon as this callback returns;
     i.e., the terminate callback is called.
  */
@@ -643,7 +667,12 @@ but a short "login window" is probably more than sufficient in most
 applications. The "login window" length is controlled in the
 LoginTrackerIntf_Validate callback method.
 
- */
+ 
+    @param o Required callback interface.
+    @param info Required borrowed authentication record.
+    @param node Required cached node after its counter and time are updated.
+    The callback returns no value and does not own the node.
+*/
 typedef void (*LoginTrackerIntf_LoginFailed)(
    struct LoginTrackerIntf* o,
    AuthInfo* info,
@@ -654,7 +683,12 @@ The TerminateNode method is called when the LoginTracker reuses a node
 in the internal node cache. The TerminateNode method can be used for
 clearing/releasing any data set with method
 LoginTrackerNode::setUserData.
- */
+ 
+    @param o Required callback interface.
+    @param node Required node about to leave the cache or be reused. Release any
+    application-owned userData here, but do not free the tracker-owned node.
+    Also called by clearCache() and the tracker destructor.
+*/
 typedef void (*LoginTrackerIntf_TerminateNode)(
    struct LoginTrackerIntf* o,
    struct LoginTrackerNode* node);
@@ -667,7 +701,7 @@ LoginTrackerIntf.
 typedef struct LoginTrackerIntf
 {
 #ifdef __cplusplus
-      /** Create a LoginTrackerIntf.
+      /** Install four required callbacks; none may be NULL.
           \param validate validate a user.
           \param login A user successfully logged in.
           \param loginFailed The login attempt failed.
@@ -684,6 +718,13 @@ typedef struct LoginTrackerIntf
       LoginTrackerIntf_TerminateNode terminateNode;
 } LoginTrackerIntf;
 
+/** Install required tracker callbacks; no callback may be NULL.
+    @param o Required interface storage.
+    @param validateMA LoginTrackerIntf_Validate callback.
+    @param loginMA LoginTrackerIntf_Login callback.
+    @param loginFailedMA LoginTrackerIntf_LoginFailed callback.
+    @param terminateNodeMA LoginTrackerIntf_TerminateNode callback.
+ */
 #define LoginTrackerIntf_constructor(\
  o, validateMA, loginMA, loginFailedMA, terminateNodeMA) do {\
    (o)->validate=validateMA;\
@@ -691,12 +732,32 @@ typedef struct LoginTrackerIntf
    (o)->loginFailed=loginFailedMA;\
    (o)->terminateNode=terminateNodeMA;\
 } while(0)
+/** Invoke the corresponding LoginTrackerIntf callback synchronously.
+    @param o Required initialized callback interface.
+    @param request Required AuthInfo pointer (not HttpRequest).
+    @param node Required cached LoginTrackerNode.
+    @return Callback result: TRUE permits, FALSE denies.
+ */
 #define LoginTrackerIntf_validate(o, request, node) \
   (o)->validate(o, request, node)
+/** Invoke the corresponding LoginTrackerIntf callback synchronously.
+    @param o Required initialized callback interface.
+    @param request Required AuthInfo pointer.
+    @param user Borrowed LoginTrackerNode pointer, or NULL, despite the argument name.
+ */
 #define LoginTrackerIntf_login(o, request, user) \
   (o)->login(o, request, user)
+/** Invoke the corresponding LoginTrackerIntf callback synchronously.
+    @param o Required initialized callback interface.
+    @param node Required AuthInfo pointer, despite the argument name.
+    @param loginName Required LoginTrackerNode pointer, not a string.
+ */
 #define LoginTrackerIntf_loginFailed(o, node, loginName) \
   (o)->loginFailed(o, node, loginName)
+/** Invoke the corresponding LoginTrackerIntf callback synchronously.
+    @param o Required initialized callback interface.
+    @param node Required node whose application data must be released.
+ */
 #define LoginTrackerIntf_terminateNode(o, node) \
   (o)->terminateNode(o, node)
 
@@ -718,32 +779,39 @@ LoginTracker stores LoginTrackerNodes internally in a cache.
 typedef struct LoginTrackerNode
 {
 #ifdef __cplusplus
-      /** Returns the number of login attempts.
-       */
+      /** Query the address failure/denial counter.
+    @return U32 count maintained by the tracker, initially zero for a new node.
+ */
       U32 getCounter();
 
-      /** Get auxiliary counter.
-       */
+      /** Query the application auxiliary counter.
+    @return Last stored U32 value, initially zero for a new node.
+ */
       U32 getAuxCounter();
 
-      /** Set auxiliary counter.
-       */
+      /** Set the application auxiliary counter.
+    @param count U32 value, used as the baseline subtracted from loginCounter when populating denied-attempt information.
+ */
       void setAuxCounter(U32 count);
 
-      /** Return the HttpSockaddr.
-       */
+      /** Access the cached peer IP address.
+    @return Borrowed pointer valid while this node remains cached. Do not modify the address used as the tree key.
+ */
       HttpSockaddr* getAddr();
 
-      /** Store application data in this node.
-       */
+      /** Associate application data with the node.
+    @param data Borrowed application pointer, or NULL. Replacing it does not free the old value. Release owned data through the terminateNode callback.
+ */
       void setUserData(void* data);
 
-      /** Fetch stored application data in this node.
-       */
+      /** Query application data.
+    @return Last stored pointer, initially NULL; ownership remains with the application.
+ */
       void* getUserData();
 
-      /** Returns the time for the latest login attempt.
-       */
+      /** Query the latest recorded failed or denied attempt.
+    @return Unix time in seconds, as provided by baGetUnixTime().
+ */
       BaTime getTime();
 #endif
       SplayTreeNode super;
@@ -755,12 +823,33 @@ typedef struct LoginTrackerNode
       U32 auxCounter;
 } LoginTrackerNode;
 
+/** @copydoc LoginTrackerNode::getCounter
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_getCounter(o) (o)->loginCounter
+/** @copydoc LoginTrackerNode::getAuxCounter
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_getAuxCounter(o) (o)->auxCounter
+/** @copydoc LoginTrackerNode::setAuxCounter
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_setAuxCounter(o, count) (o)->auxCounter=count
+/** @copydoc LoginTrackerNode::getAddr
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_getAddr(o) (&(o)->addr)
+/** @copydoc LoginTrackerNode::setUserData
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_setUserData(o, data) (o)->userData=data
+/** @copydoc LoginTrackerNode::getUserData
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_getUserData(o) (o)->userData
+/** @copydoc LoginTrackerNode::getTime
+    @param o Required live tracker node.
+ */
 #define LoginTrackerNode_getTime(o) (o)->t
 
 #ifdef __cplusplus
@@ -793,50 +882,52 @@ inline BaTime LoginTrackerNode::getTime() {
     can be installed in an instance of one of the authenticator
     classes.
 
-A hacker may write an automated password cracker tool to exploit weak
-passwords. This is often referred to as a
-<a href="https://en.wikipedia.org/wiki/Dictionary_attack" >
-Dictionary attack</a>. 
-
-The purpose with the LoginTracker is to make it virtually impossible
-to perform dictionary attacks on the Barracuda authenticator
-classes. The LoginTracker keeps track of IP addresses that failed to
-supply the correct user name or password. The LoginTracker keeps a
-cache of LoginTrackerNode instances where each LoginTrackerNode
-stores information such as IP address and time of login attempt.
+The tracker caches failed attempts by peer IP address and delegates the decision
+    to allow another attempt to application callbacks. It does not provide a
+    built-in retry policy. A full cache reuses its oldest inserted active node.
+    Serialize access with the server mutex and keep callbacks/dependencies alive.
 */
 typedef struct LoginTracker
 {
 #ifdef __cplusplus
-      /** Create a LoginTracker instance.
-          \param noOfLoginTrackerNodes size of internal LoginTrackerNode cache.
-          \param intf the application interface used by the LoginTracker.
-          \param allocator the allocator uses when allocating the LoginTracker
-          nodes.
-      */
+      /** Allocate a fixed cache of address records.
+    @param noOfLoginTrackerNodes Requested positive cache capacity.
+    @param intf Required borrowed interface containing four non-NULL callbacks.
+    @param allocator Required allocation interface; the C++ default is
+    AllocatorIntf::getDefault(). NULL does not select a default in the C function.
+    Allocation failure calls baFatalE(FE_MALLOC, 0); there is no error return.
+    @warning The current implementation allocates one fewer node than the capacity
+    it uses and frees node storage with baFree rather than the supplied allocator.
+    These implementation limitations require a separate source repair.
+    The C++ interface has no automatic cleanup destructor; after detaching users,
+    call LoginTracker_destructor() once.
+ */
       LoginTracker(U32 noOfLoginTrackerNodes,
                    LoginTrackerIntf* intf,
                    AllocatorIntf* allocator = AllocatorIntf::getDefault());
 
-      /** Clear the LoginTrackerNode cache.
-       */
+      /** Remove all active cached addresses.
+    Invokes terminateNode for each active node and retains storage for reuse.
+    Previously returned node pointers must no longer be used as cached entries.
+ */
       void clearCache();
 
-      /** Return first LoginTrackerNode in the cache or NULL if cache empty.
-       */
+      /** Start iteration over active cached addresses in insertion order.
+    @return Borrowed first node, or NULL when empty. Keep the cache unchanged
+    during iteration; pointers may be reused after login, clearing, or recycling.
+ */
       LoginTrackerNode* getFirstNode();
 
-      /** Return the next LoginTrackerNode in the cache or NULL if no
-       * more nodes.
-       */
+      /** Advance through active cached addresses.
+    @param n Required node currently in this tracker's active list.
+    @return Borrowed next node, or NULL at the end. Do not pass NULL or a stale node.
+ */
       LoginTrackerNode* getNextNode(LoginTrackerNode* n);
 
-      /** Find LoginTrackerNode in cache by using the IP address from
-          the request object.
-       \returns the LoginTrackerNode if the user is in the cache or
-       NULL if the user either never has failed a login attempt or the
-       user is authenticated.
-       */
+      /** Find a cached address using the current connection's peer IP.
+    @param request Required request with its current connection.
+    @return Borrowed node, or NULL when not cached or peer lookup fails.
+ */
       LoginTrackerNode* find(HttpRequest* request);
 #endif
       SplayTree tree;
@@ -852,19 +943,58 @@ typedef struct LoginTracker
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc LoginTracker::LoginTracker
+    @param o Required storage to initialize.
+ */
 BA_API void LoginTracker_constructor(LoginTracker* o,
                                      U32 noOfLoginTrackerNodes,
                                      LoginTrackerIntf* intf,
                                      AllocatorIntf* allocator);
+/** Release a tracker after detaching all users.
+    @param o Required initialized tracker. Calls clearCache(), then baFree on its node storage. Does not free callback interfaces.
+ */
 BA_API void LoginTracker_destructor(LoginTracker* o);
+/** @copydoc LoginTracker::clearCache
+    @param o Required initialized tracker.
+ */
 BA_API void LoginTracker_clearCache(LoginTracker* o);
+/** @copydoc LoginTracker::getFirstNode
+    @param o Required initialized tracker.
+ */
 BA_API LoginTrackerNode* LoginTracker_getFirstNode(LoginTracker* o);
+/** @copydoc LoginTracker::getNextNode
+    @param o Required initialized tracker.
+ */
 BA_API LoginTrackerNode* LoginTracker_getNextNode(
    LoginTracker* o, LoginTrackerNode* n);
+/** C form of LoginTracker::find.
+    @param o Required tracker.
+    @param req Required request.
+    @return Borrowed node, or NULL if absent or peer lookup fails.
+ */
 BA_API LoginTrackerNode* LoginTracker_find(LoginTracker*o, HttpRequest* req);
+/** Record a failed login, inserting or recycling an address node as needed.
+    @param o Required initialized tracker.
+    @param info Required authentication record with non-NULL cmd.
+    Updates the counter/time before calling loginFailed. If peer lookup fails,
+    marks the connection terminated. No error value is returned.
+ */
 BA_API void LoginTracker_loginFailed(
    LoginTracker* o, AuthInfo* info);
+/** Check whether a cached peer may attempt authentication.
+    @param o Required initialized tracker.
+    @param info Required authentication record with non-NULL cmd.
+    @return TRUE for an uncached address or callback acceptance; FALSE for callback
+    denial or peer lookup failure. Denial updates denied/loginAttempts and the
+    node counter/time. Peer lookup failure sends an HTTP 501 response.
+ */
 BA_API BaBool LoginTracker_validate(LoginTracker* o, AuthInfo* info);
+/** Notify successful authentication and remove any cached peer entry.
+    @param o Required initialized tracker.
+    @param info Required authentication record with non-NULL cmd.
+    Calls login with a node or NULL, then terminateNode for an existing node
+    before recycling it. Callback pointers are borrowed and must not be retained.
+ */
 BA_API void LoginTracker_login(LoginTracker* o, AuthInfo* info);
 #ifdef __cplusplus
 }

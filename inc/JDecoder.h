@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JDecoder.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: JDecoder.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -33,6 +33,8 @@
  *               http://realtimelogic.com
  ****************************************************************************
 */
+
+/** @file JDecoder.h */
 
 #ifndef __jdecode_h
 #define __jdecode_h
@@ -60,19 +62,18 @@ typedef enum {
    /** Parsed data includes a member whose name is not in value tree. */
    JDecoderS_NameNotFound,
 
-   /** Received more array or object member values from parsed data than
-    * found in value tree.
+   /** Unconsumed schema values remain when a container ends; also used
+    * for excessive schema nesting.
     */
    JDecoderS_Overflow,
 
    /** Parsed string longer than buffer provided */
    JDecoderS_StringOverflow,
 
-   /** Incorrect use of '{', '}', '[', or '[' in JDecoder::get */
+   /** Incorrect use of '{', '}', '[', or ']' in JDecoder::get */
    JDecoderS_Unbalanced,
 
-   /** Received less array or object member values from parsed data than
-    * found in value tree.
+   /** Input supplies another value after all schema children were consumed.
     */
    JDecoderS_Underflow,
 
@@ -141,7 +142,11 @@ typedef struct JDecoder
 #ifdef __cplusplus
 : public JParserIntf
 {
-   /** See JDecoder::get for details */
+   /** Build the same schema as get(), consuming a variable argument list.
+       @param fmt Required format string, as for get().
+       @param argList Required pointer to an initialized va_list, consumed by this
+       call. Match the exact argument types documented by get().
+       @return Zero on success, -1 on schema setup failure. */
    int vget(const char* fmt, va_list* argList);
 
    /** Build a pointer value tree that is used by the integrated
@@ -155,7 +160,7 @@ typedef struct JDecoder
       <tr><td>Number</td><td> l </td><td>S64*</td></tr>
       <tr><td>Number</td><td> f </td><td>double*</td></tr>
       <tr><td>boolean</td><td> b </td><td>BaBool* or U8*</td></tr>
-      <tr><td>string</td><td> s </td><td>char**</td></tr>
+      <tr><td>string</td><td> s </td><td>char* buffer, size_t capacity</td></tr>
       <tr><td>Start object</td><td> { </td><td>n/a</td></tr>
       <tr><td>End object</td><td> } </td><td>n/a</td></tr>
       <tr><td>Start array</td><td> [ </td><td>n/a</td></tr>
@@ -170,17 +175,34 @@ typedef struct JDecoder
       \sa JD_MSTR
       \sa JD_ASTR
       \sa JEncoder::set
-    */
+          The format must describe a complete top-level object or array. Object
+      members take a borrowed NUL-terminated name before their destination arguments.
+      For s, pass a writable char buffer and a size_t capacity. The current length
+      check requires at least string-byte-length + 2 bytes, including spare space
+      beyond the terminator. JSON null mapped to s stores an empty C string.
+      Numeric values must match the expected kind, except S32 input can populate
+      S64 or double destinations. X delegates a container to a borrowed JParserIntf.
+      All destination pointers and member-name strings must remain valid throughout
+      parsing. Values can be partially updated before a later decoding error.
+      Call get() again before decoding another document; consuming a document
+      modifies the pointer tree.
+      @return Zero after schema construction, -1 on setup failure. Inspect status
+      for decoder details, but a too-small schema buffer can return -1 with status
+      still JDecoderS_OK. A successful get() does not mean input has been parsed.
+      */
    int get(const char* fmt, ...);
 
    /** Create/initialize a JDecoder instance.
 
        \param buf is a pointer to a buffer used internally for memory
        storage when building the pointer value tree. The minimum size
-       must be sizeof(JDecoderV) * N, where N is the number of format
+       must be greater than sizeof(JDecoderV) * N, where N is the number of format
        flags minus the end of array/object flags (] or }).
 
-       \param bufSize the size of 'buf'
+       \param bufSize Positive byte capacity of buf. Keep the schema byte offsets
+       representable in U16 (less than 65536); allocation and growth are not performed.
+       buf must be aligned to sizeof(J_ALIGNMT), normally pointer alignment, and
+       remain writable throughout schema construction and parsing.
 
        \param extraStackLen is an undocumented value and must be set to 0.
    */
@@ -192,6 +214,8 @@ typedef struct JDecoder
 {
       JParserIntf super; /* Inherits from JParserIntf */
 #endif
+   /** Decoder status set by get() and parser callbacks. Read after get()/parse;
+       construction alone does not initialize this field. */
    JDecoderS status;
    JParserIntf* pIntf;
    int startServiceLevel;
@@ -204,17 +228,17 @@ typedef struct JDecoder
 
 
 /** JDecoder::get helper macro, used when setting a number pointer in an object.
-    encoder.set("{d}", JD_MNUM(structval, membername));
+    decoder.get("{d}", JD_MNUM(structval, membername));
 */
 #define JD_MNUM(o, m) #m, &(o)->m
 
 /** JDecoder::get helper macro, used when setting a string pointer in an object.
-    encoder.set("{s}", JD_MSTR(structval, membername));
+    decoder.get("{s}", JD_MSTR(structval, membername));
 */
 #define JD_MSTR(o, m) #m, &(o)->m, sizeof((o)->m)
 
 /** JDecoder::get helper macro, used when setting a string pointer in an array.
-    encoder.set("[s]", JD_ASTR(structval, membername));
+    decoder.get("[s]", JD_ASTR(structval, membername));
 */
 #define JD_ASTR(o, m) &(o)->m, sizeof((o)->m)
 
@@ -222,8 +246,17 @@ typedef struct JDecoder
 extern "C" {
 #endif
 
+/** @copydoc JDecoder::vget
+    @param o Required initialized decoder.
+ */
 int JDecoder_vget(JDecoder* o, const char* fmt, va_list* argList);
+/** @copydoc JDecoder::get
+    @param o Required initialized decoder.
+ */
 int JDecoder_get(JDecoder* o, const char* fmt, ...);
+/** @copydoc JDecoder::JDecoder
+    @param o Required storage to initialize.
+ */
 void JDecoder_constructor(
    JDecoder* o, U8* buf, int bufSize, int extraStackLen);
 #ifdef __cplusplus

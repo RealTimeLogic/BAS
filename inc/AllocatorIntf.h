@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AllocatorIntf.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: AllocatorIntf.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -35,6 +35,8 @@
  *
  */
 
+/** @file AllocatorIntf.h */
+
 #ifndef __AllocatorIntf_h
 #define __AllocatorIntf_h
  
@@ -48,24 +50,37 @@
 
 struct AllocatorIntf;
 
-/** Malloc prototype.
-    \param size the size required.  The allocator can change the
-    size to a size larger than the one requested.
-    \sa AllocatorIntf::AllocatorIntf
-*/
+/** Allocate a block using an allocator implementation.
+ * @param[in,out] o Allocator instance supplied to the callback.
+ * @param[in,out] size Required pointer to the requested byte count. On success
+ * the implementation may increase it to the actual allocation size. Its value
+ * on failure, and the handling of a zero request, depend on the implementation.
+ * @return Uninitialized storage of at least the requested size, or NULL on
+ * failure. Release successful allocations with the same allocator's free
+ * callback. The allocator object must outlive its allocated blocks.
+ */
 typedef void* (*AllocatorIntf_Malloc)(struct AllocatorIntf* o, size_t* size);
 
-/** Realloc prototype.
-    \param size the size required.  The allocator can change the
-    size to a size larger than the one requested.
-    \sa AllocatorIntf::AllocatorIntf
-*/
+/** Resize a block using the same allocator that allocated it.
+ * @param[in,out] o Allocator instance supplied to the callback.
+ * @param[in] memblock Existing allocation, or NULL to request a new block.
+ * @param[in,out] size Required requested byte count. On success it may be
+ * increased to the actual size. Use a positive size for portable behavior;
+ * zero-size behavior depends on the allocator implementation.
+ * @return Replacement block preserving the smaller of the old and new byte
+ * counts, or NULL on failure. For a positive request, failure leaves memblock
+ * owned by the caller; success invalidates the old pointer. New bytes are not
+ * initialized. This callback is optional in AllocatorIntf.
+ */
 typedef void* (*AllocatorIntf_Realloc)(
    struct AllocatorIntf* o, void* memblock, size_t* size);
 
-/** Free prototype.
-    \sa AllocatorIntf::AllocatorIntf
-*/
+/** Release a block.
+ * @param[in,out] o Allocator instance supplied to the callback.
+ * @param[in] memblock Live block obtained from this allocator. NULL handling
+ * depends on the implementation; FixedSizeAllocator requires a non-NULL block.
+ * The pointer must not be used after the callback returns.
+ */
 typedef void (*AllocatorIntf_Free)(struct AllocatorIntf* o, void* memblock);
 
 /** Memory allocation and deallocation Interface class.
@@ -82,43 +97,49 @@ typedef void (*AllocatorIntf_Free)(struct AllocatorIntf* o, void* memblock);
 typedef struct AllocatorIntf
 {
 #ifdef __cplusplus
+      /** Leave callbacks uninitialized; initialize them before use. */
       AllocatorIntf() {}
       /** Create an instance of a memory allocation class.
           This is an abstract base class and should, therefore, be sub-classed.
-          \param malloc Pointer to memory allocation method.
+          \param malloc Required allocation callback, retained without copying.
           \param realloc Pointer to memory reallocation method. This
           method is optional and the argument can be set to NULL if not
           implemented.
-          \param free Pointer to a memory deallocation method.
+          \param free Required deallocation callback, retained without copying.
       */
       AllocatorIntf(AllocatorIntf_Malloc malloc,
                     AllocatorIntf_Realloc realloc,
                     AllocatorIntf_Free free);
 
-      /** Returns a pointer to a predefined AllocatorIntf class. The
-          default implementation uses method baMalloc(), baRealloc() and
-          baFree().
-      */
+      /** Obtain the shared allocator backed by baMalloc, baRealloc and baFree.
+       * @return Borrowed process-lifetime allocator; do not free it or change
+       * its callbacks. */
       static AllocatorIntf* getDefault(void);
 
-      /** Returns pointer to uninitialized newly-allocated space for
-         an object of size "size", or NULL on error.
-         \param size the size required.  The allocator can change the
-          size to a size larger than the one requested.
-       */
+      /** Allocate uninitialized storage.
+       * @param[in,out] size Requested byte count, possibly increased on success.
+       * @return Allocated block or NULL; see AllocatorIntf_Malloc. */
       void* malloc(size_t* size);
+      /** Allocate without returning the adjusted allocation size.
+       * @param[in] size Requested byte count.
+       * @return Allocated block or NULL; see AllocatorIntf_Malloc. */
       void* malloc(size_t size) { return malloc(&size); }
 
-      /** Returns pointer to newly-allocated space for an object of
-          size "size", initialized, to minimum of old and new sizes, to
-          existing contents of p (if non-null), or NULL on error. On
-          success, old object deallocated; otherwise unchanged.
-      */
+      /** Resize an allocation.
+       * @param[in] p Block allocated by this allocator, or NULL.
+       * @param[in,out] size Requested byte count, possibly increased on success.
+       * @return Replacement block or NULL. If realloc is not implemented,
+       * returns NULL without modifying p or size. See AllocatorIntf_Realloc. */
       void* realloc(void* p, size_t* size);
+      /** Resize without returning the adjusted allocation size.
+       * @param[in] p Block allocated by this allocator, or NULL.
+       * @param[in] size Requested byte count.
+       * @return Replacement block or NULL; see AllocatorIntf_Realloc. */
       void* realloc(void* p, size_t size) { return realloc(p, &size); }
 
-      /** Deallocates space to which it points.
-       */
+      /** Release an allocation.
+       * @param[in] p Live block from this allocator. NULL is allowed only if
+       * the installed callback supports it; see AllocatorIntf_Free. */
       void free(void* p);
 #endif
       AllocatorIntf_Malloc mallocCB;
@@ -126,24 +147,47 @@ typedef struct AllocatorIntf
       AllocatorIntf_Free freeCB;
 } AllocatorIntf;
 
+/** Install allocator callbacks without allocating any memory.
+ * @param[out] o Caller-owned allocator object.
+ * @param[in] m Required allocation callback.
+ * @param[in] r Optional resize callback; NULL disables resizing.
+ * @param[in] f Required deallocation callback. */
 #define AllocatorIntf_constructor(o, m, r, f) do { \
    (o)->mallocCB=m; \
    (o)->reallocCB=r; \
    (o)->freeCB=f; \
 } while(0)
 
+/** Dispatch an allocation request.
+ * @param[in,out] o Initialized allocator.
+ * @param[in,out] size Requested byte count; see AllocatorIntf_Malloc.
+ * @return New storage or NULL on failure. */
 #define AllocatorIntf_malloc(o, size) (o)->mallocCB(o, size)
+/** Dispatch a resize request.
+ * @param[in,out] o Initialized allocator.
+ * @param[in] memblock Existing block or NULL; see AllocatorIntf_Realloc.
+ * @param[in,out] size Requested byte count; see AllocatorIntf_Realloc.
+ * @return Replacement block or NULL. An absent callback returns NULL and
+ * leaves the original block and size unchanged. */
 #define AllocatorIntf_realloc(o, memblock, size) \
    ((o)->reallocCB ? (o)->reallocCB(o,memblock,size) : 0)
+/** Dispatch a deallocation request.
+ * @param[in,out] o Initialized allocator.
+ * @param[in] memblock Block to release; see AllocatorIntf_Free. */
 #define AllocatorIntf_free(o, memblock) (o)->freeCB(o,memblock)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @return Borrowed process-lifetime allocator backed by baMalloc,
+ * baRealloc and baFree. Do not free it or change its callbacks. */
 BA_API AllocatorIntf* AllocatorIntf_getDefault(void);
 
-/** Calls method malloc in the allocator to allocate storage space for
-    a copy of str and then copies src to the allocated space.
+/** Allocate a NUL-terminated copy of a string.
+ * @param[in,out] a Required initialized allocator, used only when str is non-NULL.
+ * @param[in] str NUL-terminated source string, or NULL. The source is not modified.
+ * @return Independent copy, or NULL when str is NULL or allocation fails.
+ * Release a successful result through a. The allocation includes the NUL byte.
  */
 BA_API char* baStrdup2(struct AllocatorIntf* a, const char* str);
 

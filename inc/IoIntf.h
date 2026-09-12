@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: IoIntf.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: IoIntf.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2018
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+
+/** @file IoIntf.h */
 
 #ifndef __IoIntf_h
 #define __IoIntf_h
@@ -166,11 +168,11 @@ typedef struct ResIntf* ResIntfPtr;
  */
 typedef struct
 {
-      /** Get lastModified time. */
+      /** Last modification time in Unix seconds; availability and precision depend on the filesystem. */
       BaTime lastModified;
-      /** Get size. */
+      /** File size in bytes. A directory size has no portable meaning. */
       BaFileSize size;
-      /** Resource type */
+      /** TRUE for a directory, FALSE for a file. Read metadata only after successful stat. */
       BaBool isDir;
 } IoStat;
 
@@ -192,11 +194,13 @@ extern "C" {
 
 /** wrapper for IoIntf_Property: 'pl'.  \param o a pointer to the
     IoIntf implementation.  \param password the required password for
-    accessing the resources.  \param passwordLen the length of the
+    accessing the resources. ZipIo copies it; it must be non-NULL.
+    \param passwordLen the length of the
     password (in bytes), can be zero when the password is ASCII
     format, and in this case, the length is calculated with strlen.
-    \returns 0 on success or a non zero value if setting password not
-    implemeted by the IoIntf implementation.
+    ZipIo stores this length in U16, so keep the actual password at most 65535 bytes.
+    \returns Zero when handled, nonzero if unsupported or failed. The current
+    ZipIo text-password path does not report its copy-allocation failure.
 */
 BA_API int IoIntf_setPassword(
    IoIntfPtr o, const char* password, size_t passwordLen);
@@ -210,7 +214,7 @@ BA_API int IoIntf_setPassword(
     \param passwordBin Set to TRUE if the password is binary; it will
     be translated to an ASCII string.
     \returns 0 on success or a non zero value if setting password
-	 properties not implemeted by the IoIntf implementation.
+	 properties not implemented by the IoIntf implementation.
 */
 BA_API int IoIntf_setPasswordProp(
    IoIntfPtr o, BaBool passwordRequired, BaBool passwordBin);
@@ -227,45 +231,63 @@ BA_API int IoIntf_setPasswordProp(
 BA_API char* IoIntf_getAbspath(IoIntfPtr o, const char* path);
 
 
-/** wrapper for IoIntf_Property: 'type'.
-    \param o a pointer to the IoIntf implementation.
-    \param type is where the type is stored. Common types are 'disk' and 'zip'.
-    \param platform is where the platform type is stored. Common types
-    are 'windows' and 'POSIX'.
-*/
+/** Query the implementation's type property.
+    @param o Required initialized filesystem with propertyFp.
+    @param type Required output pointer for a borrowed NUL-terminated type string,
+    such as "disk" or "zip". Do not free the returned string.
+    @param platform Optional output pointer for a borrowed platform string; may
+    equal the type where no separate platform is reported. NULL omits it.
+    @return Zero on success, nonzero if unsupported or failed. Outputs are valid
+    only on success and should be copied before filesystem destruction.
+ */
 BA_API int IoIntf_getType(IoIntfPtr o,const char** type,const char** platform);
 
 /** wrapper for IoIntf_Property: 'aes'.
     \param o a pointer to the IoIntf implementation.
     \param name the file name.
-    \param isEncrypted return value set to TRUE or FALSE.
-    \returns zero if found. Non-zero if not found.
+    \param isEncrypted Required output pointer receiving TRUE or FALSE on success.
+    \returns Zero when the encryption flag was obtained. Nonzero when
+    unsupported, not found, or another error occurs; do not use the output then.
 */
 BA_API int IoIntf_isEncrypted(
    IoIntfPtr o,const char* name,BaBool* isEncrypted);
 
 
-/** Virtual destructor.
-    Releases dynamically allocated resources.
-*/
+/** Invoke the implementation's "destructor" property.
+    @param o Required initialized filesystem implementing that property. Close
+    resources/iterators and detach all users first. Implementation-owned storage
+    is released; the caller still owns the IoIntf object itself.
+    There is no error return; debug builds assert that the property succeeds.
+ */
 BA_API void IoIntf_destructor(IoIntfPtr o);
 
 
-/** Open a file for writing.
-    Inflates the gzip file as it is saved.
-    Function in BaGzip.c.
-    Function pointer in HttpUpload.c
-    See BaGzip.c for more info.
-*/
+/** Open a destination that accepts gzip bytes and stores decompressed data.
+    @param io Required writable filesystem, borrowed until the resource is closed.
+    @param name Required NUL-terminated destination path, used during opening.
+    @param status Required I/O status output.
+    @param ecode Optional output for a borrowed implementation error string.
+    @return Owned writable resource, or NULL on failure. Check write and close
+    results for gzip/data errors. Opening may create or truncate the destination.
+    Supplied by the optional BaGzip adapter.
+ */
 typedef ResIntfPtr (*IoIntf_InflateGzip)(
    IoIntfPtr io, const char* name, int* status, const char** ecode);
 
 
-/** Deflate a file or portion of a file to temporary storage.
-    A ResIntfPtr is returned to the compressed file or file fragment
-    Function pointer in HttpResRdr.c
-    See BaGzip.c for more info.
-*/
+/** Optionally compress an open resource or range into temporary gzip storage.
+    @param resPtr Required readable resource at the start of the desired input.
+    @param name Required NUL-terminated resource name used for compression policy.
+    @param m Optional caller-owned, already-locked mutex, released/reacquired while
+    producing temporary data.
+    @param size Required input/output byte count: input amount selected by the
+    caller, output gzip size when compressed. The adapter applies its size policy.
+    @param isCompressed Required output: TRUE when compression was selected,
+    FALSE when declined. TRUE alone does not indicate successful compression.
+    @return Original resource unchanged when declined, a new readable resource
+    when compressed, or NULL on failure. Once compression is selected, the adapter
+    closes resPtr even on failure. Close only the returned non-NULL resource.
+ */
 typedef ResIntfPtr (*IoIntf_DeflateGzip)(
    ResIntfPtr resPtr, const char* name, ThreadMutex* m,
    BaFileSize* size, BaBool* isCompressed);
@@ -278,36 +300,51 @@ typedef ResIntfPtr (*IoIntf_DeflateGzip)(
 /* Required API methods
  */
 
-/** Set or get properties. The method returns a non zero value if
-    the property is not supported.
+/** Implementation-specific property operation.
+    @param o Required initialized filesystem.
+    @param name Required NUL-terminated property name, borrowed for the call.
+    @param a Property-specific pointer/value; see the contracts below.
+    @param b Property-specific pointer/value, or NULL where unused/optional.
+    @return Zero when handled successfully, nonzero if unsupported or failed.
+    Do not assume output arguments are initialized on failure.
 
-   name: type
-   a:    pointer to 'const char**'. The type is returned as a string in 'a'.
-         Common values: "disk", "zip". Variable 'b' contains a pointer to
-         the platform type such as 'windows', 'POSIX', etc.
-   
-   name: movedir
-   a:    Return value: pointer to U32 set to TRUE or FALSE.
-   b:    n/a
-   
-   name: hidden
-   a:    pointer to 'const char*'. The resource name.
-   b:    Pointer to U32 is set to TRUE for hidden and FALSE if hidden
-         attribute is to be cleared.
-
-  name: pwd
-  a:    pointer to 'const char*', the password.
-
-*/
+    Common properties:
+    - "type": a is required const char** output; b is optional const char**
+      platform output. Returned strings are borrowed.
+    - "movedir": a is required U32* output, TRUE/FALSE for moving directories.
+    - "hidden": a is a borrowed resource-name string; b is required U32* input,
+      TRUE to set the hidden flag or FALSE to clear it.
+    - "abs": a is a borrowed path string; b is char** output for a baFree-owned
+      absolute path. Prefer IoIntf_getAbspath().
+    - "destructor": a and b are NULL. Prefer IoIntf_destructor().
+    - "SeekAndRead": a is IoIntf_SeekAndRead* output; b is unused.
+    - "attach": a is a borrowed attached IoIntf; b points to an
+      IoIntf_OnTerminate callback to copy. a=NULL detaches. Implementations may
+      notify the previous attachment when replacing it.
+    ZIP password/encryption properties have typed wrappers: IoIntf_setPassword(),
+    IoIntf_setPasswordProp(), and IoIntf_isEncrypted(). Availability depends on
+    the implementation; do not call optional operations through NULL pointers.
+ */
 typedef int (*IoIntf_Property)(IoIntfPtr o,const char* name,void* a,void* b);
 
-/** Open a directory for reading.
-    \returns DirIntfPtr directory iterator
+/** Open a directory iterator before its first entry.
+    @param o Required initialized filesystem.
+    @param dirname Required borrowed NUL-terminated directory path.
+    @param status Required output receiving zero on success or an I/O error.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Owned iterator on success, NULL on failure. Advance with readFp
+    before accessing an entry; close it through this filesystem's closeDirFp.
+    Keep the filesystem alive until the iterator is closed.
  */
 typedef DirIntfPtr (*IoIntf_OpenDir)(IoIntfPtr o, const char* dirname,
                                    int* status, const char** ecode);
 
-/** Fetch resource information.
+/** Fetch metadata for a file or directory.
+    @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param st Required writable output record, valid only on success.
+    @return Zero on success, nonzero I/O status on failure.
  */
 typedef int (*IoIntf_Stat)(IoIntfPtr o, const char* name, IoStat* st);
 
@@ -328,41 +365,109 @@ typedef int (*IoIntf_Stat)(IoIntfPtr o, const char* name, IoStat* st);
    +-------------+-------------------------------------------------+
    |     a+      | OpenRes_READ | OpenRes_WRITE | OpenRes_APPEND   |
    +-------------+-------------------------------------------------+
+     @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param mode OpenRes_READ, OpenRes_WRITE, or a supported combination with
+    OpenRes_APPEND. Query the implementation before relying on combined modes.
+    @param status Required output receiving zero on success or an I/O error.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Owned resource handle on success, NULL on failure. Close through
+    its closeFp and keep the filesystem alive until all handles are closed.
+    Check optional resource function pointers before calling them.
  */
 typedef ResIntfPtr (*IoIntf_OpenRes)(IoIntfPtr o, const char* name,
                                      U32 mode, int* status,
                                      const char** ecode);
 
-/** Close an open directory iterator.
+/** Consume and close a directory iterator.
+    @param o Required filesystem that opened the iterator.
+    @param dirIntf Required pointer to a live non-NULL iterator. On completion
+    the implementation releases it and clears the caller's pointer.
+    @return Zero on success or nonzero I/O status. Do not retry using a consumed
+    handle; NULL-handle acceptance is not portable across implementations.
  */
 typedef int (*IoIntf_CloseDir)(IoIntfPtr o, DirIntfPtr* dirIntf);
 
-/** Returns data as a compressed gzip file.
+/** Open a gzip representation for reading when supported.
+    @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param m Optional mutex already held by the caller. A compressing adapter
+    may release it during work and reacquire it before returning.
+    @param size Required input/output byte count: supply the original file size;
+    on success receives the gzip representation size including framing.
+    @param status Required I/O status output. IOINTF_NOTCOMPRESSED indicates that
+    the implementation declines compression; opening can also fail for other reasons.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Owned readable resource, or NULL on failure/declined compression.
+    Always test the pointer; close a returned resource through closeFp.
  */
 typedef ResIntfPtr (*IoIntf_OpenResGzip)(IoIntfPtr o, const char* name,
                                          ThreadMutex* m, BaFileSize* size,
                                          int* status, const char** ecode);
 
-/** Create a new directory.
+/** Create a directory.
+    @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Zero on success, nonzero I/O status on failure. Missing operations
+    are represented by NULL function pointers on read-only filesystems.
  */
 typedef int (*IoIntf_MkDir)(IoIntfPtr o, const char* name, const char** ecode);
 
-/** Close an open directory iterator.
+/** Rename or move a resource within this filesystem.
+    @param o Required initialized writable filesystem.
+    @param from Required borrowed NUL-terminated existing path.
+    @param to Required borrowed NUL-terminated destination path.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Zero on success, nonzero I/O status on failure. Replacement and
+    nonempty-directory move behavior are implementation-specific; check "movedir".
  */
 typedef int (*IoIntf_Rename)(IoIntfPtr o, const char* from, const char* to,
                            const char** ecode);
-/** Delete a file.
+/** Remove a file.
+    @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Zero on success, nonzero I/O status on failure. Missing operations
+    are represented by NULL function pointers on read-only filesystems.
  */
 typedef int (*IoIntf_Remove)(IoIntfPtr o,const char* name, const char** ecode);
 
-/** delete an empty directory.
+/** Remove an empty directory.
+    @param o Required initialized filesystem.
+    @param name Required borrowed NUL-terminated path relative to this filesystem.
+    @param ecode Optional output for a borrowed implementation error string;
+    NULL omits it. Copy if needed beyond the operation and do not assume it is set.
+    @return Zero on success, nonzero I/O status on failure. Missing operations
+    are represented by NULL function pointers on read-only filesystems.
  */
 typedef int (*IoIntf_RmDir)(IoIntfPtr o, const char* name, const char** ecode);
 
+/** Perform a combined seek and read on a resource.
+    @param super Required live resource belonging to the implementation.
+    @param offset Absolute byte position from the beginning of the resource.
+    @param buf Required writable buffer for maxSize bytes.
+    @param maxSize Positive maximum byte count.
+    @param size Required output for the number of bytes read.
+    @return ResIntf_Read-style status and count. This combined operation is needed
+    by readers whose I/O releases the dispatcher mutex between operations; obtain
+    it through the filesystem's "SeekAndRead" property.
+ */
 typedef int (*IoIntf_SeekAndRead)(
    ResIntfPtr super, BaFileSize offset,void* buf,size_t maxSize,size_t* size);
 
 /* Called by I/O when terminating if property:attach is set */
+/** Notify a filesystem attachment of termination/replacement.
+    @param o Borrowed attached interface supplied by the "attach" property.
+    @param io Filesystem delivering the notification. Its storage is still present
+    during this callback but must not be retained for later use.
+    No return value or ownership transfer is implied by the callback itself.
+ */
 typedef void (*IoIntf_OnTerminate)(IoIntfPtr o, IoIntfPtr io);
 
 /** The IoIntf class specifies an abstract file API, implementations
@@ -423,6 +528,21 @@ typedef struct IoIntf
 
 /* Constructor for Read And Write resource collections.
  */
+/** Initialize an I/O interface with caller-supplied callbacks.
+    @param o Required caller-owned IoIntf storage.
+    @param property IoIntf_Property callback for implementation-specific properties.
+    @param closeDir IoIntf_CloseDir callback that consumes directory handles.
+    @param mkDir IoIntf_MkDir callback, or NULL when unsupported.
+    @param rename IoIntf_Rename callback, or NULL when unsupported.
+    @param openDir IoIntf_OpenDir callback.
+    @param openRes IoIntf_OpenRes callback.
+    @param openResGzip IoIntf_OpenResGzip callback, or NULL when unsupported.
+    @param rm IoIntf_Remove callback, or NULL when unsupported.
+    @param rmDir IoIntf_RmDir callback, or NULL when unsupported.
+    @param st IoIntf_Stat callback.
+    No allocation or return value. Callbacks must remain callable throughout
+    the interface lifetime. Attachment fields are cleared.
+ */
 #define IoIntf_constructorRW(o, property, closeDir, mkDir, rename,\
                              openDir, openRes, openResGzip, rm,\
                              rmDir, st) do {\
@@ -444,6 +564,17 @@ typedef struct IoIntf
 
 /* Constructor for Read Only resource collections.
  */
+/** Initialize an I/O interface with caller-supplied callbacks.
+    @param o Required caller-owned IoIntf storage.
+    @param property IoIntf_Property callback for implementation-specific properties.
+    @param closeDir IoIntf_CloseDir callback that consumes directory handles.
+    @param openDir IoIntf_OpenDir callback.
+    @param openRes IoIntf_OpenRes callback.
+    @param openResGzip IoIntf_OpenResGzip callback, or NULL when unsupported.
+    @param st IoIntf_Stat callback.
+    No allocation or return value. Callbacks must remain callable throughout
+    the interface lifetime. Attachment fields are cleared. Write/directory modification callbacks are set to NULL.
+ */
 #define IoIntf_constructorR(o, property, closeDir, openDir,\
                             openRes, openResGzip, st) do {\
    (o)->propertyFp=property;\
@@ -462,32 +593,49 @@ typedef struct IoIntf
 
 
 
-/** Iterate to next resource in directory.
+/** Advance to the next directory entry, including the first after open.
+    @param o Required live iterator.
+    @return Zero when an entry is available, IOINTF_NOTFOUND at the end, or another
+    nonzero I/O status on failure. Stop after a nonzero result. Ordering and whether
+    special dot entries are exposed depend on the implementation.
  */
 typedef int (*DirIntf_Read)(DirIntfPtr o);
 
-/** Returns the resource name. 
+/** Access the current entry name after successful readFp.
+    @param o Required live iterator positioned on an entry.
+    @return Borrowed NUL-terminated entry name, valid until advance or close.
+    Copy it if needed later; behavior outside a valid entry is not portable.
  */
 typedef const char* (*DirIntf_GetName)(DirIntfPtr o);
 
-/** Returns resource information.
+/** Fetch metadata for the current entry after successful readFp.
+    @param o Required live iterator positioned on an entry.
+    @param st Required output record, valid only on success.
+    @return Zero on success, nonzero I/O status on failure.
  */
 typedef int (*DirIntf_Stat)(DirIntfPtr o, IoStat* st);
 
 /** Directory handle for a directory opened with IoIntf_OpenDir.
 Example:
 \code
+int status;
 DirIntfPtr dir = io->openDirFp(io, relPath, &status, 0);
 if(dir)
 {
-   while ( ! dir->readFp(dir) )
+   while((status = dir->readFp(dir)) == 0)
    {
       IoStat st;
       const char* name = dir->getNameFp(dir);
-      dir->statFp(dir, &st);
+      int statStatus = dir->statFp(dir, &st);
+      if(statStatus == 0)
+      {
+         // Process name/st here before advancing the iterator.
+      }
    }
+   // IOINTF_NOTFOUND is normal end-of-directory; other values are errors.
+   int closeStatus = io->closeDirFp(io, &dir);
+   // Handle closeStatus; dir has been consumed even if closing failed.
 }
-io->closeDirFp(io, &dir);
 \endcode
 \sa IoIntf
  */
@@ -503,23 +651,61 @@ typedef struct DirIntf
 }DirIntf;
 
 
+/** Install directory handle callbacks; no allocation or return value.
+    @param o Required initialized implementation storage.
+    @param read Read callback; directory iteration or resource bytes respectively.
+    @param getName Current-entry name callback.
+    @param st Current-entry metadata callback.
+    Callback storage and code must outlive the handle.
+ */
 #define DirIntf_constructor(o, read, getName, st) do {\
   (o)->readFp=read;\
   (o)->getNameFp=getName;\
   (o)->statFp=st;\
 }while(0)
 
-/** Abstract Resource Interface.
+/** Read binary bytes at the current resource position.
+    @param o Required live resource supporting reads.
+    @param buf Required writable buffer for maxSize bytes.
+    @param maxSize Positive capacity in bytes; zero-size behavior is not portable.
+    @param size Required output receiving the byte count, no greater than maxSize.
+    @return Zero for a successful read, IOINTF_EOF for end-of-file, or another
+    nonzero I/O status. A successful read can be short or have zero bytes depending
+    on the implementation. Inspect both status and count; no NUL is appended.
+    A failure may leave partial bytes/count, whose availability is implementation-specific.
  */
 typedef int (*ResIntf_Read)(
    ResIntfPtr o, void* buf, size_t maxSize, size_t* size);
+/** Write binary bytes at the current resource position.
+    @param o Required live resource supporting writes.
+    @param buf Readable buffer, required when size is positive.
+    @param size Number of bytes to write.
+    @return Zero for a complete write, nonzero I/O status on failure. No partial
+    count is returned; failure may already have changed the file.
+ */
 typedef int (*ResIntf_Write)(ResIntfPtr o, const void* buf, size_t size); 
+/** Set the resource position relative to its beginning.
+    @param o Required live resource supporting seek.
+    @param offset Nonnegative absolute byte offset. Supported range and seeking
+    beyond the current end depend on the implementation.
+    @return Zero on success, nonzero I/O status on failure.
+ */
 typedef int (*ResIntf_Seek)(ResIntfPtr o, BaFileSize offset);
+/** Flush buffered writes through the implementation.
+    @param o Required live resource supporting flush.
+    @return Zero on success, nonzero I/O status on failure. Success is not a
+    portable guarantee of physical-media durability.
+ */
 typedef int (*ResIntf_Flush)(ResIntfPtr o);
+/** Close and consume a resource handle.
+    @param o Required live resource. Its storage is released by this call.
+    @return Zero on success, nonzero I/O status if finalization/close fails.
+    The handle is no longer usable even on failure; do not retry close.
+ */
 typedef int (*ResIntf_Close)(ResIntfPtr o);
 
 
-/** Resource handle for a directory opened with IoIntf_OpenRes.
+/** Resource handle for a file opened with IoIntf_OpenRes.
  */
 typedef struct ResIntf
 {
@@ -535,6 +721,15 @@ typedef struct ResIntf
       ResIntf_Close closeFp;
 }ResIntf;
 
+/** Install resource handle callbacks; no allocation or return value.
+    @param o Required initialized implementation storage.
+    @param read Read callback; directory iteration or resource bytes respectively.
+    @param write Write callback, or NULL for a read-only resource.
+    @param seek Seek callback, or NULL when unsupported.
+    @param flush Flush callback, or NULL when unsupported.
+    @param close Required close callback that releases the handle.
+    Callback storage and code must outlive the handle.
+ */
 #define ResIntf_constructor(o, read, write, seek, flush, close) do {\
   (o)->readFp=read;\
   (o)->writeFp=write;\

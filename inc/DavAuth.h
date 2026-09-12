@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: DavAuth.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: DavAuth.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006
  *
@@ -33,6 +33,8 @@
  ****************************************************************************
  *
  */
+
+/** @file DavAuth.h */
 
 #ifndef __DavAuth_h
 #define __DavAuth_h
@@ -60,24 +62,37 @@ typedef struct DavAuth
 #ifdef __cplusplus
    : public AuthenticatorIntf
 {
-      /** Create a DavAuth instance.
-         \param userDbIntf is a reference to a user database you must
-         provide/implement.
-         \param realm is the realm name provided to the client.
-      */
+      /** Construct an authenticator using application-provided user lookup.
+        @param userDbIntf Required borrowed user database interface; keep it alive
+        while this authenticator is used.
+        @param realm Required NUL-terminated realm string, copied during
+        construction. It identifies the authentication realm sent to clients.
+        Constructors have no error return; realm allocation failure cannot be
+        reported through the constructor signature. Detach the authenticator from
+        directories and stop its users before calling DavAuth_destructor().
+        The C++ interface has no destructor that performs this cleanup automatically.
+        Microsoft domain-prefix filtering is enabled for both embedded authenticators.
+       */
       DavAuth(UserIntf* userDbIntf, const char* realm);
 
-      /** Get the internal BasicAuthenticator
+      /** Access the embedded Basic authenticator.
+        @return Non-NULL borrowed pointer with the parent's lifetime. Use it to
+        configure that mechanism; do not destroy or free it independently.
        */
       BasicAuthenticator* getBasicAuth();
 
-      /** Get the internal DigestAuthenticator
+      /** Access the embedded Digest authenticator.
+        @return Non-NULL borrowed pointer with the parent's lifetime. Use it to
+        configure that mechanism; do not destroy or free it independently.
        */
       DigestAuthenticator* getDigestAuth();
 
-      /** Prevent dictionary attacks.
-          \param tracker the IP address tracker.
-      */
+      /** Configure login-attempt tracking.
+        @param tracker Borrowed tracker, or NULL to disable tracking (the default).
+        Keep the tracker alive while configured. This setter does not allocate
+        or destroy it.
+        Applies to all embedded authentication mechanisms.
+       */
       void setLoginTracker(LoginTracker* tracker);
 #else
       {
@@ -92,13 +107,31 @@ typedef struct DavAuth
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** C form of DavAuth::DavAuth.
+    @param o Required storage to initialize.
+    @param userDbIntf Required borrowed user database.
+    @param realm Copied realm string; see the C++ constructor for NULL handling.
+ */
 BA_API void DavAuth_constructor(DavAuth* o,
                         UserIntf* userDbIntf,
                         const char* realm);
 
+/** Release authenticator-owned realm storage after detaching all users.
+    @param o Required initialized authenticator. Borrowed dependencies are not freed.
+ */
 BA_API void DavAuth_destructor(DavAuth* o);
+/** @copydoc DavAuth::getBasicAuth
+    @param o Required initialized parent authenticator.
+ */
 #define DavAuth_getBasicAuth(o) (&(o)->basicAuth)
+/** @copydoc DavAuth::getDigestAuth
+    @param o Required initialized parent authenticator.
+ */
 #define DavAuth_getDigestAuth(o) (&(o)->digestAuth)
+/** C form of DavAuth::setLoginTracker.
+    @param o Required initialized authenticator.
+    @param loginTracker Borrowed tracker, or NULL to disable.
+ */
 #define DavAuth_setLoginTracker(o, loginTracker) do{\
    BasicAuthenticator_setLoginTracker(&(o)->basicAuth, loginTracker);\
    DigestAuthenticator_setLoginTracker(&(o)->digestAuth, loginTracker);\

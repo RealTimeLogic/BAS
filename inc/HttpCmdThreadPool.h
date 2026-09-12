@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpCmdThreadPool.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: HttpCmdThreadPool.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004-2012
  *
@@ -33,6 +33,8 @@
  ****************************************************************************
  *
  */
+
+/** @file HttpCmdThreadPool.h */
 
 #ifndef _HttpCmdThreadPool_h
 #define _HttpCmdThreadPool_h
@@ -87,12 +89,15 @@ typedef struct HttpCmdThreadPool
           HttpServerConfig::setNoOfHttpCommands for more
           information.
 
-          Please note that failure to create the necessary resources
-          is considered a fatal error.
+          The constructor returns no status. Platform thread creation failures
+          use the Thread implementation's error handling. The worker array must
+          be allocated successfully for the pool to serve requests.
 
-         \param server is the HttpServer instance you bind this object to.
-         \param priority is the priority for the created thread(s).
-         \param stackSize is the stack size for the created thread(s).
+         \param server Required initialized server, retained by the pool. Keep it
+         alive until after the pool is destroyed.
+         \param priority ThreadPriority used for every worker.
+         \param stackSize Stack size in bytes for each worker, subject to the
+         target Thread implementation requirements.
       */
       HttpCmdThreadPool(
          HttpServer* server,ThreadPriority priority,int stackSize);
@@ -125,10 +130,21 @@ typedef struct HttpCmdThreadPool
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Create workers and bind the pool to a server.
+ * @param[out] o Caller-owned pool object.
+ * @param[in,out] server Required initialized server that outlives the pool.
+ * @param[in] priority ThreadPriority for each worker.
+ * @param[in] stackSize Per-worker stack size in bytes.
+ * No recoverable construction status is returned.
+ * @see HttpCmdThreadPool::HttpCmdThreadPool */
 BA_API void HttpCmdThreadPool_constructor(HttpCmdThreadPool* o,
                                           HttpServer* server,
                                           ThreadPriority priority,
                                           int stackSize);
+/** Wait for worker completion and detach the pool.
+ * @param[in,out] o Initialized pool, destroyed before its server. The caller
+ * must hold the dispatcher mutex; it is released and reacquired while waiting.
+ * Do not call from one of this pool's workers. */
 BA_API void HttpCmdThreadPool_destructor(HttpCmdThreadPool* o);
 #ifdef __cplusplus
 }

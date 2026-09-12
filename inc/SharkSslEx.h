@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEx.h 5853 2026-08-17 09:48:31Z gianluca $
+ *   $Id: SharkSslEx.h 5987 2026-09-11 21:42:19Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2026
  *
@@ -142,8 +142,7 @@ typedef enum
        SHARKSSL_CHECK_DATE=1. This mode also checks the
        certificate's 'from' and 'to' dates with the time returned by
        #baGetUnixTime. The certificate and all intermediates are
-       checked, except for the root certificate. Unfortunately, many
-       root certifies are expired and must simply be accepted.
+       checked; the root trust anchor is not date-validated.
    */
    SharkSslConTrust_CertCnDate
 } SharkSslConTrust;

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjsonex.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: ubjsonex.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014
  *
@@ -37,6 +37,8 @@
  Extended API: UBJDecoder and UBJEncoder_set
 */
 
+/** @file ubjsonex.h */
+
 #ifndef __ubjsonex_h
 #define __ubjsonex_h
 
@@ -58,19 +60,18 @@ typedef enum {
    /** Parsed data includes a member whose name is not in value tree. */
    UBJDecoderS_NameNotFound,
 
-   /** Received more array or object member values from parsed data than
-    * found in value tree.
+   /** Unconsumed schema values remain when a container ends; also used
+    * for excessive schema nesting.
     */
    UBJDecoderS_Overflow,
 
    /** Parsed string longer than buffer provided */
    UBJDecoderS_StringOverflow,
 
-   /** Incorrect use of '{', '}', '[', or '[' in JDecoder::get */
+   /** Incorrect use of '{', '}', '[', or ']' in UBJDecoder::get */
    UBJDecoderS_Unbalanced,
 
-   /** Received less array or object member values from parsed data than
-    * found in value tree.
+   /** Input supplies another value after all schema children were consumed.
     */
    UBJDecoderS_Underflow,
 
@@ -83,7 +84,7 @@ typedef enum {
    UBJDecoderS_BufNotAligned,
 
    /** A chained parser callback, provided via the 'X' format flag in
-    * JDecoder::get, reported an error.
+    * UBJDecoder::get, reported an error.
     */
    UBJDecoderS_ChainedErr,
 
@@ -150,7 +151,7 @@ typedef struct UBJDecoder
 
    /** Build a pointer value tree that is used by the integrated
        parser callback function when the parser feeds elements to the
-       JDecoder instance.
+       UBJDecoder instance.
 
        \param fmt format flags:
        <table>
@@ -163,8 +164,8 @@ typedef struct UBJDecoder
        <tr><td>int64</td><td>L</td><td>S64*</td></tr>
        <tr><td>float32</td><td>d</td><td>float*</td></tr>
        <tr><td>float64</td><td>D</td><td>double*</td></tr>
-       <tr><td>char</td><td>C</td><td>S8</td></tr>
-       <tr><td>string</td><td>S</td><td>char**</td></tr>
+       <tr><td>char</td><td>C</td><td>S8*</td></tr>
+       <tr><td>string</td><td>S</td><td>char* buffer, size_t capacity</td></tr>
        </table>
 
        See the [JSON and UBJSON tutorial](@ref JDecoderUBJDecoder) for more
@@ -174,17 +175,31 @@ typedef struct UBJDecoder
       \sa UBJD_MSTR
       \sa UBJD_ASTR
       \sa UBJEncoder::set
-    */
+          Use a complete top-level object/array format with matching braces/brackets.
+      Each object value takes a borrowed nonempty member-name string before its
+      destination. S takes a writable char buffer and size_t capacity; the current
+      check requires complete string length + 2 bytes. Null mapped to S stores an
+      empty C string. X delegates a container to a borrowed UBJPIntf callback.
+      All names/destinations must remain valid through parsing. Rebuild with get()
+      before decoding another document; the schema is consumed as values arrive.
+      Outputs can be partially modified on failure. Numeric conversions are
+      implementation-specific; use matching wire and destination types.
+      @return Zero when the schema is ready, -1 on setup failure. Check this return
+      even when status is OK; schema buffer exhaustion need not set status.
+      Successful setup does not mean any input has been decoded.
+      */
    int get(const char* fmt, ...);
 
    /** Create/initialize a UBJDecoder instance.
 
        \param buf is a pointer to a buffer used internally for memory
        storage when building the pointer value tree. The minimum size
-       must be sizeof(UBJDecoderV) * N, where N is the number of format
+       must be greater than sizeof(UBJDecoderV) * N, where N is the number of format
        flags minus the end of array/object flags (] or }).
 
-       \param bufSize the size of 'buf'
+       \param bufSize Positive byte capacity. buf must be aligned to sizeof(UBJ_ALIGNMT)
+       and retained through parsing. Keep byte offsets representable in U16.
+       This storage does not grow.
 
        \param extraStackLen is an undocumented value and must be set to 0.
    */
@@ -208,18 +223,18 @@ typedef struct UBJDecoder
    UBJDecoderStackNode stack[UBJPARS_STACK_LEN];
 } UBJDecoder;
 
-/** JDecoder::get helper macro, used when setting a number pointer in an object.
-    encoder.set("{d}", UBJD_MNUM(structval, membername));
+/** UBJDecoder::get helper macro, used when setting a number pointer in an object.
+    decoder.get("{l}", UBJD_MNUM(structval, membername));
 */
 #define UBJD_MNUM(o, m) #m, &(o)->m
 
-/** JDecoder::get helper macro, used when setting a string pointer in an object.
-    encoder.set("{s}", UBJD_MSTR(structval, membername));
+/** UBJDecoder::get helper macro, used when setting a string pointer in an object.
+    decoder.get("{S}", UBJD_MSTR(structval, membername));
 */
 #define UBJD_MSTR(o, m) #m, &(o)->m, sizeof((o)->m)
 
-/** JDecoder::get helper macro, used when setting a string pointer in an array.
-    encoder.set("[s]", UBJD_ASTR(structval, membername));
+/** UBJDecoder::get helper macro, used when setting a string pointer in an array.
+    decoder.get("[S]", UBJD_ASTR(structval, membername));
 */
 #define UBJD_ASTR(o, m) &(o)->m, sizeof((o)->m)
 
@@ -228,8 +243,20 @@ typedef struct UBJDecoder
 extern "C" {
 #endif
 
+/** Build the schema using a va_list; see UBJDecoder::get for format rules.
+    @param o Required initialized decoder.
+    @param fmt Required NUL-terminated schema format.
+    @param argList Required pointer to a va_list matching fmt; consumed by the call.
+    @return 0 on success, -1 on schema construction failure.
+ */
 int UBJDecoder_vget(UBJDecoder* o, const char* fmt, va_list* argList);
+/** @copydoc UBJDecoder::get
+    @param o Required initialized decoder.
+ */
 int UBJDecoder_get(UBJDecoder* o, const char* fmt, ...);
+/** @copydoc UBJDecoder::UBJDecoder
+    @param o Required storage to initialize.
+ */
 void UBJDecoder_constructor(
    UBJDecoder* o, U8* buf, int bufSize, int extraStackLen);
 #ifdef __cplusplus

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResMgr.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpResMgr.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2019
  *
@@ -35,6 +35,8 @@
  *
  *
  */
+
+/** @file HttpResMgr.h */
 
 #ifndef __HttpResMgr_h
 #define __HttpResMgr_h
@@ -82,15 +84,19 @@ typedef struct HttpResMgr
 : public HttpDir
 { 
       /** Initializes a HttpResMgr.
-          \param io is a IoIntf implementation such as DiskIo
-          \param maxUploads is the limit value for concurrent uploads. The
+          \param io Required borrowed I/O interface, valid until the manager and
+          all its uploads have been destroyed.
+          \param maxUploads Concurrent upload-request limit, not a byte-size
+          limit. Values less than or equal to zero select one upload. The
           maximum numbers of downloads are controlled by the
           HttpCmdThreadPool. See the limitations section in
           HttpResRdr for more information on how the download works.
-          \param dirName is the HttpDir name.
-          \param alloc is the allocator used when allocating
-          "concurrent upload" objects.
-          \param priority is the HttpDir priority
+          \param dirName Borrowed NUL-terminated directory name, valid throughout
+          use; NULL selects an empty name.
+          \param alloc Borrowed allocator for upload state; NULL (default) uses
+          AllocatorIntf_getDefault(). Keep it alive throughout manager use.
+          \param priority Signed directory priority, default zero. Construction
+          does not open resources or report whether the I/O root exists.
       */
       HttpResMgr(IoIntf* io,
                  int maxUploads,
@@ -99,7 +105,8 @@ typedef struct HttpResMgr
                  S8 priority=0);
 
       /**  Terminate the HttpResMgr object. Please note that any
-           upload in progress will be aborted.
+           upload in progress will be aborted. Stop new requests first.
+           The borrowed I/O interface and allocator are not destroyed.
        */
       ~HttpResMgr();
 #if 0
@@ -122,6 +129,13 @@ typedef struct HttpResMgr
 extern "C" {
 #endif
 
+/** Initialize the file manager; see HttpResMgr::HttpResMgr.
+ * @param[out] o Caller-owned manager storage.
+ * @param[in] io Borrowed I/O interface, valid throughout use.
+ * @param[in] maxUploads Concurrent request limit; nonpositive values select one.
+ * @param[in] dirName Borrowed directory name, valid throughout use, or NULL.
+ * @param[in] alloc Borrowed allocator, or NULL for the default.
+ * @param[in] priority Signed directory priority. */
  void
 HttpResMgr_constructor(HttpResMgr* o,
                        IoIntf* io,
@@ -130,8 +144,17 @@ HttpResMgr_constructor(HttpResMgr* o,
                        AllocatorIntf* alloc,
                        S8 priority);
 
+/** Abort active uploads without freeing this object or borrowed dependencies.
+ * @param[in,out] o Initialized manager whose incoming requests have stopped.
+ * Follow HttpDir lifecycle rules to detach and destroy the directory itself. */
  void HttpResMgr_destructor(HttpResMgr* o);
 
+/** Attach authentication using HttpDir_setAuthenticator.
+ * @param[in,out] o Initialized manager.
+ * @param[in] authenticator Borrowed AuthenticatorIntf pointer, valid while attached, or NULL.
+ * @param[in] realm Borrowed AuthorizerIntf pointer, valid while attached, or NULL.
+ * Despite the macro parameter name, this is not a realm string.
+ * @sa HttpDir::setAuthenticator */
 #define HttpResMgr_setAuthenticator(o, authenticator, realm) \
    HttpDir_setAuthenticator((HttpDir*)o, authenticator, realm)
 #ifdef __cplusplus

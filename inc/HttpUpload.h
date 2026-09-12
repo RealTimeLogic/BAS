@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpUpload.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpUpload.h 5978 2026-09-11 16:13:48Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -35,6 +35,8 @@
  *
  *
  */
+
+/** @file HttpUpload.h */
 
 #ifndef _HttpUpload_h
 #define _HttpUpload_h
@@ -72,24 +74,40 @@ struct HttpConnection;
  */
 struct HttpUploadNode
 {
-      /** Returns the file name including the relative path */
+      /** @return Borrowed NUL-terminated path within the I/O interface.
+       * PUT returns the destination path; multipart POST returns the current
+       * file path, or the destination directory before a file is selected.
+       * Copy it before the next file callback or node destruction. */
       const char* getName();
 
-      /** Returns the full URL the client used when sending data */
+      /** @return Borrowed URL generated from the request's current directory
+       * using HttpResponse::encodeRedirectURL with an empty relative path.
+       * It can include session encoding; it is not necessarily the original
+       * request URI or a URL identifying the current multipart file.
+       * Valid until node destruction. */
       const char* getUrl();
 
-      /** Fetch the response object. Please note that calling this
-          function terminates the current upload if not completed. The
-          method may return NULL if the socket connection is
-          broken.
-      */
+      /** Switch from receiving the upload to producing its response.
+       * Calling before completion aborts reception. Send the desired response
+       * from the callback, including on success; obtaining the object alone
+       * does not establish that any response was delivered.
+       * @return Borrowed embedded response object, never NULL for a valid node.
+       * Its connection can be unusable; check the response operation results.
+       * Do not destroy or free this object separately from the upload node.
+       */
       HttpAsynchResp* getResponse();
 
+      /** @return Borrowed receive connection only after reception has reached
+       * a state that needs no lingering close and before response mode.
+       * Returns NULL while an incomplete upload needs closing or after response
+       * mode starts. The pointer is not an ownership transfer. */
       struct HttpConnection* getConnection();
 
+      /** @return Borrowed destination I/O interface owned by the application. */
       IoIntfPtr getIoIntf();
 
-      /** Returns the HttpSession object or null if no session object.
+      /** @return Borrowed session found by its saved ID, or NULL if no session
+          exists or it has expired.
 
           The session object may expire at any time. See the
           explanation in the HttpSession for more information.
@@ -99,7 +117,7 @@ struct HttpUploadNode
       HttpSession* getSession();
 
 
-      /** Returns true if HTTP POST. False for HTTP PUT */
+      /** @return True for multipart POST, false for PUT. */
       bool isMultipartUpload();
 };
 #else
@@ -109,20 +127,56 @@ struct HttpUploadNode;
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpUploadNode::getName
+ * @param[in,out] o Live upload node. */
 BA_API const char* HttpUploadNode_getName(struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::getUrl
+ * @param[in,out] o Live upload node. */
 BA_API const char* HttpUploadNode_getUrl(struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::getResponse
+ * @param[in,out] o Live upload node. */
 BA_API HttpAsynchResp* HttpUploadNode_getResponse(struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::getConnection
+ * @param[in,out] o Live upload node. */
 BA_API struct HttpConnection* HttpUploadNode_getConnection(
    struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::getIoIntf
+ * @param[in,out] o Live upload node. */
 BA_API IoIntfPtr HttpUploadNode_getIoIntf(struct HttpUploadNode* o);
+/** @param[in] o Live upload node.
+ * @return Borrowed userdata passed to service, possibly NULL. */
 BA_API void* HttpUploadNode_getdata(struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::getSession
+ * @param[in,out] o Live upload node. */
 BA_API HttpSession* HttpUploadNode_getSession(struct HttpUploadNode* o);
+/** @copydoc HttpUploadNode::isMultipartUpload
+ * @param[in,out] o Live upload node. */
 BA_API BaBool HttpUploadNode_isMultipartUpload(struct HttpUploadNode* o);
+/** @param[in] o Live upload node.
+ * @return TRUE after an asynchronous response connection has been installed;
+ * FALSE otherwise. This does not test whether sending will succeed. */
 BA_API BaBool HttpUploadNode_isResponseMode(struct HttpUploadNode* o);
+/** @param[in] o Live upload node.
+ * @return Saved HttpResponse_initial state from the command at upload startup. */
 BA_API BaBool HttpUploadNode_initial(struct HttpUploadNode* o);
+/** Release one retained reference.
+ * @param[in,out] o Live node with a nonzero reference count.
+ * @return -1 if the count reached zero and the node was destroyed, otherwise 0.
+ * Do not access o after -1. Do not decrement an internal callback reference. */
 BA_API int HttpUploadNode_decrRef(struct HttpUploadNode* o);
+/** Retain a node beyond the current callback.
+ * @param[in,out] o Live node; increments its U8 reference counter. Do not exceed
+ * 255 total references, including internal callback references. Pair each
+ * external increment with decrRef; stop external use before parent destruction.
+ * Serialize access with the server. This does not make the node thread-safe. */
 BA_API void HttpUploadNode_incRef(struct HttpUploadNode* o);
+/** Install the process-wide gzip upload adapter in builds with zlib support.
+ * @param[in] ptr Callback used to open gzip-decoding output resources, or NULL
+ * to disable that adaptation. Configure before concurrent uploads begin.
+ * @sa IoIntf_InflateGzip */
 BA_API void set_inflategzip(IoIntf_InflateGzip ptr);
+/** @return Installed process-wide gzip upload adapter, or NULL.
+ * Available in builds with zlib support. No ownership is transferred. */
 BA_API IoIntf_InflateGzip get_inflategzip(void);
 #ifdef __cplusplus
 }
@@ -148,8 +202,28 @@ inline bool HttpUploadNode::isMultipartUpload() {
 struct HttpUploadCbIntf;
 #endif
 
+/** Notify the application about a file or completed request.
+ * @param[in,out] o Borrowed callback interface installed in HttpUpload.
+ * @param[in,out] node Borrowed upload node, valid during the callback.
+ * @param[in] completed FALSE before opening each multipart file; TRUE when
+ * the complete upload request finishes and its last file closes successfully.
+ * PUT has a completion callback but no FALSE start notification.
+ * A multipart request can contain several files; TRUE is not a per-file event.
+ * Call HttpUploadNode_getResponse to reject a file before opening it or to send
+ * the final response. Callbacks can run synchronously during service, or later.
+ * Do not destroy the parent HttpUpload from a callback. */
 typedef void (*HttpUploadCbIntf_OnFile)(
    struct HttpUploadCbIntf* o, struct HttpUploadNode* node, BaBool completed);
+/** Report upload failure or parent shutdown.
+ * @param[in,out] o Borrowed installed callback interface.
+ * @param[in,out] node Borrowed upload node, valid during the callback.
+ * @param[in] ecode I/O error code, or FE_SOCKET for receive/parser failures.
+ * Parent shutdown reports IOINTF_IOERROR.
+ * @param[in] extraEcode Borrowed optional error text, valid during the callback;
+ * copy it if retaining it. Do not interpret it as a stable machine-readable code.
+ * Send any desired error response using HttpUploadNode_getResponse. The socket
+ * may already be unusable. Files can be partially written; cleanup is the
+ * application's responsibility. The library does not free userdata. */
 typedef void (*HttpUploadCbIntf_OnError)(
    struct HttpUploadCbIntf* o, struct HttpUploadNode* node,
    int ecode, const char* extraEcode);
@@ -162,11 +236,12 @@ typedef void (*HttpUploadCbIntf_OnError)(
 typedef struct HttpUploadCbIntf
 {
 #ifdef __cplusplus
+      /** Uninitialized storage; install both callbacks before use. */
       HttpUploadCbIntf(){}
 
       /** Initialize a HttpUploadCbIntf interface
-      \param of is the callback called at start or end of an upload.
-      \param oe is the error callback method called if the upload failed.
+      \param of Required file/completion callback; see HttpUploadCbIntf_OnFile.
+      \param oe Required failure callback; see HttpUploadCbIntf_OnError.
       */
       HttpUploadCbIntf(HttpUploadCbIntf_OnFile of,HttpUploadCbIntf_OnError oe);
 #endif
@@ -174,6 +249,10 @@ typedef struct HttpUploadCbIntf
       HttpUploadCbIntf_OnError onErrorFp;
 } HttpUploadCbIntf;
 
+/** Install upload callbacks without allocating memory.
+ * @param[out] o Caller-owned callback interface, valid throughout upload use.
+ * @param[in] onFile Required file/completion callback.
+ * @param[in] onError Required failure callback. */
 #define HttpUploadCbIntf_constructor(o, onFile, onError) do { \
    (o)->onFileFp=onFile; \
    (o)->onErrorFp=onError; \
@@ -195,19 +274,23 @@ typedef struct HttpUploadCbIntf
 typedef struct HttpUpload
 {
 #ifdef __cplusplus
+      /** Uninitialized storage; initialize before use or destruction. */
       HttpUpload() {}
 
       /** Initialize an HttpUpload instance.
 
-          \param io is a IoIntf implementation such as DiskIo.
+          \param io Required borrowed writable I/O interface, valid until all
+          uploads are destroyed.
 
-          \param alloc is the allocator used when creating
-          HttpUploadNode instances.
+          \param alloc Required borrowed allocator, valid until all uploads are
+          destroyed. Pass AllocatorIntf_getDefault() to use the default.
 
-          \param uploadCb is the HttpUploadCbIntf implementation.
+          \param uploadCb Required borrowed callback interface with both callbacks
+          installed; must outlive this uploader and every active node.
 
-          \param maxUploads is the maximum number of concurrent
-          uploads. The HttpUpload::service method sends a 503 HTTP
+          \param maxUploads Nonnegative maximum number of concurrent requests,
+          not a byte limit or a limit on files within one multipart request.
+          Zero disables uploads. The HttpUpload::service method sends a 503 HTTP
           response if the maximum number of concurrent uploads are
           reached.
       */
@@ -215,23 +298,33 @@ typedef struct HttpUpload
                  HttpUploadCbIntf* uploadCb, int maxUploads);
 
       /** Terminate the HttpUpload instance and all active
-       * HttpUploadNode instances. */
+       * HttpUploadNode instances. Calls the error callback for each active
+       * node. Do not call from an upload callback or while external node
+       * references remain. The I/O interface, allocator and callback interface
+       * are not destroyed; caller-provided userdata is not freed. */
       ~HttpUpload();
 
       /** The HttpUpload service method. This method is typically
           called from a HttpDir or HttpPage service method.
-          \param name is:
+          \param name Required NUL-terminated destination, copied before return:
           \li if PUT: path + name relative to the I/O interface.
-          \li if POST: path relative to the I/O interface. The full
+          \li if POST: directory path relative to the I/O interface, ending in a slash
+          when nonempty. The full
           path+name is constructed from the name in the multipart
           message.
-          \param cmd is the request/response container object.
-          \param userdata is an optional reference that is set in the HttpUploadNode.
+          \param cmd Borrowed current command; call from its service handler.
+          An accepted upload takes over asynchronous request processing.
+          \param userdata Optional borrowed context (default NULL), retrievable
+          with HttpUploadNode_getdata. Keep it valid until callbacks finish.
+          The uploader does not free it.
+          \return -1 for an unsupported request, 0 when accepted, or 1 on
+          startup failure. See #HttpUpload_service for callback-state ownership.
        */
       int service(const char* name, HttpCommand* cmd, void* userdata=0);
 
-      /** Return a pointer to the IoIntf implementation.
+      /** @return Borrowed destination I/O interface passed to construction.
        */
+      /** @return Borrowed destination I/O interface owned by the application. */
       IoIntfPtr getIoIntf();
 #endif
 
@@ -245,12 +338,31 @@ typedef struct HttpUpload
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** @copydoc HttpUpload::HttpUpload(IoIntfPtr, AllocatorIntf*, HttpUploadCbIntf*, int)
+ * @param[out] o Caller-owned uploader storage. */
 BA_API void HttpUpload_constructor(
    HttpUpload* o, IoIntfPtr io, AllocatorIntf* alloc,
    HttpUploadCbIntf* uploadCb, int maxUploads);
+/** Abort active uploads and release their storage.
+ * @param[in,out] o Initialized uploader; not in a callback and no external node
+ * references outstanding. See HttpUpload::~HttpUpload for callback/lifetime rules. */
 BA_API void HttpUpload_destructor(HttpUpload* o);
+/** Start an upload for a PUT or multipart POST request.
+    @param[in,out] o Initialized uploader.
+    @param[in] name Required copied destination path. For multipart POST,
+    use a directory path ending in a slash when nonempty.
+    @param[in,out] cmd Borrowed current command; accepted requests become asynchronous.
+    @param[in] userdata Borrowed callback context, or NULL; never freed by the uploader.
+    @return -1 unsupported request, 0 accepted, 1 startup failure.
+    Returns -1 for an unsupported request, 0 when accepted (callbacks may
+    already have run), or 1 when startup failed.
+    On startup failure the caller must release userdata unless a synchronous
+    callback already released it. Existing HTTP error responses are preserved.
+ */
 BA_API int HttpUpload_service(
    HttpUpload* o, const char* name, HttpCommand* cmd, void* userdata);
+/** @param[in] o Initialized uploader.
+ * @return Borrowed destination I/O interface. */
 #define HttpUpload_getIoIntf(o) (o)->io
 #ifdef __cplusplus
 }

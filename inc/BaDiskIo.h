@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaDiskIo.h 5811 2026-06-12 16:18:19Z wini $
+ *   $Id: BaDiskIo.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006
  *
@@ -41,6 +41,8 @@
  *  platforms. See the sub-directories for platform specific
  *  implementations.
  */
+
+/** @file BaDiskIo.h */
 
 #ifndef _DiskIo_h
 #define _DiskIo_h
@@ -74,22 +76,14 @@
     offset value. The offset value is set with method
     DiskIo::setRootDir
 
-    The setRootDir method can accept an absolute or relative path
-    argument. As an example, all example programs compiled in 'debug'
-    mode executes from the 'obj/debug' directory. All 'debug mode'
-    examples opens a DiskIo and sets the root path to '../../html' and
-    binds the DiskIo to a HttpResRdr instance. This makes it
-    possible for the web server to access the HTML files in the 'html'
-    directory.
+    Root syntax and default roots are platform-specific. Desktop ports accept
+    absolute paths and selected relative paths; embedded ports may require a
+    mounted volume or a platform-specific prefix. See xrc/DiskIo for the port
+    selected by the build. Call setRootDir explicitly before serving files.
 
-    This is a generic header file for all file systems and
-    platforms.
-
-    Barracuda does not officially support native file systems as
-    Barracuda can easily work without using a file system. However,
-    the xrc/DiskIo directory contains implementation for common
-    file systems. This directory also contains the BaFile API used by
-    some of the example code.
+    This generic interface does not mount media, enforce filesystem permissions,
+    or replace the platform's path and symbolic-link rules. Stop dependent
+    readers and serialize operations before changing its root or destroying it.
  */
 typedef struct DiskIo
 #ifdef __cplusplus
@@ -109,21 +103,35 @@ typedef struct DiskIo
        */
       DiskIo();
 
-      /** Terminate the DiskIo instance
+      /** Release the root configuration and notify an attached I/O interface.
+          Close resources and directory iterators, and stop dependent users,
+          before destruction. Does not unmount media or free this object.
        */
       ~DiskIo();
 
-      /** Set the root directory.
-
-         \param root is a UTF-8 formatted path using forward slashes. The
-         meaning of 'root' depends on the implementation. Please see
-         the comments in the DiskIo implementation for your target
-         platform for more information.
-
-         \returns 0 on success. A non zero value indicates failure.
+      /** Select the filesystem location exposed as this I/O interface's root.
+       * @param[in] root NUL-terminated UTF-8 path using forward slashes.
+       * The path is copied. Accepted prefixes, relative paths, NULL, and empty
+       * strings vary by port; use an explicit valid path for portable code.
+       * @return Zero on success, nonzero platform/I/O status on failure.
+       * Success does not universally verify that the directory exists.
+       * A failed change need not preserve the previous root. Stop using the
+       * instance until a valid root has been established again.
        */
       int setRootDir(const char* root);
 
+      /** Copy the configured root representation.
+       * @param[out] buf Caller-owned writable buffer. On success it contains
+       * a NUL-terminated UTF-8 path, which may include a trailing slash.
+       * @param[in] len Positive capacity in bytes, including the terminator.
+       * Allocate enough for the entire path plus NUL; do not use this function
+       * as a size query. Some ports do not check the terminator byte correctly.
+       * @return Nonnegative on success, -1 on insufficient storage or conversion
+       * failure. Most ports return strlen(buf); HCC_UNICODE returns zero for a
+       * converted configured root. Use strlen(buf) when the length is needed.
+       * Output is unspecified on failure. This reports configuration, not
+       * filesystem existence or a universally canonical absolute path.
+       */
       int getRootDir(char* buf, int len);
 #if 0
 }
@@ -141,9 +149,19 @@ typedef struct DiskIo
 #ifdef __cplusplus
 extern "C" {
 #endif
+/** Initialize the platform DiskIo implementation.
+ * @param[out] o Caller-owned instance; explicitly set its root before use.
+ * @sa DiskIo::DiskIo */
 BA_API void DiskIo_constructor(DiskIo* o);
+/** Release configuration after dependent users and open handles have stopped.
+ * @param[in,out] o Initialized instance. Does not free o or unmount media.
+ * @sa DiskIo::~DiskIo */
 BA_API void DiskIo_destructor(DiskIo* o);
+/** @copydoc DiskIo::setRootDir
+ * @param[in,out] o Initialized instance, not concurrently in use. */
 BA_API int DiskIo_setRootDir(DiskIo* o, const char* root);
+/** @copydoc DiskIo::getRootDir
+ * @param[in] o Initialized instance with a valid root configuration. */
 BA_API int DiskIo_getRootDir(DiskIo* o, char* buf, int len);
 #ifdef __cplusplus
 }

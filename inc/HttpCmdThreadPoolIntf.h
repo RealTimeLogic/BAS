@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpCmdThreadPoolIntf.h 5385 2023-02-17 19:38:01Z wini $
+ *   $Id: HttpCmdThreadPoolIntf.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2005-2012
  *
@@ -34,6 +34,7 @@
  *
  */
 
+/** @file HttpCmdThreadPoolIntf.h */
 #ifndef _HttpCmdThreadPoolIntf_h
 #define _HttpCmdThreadPoolIntf_h
 
@@ -44,15 +45,26 @@
 
 struct HttpCmdThreadPoolIntf;
 
+/** Attempt to dispatch HTTP work to a worker while the server mutex is held.
+    @param o Required initialized pool interface.
+    @param cmd Borrowed live command whose processing is transferred on success.
+    @param dir Borrowed directory from which service starts; retain it through work.
+    @return 0 if accepted for worker execution; nonzero declines the transfer and
+    lets HttpServer process it on the current thread. This is not a response or
+    completion status. Implementations must preserve the server's command/mutex
+    lifecycle. Supplied implementations are HttpCmdThreadPool and LThreadMgr.
+ */
 typedef int(*HttpCmdThreadPoolIntf_DoDir)(
    struct HttpCmdThreadPoolIntf* o,HttpCommand* cmd,
    HttpDir* dir);
 
+/** Worker-pool dispatch interface borrowed by HttpServer. */
 typedef struct HttpCmdThreadPoolIntf
 {
-   HttpCmdThreadPoolIntf_DoDir doDir;
+   HttpCmdThreadPoolIntf_DoDir doDir; /**< Required dispatch callback. */
 }  HttpCmdThreadPoolIntf;
 
+/** @copydoc HttpCmdThreadPoolIntf_DoDir */
 #define HttpCmdThreadPoolIntf_doDir(o, cmd, dir) \
    (o)->doDir(o, cmd, dir)
 

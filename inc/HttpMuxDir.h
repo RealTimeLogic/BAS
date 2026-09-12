@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpMuxDir.h 5813 2026-06-15 10:15:50Z wini $
+ *   $Id: HttpMuxDir.h 5978 2026-09-11 16:13:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008
  *
@@ -36,14 +36,16 @@
  *
  */
 
+/** @file HttpMuxDir.h */
+
 #ifndef __HttpMuxDir_h
 #define __HttpMuxDir_h
 
 #include <HttpServer.h>
 
 
-/** HttpMuxDir HttpDir Multiplexer captures many muxResource requests and
-    feeds all muxResource requests to one page.
+/** HttpMuxDir HttpDir Multiplexer captures many resource requests and
+    feeds all resource requests to one page.
     The HttpMuxDir class makes it possible to have an LSP or CSP page
     handle multiple URL's. The HttpMuxDir class is typically used in
     Representational State Transfer (REST) design. Another use for this
@@ -54,14 +56,14 @@
 
    C/C++ code HttpResponse::getRequestURI.
 
-   LSP: request:uri
+   LSP: request:uri()
 
    The URI is typically used as a path for opening HTML page fragments
    or for searching in a database.
 
-   The page can signal that it did not handle the request by not
-   writing anything to the response. The virtual
-   file system will, in this case, continue searching for the muxResource.
+   The page can signal that it did not handle the request by leaving the response untouched: no output operation, no
+   committed response, and status code still 200. The virtual
+   file system will, in this case, continue searching for the requested resource.
 
 */
 typedef struct HttpMuxDir
@@ -69,14 +71,18 @@ typedef struct HttpMuxDir
 : public HttpDir
 {
  /** Create an HttpMuxDir instance.
-   \param name the HttpDir name.
+   \param name Borrowed NUL-terminated HttpDir name, valid throughout use;
+   NULL selects an empty name.
 
-   \param startDir the directory where we search for the mux muxResource.
+   \param startDir Required borrowed directory from which to resolve the
+   target. It must outlive this multiplexer.
 
-   \param muxResource is the relative path from 'startDir' to the mux
-   muxResource, which is normally a CSP or LSP page.
+   \param muxResource Required borrowed NUL-terminated path from startDir
+   to a CSP or LSP page. One leading slash is ignored. Keep this string valid
+   and unchanged for the lifetime of the multiplexer.
  
-   \param priority the page priority. See HttpDir for more information.
+   \param priority Signed directory priority, default zero; see HttpDir.
+   Construction does not resolve the target or report whether it exists.
 */
       HttpMuxDir(const char* name,
                  HttpDir* startDir,
@@ -98,6 +104,13 @@ typedef struct HttpMuxDir
 #ifdef __cplusplus
 extern "C" {
 #endif 
+/** Initialize a multiplexer; see HttpMuxDir::HttpMuxDir.
+ * @param[out] o Caller-owned object.
+ * @param[in] name Borrowed directory name, valid throughout use; NULL means empty.
+ * @param[in] startDir Borrowed target directory, valid throughout use.
+ * @param[in] muxResource Borrowed NUL-terminated target path, valid throughout use.
+ * @param[in] priority Signed directory priority.
+ * No target lookup is performed until a request is served. */
 void HttpMuxDir_constructor(
    HttpMuxDir* o,
    const char* name,
