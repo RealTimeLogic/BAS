@@ -41,9 +41,16 @@ Commercial licensing is available for users who cannot use BAS or BWS under GPLv
 
 ### GPLv2 Clarification
 
-The following clarification applies to users who choose GPLv2 and distribute derivative work. The GPLv2 license applies to all BAS and BWS APIs, including but not limited to the BAS and BWS C APIs, BAS Lua APIs, and web content hosted by a BAS or BWS derivative product. Web content hosted by the server is considered part of the application as a whole.
+BAS and BWS are available under [GPLv2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html) or, alternatively, under a commercial license from Real Time Logic.
 
-GPLv2: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html
+When BAS or BWS is used under GPLv2, the standard terms and conditions of GPLv2 apply. No additional restrictions or conditions beyond GPLv2 are imposed by this clarification.
+
+Applications that incorporate, link with, or otherwise form a derivative work of BAS or BWS must comply with GPLv2 when distributed under the GPLv2 licensing option. This includes application code using the BAS or BWS C APIs and server-side Lua/LSP application code that uses BAS-specific APIs and executes as part of a BAS application.
+
+Independent data or content does not become subject to GPLv2 merely because it is stored, transmitted, or served by BAS or BWS.
+
+Users who wish to distribute BAS or BWS, or derivative works based on BAS or BWS, under terms incompatible with GPLv2 may obtain an applicable commercial license from Real Time Logic.
+
 
 ### Export Restrictions
 
