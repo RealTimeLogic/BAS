@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 5869 2026-08-23 10:09:56Z wini $
+ *   $Id: BaFile.c 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2006 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -513,7 +513,23 @@ DiskIo_mkAbsPath(DiskIo* o, const char* name, int extraChars, int* status)
 {
    size_t len;
    WCHAR* wptr;
+   const char* end;
    if(*name == '/') name++;
+   /* Reject stream names and components Win32 silently trims. Validate
+      the relative name, not rootPath, which contains the drive colon. */
+   for(end=name;;end++)
+   {
+      if(*end == ':' ||
+         ((!*end || *end == '/' || *end == '\\') && end > name &&
+          (end[-1] == ' ' ||
+           (end[-1] == '.' && end > name+1 &&
+            end[-2] != '/' && end[-2] != '\\'))))
+      {
+         *status=IOINTF_INVALIDNAME;
+         return 0;
+      }
+      if(!*end) break;
+   }
    if( ! o->rootPath )
    {  /* If not using an offset start path i.e. if reading from '/',
        * where '/' contains the drives on the PC.
@@ -568,6 +584,35 @@ DiskIo_mkAbsPath(DiskIo* o, const char* name, int extraChars, int* status)
    }
    *status=E_MALLOC;
    return 0;
+}
+
+
+
+/* Resource handlers use case-sensitive extensions. Do not let Windows
+   resolve a different extension spelling to the same file. Keep normal
+   case-insensitive lookup for the filename stem and for directories. */
+static int
+DiskIo_checkExt(const WCHAR* wname)
+{
+   WIN32_FIND_DATAW data;
+   HANDLE h;
+   const WCHAR* leaf = wcsrchr(wname, L'\\');
+   const WCHAR* ext = wcsrchr(leaf ? leaf+1 : wname, L'.');
+   const WCHAR* diskExt;
+   if(!ext) return 0;
+   h=FindFirstFileW(wname, &data);
+   if(h == INVALID_HANDLE_VALUE)
+   {
+      DWORD err=GetLastError();
+      /* A write may create a new file; its requested spelling is then
+         the on-disk spelling. Other lookup failures must fail closed. */
+      return err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND ?
+         0 : IOINTF_NOACCESS;
+   }
+   FindClose(h);
+   if(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) return 0;
+   diskExt=wcsrchr(data.cFileName, L'.');
+   return diskExt && !wcscmp(ext, diskExt) ? 0 : IOINTF_INVALIDNAME;
 }
 
 
@@ -759,7 +804,7 @@ DiskIo_stat(IoIntfPtr super, const char* name, IoStat* st)
 #ifdef BA_FILESIZE64
       st->size |= ((BaFileSize)wfad.nFileSizeHigh) << 32;
 #endif
-      status=0;
+      status=st->isDir ? 0 : DiskIo_checkExt(wname);
    }
    else
       status=IOINTF_NOTFOUND;
@@ -797,7 +842,14 @@ DiskIo_openRes(IoIntfPtr super, const char* name, U32 mode,
    shareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
    if( (wname = DiskIo_mkAbsPath(o, name, 0, status)) != 0)
    {
-      DiskRes* dr = (DiskRes*)baMalloc(sizeof(DiskRes));
+      DiskRes* dr;
+      *status=DiskIo_checkExt(wname);
+      if(*status)
+      {
+         baFree(wname);
+         return 0;
+      }
+      dr = (DiskRes*)baMalloc(sizeof(DiskRes));
       if(dr)
       {
          HANDLE hndl;

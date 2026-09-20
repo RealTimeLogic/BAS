@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 5991 2026-09-12 08:49:46Z gianluca $
+ *   $Id: SharkSSL.h 6034 2026-09-15 14:10:47Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -324,8 +324,7 @@ typedef const U8 *SharkSslCert;
 extern "C" {
 #endif
 
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     Get certificate length
     \param cert a valid SharkSSL certificate
  */
@@ -338,48 +337,47 @@ U32 baGetUnixTime(void);
 #endif
 
 #if SHARKSSL_ENABLE_CSR_CREATION
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     CSR creation (all parameters are input parameters)
 
-   Note: after successful execution, the function
-   SharkSslASN1Create_getDataLen must be called.
+    Note: after successful execution, the function
+    SharkSslASN1Create_getDataLen must be called.
 
-   Example:
-   \code
-   U8 *asnData;
-   int asnDataLen;
-   SharkSslASN1Create asn;
-   
-   SharkSslASN1Create_CSR(&asn, <additional parameters>)
-   asnDataLen = SharkSslASN1Create_getDataLen(&asn, &asnData);
-   \endcode
+    Example:
+    \code
+    U8 *asnData;
+    int asnDataLen;
+    SharkSslASN1Create asn;
 
-   The blob 'asnData' is the CSR in binary format.
+    SharkSslASN1Create_CSR(&asn, <additional parameters>)
+    asnDataLen = SharkSslASN1Create_getDataLen(&asn, &asnData);
+    \endcode
 
-   \param o pointer to an initialized #SharkSslASN1Create instance.
+    The blob 'asnData' is the CSR in binary format.
 
-   \param privKey a private key (ECC or RSA) in SharkSSL format. The
-   key can be created with #SharkSslECCKey_create and
-   #SharkSslRSAKey_create.
+    \param o pointer to an initialized #SharkSslASN1Create instance.
 
-   \param hashID an identifier for the digest function used in the CSR signature
-   Allowed values are:
+    \param privKey a private key (ECC or RSA) in SharkSSL format. The
+    key can be created with #SharkSslECCKey_create and
+    #SharkSslRSAKey_create.
+
+    \param hashID an identifier for the digest function used in the CSR signature
+    Allowed values are:
          SHARKSSL_HASHID_SHA512
          SHARKSSL_HASHID_SHA384
          SHARKSSL_HASHID_SHA256
 
-   \param certDN pointer to an initialized #SharkSslCertDN instance.
+    \param certDN pointer to an initialized #SharkSslCertDN instance.
 
-   \param SAN pointer to a string where Subject Alternative Names are
-   listed.  Multiple names and/or IP addresses can be specified
-   separating them by semicolons. Note: SAN must include the common
-   name set in SharkSslCertDN. The subject alternative name may
-   include an IP address in the form "IP:IPv4"; example:
-   "localhost;IP:127.0.0.1"
+    \param SAN pointer to a string where Subject Alternative Names are
+    listed.  Multiple names and/or IP addresses can be specified
+    separating them by semicolons. Note: SAN must include the common
+    name set in SharkSslCertDN. The subject alternative name may
+    include an IP address in the form "IP:IPv4"; example:
+    "localhost;IP:127.0.0.1"
 
-   \param keyUsage flags used to specify the key usage. You may use
-   the following flags and combine them by a bitwise OR:
+    \param keyUsage flags used to specify the key usage. You may use
+    the following flags and combine them by a bitwise OR:
          SHARKSSL_X509_KU_DIGITAL_SIGNATURE
          SHARKSSL_X509_KU_NON_REPUDIATION
          SHARKSSL_X509_KU_KEY_ENCIPHERMENT
@@ -388,7 +386,7 @@ U32 baGetUnixTime(void);
          SHARKSSL_X509_KU_KEY_CERT_SIGN
          SHARKSSL_X509_KU_CRL_SIGN
 
-   \param nsCertType flags used to specify the "Netscape" certificate
+    \param nsCertType flags used to specify the "Netscape" certificate
       type. You may use the following flags and combine them by a
       bitwise OR:
          SHARKSSL_X509_NS_CERT_TYPE_SSL_CLIENT
@@ -397,8 +395,8 @@ U32 baGetUnixTime(void);
          SHARKSSL_X509_NS_CERT_TYPE_SSL_CA
          SHARKSSL_X509_NS_CERT_TYPE_OBJECT_SIGNING_CA
 
-   \return 0 on success, otherwise a negative value is returned on
-   error, where the typical reason would be that the buffer is full.
+    \return 0 on success, otherwise a negative value is returned on
+    error, where the typical reason would be that the buffer is full.
  */
 SHARKSSL_API int
 SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
@@ -411,23 +409,22 @@ SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
 #endif
 
 #if SHARKSSL_ENABLE_CSR_SIGNING
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     CSR signing (if not specified, parameters are input parameters)
 
-   \param signedCSR [output variable] is a certificate in SharkSSL
+    \param signedCSR [output variable] is a certificate in SharkSSL
       format. Variable signedCSR will on successfull execution point
       to allocated memory that can be freed by calling
       baFree(signedCSR); Please notice that the SharkSSL
       certificate format includes both the certificate and the private
       key. See the privKey parameter for more information.
-   
-   \param csrData pointer to a CSR, see #SharkSslASN1Create_CSR and
+
+    \param csrData pointer to a CSR, see #SharkSslASN1Create_CSR and
       #SharkSslASN1Create_getDataLen. CSR is in binary DER format.
 
-   \param csrDataLen CSR length, see #SharkSslASN1Create_getDataLen
+    \param csrDataLen CSR length, see #SharkSslASN1Create_getDataLen
 
-   \param caCert: a CA certificate in SharkSSL format or NULL if the
+    \param caCert: a CA certificate in SharkSSL format or NULL if the
       CSR is to be self-signed -- that is, when issuer is the same as
       subject. This certificate may be obtained by using the
       [SharkSslParseCert](\ref SharkSslParseCert) tool. Note that the
@@ -435,7 +432,7 @@ SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
       the CA private key, where the latter will be used to sign the
       certificate obtained from the CSR.
 
-   \param privKey the private key (ECC or RSA) matching the CSR's
+    \param privKey the private key (ECC or RSA) matching the CSR's
       public key, in SharkSSL format. The key may for example be
       obtained by using the [SharkSslParseKey](\ref SharkSslParseKey)
       tool. if the parameter caCert is NULL (self-signing), this key
@@ -451,23 +448,23 @@ SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
       certificate. The produced certificate , with the dummy key,
       cannot be used as argument to SharkSsl_addCertificate.
 
-   \param validFrom UTC date/time string in format YYYYMMDDHHMMSS. The
-   certificate is valid starting from this date. No timezone conversion is
-   performed.
+    \param validFrom UTC date/time string in format YYYYMMDDHHMMSS. The
+    certificate is valid starting from this date. No timezone conversion is
+    performed.
 
-   \param validTo UTC date/time string in format YYYYMMDDHHMMSS. The
-   certificate is valid until this date. No timezone conversion is
-   performed.
+    \param validTo UTC date/time string in format YYYYMMDDHHMMSS. The
+    certificate is valid until this date. No timezone conversion is
+    performed.
 
-   \param serialNumber serial number for the generated certificate.
+    \param serialNumber serial number for the generated certificate.
 
-   \param hashID an identifier for the digest function used in the
+    \param hashID an identifier for the digest function used in the
       certificate signature. Allowed values are:
          SHARKSSL_HASHID_SHA256
          SHARKSSL_HASHID_SHA384
          SHARKSSL_HASHID_SHA512
 
-   \return the number of allocated bytes for the signed certificate or
+    \return the number of allocated bytes for the signed certificate or
       a negative value on error, where the typical reason would be
       that allocation fails. This is a binary format that can be saved
       to RAM or Flash by saving the returned allocated number of bytes
@@ -589,7 +586,8 @@ SharkSsl
 
    ~SharkSsl();
    SharkSslCon *createCon(void);
-   U8 setCAList(SharkSslCAList caList);
+   U8 setCAList(SharkSslCAList list);
+   U8 setCAListEx(SharkSslCAList list, U32 caListLen);
    U8 addCertificate(SharkSslCert cert);
    void terminateCon(SharkSslCon *sslCon);
 #endif
@@ -644,8 +642,9 @@ typedef enum
    /** Returned when an SSL/TLS handshake message has been received or
        is to be sent. During this phase, one must call
        #SharkSslCon_getHandshakeData and
-       #SharkSslCon_getHandshakeDataLen, and send the handshake data to
-       the peer side. 
+       #SharkSslCon_getHandshakeDataLen, send the handshake data to the peer,
+       and report the accepted length using
+       #SharkSslCon_setHandshakeDataSent.
 
        __selib.c code snippet:__
        \dontinclude selib.c
@@ -967,12 +966,30 @@ extern "C" {
     to zero disables the cache management code. See
     [SSL Session Management](@ref SharkSslSessionApi) for details.
 
-    \param inBufStartSize
-    \param outBufSize
+    \param inBufStartSize Initial input-buffer capacity, in bytes, for
+    each #SharkSslCon created from this object. The value does not include
+    the private record headroom allocated by SharkSSL. For a client, the
+    buffer must hold the complete ClientHello selected by the compiled
+    features and the connection options, such as SNI and ALPN. ClientHello
+    construction checks the complete size before writing and does not grow
+    this buffer. For a server, SharkSSL raises the initial allocation when
+    necessary to accommodate the largest installed certificate and the
+    compiled key-exchange requirements. Later received records and
+    fragmented handshake messages may grow the input buffer when
+    #SHARKSSL_DISABLE_INBUF_EXPANSION is zero.
 
-    parameter must be provided if you plan on using function
-    #SharkSslCon_trustedCA or #SharkSslCon_trusted. See
-    #SharkSslCAList for details.
+    \param outBufSize Output-buffer capacity, in bytes, for each
+    #SharkSslCon. The buffer must hold the compiled internal handshake state
+    as well as the handshake message, cipher overhead, and temporary data
+    required by the selected protocol, ciphers, certificates, and connection
+    options.
+
+    There is no configuration-independent minimum for either buffer. If an
+    allocation fails, or a required handshake message and its scratch space
+    do not fit, the handshake API returns #SharkSslCon_AllocationError. With
+    #SHARKSSL_DISABLE_INBUF_EXPANSION enabled, input which requires a larger
+    receive buffer follows the same controlled error path. Terminate the
+    connection after this result.
 
     \sa #SharkSsl_addCertificate, #SharkSsl_setCAList,
     SharkSsl_createCon, and SharkSsl_terminateCon.
@@ -1001,14 +1018,14 @@ SHARKSSL_API void  SharkSsl_destructor(SharkSsl *o);
     The following code snippet is from the
     [example programs](\ref SharkExamples).
     \code
-int rc;
-SharkSslCon *scon;
-if( (rc=se_connect(&sock, "realtimelogic.com", 443)) == 0) // open socket
-{
-   if( (scon = SharkSsl_createCon(&sharkSsl)) != NULL)
-   {
+    int rc;
+    SharkSslCon *scon;
+    if( (rc=se_connect(&sock, "realtimelogic.com", 443)) == 0) // open socket
+    {
+    if( (scon = SharkSsl_createCon(&sharkSsl)) != NULL)
+    {
       // success
-   \endcode
+    \endcode
 
     \return a SharkSslCon object or NULL if memory is exhausted.
 
@@ -1039,7 +1056,7 @@ void SharkSsl_terminateCon(const SharkSsl *o, SharkSslCon *con);
 /** Returns the SharkSsl session cache size.
     \sa SharkSsl_constructor (parameter cacheSize) and
     #SHARKSSL_ENABLE_SESSION_CACHE
-*/
+ */
 SHARKSSL_API U16   SharkSsl_getCacheSize(SharkSsl *o);
 
 #define SharkSsl_setIntf(o, sharkSslIntf) (o)->intf=sharkSslIntf
@@ -1057,8 +1074,8 @@ SHARKSSL_API U16   SharkSsl_getCacheSize(SharkSsl *o);
 #define SharkSslCon_terminate(o) SharkSsl_terminateCon(0, o)
 
 /** @addtogroup SharkSslCoreApi
-@{
-*/
+    @{
+ */
 
 /** Decrypt the received data copied into the SharkSslCon receive
     buffer (the buffer returned by #SharkSslCon_getBuf). See
@@ -1100,7 +1117,16 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 readLen);
     \param maxLen is the length of 'buf' or the length of the data
     data copied directly to the SharkSslCon send buffer.
 
-    \return the decrypt state information #SharkSslCon_RetVal.
+    When #SHARKSSL_ENABLE_KEY_UPDATE is enabled and the copy API is used, this
+    function can return #SharkSslCon_Handshake before consuming any
+    application bytes in order to send a proactive AES-GCM KeyUpdate. Send
+    and acknowledge the handshake data, then call this function again with
+    the same buf and maxLen values. The zero-copy API cannot update before
+    encrypting plaintext already placed in its output buffer; it therefore
+    fails closed at the key-usage limit if the application has not explicitly
+    updated sooner.
+
+    \return the encrypt state information #SharkSslCon_RetVal.
 
     \sa SharkSslCon_getEncBufPtr, SharkSslCon_getEncBufSize, SharkSslCon_decrypt
  */
@@ -1123,28 +1149,33 @@ SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 maxLen);
  */
 #define SHARKSSL_KEY_UPDATE_REQUESTED              1
 
-/**
- * Creates a TLS 1.3 KeyUpdate message and advances the local write keys.
- *
- * Every KeyUpdate rotates the sending direction from the caller to the peer.
- * #SHARKSSL_KEY_UPDATE_NOT_REQUESTED rotates only caller-to-peer traffic and
- * requires no response. #SHARKSSL_KEY_UPDATE_REQUESTED also asks the peer to
- * respond with #SHARKSSL_KEY_UPDATE_NOT_REQUESTED, thereby rotating both
- * traffic directions.
- *
- * The encrypted handshake data must be sent using
- * #SharkSslCon_getHandshakeData and acknowledged using
- * #SharkSslCon_setHandshakeDataSent before encrypting application data.
- *
- * \param o the SharkSslCon object returned by function #SharkSsl_createCon.
- * \param requestUpdate must be #SHARKSSL_KEY_UPDATE_NOT_REQUESTED to rotate
- * only the local sending direction, or #SHARKSSL_KEY_UPDATE_REQUESTED to ask
- * the peer to rotate its sending direction as well. Both values rotate the
- * local write keys.
- *
- * \return TRUE (1) if the request is accepted. Returns FALSE (0) if TLS 1.3
- * is not active, the handshake has not completed, output is pending, or the
- * request value is invalid.
+/** Creates a TLS 1.3 KeyUpdate message and advances the local write keys.
+
+    Every KeyUpdate rotates the sending direction from the caller to the peer.
+    #SHARKSSL_KEY_UPDATE_NOT_REQUESTED rotates only caller-to-peer traffic and
+    requires no response. #SHARKSSL_KEY_UPDATE_REQUESTED also asks the peer to
+    respond with #SHARKSSL_KEY_UPDATE_NOT_REQUESTED, thereby rotating both
+    traffic directions.
+    After a successful #SHARKSSL_KEY_UPDATE_REQUESTED, another requested update
+    is rejected until any subsequent peer KeyUpdate is successfully processed.
+    #SHARKSSL_KEY_UPDATE_NOT_REQUESTED remains available while a requested
+    update is outstanding, subject to the normal connection and output checks.
+
+    Retrieve the encrypted handshake data using #SharkSslCon_getHandshakeData,
+    send it, and report the number of bytes accepted by the transport using
+    #SharkSslCon_setHandshakeDataSent. This acknowledgement is required after
+    every send attempt, including a complete send or a zero-byte result.
+
+    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
+    \param requestUpdate must be #SHARKSSL_KEY_UPDATE_NOT_REQUESTED to rotate
+    only the local sending direction, or #SHARKSSL_KEY_UPDATE_REQUESTED to ask
+    the peer to rotate its sending direction as well. Both values rotate the
+    local write keys.
+
+    \return TRUE (1) if the request is accepted. Returns FALSE (0) if TLS 1.3
+    is not active, the handshake has not completed, output is pending, the
+    request value is invalid, the sending epoch has reached 2^48-1, or if a
+    requested update is already outstanding.
  */
 SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 requestUpdate);
 #endif
@@ -1157,7 +1188,7 @@ SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 requestUpdate);
     connection includes additional data that must be processed by calling
     SharkSslCon_decrypt.
     See state #SharkSslCon_Handshake for example code.
-*/
+ */
 U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o);
 
 
@@ -1197,17 +1228,21 @@ U8  SharkSslCon_decryptMore(SharkSslCon *o);
 
     Example code:
     \code
-   readLen = recv(mysocket, SharkSslCon_getBuf(s),SharkSslCon_getBufLen(s), 0);
-   \endcode
+    readLen = recv(mysocket, SharkSslCon_getBuf(s),SharkSslCon_getBufLen(s), 0);
+    \endcode
     \sa SharkSslCon_getBufLen and SharkSslCon_getDecData
  */
 U8 *SharkSslCon_getBuf(SharkSslCon *o);
 
 
-/** Returns the length of the SharkSslCon input buffer. The buffer is
-    internally managed by SharkSSL and may dynamically grow as large
-    as 16Kbytes. The SharkSslCon input buffer start size is set with
-    parameter inBufStartSize when calling the #SharkSsl_constructor.
+/** Returns the number of bytes currently available at the pointer returned
+    by #SharkSslCon_getBuf. The SharkSslCon input-buffer start size is set with
+    parameter inBufStartSize when calling the #SharkSsl_constructor. If
+    #SHARKSSL_DISABLE_INBUF_EXPANSION is zero, SharkSSL may grow this buffer
+    to receive a larger record or reassemble a fragmented handshake message.
+    The configured #SHARKSSL_MAX_HANDSHAKE_LENGTH and the internal record
+    limit bound this growth. This U16 API exposes at most 65535 bytes at a
+    time.
 
     Many ciphers are block based and the receiving end must read the
     complete block before it can be decrypted. The SSL/TLS
@@ -1229,10 +1264,10 @@ U16 SharkSslCon_getBufLen(SharkSslCon *o);
 
     Example:
     \code
-for(;;)
-{
-   switch (SharkSslCon_decrypt(s, (U16)readLen))
-   {
+    for(;;)
+    {
+    switch (SharkSslCon_decrypt(s, (U16)readLen))
+    {
       case SharkSslCon_Decrypted:
          readLen = SharkSslCon_copyDecData(s, buf, maxLen);
          // decrypted readLen bytes
@@ -1271,9 +1306,12 @@ SHARKSSL_API U16 SharkSslCon_getDecData(SharkSslCon *o, U8 **bufPtr);
     The function returns the handshake data that must be sent to the
     peer side, if any.
 
+    After each send attempt, report the number of bytes accepted by the
+    transport using #SharkSslCon_setHandshakeDataSent.
+
     See #SharkSslCon_Handshake for example code.
 
-    \sa SharkSslCon_getHandshakeDataLen
+    \sa SharkSslCon_getHandshakeDataLen, SharkSslCon_setHandshakeDataSent
  */
 U8 *SharkSslCon_getHandshakeData(SharkSslCon *o);
 
@@ -1285,10 +1323,10 @@ U8 *SharkSslCon_getHandshakeData(SharkSslCon *o);
     The function returns the length of the handshake data that must be
     sent to the peer side, if any. The function returns zero if no
     handshake data should be sent.
-    
+
     See #SharkSslCon_Handshake for example code.
 
-    \sa SharkSslCon_getHandshakeData
+    \sa SharkSslCon_getHandshakeData, SharkSslCon_setHandshakeDataSent
  */
 U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o);
 
@@ -1301,9 +1339,15 @@ U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o);
     that must be sent to the peer side, if any. The function returns 
     zero if no handshake data should be sent.
 
+    Call this function after every attempt to send handshake data, including
+    when the transport accepts the complete buffer or zero bytes. Do not
+    continue connection processing until the function returns zero.
+    A zero-copy transport must acknowledge only bytes for which it no longer
+    references the buffer returned by #SharkSslCon_getHandshakeData.
+
     \param o the SharkSslCon object returned by function #SharkSsl_createCon.
-    \param length is number of handshake bytes sent to the peer 
-    (usually via TCP/IP).
+    \param length is the number of handshake bytes consumed or copied by the
+    transport (usually TCP/IP); it may be zero.
 
     \sa SharkSslCon_getHandshakeData
  */
@@ -1328,7 +1372,7 @@ U8 *SharkSslCon_getEncData(SharkSslCon *o);
 
     The function returns the length of the encoded data that must be
     sent to the peer side.
-   
+
     See #SharkSslCon_Encrypted for example code.
 
     \sa SharkSslCon_getEncData and SharkSslCon_encryptMore
@@ -1459,27 +1503,37 @@ SHARKSSL_API U8 SharkSsl_addCertificate(SharkSsl *o, SharkSslCert cert);
 
 #if SHARKSSL_ENABLE_CA_LIST
 
-/** Set a Certificate Authority (CA) list so the SharkSSL object can
-    permform certificate validation on the peer's certificate.
-    
-    \param o the SharkSsl object.
-
-    \param caList list created by calling #SharkSslCertStore_assemble
-    or by using the command line tool
-    [SharkSSLParseCAList](\ref SharkSSLParseCAList)
-
-    __Note:__ You can only set one CA list, thus the CA list must
-    include all root certificates required for your system.
-
-    The example program certcheck.c includes code that shows how to
-    perform complete certificate validation of the connected servers.
-
-    \return TRUE if the CA list was successfully installed or FALSE if
-    another CA list has previously been installed.
-
-    \sa #SharkSslCAList and SharkSslCon_trusted.
+/**
+ * Set a Certificate Authority (CA) list so the SharkSSL object can perform
+ * certificate validation on the peer's certificate.
+ *
+ * \param o the SharkSsl object.
+ *
+ * \param caList list created by calling #SharkSslCertStore_assemble or by
+ * using the command line tool [SharkSSLParseCAList](\ref SharkSSLParseCAList).
+ *
+ * \param caListLen allocation length when caList is a serialized index list
+ * created by SharkSSLParseCAList. A nonzero length validates the complete list
+ * before installing it. Lists created by #SharkSslCertStore_assemble contain
+ * pointers and must use zero. Zero preserves the historical trusted-data
+ * behavior and requires the application to guarantee the list's lifetime and
+ * extent.
+ *
+ * __Note:__ You can only set one CA list, thus the CA list must include all
+ * root certificates required for your system. The CA list must remain valid
+ * and unchanged while the SharkSsl object uses it.
+ *
+ * The example program certcheck.c includes code that shows how to perform
+ * complete certificate validation of the connected servers.
+ *
+ * \return TRUE if the CA list was successfully installed. Returns FALSE if
+ * connections already exist or a length-aware validation fails.
+ *
+ * \sa #SharkSslCAList and SharkSslCon_trusted.
  */
-SHARKSSL_API U8  SharkSsl_setCAList(SharkSsl *o, SharkSslCAList caList);
+SHARKSSL_API U8 SharkSsl_setCAListEx(SharkSsl *o, SharkSslCAList caList, U32 caListLen);
+/** Install an application-trusted CA list without validating its allocation extent. */
+#define SharkSsl_setCAList(o, caList) SharkSsl_setCAListEx((o), (caList), 0)
 
 /** Returns TRUE if the certificate is valid and is signed with a root
     certificate trusted by SharkSSL. Root certificates can optionally
@@ -1508,14 +1562,13 @@ U8  SharkSslCon_isCAListEmpty(SharkSslCon *o);
 /** Disable RSA preference in SharkSslCon_favorRSA. */
 #define SHARKSSL_CLEAR_FAVOR_RSA    0
 
-/**
- * Configures TLS 1.2 cipher-suite selection to favor RSA-authenticated
- * suites when both RSA and ECDSA certificates are available. This setting
- * does not affect TLS 1.3 certificate selection.
- * \param o connection to configure before the initial or renegotiation
- * handshake starts.
- * \param flag #SHARKSSL_SET_FAVOR_RSA or #SHARKSSL_CLEAR_FAVOR_RSA.
- * \return 1 if the preference was updated; otherwise 0.
+/** Configures TLS 1.2 cipher-suite selection to favor RSA-authenticated
+    suites when both RSA and ECDSA certificates are available. This setting
+    does not affect TLS 1.3 certificate selection.
+    \param o connection to configure before the initial or renegotiation
+    handshake starts.
+    \param flag #SHARKSSL_SET_FAVOR_RSA or #SHARKSSL_CLEAR_FAVOR_RSA.
+    \return 1 if the preference was updated; otherwise 0.
  */
 U8  SharkSslCon_favorRSA(SharkSslCon *o, U8 flag);
 #endif  /* SHARKSSL_SSL_SERVER_CODE */
@@ -1524,8 +1577,8 @@ U8  SharkSslCon_favorRSA(SharkSslCon *o, U8 flag);
 U8  SharkSslCon_selectProtocol(SharkSslCon *o, U8 protocol);
 
 /** @addtogroup SharkSslSessionApi
-@{
-*/
+    @{
+ */
 
 #if SHARKSSL_ENABLE_SESSION_CACHE
 
@@ -1540,7 +1593,7 @@ SHARKSSL_API U8    SharkSslCon_isResumed(SharkSslCon *o);
 SHARKSSL_API U8    SharkSslSession_release(SharkSslSession *o, SharkSsl *s);
 
 #if SHARKSSL_SSL_SERVER_CODE
-/** experimental 
+/** experimental
  */
 SHARKSSL_API U8    SharkSslCon_releaseSession(SharkSslCon *o);
 #endif
@@ -1553,7 +1606,7 @@ SHARKSSL_API U8    SharkSslCon_releaseSession(SharkSslCon *o);
     session cache pool is exhausted. See parameter 'cacheSize' in
     function SharkSsl_constructor for more information on the cache
     size.
-  */
+ */
 SHARKSSL_API SharkSslSession *SharkSslCon_acquireSession(SharkSslCon *o);
 
 
@@ -1577,71 +1630,58 @@ SHARKSSL_API U32   SharkSslSession_getLatestAccessTime(SharkSslSession *o);
 
 #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH && \
     (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
-/** This function is used by server solutions that require client SSL
-    certificate authentication. For example, it can be used by an
-    HTTPS server that requires the client to authenticate using a
-    certificate signed with a Certificate Authority (CA) known to the
-    server. The second parameter, caList specifies one or several CA
-    certificates the server uses when validating the client
-    certificate.
-
-    The function must be called before the initial handshake has
-    started or just after calling SharkSslCon_renegotiate. Calling
-    SharkSslCon_requestClientCert after #SharkSslCon_renegotiate
-    enables an existing session to request client authentication at a
-    later stage. For example, a server may require that the client
-    authenticates when the user navigates to a protected web page.
-
-    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
-
-    \param caList the SharkSSL CA list is in a binary format optimized
-    for speed and size. The list can be created by calling
-    #SharkSslCertStore_assemble or by using the command line tool
-    [SharkSSLParseCAList](\ref SharkSSLParseCAList). The client is
-    then requested to provide an SSL certificate and this certificate
-    must be signed using one of the CA certificates provided in the
-    caList. The SSL handshake or rehandshake fails if the client's
-    certificate is not trusted or not signed with a known CA
-    certificate.
-
-    \return TRUE (1) if the request is accepted. Returns FALSE (0) if
-    the SharkSSL connection is already going through or done with a
-    handshaking phase.
+/**
+ * Request client-certificate authentication. The CA list specifies the
+ * authorities accepted by the server when validating the client certificate.
+ *
+ * The function must be called before the initial handshake starts or just
+ * after calling #SharkSslCon_renegotiate. Calling it after renegotiation lets
+ * an existing TLS 1.2 session request client authentication. It also initiates
+ * TLS 1.3 post-handshake authentication when that feature is enabled.
+ *
+ * \param o the SharkSslCon object returned by #SharkSsl_createCon.
+ *
+ * \param caList a CA list created by #SharkSslCertStore_assemble or the
+ * [SharkSSLParseCAList](\ref SharkSSLParseCAList) command-line tool. The list
+ * may be NULL when no CA list is supplied.
+ *
+ * \param caListLen allocation length when caList is a serialized index list
+ * created by SharkSSLParseCAList. A nonzero length validates the complete list
+ * before accepting the request. Lists created by #SharkSslCertStore_assemble
+ * contain pointers and must use zero. Zero requires application-trusted data.
+ *
+ * \return TRUE if the request is accepted. Returns FALSE if the connection is
+ * in an incompatible handshake state or a length-aware validation fails.
  */
-SHARKSSL_API U8 SharkSslCon_requestClientCert(
-   SharkSslCon *o, const void *caList);
+SHARKSSL_API U8 SharkSslCon_requestClientCertEx(SharkSslCon *o, const void *caList, U32 caListLen);
+/** Request client authentication with an application-trusted CA list. */
+#define SharkSslCon_requestClientCert(o, caList) SharkSslCon_requestClientCertEx((o), (caList), 0)
 #endif
 
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_EXTENSION && \
     (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
-/** This function is used by client solutions that require server SSL
-    certificate authentication. It implements the "Certificate Authorities"
-    extension as per RFC 8446, section 4.2.4.
-
-    The function must be called before the initial handshake has
-    started. 
-
-    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
-
-    \param caList the SharkSSL CA list is in a binary format optimized
-    for speed and size. The list can be created by calling
-    #SharkSslCertStore_assemble or by using the command line tool
-    [SharkSSLParseCAList](\ref SharkSSLParseCAList). 
-    
-    Whenever the server is requested to provide an SSL certificate, 
-    this certificate must be signed using one of the CA certificates 
-    provided in the caList. The SSL handshake fails if the server's
-    certificate is not trusted or not signed with a known CA
-    certificate. In practice, for the specific connection, caList 
-    will take over the list associated with the SharkSSL object 
-    via #SharkSsl_setCAList.
-
-    \return TRUE (1) if the request is accepted. Returns FALSE (0) if
-    the SharkSSL connection is already going through or done with a
-    handshaking phase.
+/**
+ * Configure the TLS 1.3 Certificate Authorities extension specified in RFC
+ * 9846, Section 4.2.4. The function must be called before the initial handshake
+ * starts.
+ *
+ * \param o the SharkSslCon object returned by #SharkSsl_createCon.
+ *
+ * \param caList a CA list created by #SharkSslCertStore_assemble or the
+ * [SharkSSLParseCAList](\ref SharkSSLParseCAList) command-line tool. For this
+ * connection it overrides the list installed with #SharkSsl_setCAList.
+ *
+ * \param caListLen allocation length when caList is a serialized index list
+ * created by SharkSSLParseCAList. A nonzero length validates the complete list
+ * before accepting it. Lists created by #SharkSslCertStore_assemble contain
+ * pointers and must use zero. Zero requires application-trusted data.
+ *
+ * \return TRUE if the CA list is accepted. Returns FALSE if the handshake has
+ * already progressed too far or a length-aware validation fails.
  */
-SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
-   SharkSslCon *o, const void *caList);
+SHARKSSL_API U8 SharkSslCon_setCertificateAuthoritiesEx(SharkSslCon *o, const void *caList, U32 caListLen);
+/** Configure the extension with an application-trusted CA list. */
+#define SharkSslCon_setCertificateAuthorities(o, caList) SharkSslCon_setCertificateAuthoritiesEx((o), (caList), 0)
 #endif
 
 #if SHARKSSL_ENABLE_ALPN_EXTENSION
@@ -1649,7 +1689,7 @@ SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
 /** This function is used by client solutions to specify a list of
     application layer protocols according to RFC 7301 (ALPN).
     It must be called before the initial handshake has started.
-    
+
     \param o the SharkSslCon object returned by function #SharkSsl_createCon.
 
     \param protList a comma-separated list of protocol names, or NULL to
@@ -1659,12 +1699,12 @@ SHARKSSL_API U8 SharkSslCon_setCertificateAuthorities(
     The string is not copied and must therefore remain valid and
     unmodified for as long as it may be used by the connection, including
     calls to #SharkSslCon_getALPNProtocol (e.g., a constant string stored in ROM).
-        
+
     \return TRUE (1) if the protocol list is accepted or successfully
     cleared. Returns FALSE (0) if the connection is invalid, is not a
     client connection, has already started the handshake, or if
     protList is malformed or exceeds the permitted length.
-*/
+ */
 SHARKSSL_API U8 SharkSslCon_setALPNProtocols(SharkSslCon *o, const char *protList);
 
 /** This function is used by client solutions to return the application
@@ -1679,7 +1719,7 @@ SHARKSSL_API U8 SharkSslCon_setALPNProtocols(SharkSslCon *o, const char *protLis
     selected by the server - this pointer is to the string passed via the
     function #SharkSslCon_setALPNProtocols; please be aware that the protocol
     name can be terminated by a NULL or a comma, according to the passed string.
-*/
+ */
 SHARKSSL_API const char *SharkSslCon_getALPNProtocol(SharkSslCon *o);
 #endif
 #if SHARKSSL_SSL_SERVER_CODE
@@ -1691,35 +1731,34 @@ SHARKSSL_API U8 SharkSslCon_setALPNFunction(
 
 #if ((SHARKSSL_SSL_SERVER_CODE || SHARKSSL_SSL_CLIENT_CODE) && \
      SHARKSSL_ENABLE_SELECT_CIPHERSUITE)
-/**
-This function enables you to limit the number of ciphers at
-runtime. Cipher suites can be enabled/disabled at compile time, but
-your application may require that you also allow only specific ciphers
-at runtime. By default, all ciphers enabled at compile time can be
-used by SharkSSL. Calling this function disables the use of all
-ciphers except the selected cipher. You can call this function up to N
-times and re-enable N ciphers. N is by default set to 8 at compile
-time. You can change the N value by setting macro
-#SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH.
+/** This function enables you to limit the number of ciphers at
+    runtime. Cipher suites can be enabled/disabled at compile time, but
+    your application may require that you also allow only specific ciphers
+    at runtime. By default, all ciphers enabled at compile time can be
+    used by SharkSSL. Calling this function disables the use of all
+    ciphers except the selected cipher. You can call this function up to N
+    times and re-enable N ciphers. N is by default set to 8 at compile
+    time. You can change the N value by setting macro
+    #SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH.
 
-The function must be called before the initial handshake has completed
-or just after calling SharkSslCon_renegotiate. Calling
-SharkSslCon_selectCiphersuite and then #SharkSslCon_renegotiate
-enables an existing session to change cipher.
+    The function must be called before the initial handshake has completed
+    or just after calling SharkSslCon_renegotiate. Calling
+    SharkSslCon_selectCiphersuite and then #SharkSslCon_renegotiate
+    enables an existing session to change cipher.
 
-<b>Example:</b><br>
-SharkSslCon_selectCiphersuite(myCon, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384)
+    <b>Example:</b><br>
+    SharkSslCon_selectCiphersuite(myCon, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384)
 
-\param o the SharkSslCon object returned by function #SharkSsl_createCon.
+    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
 
-\param cipherSuite is one of the [supported ciphers](\ref SharkSslCiphers)
-enabled at compile time.
+    \param cipherSuite is one of the [supported ciphers](\ref SharkSslCiphers)
+    enabled at compile time.
 
-\return TRUE (1) if the request is accepted. Returns FALSE (0) if the
-SharkSSL connection is currently in the handshaking phase, if the
-selected cipher was not enabled at compile time, or if called more
-than N times.
-*/
+    \return TRUE (1) if the request is accepted. Returns FALSE (0) if the
+    SharkSSL connection is currently in the handshaking phase, if the
+    selected cipher was not enabled at compile time, or if called more
+    than N times.
+ */
 SHARKSSL_API U8 SharkSslCon_selectCiphersuite(SharkSslCon *o, U16 cipherSuite);
 
 /** Clears the selection, thus enabling all ciphers.
@@ -1746,7 +1785,7 @@ SHARKSSL_API U8 SharkSslCon_clearCiphersuiteSelection(SharkSslCon *o);
 
     \return TRUE (1) if the request is accepted. Returns FALSE (0) if
     the SharkSSL connection is currently in the handshaking phase.
-*/
+ */
 SHARKSSL_API U8 SharkSslCon_renegotiate(SharkSslCon *o);
 #endif
 
@@ -1823,31 +1862,31 @@ typedef enum
 
 
 /** Create a SharkSslCert certificate by using a certificate and key
- * in PEM format.
+    * in PEM format.
 
     example:
 
     \code
-int addMyCert(SharkSsl *shark)
-{
-   SharkSslCert *sharkCert;
-   // The two following functions illustrate how a certificate and
-   // key can be read from a file system and inserted into an
-   // allocated buffer.
-   char *cert=readMyCertFromFileSystem();
-   char *key=readMyKeyFromFileSystem();
-   if(sharkssl_PEM(cert,key,NULL,&sharkCert))
+    int addMyCert(SharkSsl *shark)
+    {
+    SharkSslCert *sharkCert;
+    // The two following functions illustrate how a certificate and
+    // key can be read from a file system and inserted into an
+    // allocated buffer.
+    char *cert=readMyCertFromFileSystem();
+    char *key=readMyKeyFromFileSystem();
+    if(sharkssl_PEM(cert,key,NULL,&sharkCert))
       return -1;
-   free(cert);
-   free(key);
-   // You may redesign the code and keep a reference to the
-   // SharkSslCert object if you design a system using dynamic objects
-   // i.e. if you later plan on releasing the SharkSSL object and
-   // the SharkSslCert object. You cannot release the SharkSslCert
-   // object before releasing the SharkSSL object.
-   SharkSsl_addCertificate(shark,sharkCert);
-   return 0;
-}
+    free(cert);
+    free(key);
+    // You may redesign the code and keep a reference to the
+    // SharkSslCert object if you design a system using dynamic objects
+    // i.e. if you later plan on releasing the SharkSSL object and
+    // the SharkSslCert object. You cannot release the SharkSslCert
+    // object before releasing the SharkSSL object.
+    SharkSsl_addCertificate(shark,sharkCert);
+    return 0;
+    }
     \endcode
  */
 SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(
@@ -1857,20 +1896,20 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
 /** sharkssl_PEM_PBKDF2 (output, passphrase, salt, salt_len, iterations, dkLen, hashID)
     Derives a key from a passphrase using the PBKDF2 algorithm as specified in RFC 8018 section 5.2.
-  
-   This function performs the Password-Based Key Derivation Function 2 (PBKDF2) to derive a key from a given passphrase.
-   The derived key is computed by iterating the specified hash function over the passphrase and salt.
-  
-   \param dk          pointer to the buffer where the derived key will be stored
-   \param passphrase  pointer to the passphrase (null-terminated string) used to derive the key
-   \param salt        pointer to the salt string used in the key derivation process
-   \param saltLen     length of the salt in bytes
-   \param iterations  number of iterations to perform in the key derivation process
-   \param dkLen       desired length of the derived key in bytes.
-   \param hashID      identifier for the digest function to use; allowed values are: 
+
+    This function performs the Password-Based Key Derivation Function 2 (PBKDF2) to derive a key from a given passphrase.
+    The derived key is computed by iterating the specified hash function over the passphrase and salt.
+
+    \param dk          pointer to the buffer where the derived key will be stored
+    \param passphrase  pointer to the passphrase (null-terminated string) used to derive the key
+    \param salt        pointer to the salt string used in the key derivation process
+    \param saltLen     length of the salt in bytes
+    \param iterations  number of iterations to perform in the key derivation process
+    \param dkLen       desired length of the derived key in bytes.
+    \param hashID      identifier for the digest function to use; allowed values are: 
                       SHARKSSL_HASHID_SHA512,  SHARKSSL_HASHID_SHA384, SHARKSSL_HASHID_SHA256
-                        
-   \return 0 on success, or a non-zero error code on failure
+
+    \return 0 on success, or a non-zero error code on failure
  */
 SHARKSSL_API int sharkssl_PEM_PBKDF2(
    U8 *dk, const char *passphrase, 
@@ -1965,13 +2004,13 @@ typedef U8* SharkSslRSAKey;
 #if SHARKSSL_ENABLE_PEM_API
 /** Convert an RSA private or public key in PEM format to the
     #SharkSslRSAKey format.
- 
+
     Note: the converted value must be released by calling
     SharkSslRSAKey_free, when no longer needed.
 
     example:
     \code
-   {
+    {
       SharkSslRSAKey RSAKey;   
       ...
       RSAKey = sharksslPEM_to_RSAKey(key, pass);
@@ -1980,12 +2019,12 @@ typedef U8* SharkSslRSAKey;
          ...
          void SharkSslRSAKey_free(RSAKey);
       }
-   }
-   \endcode
+    }
+    \endcode
 
-   \return the private/public key in #SharkSslRSAKey format or NULL if
-   the conversion fails.
-  */
+    \return the private/public key in #SharkSslRSAKey format or NULL if
+    the conversion fails.
+ */
 SHARKSSL_API SharkSslRSAKey sharkssl_PEM_to_RSAKey(
    const char *PEMKey, const char *passphrase);
 
@@ -1996,7 +2035,7 @@ SHARKSSL_API SharkSslRSAKey sharkssl_PEM_to_RSAKey(
 
     example:
     \code
-   {
+    {
       SharkSslKey SslKey;   
       ...
       SslKey = sharkssl_PEM_extractPublicKey(cert);
@@ -2005,11 +2044,11 @@ SHARKSSL_API SharkSslRSAKey sharkssl_PEM_to_RSAKey(
          ...
          void SharkSslKey_free(SslKey);
       }
-   }
-   \endcode
+    }
+    \endcode
 
-   \return the certificate's public key in #SharkSslKey (RSA or ECC) format
-   or NULL if the conversion fails.
+    \return the certificate's public key in #SharkSslKey (RSA or ECC) format
+    or NULL if the conversion fails.
 
  */
 SHARKSSL_API SharkSslKey
@@ -2029,38 +2068,36 @@ SHARKSSL_API void SharkSslRSAKey_free(SharkSslRSAKey key);
 
 #if SHARKSSL_ENABLE_RSA
 #if SHARKSSL_ENABLE_RSAKEY_CREATE
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     RSA key creation.
 
-  \param privKey [output parameter] points to a buffer allocated by
+    \param privKey [output parameter] points to a buffer allocated by
      SharkSslRSAKey_create and which contains the generated private
      RSA key; the key is represented in the SharkSSL format.
 
-  \param keyLength key length in bits, valid values: 1024,
+    \param keyLength key length in bits, valid values: 1024,
      2048, 4096; other key length are not currently supported for
      certificate creation. 
-     
-  \return the number of allocated bytes if the key creation was
-   successful. A negative value is returned on error --
-   e.g. allocation error.  They key is in a binary format that can be
-   saved to RAM or Flash by saving the returned allocated number of
-   bytes starting at the address pointed to by 'privKey'
 
-   Note: the key must be saved after creating it if the key must
-   be persistent. See the #SharkSslECCKey_create example for more information.
+    \return the number of allocated bytes if the key creation was
+    successful. A negative value is returned on error --
+    e.g. allocation error.  They key is in a binary format that can be
+    saved to RAM or Flash by saving the returned allocated number of
+    bytes starting at the address pointed to by 'privKey'
+
+    Note: the key must be saved after creating it if the key must
+    be persistent. See the #SharkSslECCKey_create example for more information.
  */
 SHARKSSL_API int SharkSslRSAKey_create(SharkSslRSAKey *privKey, U16 keyLength);
 
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     RSA public key extraction from a private key.
 
-  \param privKey [input parameter] RSA key represented in the
+    \param privKey [input parameter] RSA key represented in the
      internal SharkSSL format. See the privKey parameter in
      #SharkSslRSAKey_create function.
 
-  \return a pointer to the RSA public key as sequence of bytes.
+    \return a pointer to the RSA public key as sequence of bytes.
      The RSA public key is a modulo and its length can be
      determined by calling the function #SharkSslRSAKey_size and
      passing to it the RSA key privKey.
@@ -2068,8 +2105,7 @@ SHARKSSL_API int SharkSslRSAKey_create(SharkSslRSAKey *privKey, U16 keyLength);
 SHARKSSL_API U8 *SharkSslRSAKey_getPublic(SharkSslRSAKey privKey);
 #endif 
 
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     Returns the private or public key's modulus size in bytes.
  */
 SHARKSSL_API U16 SharkSslRSAKey_size(SharkSslRSAKey key);
@@ -2091,10 +2127,10 @@ SHARKSSL_API U16 SharkSslRSAKey_size(SharkSslRSAKey key);
     \param out the encrypted ciphertext is copied to this buffer. The
     size of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-   \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
-   #SHARKSSL_RSA_NO_PADDING
+    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
+    #SHARKSSL_RSA_NO_PADDING
 
-   \return the size of the encrypted ciphertext, or -1 if any error occurs
+    \return the size of the encrypted ciphertext, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt(
     SharkSslRSAKey pubkey, const U8 *in, int len, U8 *out, int padding);
@@ -2112,52 +2148,50 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt(
     \param out the decrypted ciphertext is copied to this buffer. The
     size of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-   \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
-   #SHARKSSL_RSA_NO_PADDING
+    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
+    #SHARKSSL_RSA_NO_PADDING
 
-   \return the size of the decrypted ciphertext, or -1 if any error occurs
+    \return the size of the decrypted ciphertext, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt(
    SharkSslRSAKey privkey, const U8 *in, int len, U8 *out, int padding);
 
 
-/**
- * Sign a hash using a private RSA key.
- * Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.1.
- *
- * \param privkey is the private key in SharkSslRSAKey format.
- * \param sig     Pointer to the buffer where the signature will be stored.
- *                The buffer size must be at least #SharkSslRSAKey_size.
- * \param siglen  Pointer to store the length of the generated signature (output parameter).
- * \param hash    Pointer to the hash to sign.
- * \param hashID  Identifier for the digest function used.
- *                Valid values:
- *                - SHARKSSL_HASHID_SHA256
- *                - SHARKSSL_HASHID_SHA384
- *                - SHARKSSL_HASHID_SHA512
- * \return 0 upon successful completion, or an error value to be checked
- *         against #sharkssl_RSA_RetVal.
+/** Sign a hash using a private RSA key.
+    Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.1.
+
+    \param privkey is the private key in SharkSslRSAKey format.
+    \param sig     Pointer to the buffer where the signature will be stored.
+                   The buffer size must be at least #SharkSslRSAKey_size.
+    \param siglen  Pointer to store the length of the generated signature (output parameter).
+    \param hash    Pointer to the hash to sign.
+    \param hashID  Identifier for the digest function used.
+                   Valid values:
+                   - SHARKSSL_HASHID_SHA256
+                   - SHARKSSL_HASHID_SHA384
+                   - SHARKSSL_HASHID_SHA512
+    \return 0 upon successful completion, or an error value to be checked
+            against #sharkssl_RSA_RetVal.
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_sign_hash(
    SharkSslRSAKey privkey, U8 *sig, U16 *siglen, const U8 *hash, U8 hashID);
 
 
-/**
- * Verify a signature hash using a public RSA key.
- * Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.2.
- *
- * \param pubkey The public key in SharkSslRSAKey format.
- *               A corresponding private key may also be used.
- * \param sig     Pointer to the signature to verify.
- * \param siglen  The length of the signature in bytes (input parameter).
- * \param hash    Pointer to the hash to verify against the signature.
- * \param hashID Identifier for the digest function used.
- *              Valid values:
- *                - SHARKSSL_HASHID_SHA256
- *                - SHARKSSL_HASHID_SHA384
- *                - SHARKSSL_HASHID_SHA512
- * \return 0 upon successful verification, or an error value to be checked
- *         against #sharkssl_RSA_RetVal.
+/** Verify a signature hash using a public RSA key.
+    Padding follows PKCS#1 V1.5 per RFC 8017 section 8.2.2.
+
+    \param pubkey The public key in SharkSslRSAKey format.
+                  A corresponding private key may also be used.
+    \param sig     Pointer to the signature to verify.
+    \param siglen  The length of the signature in bytes (input parameter).
+    \param hash    Pointer to the hash to verify against the signature.
+    \param hashID Identifier for the digest function used.
+                 Valid values:
+                   - SHARKSSL_HASHID_SHA256
+                   - SHARKSSL_HASHID_SHA384
+                   - SHARKSSL_HASHID_SHA512
+    \return 0 upon successful verification, or an error value to be checked
+            against #sharkssl_RSA_RetVal.
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_verify_hash(
    SharkSslRSAKey pubkey, U8 *sig, U16 siglen, const U8 *hash, U8 hashID);
@@ -2166,27 +2200,27 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_verify_hash(
 #if SHARKSSL_ENABLE_RSA_OAEP
 /** Decrypt ciphertext using the private key, padding is OAEP per RFC 8017.
 
-   \param privkey is the private key in SharkSslRSAKey format.
+    \param privkey is the private key in SharkSslRSAKey format.
 
-   \param in the ciphertext (must be in RAM since ITS CONTENT WILL BE MODIFIED)
+    \param in the ciphertext (must be in RAM since ITS CONTENT WILL BE MODIFIED)
 
-   \param len is the length/size of parameter 'in'. This length must be
-   exactly #SharkSslRSAKey_size(privkey).
+    \param len is the length/size of parameter 'in'. This length must be
+    exactly #SharkSslRSAKey_size(privkey).
 
-   \param hashID an identifier for the digest function used 
+    \param hashID an identifier for the digest function used 
     Allowed values are:
         SHARKSSL_HASHID_SHA1
 
-   \param out the decrypted ciphertext is copied to this buffer. The
-   size of this buffer must be no less than the expected decrypted text
+    \param out the decrypted ciphertext is copied to this buffer. The
+    size of this buffer must be no less than the expected decrypted text
 
-   \param label is an optional label per RFC 8017 sec. 7.1.1. Use
+    \param label is an optional label per RFC 8017 sec. 7.1.1. Use
     null string when empty.
 
-   \param labelLen is the length of the label. Specify 0 when label
+    \param labelLen is the length of the label. Specify 0 when label
     is empty
 
-   \return the size of the decrypted ciphertext, or <0 if any error occurs
+    \return the size of the decrypted ciphertext, or <0 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
    SharkSslRSAKey privkey, U8 *in, int len, U8 hashID, U8 *out, const char *label, U16 labelLen);
@@ -2194,28 +2228,28 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
 
 /** Encrypt cleartext using the public key, padding is OAEP per RFC 8017.
 
-   \param pubkey is the public key in SharkSslRSAKey format. The matching
-   private key can be provided, too.
+    \param pubkey is the public key in SharkSslRSAKey format. The matching
+    private key can be provided, too.
 
-   \param in the cleartext (not required to be in RAM)
+    \param in the cleartext (not required to be in RAM)
 
-   \param len is the length/size of parameter 'in'. This length must be
-   not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
+    \param len is the length/size of parameter 'in'. This length must be
+    not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
 
-   \param hashID an identifier for the digest function used 
+    \param hashID an identifier for the digest function used 
     Allowed values are:
         SHARKSSL_HASHID_SHA1
 
-   \param out the encrypted cleartext is copied to this buffer. The
-   size of this buffer must be #SharkSslRSAKey_size(pubkey)
+    \param out the encrypted cleartext is copied to this buffer. The
+    size of this buffer must be #SharkSslRSAKey_size(pubkey)
 
-   \param label is an optional label per RFC 8017 sec. 7.1.1. Use
+    \param label is an optional label per RFC 8017 sec. 7.1.1. Use
     null string when empty.
 
-   \param labelLen is the length of the label. Specify 0 when label
+    \param labelLen is the length of the label. Specify 0 when label
     is empty
 
-   \return the size of the encrypted ciphertext, or <0 if any error occurs
+    \return the size of the encrypted ciphertext, or <0 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(
    SharkSslRSAKey pubkey, const U8 *in, int len, U8 hashID, U8 *out, const char *label, U16 labelLen);
@@ -2237,16 +2271,16 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_encrypt_OAEP(
     \param out the signature is copied to this buffer. The size
     of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-   \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
-   #SHARKSSL_RSA_NO_PADDING
+    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
+    #SHARKSSL_RSA_NO_PADDING
 
-   \return the size of the signature, or -1 if any error occurs
+    \return the size of the signature, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_encrypt(
    SharkSslRSAKey privkey, const U8 *in, int len, U8 *out, int padding);
 
 
-/** Bring back a message digest using the public key or private key. 
+/** Bring back a message digest using the public key or private key.
     The private key includes the public key an can for this reason be used for
     this operation.
 
@@ -2261,10 +2295,10 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_encrypt(
     \param out the message digest is copied to this buffer. The size
     of this buffer must be no less than #SharkSslRSAKey_size (key)
 
-   \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
-   #SHARKSSL_RSA_NO_PADDING
+    \param padding is one of #SHARKSSL_RSA_PKCS1_PADDING or
+    #SHARKSSL_RSA_NO_PADDING
 
-   \return the size of the obtained message digest, or -1 if any error occurs
+    \return the size of the obtained message digest, or -1 if any error occurs
  */
 SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_decrypt(
    SharkSslRSAKey pubkey, const U8 *in, int len, U8 *out, int padding);
@@ -2330,7 +2364,7 @@ SHARKSSL_API int sharkssl_X25519_createKeyPair(
 
 /** Calculate an X25519 shared secret.
     \ingroup RayCryptoApi
-    
+
     \param privateKey a 32-byte private key generated by
            #sharkssl_X25519_createKeyPair. The key must be passed
            unchanged to this function.
@@ -2356,17 +2390,16 @@ SHARKSSL_API int sharkssl_X25519_sharedSecret(
 typedef U8* SharkSslECCKey;
 
 #if SHARKSSL_ENABLE_PEM_API
-/** 
-    @ingroup ECDSA
+/** @ingroup ECDSA
     Convert an ECC private or public key in PEM format to the
     #SharkSslECCKey format.
- 
+
     Note: the converted value must be released by calling
     SharkSslECCKey_free, when no longer needed.
 
     example:
     \code
-   {
+    {
       SharkSslECCKey ECCKey;   
       ...
       ECCKey = sharksslPEM_to_ECCKey(key, pass);
@@ -2375,24 +2408,23 @@ typedef U8* SharkSslECCKey;
          ...
          void SharkSslECCKey_free(ECCKey);
       }
-   }
-   \endcode
+    }
+    \endcode
 
-   \return the private/public key in #SharkSslECCKey format or NULL if
-   the conversion fails.
-  */
+    \return the private/public key in #SharkSslECCKey format or NULL if
+    the conversion fails.
+ */
 SHARKSSL_API SharkSslECCKey sharkssl_PEM_to_ECCKey(
    const char *PEMKey, const char *passphrase);
 
 
 #if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
-/** 
-   @ingroup SharkSslCertApi
-   Returns the private or public key's "vector size" in bytes.
-   The "vector size" is the size of the key as represented as
-   an array of bytes in the SharkSSL internal proprietary format.
-   This function is useful for key comparison or saving.
-  */
+/** @ingroup SharkSslCertApi
+    Returns the private or public key's "vector size" in bytes.
+    The "vector size" is the size of the key as represented as
+    an array of bytes in the SharkSSL internal proprietary format.
+    This function is useful for key comparison or saving.
+ */
 
 SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
 #define SharkSslCert_vectSize(c) SharkSslKey_vectSize((const SharkSslCert)c)
@@ -2410,22 +2442,21 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
 #define SHARKSSL_KEYTYPE_RSA     0x00 
 #define SHARKSSL_KEYTYPE_EC      0x02
 
-/** 
-   @ingroup SharkSslCertApi
-   Returns the private or public key's "vector size" in bytes.
-   The "vector size" is the size of the key as represented as
-   an array of bytes in the SharkSSL internal proprietary format.
-   Returns 0 if the key is not valid.
-   keyType: return value, either SHARKSSL_KEYTYPE_RSA or SHARKSSL_KEYTYPE_EC
-   isKeyPrivate: 0 if public key, 1 if private key
-   if the keyType is SHARKSSL_KEYTYPE_RSA:
+/** @ingroup SharkSslCertApi
+    Returns the private or public key's "vector size" in bytes.
+    The "vector size" is the size of the key as represented as
+    an array of bytes in the SharkSSL internal proprietary format.
+    Returns 0 if the key is not valid.
+    keyType: return value, either SHARKSSL_KEYTYPE_RSA or SHARKSSL_KEYTYPE_EC
+    isKeyPrivate: 0 if public key, 1 if private key
+    if the keyType is SHARKSSL_KEYTYPE_RSA:
      d1: pointer to the modulus, a sequence of bytes in big endian format of length d1Len
      d2: pointer to the exponent, a sequence of bytes in big endian format of length d2Len
-   if the keyType is SHARKSSL_KEYTYPE_EC:
+    if the keyType is SHARKSSL_KEYTYPE_EC:
      d1: pointer to the X coordinate, a sequence of bytes in big endian format of length d1Len
      d2: pointer to the Y coordinate, a sequence of bytes in big endian format of length d2Len
-   This function is useful to extract info from a key.
-  */
+    This function is useful to extract info from a key.
+ */
 SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType, U8 *isKeyPrivate, U8 **d1, U16 *d1Len, U8 **d2, U16 *d2Len);
 #endif
 #endif
@@ -2463,7 +2494,7 @@ typedef int (*sharkssl_rngfunc)(void *handle, U8 *ptr, U16 len);
      SharkSslECCKey_create and which contains the generated private
      ECC key; the key is represented in a the SharkSSL format.
 
-  \param curveID is one of:
+    \param curveID is one of:
     - SHARKSSL_EC_CURVE_ID_SECP256R1
     - SHARKSSL_EC_CURVE_ID_SECP384R1
     - SHARKSSL_EC_CURVE_ID_SECP521R1
@@ -2477,18 +2508,18 @@ typedef int (*sharkssl_rngfunc)(void *handle, U8 *ptr, U16 len);
     \param rngFunc You can use your own random generator function for creating the key
 
 
-  \return the number of allocated bytes if the key creation was
+    \return the number of allocated bytes if the key creation was
      successful. A negative value is returned on error --
      e.g. allocation error.  They key is in a binary format that can
      be saved to RAM or Flash by saving the returned allocated number
      of bytes starting at the address pointed to by 'privKey'
 
-   Note: the key must be saved after creating it if the key must
-   be persistent. 
-   The following example shows how to create and save a key.
-   \code
-   SharkSslECCKey createAndSaveKey(const char *filename)
-   {
+    Note: the key must be saved after creating it if the key must
+    be persistent. 
+    The following example shows how to create and save a key.
+    \code
+    SharkSslECCKey createAndSaveKey(const char *filename)
+    {
       SharkSslECCKey privKey;
       int len = SharkSslECCKey_create(&privKey, SHARKSSL_EC_CURVE_ID_SECP256R1,0,0);
       if(len > 0)
@@ -2502,16 +2533,15 @@ typedef int (*sharkssl_rngfunc)(void *handle, U8 *ptr, U16 len);
          }
       }
       return 0;
-   }
-   \endcode
+    }
+    \endcode
  */
 SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *privKey, U16 curveID, void *rngHandle, sharkssl_rngfunc rngFunc);
 #endif
 
 
 #if (SHARKSSL_ENABLE_PEM_API || SHARKSSL_ENABLE_ECCKEY_CREATE)
-/** 
-    @ingroup SharkSslCertApi
+/** @ingroup SharkSslCertApi
     Release a SharkSslECCKey allocated by functions #sharkssl_PEM_to_ECCKey
     or #SharkSslECCKey_create
  */
@@ -2586,13 +2616,13 @@ typedef enum
 /** @} */ /* end group SharkSslInfoAndCodes */ 
 
 /** @addtogroup ECDSA
-@{
-*/
+    @{
+ */
 
 
 #if SHARKSSL_ENABLE_ECDSA_API
 #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
-/** Returns the maximum length (in bytes) of a DER-encoded ECDSA 
+/** Returns the maximum length (in bytes) of a DER-encoded ECDSA
     signature generated with the private key 'privkey'. This function 
     is typically used in combination with #sharkssl_ECDSA_sign_hash to
     compute the maximum length of the signature and to allocate a 
@@ -2602,7 +2632,7 @@ typedef enum
  */
 SHARKSSL_API U16 sharkssl_ECDSA_siglen(SharkSslECCKey privkey);
 
-/** Generate the signature using the ECC private key and a hash. 
+/** Generate the signature using the ECC private key and a hash.
 
     \param privkey is the private key in #SharkSslECCKey format.
 
@@ -2632,7 +2662,7 @@ SHARKSSL_API sharkssl_ECDSA_RetVal sharkssl_ECDSA_sign_hash(
    SharkSslECCKey privkey, U8 *sig, U16 *siglen, const U8 *hash, U8 hashID);
 #endif
 
-/** Verify a message using the ECC public key and a hash algorithm. 
+/** Verify a message using the ECC public key and a hash algorithm.
 
     \param pubkey is the public key in SharkSslECCKey format.
 
@@ -2709,27 +2739,30 @@ typedef struct SharkSslCertStore
     \param o Uninitialized data of size sizeof(SharkSsl).
 
     \sa #SharkSslCertStore_assemble.
-*/
+ */
 SHARKSSL_API void  SharkSslCertStore_constructor(SharkSslCertStore *o);
 
-/** Cleanup all memory used by the SharkSslCAList object. 
+/** Cleanup all memory used by the SharkSslCAList object.
  */
 SHARKSSL_API void  SharkSslCertStore_destructor(SharkSslCertStore *o);
 
 /** Alias for SharkSslCertStore_destructor */
 #define            SharkSslCertStore_release(o) SharkSslCertStore_destructor(o)
 
-/** add a certificate in PEM or p7b format to the CA store. A
-    convenient way to get CA's is to export the certificates from a
-    browser in PEM or p7b format. The p7b format is a container format
-    that can contain many CA's.
+/** Add one or more certificates to the CA store. The input may contain one
+    binary DER or PEM certificate, multiple PEM certificates, or a PKCS#7/P7B
+    certificate container.
 
     \param o the SharkSslCertStore object.
-    \param cert is a one PEM cert or multiple certs in p7b format.
-    \param certlen is the length of parameter 'cert'
+    \param cert the certificate data.
+    \param certlen the length of parameter `cert` in bytes.
+    \return the number of certificates added by this call, or zero if no
+    certificate was added. Processing multi-certificate input is best-effort:
+    malformed or unsupported entries that can be isolated are skipped. Invalid
+    framing or an allocation failure may stop processing; certificates added
+    before that failure remain in the store and are included in the return value.
+    The return value is not the total number of certificates in the store.
     \sa SharkSslCertStore_assemble.
-    \return the number of certificates successfully parsed and added to
-    the certificate store or a negative value if memory could not be allocated.
  */
 SHARKSSL_API U16   SharkSslCertStore_add(
    SharkSslCertStore *o, const char *cert, U32 certlen);
@@ -2779,8 +2812,11 @@ inline U8 SharkSsl::addCertificate(SharkSslCert cert) {
    return SharkSsl_addCertificate(this, cert);
 }
 #if SHARKSSL_ENABLE_CA_LIST
-inline U8 SharkSsl::setCAList(SharkSslCAList caList) {
-   return SharkSsl_setCAList(this, caList);
+inline U8 SharkSsl::setCAList(SharkSslCAList list) {
+   return SharkSsl_setCAListEx(this, list, 0);
+}
+inline U8 SharkSsl::setCAListEx(SharkSslCAList list, U32 caListLen) {
+   return SharkSsl_setCAListEx(this, list, caListLen);
 }
 #endif  /* SHARKSSL_ENABLE_CA_LIST */
 #endif  /* SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA */

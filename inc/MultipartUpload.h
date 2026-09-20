@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: MultipartUpload.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: MultipartUpload.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -175,7 +175,8 @@ typedef enum {
    MultipartUpload_ReadBoundaryTag,
    MultipartUpload_ReadHeaders,
    MultipartUpload_ReadFormData,
-   MultipartUpload_ReadFileData
+   MultipartUpload_ReadFileData,
+   MultipartUpload_DrainBody
 } MultipartUpload_States;
 
 
@@ -306,7 +307,7 @@ typedef struct MultipartUpload
       char* currBName;
       AllocatorIntf* alloc;
       MultipartUpload_States state;
-      U32 currentI;
+      U32 chunkLineLen;
       U32 readI;
       U32 lineStartI;
       U32 lineEndI;
@@ -314,7 +315,9 @@ typedef struct MultipartUpload
       U32 expandSize;
       U32 maxFormSize;
       BaBool newBoundaryTag;
-      BaBool copyingHttpReqData;
+      BaBool chunked;
+      SBaFileSize bodyLeft; /* Bytes left, or chunk metadata state. */
+      HttpRequest* request; /* Borrowed during blocking run(); NULL otherwise. */
 } MultipartUpload;
 
 

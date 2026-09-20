@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpServer.h 6056 2026-09-20 05:09:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 5993
+#define BASLIB_VER_NO 6062
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(5993)
+#define BASLIB_VER BASLIB_VER_M(6062)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -79,6 +79,7 @@ from HttpPage or HttpDir.
 #include "TargConfig.h"
 #include "HttpConnection.h"
 #include "DoubleList.h"
+#include "SingleList.h"
 #include "SoDisp.h"
 #include "SplayTree.h"
 #include "BaErrorCodes.h"
@@ -1100,9 +1101,17 @@ typedef struct HttpRequest
        */
       const char* getParameter(const char* paramName);
 
-      /** Activate a WebSocket handshake. The function returns 0 on
-          successful handshake and a negative value if the client is
-          not a WebSocket client.
+      /** Validate and send an HTTP/1.1 WebSocket version-13 handshake.
+          Requires GET, Host, Upgrade/Connection tokens, one version field,
+          and one base64 key encoding a 16-byte nonce. Application routing,
+          authentication and Origin policy remain the caller's responsibility.
+          @return 0 after sending 101; -1 if no WebSocket indication is present
+          (no response sent); -2 if the response cannot be reset; -3 on output
+          failure; -4 after attempting a 400 rejection, or 426 with the supported
+          version for an otherwise valid unsupported-version request.
+          Errors do not transfer connection ownership. Callers must not send
+          a second response for -4. Ordinary HTTP can still be taken over as
+          a raw connection when -1 is returned.
       */
       int wsUpgrade();
 
@@ -1208,6 +1217,8 @@ typedef struct HttpRequest
       U16 formsI;
       U16 formLen;
       BaBool postDataConsumed; /* Set by MultipartUpload and HttpRecData */
+      BaBool expect100Continue; /* Validated expectation; cleared when handled. */
+      BaBool chunkedBody; /* Set only after successful framing validation. */
 }HttpRequest;
 
 #ifdef __cplusplus
@@ -3587,7 +3598,7 @@ address}/start.html <b>(*)</b></td></tr>
       HttpLinkCon* connections;
       SoDisp* dispatcher;
       void* userObj;
-      void* waitForConClose; /* See HttpServer_doLingeringClose */
+      SingleList waitForConClose; /* Bounded WaitForConClose list, oldest first. */
       LspOnTerminateRequest lspOnTerminateRequest;
       int commandPoolSize;
       U16 noOfConnections;

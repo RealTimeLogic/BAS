@@ -268,8 +268,8 @@ static void checkTimeThread(Thread* th)
     */
    const char* d = __DATE__;
    char buf[50];
-   if (!(basnprintf(buf, sizeof(buf), "Mon, %c%c %c%c%c %s %s",
-                    d[4],d[5], d[0],d[1],d[2], d + 7, __TIME__) < 0))
+   if (!(basnprintf(buf, sizeof(buf), "Mon, %c%c %c%c%c %s %s GMT",
+                    d[4] == ' ' ? '0' : d[4],d[5], d[0],d[1],d[2], d + 7, __TIME__) < 0))
    {
       BaTime compileT = baParseDate(buf);
       if(compileT) /* If OK: Seconds since 1970 */

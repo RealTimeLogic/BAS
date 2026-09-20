@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjson.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: ubjson.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -76,7 +76,7 @@ typedef enum {
    UBJT_Int64='L', /**< Type UBJT_Int64 */
    UBJT_Float32='d', /**< Type UBJT_Float32 */
    UBJT_Float64='D', /**< Type UBJT_Float64 */
-   UBJT_HNumber='H', /**< Type UBJT_HNumber */
+   UBJT_HNumber='H', /**< Raw numeric text; the parser does not validate its grammar. */
    UBJT_Char='C', /**< Type UBJT_Char */
    UBJT_String='S', /**< Type UBJT_String */
    UBJT_BeginObject='{', /**< Type UBJT_BeginObject */
@@ -174,6 +174,7 @@ typedef struct
    S32 ix; /* Current index goes from 0 to count-1 */
    U8 isObj; /* TRUE for object, FALSE for Array */
    U8 stronglyTyped; /* Set to token type if a strongly typed container */
+   U8 state; /* Container header, body, member value, or pending count */
 } UBJPStackNode;
 
 
@@ -228,6 +229,10 @@ inline UBJPIntf::~UBJPIntf() {
     Specification compatibility is reserved for a separate review. The contracts
     here describe the current implementation, not a conformance certification.
 
+    Only object/array roots are supported. String payloads must be UTF-8;
+    the parser does not validate this encoding. High-precision H values are
+    delivered as raw text for the application to interpret or reject.
+
     \sa UBJVal
     \sa JParser
  */
@@ -241,7 +246,7 @@ typedef struct UBJParser
        \param memberNameLen is the length of the object member name
        buffer. The length must be no less than the largest member name
        expected, plus one byte for its NUL terminator. Empty member names
-       are not supported by the current name-tracking logic.
+       are rejected. Names containing NUL bytes are unsupported.
        \param extraStackLen informs the parser that it can use a stack
        larger than the default depth of 3. Use zero for an ordinary object.
        Positive values require the additional writable storage shown below and
@@ -423,6 +428,9 @@ typedef enum
 
    /** Unknown type (Must be a type from UBJT) */ 
    UBJEStatus_Unknown,
+
+   /** Empty object member names are unsupported. */
+   UBJEStatus_EmptyName,
    
    /** No error */
    UBJEStatus_ok=0
@@ -435,7 +443,12 @@ typedef enum
     exact optimized counts. Output is incremental, and an error can leave partial
     data. Final buffered bytes must be consumed/flushed by the application; the
     destructor does not flush. The current implementation has not been verified
-    against the latest UBJSON specification.
+    against the complete UBJSON specification. Supply UTF-8 strings and
+    nonempty member names without embedded NUL bytes. UTF-8 is not validated.
+    Empty member names return UBJEStatus_EmptyName. Native floating-point
+    values must be finite; the caller must explicitly encode null for
+    nonfinite values. H numeric text must follow JSON number syntax;
+    the encoder does not validate that syntax.
  */
 typedef struct UBJEncoder
 {
@@ -700,7 +713,9 @@ int UBJEncoder_set(UBJEncoder* o, const char* fmt, ...);
 
 /** Set the pending member name. Returns the assigned char pointer (not a status).
     @param o Required initialized encoder.
-    @param v Borrowed NUL-terminated member name, valid until the next value.
+    @param v Borrowed nonempty NUL-terminated member name, valid until the next
+    value. Embedded NUL bytes are unsupported. An empty name is rejected by
+    the next value operation with UBJEStatus_EmptyName.
  */
 #define UBJEncoder_setName(o,v) ((o)->val.name=(char*)v)
 /** Encode null.

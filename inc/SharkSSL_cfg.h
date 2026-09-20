@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 5991 2026-09-12 08:49:46Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6044 2026-09-17 21:15:57Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -73,34 +73,30 @@
 #define SHARKSSL_USE_AES_128                             1
 #endif
 
-/**
- * AES-192 is not used in SSL/TLS
- * enable only if needed in application using the crypto API
+/** AES-192 is not used in SSL/TLS
+ *  enable only if needed in application using the crypto API
  */
 #ifndef SHARKSSL_USE_AES_192
 #define SHARKSSL_USE_AES_192                             0
 #endif
 
-/**
- * AES-GCM require AES:
- * relevant ciphersuites are included
+/** AES-GCM require AES:
+ *  relevant ciphersuites are included
  */
 #ifndef SHARKSSL_ENABLE_AES_GCM
 #define SHARKSSL_ENABLE_AES_GCM                          1
 #endif
 
-/**
- * AES-CCM require AES:
- * only for crypto functions - CCM TLS ciphersuites removed
+/** AES-CCM require AES:
+ *  only for crypto functions - CCM TLS ciphersuites removed
  */
 #ifndef SHARKSSL_ENABLE_AES_CCM
 #define SHARKSSL_ENABLE_AES_CCM                          0
 #endif
 
-/**
- * AES-CBC require AES:
- * CBC TLS ciphersuites removed
- * for crypto functions and PEM certificate decryption
+/** AES-CBC require AES:
+ *  CBC TLS ciphersuites removed
+ *  for crypto functions and PEM certificate decryption
  */
 #ifndef SHARKSSL_ENABLE_AES_CBC
 #define SHARKSSL_ENABLE_AES_CBC                          0
@@ -195,14 +191,42 @@
 
 
 /**
- * Select 1 to enable TLS 1.3 KeyUpdate support (RFC 8446 section 4.6.3).
- * Note: with the default define below, it is enabled whenever TLS 1.3 is.
- * Disabling this option reduces the per-connection RAM and code footprint,
- * but a TLS 1.3 peer KeyUpdate is not supported and the resulting constrained
- * profile is not fully RFC 8446 conformant.
+ * Maximum accepted body length of one incoming TLS handshake message.
+ * The 16-KiB default preserves the embedded memory profile. Host builds may
+ * select, for example, 0x00040000UL (256 KiB); 0x00FFFFFFUL enables the full
+ * uint24 range defined by RFC 9846 section 4. Values above the default widen
+ * three internal buffer counters from U16 to U32. Input-buffer expansion must
+ * also be enabled for those values.
+ */
+#ifndef SHARKSSL_MAX_HANDSHAKE_LENGTH
+#define SHARKSSL_MAX_HANDSHAKE_LENGTH                     0x00004000UL
+#endif
+
+
+/** Select 1 to enable TLS 1.3 KeyUpdate support (RFC 9846 section 4.7.3;
+ *  RFC 8446 section 4.6.3).
+ *  Note: with the default define below, it is enabled whenever TLS 1.3 is.
+ *  Disabling this option reduces the per-connection RAM and code footprint,
+ *  but receiving a TLS 1.3 peer KeyUpdate then closes the connection with a
+ *  fatal unexpected_message alert. The resulting constrained profile is not
+ *  fully TLS 1.3 conformant.
  */
 #ifndef SHARKSSL_ENABLE_KEY_UPDATE
 #define SHARKSSL_ENABLE_KEY_UPDATE                       SHARKSSL_TLS_1_3
+#endif
+
+
+/**
+ * Number of TLS 1.3 records that may be encrypted with one AES-GCM key before
+ * SharkSSL proactively sends a KeyUpdate. Every record is counted as a full-size
+ * record, which is conservative for smaller records. The value may be reduced,
+ * but must not exceed the default 2^23-record threshold; this leaves ample room
+ * below the RFC 9846 section 5.5 usage limit for a pending split write and the
+ * KeyUpdate record itself.
+ * This value is effective only when SHARKSSL_ENABLE_KEY_UPDATE is 1.
+ */
+#ifndef SHARKSSL_TLS_1_3_AES_GCM_KEY_UPDATE_THRESHOLD
+#define SHARKSSL_TLS_1_3_AES_GCM_KEY_UPDATE_THRESHOLD    0x00800000UL
 #endif
 
 
@@ -409,7 +433,7 @@
 /** Automatic certificate cloning - always enabled
  */
 #ifdef SHARKSSL_ENABLE_CLONE_CERTINFO
-#if   !SHARKSSL_ENABLE_CLONE_CERTINFO
+#if (!SHARKSSL_ENABLE_CLONE_CERTINFO)
 #error SHARKSSL_ENABLE_CLONE_CERTINFO is now enabled by default - please remove its #define
 #endif
 #endif
@@ -595,6 +619,19 @@
 #endif
 
 
+/** Select 1 to use the dedicated Curve25519 field arithmetic
+ *  (SharkSslX25519.c) instead of the generic BigInt ladder. The
+ *  dedicated code specializes the arithmetic for p = 2^255 - 19
+ *  (no per-operation Montgomery reduction, fixed inversion chain)
+ *  and is typically several times faster. The generic path remains
+ *  the default; this option has no effect unless Curve25519
+ *  (#SHARKSSL_ECC_USE_CURVE25519) is enabled.
+ */
+#ifndef SHARKSSL_X25519_DEDICATED
+#define SHARKSSL_X25519_DEDICATED                        1
+#endif
+
+
 /** Enable/disable the Curve448 curve (RFC 7748)
  */
 #ifndef SHARKSSL_ECC_USE_CURVE448
@@ -638,6 +675,27 @@
 #define SHARKSSL_OPTIMIZED_POLY1305_ASM                  0
 #endif
 
+/** Enabling assembler optimized GHASH requires SharkSslCrypto_XX.s
+ */
+#ifndef SHARKSSL_OPTIMIZED_GHASH_ASM
+#define SHARKSSL_OPTIMIZED_GHASH_ASM                     0
+#endif
+
+/** Enabling the combined assembler AES-GCM block kernel requires
+ *  SharkSslCrypto_XX.s. GHASH may use either its C or assembler implementation.
+ */
+#ifndef SHARKSSL_OPTIMIZED_GCM_ASM
+#define SHARKSSL_OPTIMIZED_GCM_ASM                       0
+#endif
+
+/** Enabling the VAES/VPCLMULQDQ AES-GCM backend requires the VAES
+ *  assembly file (SharkSslCrypto_X86_64_VAES.asm) and its CPUID probe to
+ *  be linked in addition to the AES-NI kernel. Microsoft x64 only.
+ */
+#ifndef SHARKSSL_OPTIMIZED_GCM_VAES_ASM
+#define SHARKSSL_OPTIMIZED_GCM_VAES_ASM                  0
+#endif
+
 
 /** Setting this macro to 1 enables TinyMT32 and disables other RNGs.
  *  TinyMT32 is not suitable for cryptographic applications. The SharkSSL
@@ -677,10 +735,10 @@
 #endif
 
 /** SharkSslCon_trusted also checks certificate expiration and returns
-    SharkSslConTrust_CertCnDate if date(s) are within: timeFrom <= now
-    and timeTo >= now
-    This setting requires baGetUnixTime() returning the correct time.
-*/
+ *  SharkSslConTrust_CertCnDate if date(s) are within: timeFrom <= now
+ *  and timeTo >= now
+ *  This setting requires baGetUnixTime() returning the correct time.
+ */
 #ifdef __DOXYGEN__
 #define SHARKSSL_CHECK_DATE                              0
 #endif
@@ -696,18 +754,28 @@
 /** @} */ /* end group SharkSslCfg */
 
 /** sanity defines --- do not edit below this line!
- */ 
+ */
+#if ((SHARKSSL_MAX_HANDSHAKE_LENGTH == 0) || (SHARKSSL_MAX_HANDSHAKE_LENGTH > 0x00FFFFFFUL))
+#error SHARKSSL_MAX_HANDSHAKE_LENGTH must be in the range 1..0x00FFFFFF
+#endif
+
 #if SHARKSSL_ECC_TIMING_RESISTANT
-#undef  SHARKSSL_BIGINT_TIMING_RESISTANT 
+#undef  SHARKSSL_BIGINT_TIMING_RESISTANT
 #define SHARKSSL_BIGINT_TIMING_RESISTANT                 1
 #endif
 
 /** TLS 1.3 sanity #defines
  */
-#if ((!SHARKSSL_TLS_1_3) && SHARKSSL_ENABLE_KEY_UPDATE)
+#if SHARKSSL_ENABLE_KEY_UPDATE
+#if (!SHARKSSL_TLS_1_3)
 #undef  SHARKSSL_ENABLE_KEY_UPDATE
 #define SHARKSSL_ENABLE_KEY_UPDATE                       0
+#elif SHARKSSL_ENABLE_AES_GCM
+#if ((SHARKSSL_TLS_1_3_AES_GCM_KEY_UPDATE_THRESHOLD == 0) || (SHARKSSL_TLS_1_3_AES_GCM_KEY_UPDATE_THRESHOLD > 0x00800000UL))
+#error SHARKSSL_TLS_1_3_AES_GCM_KEY_UPDATE_THRESHOLD must be in the range 1..2^23
 #endif
+#endif
+#endif  /* SHARKSSL_ENABLE_KEY_UPDATE */
 
 #if SHARKSSL_TLS_1_3
 #if SHARKSSL_ENABLE_RSA

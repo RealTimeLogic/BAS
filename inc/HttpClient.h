@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpClient.h 6056 2026-09-20 05:09:33Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2026
  *
@@ -173,8 +173,11 @@ typedef struct
     }
     @endcode
 
-    @note The current parser accepts status codes 100 through 505 and handles
-    100 Continue specially. Chunked response trailers are not supported.
+    @note The parser accepts status codes 100 through 599. Informational
+    responses are consumed until a final response, except 101 protocol switching.
+    Chunked response trailers are validated and discarded, not exposed as headers.
+    Chunk-size lines must be shorter than 256 bytes, excluding CRLF; the entire
+    trailer section including its terminating CRLF is limited to 8192 bytes.
     Content-Encoding (for example gzip) is not decoded. Applications must check
     the HTTP status separately from transport success.
 */
@@ -299,10 +302,15 @@ typedef struct HttpClient
         the body, so that use cannot be interpreted as end-of-body.
         @param bufSize Positive buffer capacity in bytes when buf is non-NULL.
         @return Positive bytes stored, zero at end-of-body (including HEAD), or a
-        negative error code. A failure may modify the buffer without reporting a
-        partial count. Reading before the declared request body is completely sent
+        negative error code. If a fixed-length read fails after copying buffered
+        bytes, their count is returned and getError() records the failure; the
+        next read returns that error. Other failures may modify the buffer without
+        reporting a partial count. Reading before the request body is completely sent
         returns E_INCORRECT_USE.
-        @note For a body delimited by connection closure, transport read failure
+        @note Closure or a read failure before Content-Length bytes arrive records
+        E_INVALID_RESPONSE, even with Connection: close. The cached HTTP status
+        is independent of this body error. For a body delimited by connection
+        closure (without Content-Length), transport read failure
         is treated as end-of-body. This cannot distinguish every truncated response.
        */
       int readData(void* buf, int bufSize);

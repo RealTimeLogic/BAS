@@ -221,6 +221,7 @@ SHARKSSL_API int SharkSslParseASN1_getSetSeq(SharkSslParseASN1 *o, U8 ASN1id);
 #define SharkSslParseASN1_getSequence(o)        SharkSslParseASN1_getSetSeq(o, SHARKSSL_ASN1_CONSTRUCTED | SHARKSSL_ASN1_SEQUENCE)
 
 int SharkSslParseASN1_getContextSpecific(SharkSslParseASN1 *o, U8 *tag);
+int SharkSslParseASN1_parseCertSignatureAlgorithm(SharkSslParseASN1 *o);
 
 
 /** 

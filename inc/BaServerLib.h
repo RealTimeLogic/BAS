@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaServerLib.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: BaServerLib.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2002 - 2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -51,6 +51,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Internal HTTP framing helper. Parse [ptr,end), excluding CRLF.
+   Returns the chunk length, or -1 for invalid syntax/overflow. */
+BA_API SBaFileSize httpParseChunkSize(const U8* ptr, const U8* end);
+
+/* Internal HTTP-date parser. Returns TRUE and sets *result on success, including
+   epoch zero; returns FALSE without changing *result for NULL/invalid input. */
+BA_API BaBool httpParseDate(const char* str, BaTime* result);
 
 
 /** @defgroup UtilityFunctions Miscellaneous library functions
@@ -152,13 +160,14 @@ BA_API int baStrnCaseCmp(const char *a, const char *b, size_t len);
 const char* baGetToken(const char** str, const char* set);
 
 /** Parse an HTTP date string as UTC.
- * @param[in] str NUL-terminated HTTP date string, or NULL. Use the RFC 1123
- * form, for example "Sun, 06 Nov 1994 08:49:37 GMT". Numeric timezone offsets
- * are not converted; supply GMT.
- * @return Seconds since 1970-01-01 00:00:00 UTC, or zero on a reported parse
- * failure, NULL or an empty string. Zero is also a valid timestamp. The
- * historical RFC 850 and asctime branches have known inconsistencies; do not
- * rely on those formats without validating the result.
+ * @param[in] str NUL-terminated IMF-fixdate, RFC 850, or asctime date, or NULL.
+ * Names are case-sensitive; the first two forms require GMT. Surrounding
+ * SP/HTAB is accepted; invalid calendar fields, trailing data, and date lists
+ * are rejected. RFC 850 years use the HTTP 50-year rule and the server clock.
+ * A recognized weekday name is required but is not compared to the date.
+ * @return Seconds since 1970-01-01 00:00:00 UTC, or zero for invalid, NULL,
+ * or empty input. Zero is also a valid timestamp. A leap second (60) maps to
+ * the following POSIX second; no historical leap-second table is consulted.
  * @see BaTime */
 BA_API BaTime baParseDate(const char* str);
 

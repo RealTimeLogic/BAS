@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpSharkSslServCon.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpSharkSslServCon.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2012
+ *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -36,7 +36,112 @@
  *             SharkSSL for Barracuda Embedded Web-Server
  *
  */
-/** @file HttpSharkSslServCon.h */
+/** @file HttpSharkSslServCon.h
+    @brief SharkSSL listener and transport adapter.
+
+    @section sharkssl_async_api Asynchronous sending: legacy and current API
+
+    The adapter implements the existing SoDispCon asynchronous API for TLS
+    client and server connections. HttpConnection uses the same operations.
+    The newer SharkSSL handshake-output and KeyUpdate APIs are handled inside
+    the adapter; application callers continue using the interfaces below.
+
+    Use an established TLS connection with a completed handshake. Serialize
+    access using the connection's dispatcher mutex and allow only one writer.
+    Select nonblocking socket mode for sending from dispatcher callbacks.
+
+    @subsection sharkssl_async_buffer Borrowed buffer and return values
+
+    SoDispCon_allocAsynchBuf() returns a borrowed void* and writes the available
+    capacity, in bytes, to the required int* size argument. The TLS adapter
+    reports its existing encryption-buffer capacity; it does not allocate a
+    new buffer or resize it to the requested size. A zero input size is also
+    supported for TLS capacity queries. Always check the pointer and use the
+    returned capacity. NULL with size zero can mean the connection is busy,
+    including pending TLS output; it does not necessarily mean out of memory.
+
+    Obtaining the pointer does not reserve the connection or start a send.
+    Repeated lookups and capacity-only queries are allowed while idle, including
+    before an ordinary synchronous write. The pointer belongs to the TLS
+    connection and must not be freed or used after that connection is destroyed.
+    TLS processing can change its contents. Fill it immediately before sending,
+    without intervening operations that use the same connection's TLS buffers.
+
+    SoDispCon_asyncSend(con, len) starts a new block when no send is pending.
+    The int len is the payload length in bytes, from 1 through the returned
+    capacity. Encryption occurs in place, so the plaintext contents need not
+    survive the call. SoDispCon_asyncReady(con), or asyncSend with len zero,
+    advances pending output without starting another application block.
+    Both operations return an int status, not a byte count:
+    - 1: Output is complete and the buffer can be refilled. This means transport
+      completion, not acknowledgement by the peer application.
+    - 0: Output remains pending. Keep the buffer unchanged and arrange a
+      send-ready callback to continue. These calls do not register callbacks.
+    - A negative value: Transport error. Stop using the connection for sending
+      and perform the owning application's error/close handling.
+
+    A block accepted by asyncSend must not be copied or submitted as a new block
+    again when the result is zero. While that send is pending, a legacy call to
+    asyncSend with a positive length also advances the existing output; its
+    length does not describe additional data. Prefer asyncReady for continuation
+    so the intent is explicit. Yield to the dispatcher when the result is zero;
+    do not spin waiting for completion.
+
+    @subsection sharkssl_async_legacy Legacy pattern: retain and reuse the buffer
+
+    1. Obtain the buffer and capacity once with SoDispCon_allocAsynchBuf().
+    2. Optionally call SoDispCon_asyncReady() before filling it. A successful
+       readiness check does not invalidate the borrowed pointer.
+    3. Fill at most the returned capacity and call SoDispCon_asyncSend().
+    4. If the result is zero, keep the buffer unchanged and advance the send
+       from send-ready callbacks until completion or error.
+    5. After result 1, refill the same buffer and send the next block. A new
+       buffer lookup or explicit release between blocks is not required.
+
+    This supports callers such as the native file reader and tunnel code.
+    Capacity lookup followed by synchronous output is also supported.
+
+    @subsection sharkssl_async_current Current pattern: obtain the buffer per block
+
+    Callers such as the Lua nonblocking writer may obtain the buffer again for
+    each new block. Complete the previous send first, obtain the pointer and
+    capacity, fill it, and call SoDispCon_asyncSend(). Continue pending output
+    exactly as in the legacy pattern. Both patterns use the same public API;
+    reacquisition is optional and does not allocate a new TLS buffer.
+
+    During pending asynchronous output, buffer lookup and synchronous writes
+    are rejected and TLS reads are deferred. Do not force the connection idle,
+    release its send buffer, or alter its buffer contents to bypass this state.
+    Completion permits the next operation; obtaining a pointer alone does not
+    impose these restrictions.
+
+    The C macros and SoDispCon_asyncReadyF() preserve negative error results.
+    The current C++ SoDispCon::asyncReady() wrapper converts the result to bool,
+    so an error also becomes true. Use the C macro or function from C++ when
+    distinguishing completion from failure.
+
+    @subsection sharkssl_control_api New SharkSSL control-output API
+
+    TLS output can include handshake or KeyUpdate records in addition to
+    application data. When asynchronous application output triggers a key
+    update, result 1 is delayed until that control output has also been sent.
+    A zero result can therefore remain after all application bytes have left
+    the socket. Continue through the same send-ready path without refilling
+    the buffer or resending the application block.
+
+    The adapter obtains control bytes with SharkSslCon_getHandshakeData() and
+    SharkSslCon_getHandshakeDataLen(). After each valid transport send result
+    it calls SharkSslCon_setHandshakeDataSent() with the actual U16 byte count,
+    including a partial send, a complete send, or zero bytes. The remaining
+    pointer and length are obtained again before the next send. Applications
+    using the BAS transport must leave this accounting to the adapter.
+
+    SharkSslCon_isHandshakeComplete() returns U8: 0 means incomplete, 1 means
+    complete, and 2 means complete with additional buffered input to process.
+    The adapter continues processing buffered input for the latter case during
+    handshake-only reads. These engine-level requirements do not introduce a
+    per-block reservation requirement in the SoDispCon API.
+ */
 
 #ifndef __HttpSharkSslServCon_h
 #define __HttpSharkSslServCon_h

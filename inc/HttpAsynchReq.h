@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: HttpAsynchReq.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpAsynchReq.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2012
+ *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -56,7 +56,7 @@ struct HttpAsynchReq;
  * data. NULL with size zero means completion. Non-NULL with size zero is the
  * preliminary Expect notification before the library sends 100 Continue.
  * @param[in] size Positive byte count, zero as described above, or a negative
- * error with NULL data: -1 receive failure, -10 malformed chunk line ending,
+ * error with NULL data: -1 receive failure, -10 malformed chunk framing,
  * -11 chunk header does not fit the receive buffer.
  * Fixed-length bodies are delivered when the buffer fills or the body ends;
  * chunked bodies can produce smaller callbacks. A completion notification is

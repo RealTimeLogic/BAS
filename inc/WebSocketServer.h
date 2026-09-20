@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: WebSocketServer.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -176,7 +176,9 @@ typedef struct WSS
    /** Perform the server handshake and take over the request's connection.
     @param req Required current uncommitted WebSocket upgrade request.
     @return Zero on successful handoff, -1 on handshake or invalid-connection
-    failure. A rejected handshake attempts an HTTP 400 response. On success,
+    failure. A rejected handshake attempts HTTP 400, or HTTP 426 with
+    Sec-WebSocket-Version: 13 for an otherwise valid unsupported version.
+    See HttpRequest::wsUpgrade for the validation requirements. On success,
     further I/O belongs to WSS; do not continue ordinary HTTP response output.
  */
    int upgrade(HttpRequest* req);

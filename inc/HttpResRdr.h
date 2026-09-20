@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResRdr.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpResRdr.h 6056 2026-09-20 05:09:33Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2008
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -142,11 +142,16 @@ and HttpResponse::forward delegations. HttpResponse::include
 delegations require special handling and data is sent using chunk
 encoding for HTTP 1.1 clients.
 
-The HttpResRdr automatically handles caching and sends a "304 not
-modified" response to a client if it detects that the client version
-is the same as the server version. The cache handling defaults to
-etags and downgrades to time handling if the client does not support
-etags.
+The HttpResRdr sends weak, quoted ETags based on the full modification
+timestamp and file size, without reading the file. If-None-Match uses weak
+comparison and takes precedence over If-Modified-Since. If-Match uses strong
+comparison, so only its wildcard can match these weak ETags; it takes
+precedence over If-Unmodified-Since. Failed read conditions return 304 or
+412 as appropriate. Invalid entity-tag syntax returns 400.
+WebDAV uses the same tags and comparisons for its file reads and writes.
+Same-size edits within the timestamp resolution can retain the same tag;
+applications requiring content revision tracking must supply their own
+validators. If-Range is not evaluated: its presence selects the full response.
 
 <b>Limitations:</b><br>
 A HttpResRdr instance is normally used for downloading small HTML
@@ -333,6 +338,13 @@ BA_API int HttpResRdr_installFilter(HttpResRdr* o, HttpRdFilter* filter);
  */
 BA_API void HttpResRdr_sendFile(IoIntf* io,const char* name,
    IoStat* st,HttpCommand* cmd);
+/* Shared resource/WebDAV helpers. Metadata is not a content revision, so the
+   NUL-terminated tag is weak; buf must hold HttpResRdr_ETagSize bytes. */
+#define HttpResRdr_ETagSize 38
+BA_API void HttpResRdr_fmtETag(char* buf, const IoStat* st);
+/* Return 0 to proceed or an HTTP status (304/400/412). st is NULL for a
+   nonexistent target; the caller performs normal method/access checks first. */
+BA_API int HttpResRdr_checkPreconditions(HttpRequest* req, const IoStat* st);
 BA_API void set_deflategzip(IoIntf_DeflateGzip ptr);
 BA_API IoIntf_DeflateGzip get_deflategzip(void);
 BA_API void HttpResRdr_setHeader(HttpResRdr* o, HttpResRdrHeader* headers);
