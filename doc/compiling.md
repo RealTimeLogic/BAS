@@ -117,7 +117,45 @@ systems must add their backend files and definitions separately.
 
 ### Windows
 
-Use the Visual Studio project file in `examples/MakoServer/VcMake`. Download SQLite before building, or disable the SQLite build in the project file.
+Open [mako.sln](../examples/MakoServer/VcMake/mako.sln) and select Debug or Release,
+with Win32 or x64. The project uses the installed Visual Studio C++ toolset and
+Windows 10/11 SDK. All four configurations define `BAS_LOADED` and build SharkSSL
+with C implementations only; no assembler setup is needed.
+
+Executables are written to
+`examples/MakoServer/obj/VcMake/<platform>/<configuration>/`, with separate
+intermediate files for each configuration. Debug uses the debug C runtime and
+retains assertions; Release enables optimization.
+
+**SQLite is optional.** When `src/sqlite3.c` and `src/sqlite3.h` are absent,
+all four configurations build without SQLite (`USE_SQL=0`). Mako can run in
+this configuration, but applications that require its SQLite binding cannot
+use that binding.
+
+To enable SQLite, copy the SQLite amalgamation files `sqlite3.c` and `sqlite3.h`
+into this repository's `src` directory, reload the solution, and rebuild. The
+project detects the files and includes SQLite and its Lua binding automatically
+(`USE_SQL=1`). No project-file edits are required.
+
+The optional MSBuild boolean property `UseSqlite` overrides detection:
+
+```bat
+rem Run from the repository root in a Visual Studio Developer Command Prompt.
+rem Build without SQLite even when its source files are present.
+msbuild examples\MakoServer\VcMake\mako.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:UseSqlite=false
+
+rem Require SQLite; the build reports an error if either source file is missing.
+msbuild examples\MakoServer\VcMake\mako.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:UseSqlite=true
+```
+
+Place `mako.zip` beside the executable before running it. The project copies
+the repository-root `mako.zip` if present. The optional MSBuild path property
+`MakoZip` selects a resource archive elsewhere:
+
+```bat
+rem Run from the repository root in a Visual Studio Developer Command Prompt.
+msbuild examples\MakoServer\VcMake\mako.sln /p:Configuration=Release /p:Platform=x64 /p:MakoZip=C:\resources\mako.zip
+```
 
 ### Linux
 

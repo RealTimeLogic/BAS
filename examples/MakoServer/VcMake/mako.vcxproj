@@ -1,142 +1,118 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <SccProjectName />
-    <SccLocalPath />
+    <ProjectGuid>{81E7B3A4-546F-C133-39D8-3D34E32C1A1C}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>mako</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+  <PropertyGroup Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <UseOfMfc>false</UseOfMfc>
-    <CharacterSet>MultiByte</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
-    <UseOfMfc>false</UseOfMfc>
+    <PlatformToolset Condition="'$(PlatformToolset)' == ''">$(DefaultPlatformToolset)</PlatformToolset>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Release'">false</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocamakopDataPlatform" />
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocamakopDataPlatform" />
-  </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
-  <PropertyGroup>
-    <_ProjectFileVersion>10.0.30128.1</_ProjectFileVersion>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.\..\obj\release\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.\..\obj\release\</IntDir>
-    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\</OutDir>
-    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">debug\</IntDir>
-    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</LinkIncremental>
+  <PropertyGroup Label="UserMacros">
+    <BasRoot>$(ProjectDir)..\..\..\</BasRoot>
+    <!-- SQLite is optional in the public source distribution. -->
+    <UseSqlite Condition="'$(UseSqlite)' == '' and Exists('$(BasRoot)src\sqlite3.c') and Exists('$(BasRoot)src\sqlite3.h')">true</UseSqlite>
+    <UseSqlite Condition="'$(UseSqlite)' == ''">false</UseSqlite>
+    <MakoZip Condition="'$(MakoZip)' == ''">$(BasRoot)mako.zip</MakoZip>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\obj\VcMake\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(OutDir)intermediate\</IntDir>
+    <TargetName>mako</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
+    <MakoSqlDefine Condition="'$(UseSqlite)' == 'true'">USE_SQL=1</MakoSqlDefine>
+    <MakoSqlDefine Condition="'$(UseSqlite)' != 'true'">USE_SQL=0</MakoSqlDefine>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
     <ClCompile>
-      <Optimization>Full</Optimization>
-      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
-      <AdditionalIncludeDirectories>..\..\..\inc;..\..\..\inc\arch\Windows;..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>BAS_LOADED;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <StringPooling>true</StringPooling>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
-      <PrecompiledHeaderOutputFile>release\mako.pch</PrecompiledHeaderOutputFile>
-      <AssemblerListingLocation>release\</AssemblerListingLocation>
-      <ObjectFileName>release\</ObjectFileName>
-      <ProgramDataBaseFileName>release\</ProgramDataBaseFileName>
+      <AdditionalIncludeDirectories>$(BasRoot)inc;$(BasRoot)inc\arch\Windows;$(BasRoot)inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>BAS_LOADED;BA_FILESIZE64;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF=1;$(MakoSqlDefine);_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;WIN32;_CONSOLE;SHARKSSL_OPTIMIZED_BIGINT_ASM=0;SHARKSSL_OPTIMIZED_CHACHA_ASM=0;SHARKSSL_OPTIMIZED_POLY1305_ASM=0;SHARKSSL_OPTIMIZED_GHASH_ASM=0;SHARKSSL_OPTIMIZED_GCM_ASM=0;SHARKSSL_OPTIMIZED_GCM_VAES_ASM=0;SHARKSSL_X25519_ASM=0;SHARKSSL_X25519_ASM_HOOK=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <CompileAs>Default</CompileAs>
-      <ExceptionHandling>false</ExceptionHandling>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)$(ProjectName).pdb</ProgramDataBaseFileName>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>..\mako.exe</OutputFile>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <ProgramDatabaseFile>release\mako.pdb</ProgramDatabaseFile>
+      <AdditionalDependencies>ws2_32.lib;advapi32.lib;user32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
-      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
-    <Midl>
-      <TypeLibraryName>.\..\obj\release\mako.tlb</TypeLibraryName>
-      <HeaderFileName>
-      </HeaderFileName>
-    </Midl>
-    <ResourceCompile>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <Culture>0x0409</Culture>
-    </ResourceCompile>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\inc;..\..\..\inc\arch\Windows;..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>BAS_LOADED;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <PrecompiledHeader>
-      </PrecompiledHeader>
-      <PrecompiledHeaderOutputFile>debug\mako.pch</PrecompiledHeaderOutputFile>
-      <AssemblerListingLocation>debug\</AssemblerListingLocation>
-      <ObjectFileName>debug\</ObjectFileName>
-      <ProgramDataBaseFileName>debug\</ProgramDataBaseFileName>
-      <WarningLevel>Level3</WarningLevel>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
-      <CompileAs>Default</CompileAs>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>..\mako.exe</OutputFile>
-      <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>debug\mako.pdb</ProgramDatabaseFile>
-      <SubSystem>Console</SubSystem>
-      <TargetMachine>MachineX86</TargetMachine>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
     </Link>
-    <Midl>
-      <TypeLibraryName>.\..\obj\debug\mako.tlb</TypeLibraryName>
-      <HeaderFileName>
-      </HeaderFileName>
-    </Midl>
-    <ResourceCompile>
-      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <Culture>0x0409</Culture>
-    </ResourceCompile>
   </ItemDefinitionGroup>
+  <!-- This project deliberately compiles C only: no MASM imports or kernels. -->
   <ItemGroup>
+    <ClCompile Include="..\..\..\src\BAS.c" />
     <ClCompile Include="..\..\..\src\arch\NET\generic\SoDisp.c" />
     <ClCompile Include="..\..\..\src\arch\NET\BamDNS-Sock.c" />
     <ClCompile Include="..\..\..\src\arch\Windows\ThreadLib.c" />
-    <ClCompile Include="..\..\..\src\BAS.c" />
     <ClCompile Include="..\..\..\src\DiskIo\windows\BaFile.c" />
+    <ClCompile Include="..\src\MakoMain.c" />
+    <ClCompile Include="..\src\Windows\MakoWinMain.c" />
+    <ClCompile Include="..\src\Windows\servutil.c" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseSqlite)' == 'true'">
     <ClCompile Include="..\..\..\src\ls_sqlite3.c" />
     <ClCompile Include="..\..\..\src\luasql.c" />
     <ClCompile Include="..\..\..\src\sqlite3.c" />
-    <ClCompile Include="..\src\makoMain.c" />
-    <ClCompile Include="..\src\Windows\makoWinMain.c" />
-    <ClCompile Include="..\src\Windows\servutil.c" />
-  </ItemGroup>
-  <ItemGroup>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
+  <Target Name="ValidateMakoOptions" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(UseSqlite)' != 'true' and '$(UseSqlite)' != 'false'" Text="UseSqlite must be true or false." />
+    <Error Condition="'$(UseSqlite)' == 'true' and (!Exists('$(BasRoot)src\sqlite3.c') or !Exists('$(BasRoot)src\sqlite3.h'))" Text="UseSqlite=true requires src\sqlite3.c and src\sqlite3.h. Add the SQLite amalgamation or set UseSqlite=false." />
+  </Target>
+  <Target Name="CopyMakoResources" AfterTargets="Build" Condition="Exists('$(MakoZip)')">
+    <Copy SourceFiles="$(MakoZip)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
