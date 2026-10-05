@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaServerLib.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: BaServerLib.h 6080 2026-09-21 07:06:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2002 - 2026
  *
@@ -54,11 +54,11 @@ extern "C" {
 
 /* Internal HTTP framing helper. Parse [ptr,end), excluding CRLF.
    Returns the chunk length, or -1 for invalid syntax/overflow. */
-BA_API SBaFileSize httpParseChunkSize(const U8* ptr, const U8* end);
+BAI_FUNC SBaFileSize httpParseChunkSize(const U8* ptr, const U8* end);
 
 /* Internal HTTP-date parser. Returns TRUE and sets *result on success, including
    epoch zero; returns FALSE without changing *result for NULL/invalid input. */
-BA_API BaBool httpParseDate(const char* str, BaTime* result);
+BAI_FUNC BaBool httpParseDate(const char* str, BaTime* result);
 
 
 /** @defgroup UtilityFunctions Miscellaneous library functions
@@ -76,7 +76,7 @@ BA_API BaBool httpParseDate(const char* str, BaTime* result);
 
 #ifdef INL_baConvBin2Hex
 
-extern const char baBin2HexTable[]; /* =
+extern BA_API const char baBin2HexTable[]; /* =
       {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
       'a', 'b', 'c', 'd', 'e', 'f'}; */
 

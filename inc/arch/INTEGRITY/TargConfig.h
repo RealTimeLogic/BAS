@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
+ *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2011 - 2023
+ *   COPYRIGHT:  Real Time Logic, 2011 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -138,11 +138,6 @@ U32 baGetMsClock(void);
 #endif
 #endif
 
-#if defined(BALUA_LIB)
-#if !defined(BA_LIB)
-#define BA_LIB BALUA_LIB
-#endif
-#endif
 
 #include <BaSharkSslOpt.h>
 
@@ -164,9 +159,6 @@ U32 baGetMsClock(void);
 #define SHARKSSL_API BA_API
 #endif
 
-#ifndef BALUA_API
-#define BALUA_API BA_API
-#endif
 
 
 

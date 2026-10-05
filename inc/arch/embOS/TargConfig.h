@@ -13,7 +13,7 @@
  *
  *   $Id: TargConfig.h 2195 2010-09-16 12:26:20Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2023
+ *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -87,11 +87,6 @@
 #endif
 #endif
 
-#if defined(BALUA_LIB)
-#if !defined(BA_LIB)
-#define BA_LIB BALUA_LIB
-#endif
-#endif
 
 #include <BaSharkSslOpt.h>
 

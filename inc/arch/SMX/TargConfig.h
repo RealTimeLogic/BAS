@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
+ *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2023
+ *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -45,6 +45,9 @@
 #ifndef BA_API
 #define BA_API
 #endif
+#define BAI_FUNC extern
+#define BAI_DATA extern
+
 #ifndef SHARKSSL_API
 #define SHARKSSL_API BA_API
 #endif

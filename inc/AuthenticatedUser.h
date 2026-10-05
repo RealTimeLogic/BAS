@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: AuthenticatedUser.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -61,9 +61,9 @@ struct AuthInfo;
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern const char BasicAuthUser_derivedType[];
-extern const char DigestAuthUser_derivedType[];
-extern const char FormAuthUser_derivedType[];
+extern BA_API const char BasicAuthUser_derivedType[];
+extern BA_API const char DigestAuthUser_derivedType[];
+extern BA_API const char FormAuthUser_derivedType[];
 #ifdef __cplusplus
 }
 #endif

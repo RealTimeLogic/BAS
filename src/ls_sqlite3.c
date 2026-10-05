@@ -3,7 +3,7 @@
 ** Author: Tiago Dionizio, Eduardo Quintao
 ** See Copyright Notice in license.html
 
-** $Id: ls_sqlite3.c 5971 2026-09-11 10:01:39Z wini $
+** $Id: ls_sqlite3.c 6080 2026-09-21 07:06:57Z wini $
 */
 
 #ifdef _WIN32
@@ -107,7 +107,7 @@ typedef struct
 
 #define LUASQLITE_BLOB "LUASQLITE BLOB"
 
-LUASQL_API int luaopen_luasqlsqlite3(lua_State *L);
+BA_API int luaopen_luasql_sqlite3(lua_State *L);
 
 
 /*
@@ -1360,7 +1360,7 @@ initSqlitePrivData(lua_State *L)
 ** Creates the metatables for the objects and registers the
 ** driver open method.
 */
-LUASQL_API int luaopen_luasql_sqlite3(lua_State *L)
+BA_API int luaopen_luasql_sqlite3(lua_State *L)
 {
    if(sqlite3_threadsafe() == 0)
       luaL_error(L,"SQLite not thread safe");

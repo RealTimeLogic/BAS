@@ -66,6 +66,55 @@ The [Mako Server example](https://realtimelogic.com/ba/doc/en/Mako.html) is the 
 
 ![Mako Server Build Process](https://realtimelogic.com/ba/doc/en/examples/MakoServer/Build-Mako-Diagram.svg)
 
+### Automatic SharkSSL assembly with mako.mk
+
+`mako.mk` automatically includes the packaged GCC/Clang assembly for supported
+x86-64 and ARM64 compiler targets. It preprocesses `SharkSslTarget.c` and
+compile-checks the backend sources with your selected compiler and flags.
+These checks never execute target code, so they also work when cross-compiling.
+Unsupported targets or failed automatic checks retain the C implementation.
+At runtime, feature checks select the cipher paths supported by the CPU and OS.
+
+From the repository root, inspect the selection before building:
+
+```sh
+# Display the selected backend, enabled hooks, and any failed compile checks.
+make -f mako.mk sharkssl-info
+make -f mako.mk
+```
+
+`SHARKSSL_ASM` is an optional string setting: `auto` (default), `off`,
+`X64_GCC`, or `ARM64_GCC`. Explicit backend requests fail if the compiler target
+does not match or required backend sources cannot compile. Automatic x64
+selection omits VAES if the assembler cannot assemble that optional kernel.
+Manually enabled assembly hooks must also be supported; failures are reported.
+
+```sh
+# Build entirely with C. Remove any manually enabled assembly macros as well.
+make -f mako.mk SHARKSSL_ASM=off clean
+make -f mako.mk SHARKSSL_ASM=off
+
+# Cross-compile using the compiler target to select ARM64 assembly.
+make -f mako.mk CC=aarch64-linux-gnu-gcc sharkssl-info
+make -f mako.mk CC=aarch64-linux-gnu-gcc
+```
+
+Use a clean build after changing compiler or feature flags, or set the optional
+directory path `ODIR` to a separate object directory for each configuration
+(default: the repository root). The optional path `BASRESDIR` selects the
+BAS-Resources checkout (default: `../BAS-Resources`). If you set `TARGET` to an
+executable path outside the repository root, copy `mako.zip` beside it before
+running the server.
+
+The shared build rules are in [SharkSslAsm.mk](../SharkSslAsm.mk) and
+[SharkSslBackends.mk](../SharkSslBackends.mk). See the
+[x64](../src/crypto/X64_GCC/README.md) and
+[ARM64](../src/crypto/ARM64_GCC/README.md) port guides for individual hooks and
+CPU requirements. In an amalgamated build, retain `src/BAS.c` (or `src/BWS.c`
+for BWS) where those guides refer to the SDK's `SharkSslCrypto.c`.
+This automatic selection applies to `mako.mk`; IDE projects and other build
+systems must add their backend files and definitions separately.
+
 ### Windows
 
 Use the Visual Studio project file in `examples/MakoServer/VcMake`. Download SQLite before building, or disable the SQLite build in the project file.

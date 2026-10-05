@@ -3,6 +3,12 @@
 # make -f mako.mk EPOLL=true
 # The above compiles mako using the 'epoll' socket dispatcher for Linux. The
 # default is to use the 'select' socket dispatcher.
+# SharkSSL GCC x64/ARM64 assembly defaults to auto, selected by the compiler
+# target and compile checks, never the build host CPU. Failed auto checks use C.
+# Inspect: make -f mako.mk sharkssl-info
+# Disable: make -f mako.mk SHARKSSL_ASM=off clean
+#          make -f mako.mk SHARKSSL_ASM=off
+# Remove manually enabled assembly macros too for a C-only build.
 # The makefile is designed for the "Embedded Linux Web Based Device
 # Management" tutorial and will auto include the generated Lua
 # bindings if found. The makefile will also auto include SQLite, Lua
@@ -29,8 +35,12 @@ OBJEXT = o
 endif
 
 #Required
-ifeq (,$(wildcard ../BAS-Resources/build))
-$(error ../BAS-Resources not found. Repository https://github.com/RealTimeLogic/BAS-Resources required!)
+.DEFAULT_GOAL := $(TARGET)
+ODIR ?= .
+BASRESDIR ?= ../BAS-Resources
+
+ifeq (,$(wildcard $(BASRESDIR)/build))
+$(error $(BASRESDIR) not found. Set BASRESDIR to the https://github.com/RealTimeLogic/BAS-Resources checkout!)
 endif
 
 USE_OPCUA?=1
@@ -97,7 +107,11 @@ SOURCE = BAS.c ThreadLib.c SoDisp.c BaFile.c MakoMain.c
 endif
 
 # Add common macros.
-CFLAGS += $(D)MAKO $(D)USE_EMBEDDED_ZIP=0
+CFLAGS += $(D)MAKO $(D)BAS_LOADED $(D)USE_EMBEDDED_ZIP=0
+
+# The responder core is in BAS.c; its socket adapter is platform-specific.
+SOURCE += BamDNS-Sock.c
+VPATH += src/arch/NET
 
 ifeq ($(DEBUG),1)
 CFLAGS += $(DEBUG_CFLAGS)
@@ -180,40 +194,61 @@ endif
 endif
 
 
-OBJS = $(SOURCE:%.c=%.$(OBJEXT))
+# Reuse the SDK selection/probe/assembly rules with the public package layout.
+# Only the GCC backends are shipped here; other compiler targets retain C.
+SHARKSSL_BACKENDS := X64_GCC ARM64_GCC
+SHARKSSL_CRYPTO_DIR := src/crypto
+SHARKSSL_INCLUDE_DIR := inc
+MFT = $(D)
+O = .$(OBJEXT)
+include SharkSslAsm.mk
+
+OBJS = $(SOURCE:%.c=$(ODIR)/%.$(OBJEXT)) $(SHARKSSL_ASM_OBJS)
+$(OBJS): $(SHARKSSL_STAMP)
+$(ODIR)/BAS.$(OBJEXT): src/crypto/SharkSslCryptoASM.h
+$(ODIR)/MakoMain.$(OBJEXT): $(ENCRYPTION_KEY_HEADER)
+$(OBJS) $(SHARKSSL_STAMP): | $(ODIR)
+
+$(ODIR):
+ifeq ($(WINDOWS),1)
+	@if not exist "$(ODIR)" mkdir "$(ODIR)"
+else
+	mkdir -p $(ODIR)
+endif
 
 $(TARGET): $(ENCRYPTION_KEY_HEADER) $(OBJS) mako.zip
 ifeq ($(WINDOWS),1)
 	$(CC) /nologo /Fe$@ $(OBJS) $(XLIB)
 else
-	$(CC) -o mako $(HEXEFLAGS) $(OBJS) $(XLIB)
+	$(CC) -o $@ $(HEXEFLAGS) $(OBJS) $(XLIB)
 endif
 
 # Implicit rules for making object files from .c files
-%.obj : %.c
+$(ODIR)/%.obj : %.c
 	$(CC) $(CFLAGS) /c /Fo$@ $<
 
-%.o : %.c
+$(ODIR)/%.o : %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Must be in the same directory as the mako executable
 mako.zip:
 ifeq ($(WINDOWS),1)
-	cmd /c "cd /d ..\BAS-Resources\build && echo n|mako.cmd"
-	cmd /c "copy /Y ..\BAS-Resources\build\mako.zip ."
+	cmd /c "cd /d $(subst /,\,$(BASRESDIR))\build && echo n|mako.cmd"
+	cmd /c "copy /Y $(subst /,\,$(BASRESDIR))\build\mako.zip ."
 else
-	cd ../BAS-Resources/build&&./mako.sh
-	cp ../BAS-Resources/build/mako.zip .
+	cd $(BASRESDIR)/build&&./mako.sh
+	cp $(BASRESDIR)/build/mako.zip .
 endif
 
 MyCustomBindings_wrap.c : MyCustomBindings.i
 	swig -lua MyCustomBindings.i
 
+.PHONY: clean
 clean:
 ifeq ($(WINDOWS),1)
-	del /Q mako.exe *.obj 2>NUL || exit 0
+	del /Q $(subst /,\,$(TARGET)) $(subst /,\,$(ODIR))\*.obj $(subst /,\,$(ODIR))\.sharkssl-* 2>NUL || exit 0
 else
-	rm -f mako *.o
+	rm -f $(TARGET) $(ODIR)/*.o $(ODIR)/.sharkssl-*
 endif
 
 $(ENCRYPTION_KEY_HEADER):

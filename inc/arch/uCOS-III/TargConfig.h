@@ -13,7 +13,7 @@
  *
  *   $Id$
  *
- *   COPYRIGHT:  Real Time Logic, 2023
+ *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -132,9 +132,6 @@ BaTime baGetMsClock(void);
 #define SHARKSSL_API BA_API
 #endif
 
-#ifndef BALUA_API
-#define BALUA_API BA_API
-#endif
 
 #include <BaSharkSslOpt.h>
 #include <BaErrorCodes.h>

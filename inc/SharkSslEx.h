@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEx.h 5987 2026-09-11 21:42:19Z gianluca $
+ *   $Id: SharkSslEx.h 6152 2026-09-26 05:46:51Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2026
  *
@@ -60,7 +60,7 @@ SubjectAltNameEnumerator;
 typedef struct SubjectAltName
 {
    U8  *ptr;
-   U16 len;
+   SharkSslSANLen len;
    U8  tag;
 } SubjectAltName;
 
@@ -69,7 +69,7 @@ typedef struct SubjectAltName
 #define SubjectAltName_getPtr(o)   ((o)->ptr)
 #define SubjectAltName_isValid(o)  (NULL != SubjectAltName_getPtr(o))
 
-SHARKSSL_API void SubjectAltNameEnumerator_constructor(SubjectAltNameEnumerator *o, U8 *ptr, U16 len);
+SHARKSSL_API void SubjectAltNameEnumerator_constructor(SubjectAltNameEnumerator *o, U8 *ptr, SharkSslSANLen len);
 SHARKSSL_API void SubjectAltNameEnumerator_getElement(SubjectAltNameEnumerator *o, SubjectAltName *s);
 #define SubjectAltNameEnumerator_nextElement SubjectAltNameEnumerator_getElement
 
@@ -95,7 +95,7 @@ SHARKSSL_API int sharkStrCaseCmp(
 /** Certificate subject name/subject alternative name comparison to "name"
  */
 SHARKSSL_API int sharkSubjectSubjectAltCmp(
-   const char *cn, U16 cnLen, U8 *subjAltPtr, U16 subjAltLen, const char *name, U16 nameLen);
+   const char *cn, U16 cnLen, U8 *subjAltPtr, SharkSslSANLen subjAltLen, const char *name, U16 nameLen);
 
 /** Converts the expected certificate time string format
     YY[YY]MMDDHHMMSSZ

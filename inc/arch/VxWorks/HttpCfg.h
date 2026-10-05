@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpCfg.h 6188 2026-09-29 22:55:46Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2007 - 2019
+ *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -50,6 +50,12 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <inetLib.h>
+#include <net/if.h>  /* if_nametoindex */
+#include <errno.h>
+#include <fcntl.h>
+#if _WRS_VXWORKS_MAJOR > 5
+#include <netdb.h>
+#endif
 
 
 /* Include the line below if you get compile errors */
@@ -60,6 +66,11 @@
 #include <TargConfig.h>
 #include <gBsdDspO.h>
 #include <NetConv.h>
+
+#define USE_DGRAM
+#if _WRS_VXWORKS_MAJOR > 5
+#define USE_ADDRINFO
+#endif
 
 
 /***********************************************************************
@@ -122,6 +133,101 @@ int _socketConnect(int s,  struct sockaddr* name,  int namelen)
 #endif
 
 
+
+#if defined(FD_CLOEXEC) && defined(F_SETFD)
+#define HttpSocket_setcloexec(o) (void)fcntl((o)->hndl, F_SETFD, FD_CLOEXEC)
+#define HttpSocket_clearcloexec(o) (void)fcntl((o)->hndl, F_SETFD, 0)
+#endif
+
+/* VxWorks assigns different values to EAGAIN and EWOULDBLOCK. */
+#if defined(EINTR) && defined(EAGAIN)
+ /* avoid unused macro */
+#undef socketAccept
+#define socketAccept
+#undef socketSend
+#define socketSend
+
+#define HttpSocket_accept(o, conSock, status) do {                      \
+      int e;                                                            \
+      (conSock)->hndl=accept((o)->hndl, NULL, NULL);                    \
+      if((conSock)->hndl < 0) {                                         \
+         e=errno;                                                       \
+         if(e==EINTR)                                        \
+            continue;                                                   \
+         *(status) = e ? e : -1;                                        \
+         break;                                                         \
+      }                                                                 \
+      else {                                                            \
+         *(status)=0;                                                   \
+         HttpSocket_setcloexec(conSock);                                \
+         break;                                                         \
+      }                                                                 \
+   } while(1)
+
+#define HttpSocket_recv(o, data, len, retLen) do { \
+  *(retLen)=recv((o)->hndl,data,len,0); \
+  if(*(retLen) == 0) {*(retLen) = -1;break;} /* graceful disconnect */ \
+  if(*(retLen) < 0) { int e=errno; \
+    if (e==EINTR) continue; \
+    if (e==EAGAIN || e==EWOULDBLOCK) {*(retLen)=0;break;}  /* No data */ \
+  } \
+  break; \
+} while(1)
+
+#define HttpSocket_send(o, m, isTerminated, data, len, retLen) do { \
+  if(m && ThreadMutex_isOwner(m)) { \
+    ThreadMutex_release(m); \
+    *(retLen)=send((o)->hndl,data,len,0); \
+    ThreadMutex_set(m); \
+  } \
+  else \
+    *(retLen)=send((o)->hndl,data,len,0); \
+  if(*(retLen) < 0) { \
+    int e=errno; \
+    if (e==EINTR) continue; \
+    if (e==EAGAIN || e==EWOULDBLOCK) {*(retLen)=0;}/* non blocking, no data sent */ \
+  } \
+  break; \
+} while(1)
+
+#endif /* defined EINTR EAGAIN */
+
+#if !defined(NO_KEEPALIVEEX) && defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL)
+#define HttpSocket_getKeepAliveEx(o,enablePtr,timePtr,intervalPtr,statusPtr)\
+do {\
+   int _ZoptV=0,_Zidle=0,_Zintv=0;\
+   int _Zs = (o)->hndl;\
+   socklen_t _Zol = sizeof(_ZoptV);\
+   *(statusPtr) =\
+      getsockopt(_Zs, SOL_SOCKET, SO_KEEPALIVE, (char*)&_ZoptV, &_Zol) ||\
+      getsockopt(_Zs, IPPROTO_TCP, TCP_KEEPIDLE, (char*)&_Zidle, &_Zol) ||\
+      getsockopt(_Zs, IPPROTO_TCP, TCP_KEEPINTVL, (char*)&_Zintv, &_Zol) ?\
+      -1 : 0;\
+   *(enablePtr)=_ZoptV;\
+   *(timePtr)=_Zidle;\
+   *(intervalPtr)=_Zintv;\
+} while(0)
+
+#define HttpSocket_setKeepAliveEx(o,enable,time,interval,statusPtr) do {\
+   int _Zs = (o)->hndl;\
+   int _ZoptV=enable;\
+   socklen_t _Zol = sizeof(_ZoptV);\
+   if( ! setsockopt(_Zs, SOL_SOCKET, SO_KEEPALIVE, (char*)&_ZoptV, _Zol) ) {\
+      if(_ZoptV && time && interval) {\
+         int _Zidle=time;\
+         int _Zintv=interval;\
+         *(statusPtr) =\
+            setsockopt(_Zs, IPPROTO_TCP, TCP_KEEPIDLE, (char*)&_Zidle, _Zol) ||\
+            setsockopt(_Zs, IPPROTO_TCP, TCP_KEEPINTVL, (char*)&_Zintv, _Zol) ?\
+            -1 : 0;\
+      }\
+      else\
+         *(statusPtr)=0;\
+   }\
+   else\
+      *(statusPtr)=1;\
+} while(0)
+#endif
 
 /* Include the default HttpSocket functions */
 #include <gBsdSock.h>

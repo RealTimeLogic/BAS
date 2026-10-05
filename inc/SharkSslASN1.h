@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslASN1.h 3670 2015-03-28 21:25:15Z gianluca $
+ *   $Id: SharkSslASN1.h 6104 2026-09-23 05:21:50Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2018 - 2026
  *
@@ -87,6 +87,8 @@
 #define SHARKSSL_OID_JIIT_DS_CERTEXT_KEYUSAGE         0x0F
 #define SHARKSSL_OID_JIIT_DS_CERTEXT_SUBJALTNAMES     0x11
 #define SHARKSSL_OID_JIIT_DS_CERTEXT_BASICCONSTRAINTS 0x13
+#define SHARKSSL_OID_JIIT_DS_CERTEXT_NAMECONSTRAINTS  0x1E
+#define SHARKSSL_OID_JIIT_DS_CERTEXT_EXTKEYUSAGE      0x25
 
 /** 
  * PKCS #10: Certificate Request tags

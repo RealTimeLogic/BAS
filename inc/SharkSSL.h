@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6034 2026-09-15 14:10:47Z gianluca $
+ *   $Id: SharkSSL.h 6215 2026-10-02 15:24:56Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -179,6 +179,8 @@ when the peer fails to process the data.
 #define SHARKSSL_ALERT_UNSUPPORTED_EXTENSION       110
 /** SHARKSSL_ALERT_UNRECOGNIZED_NAME */
 #define SHARKSSL_ALERT_UNRECOGNIZED_NAME           112
+/** SHARKSSL_ALERT_GENERAL_ERROR */
+#define SHARKSSL_ALERT_GENERAL_ERROR               117
 /** SHARKSSL_ALERT_NO_APPLICATION_PROTOCOL */
 #define SHARKSSL_ALERT_NO_APPLICATION_PROTOCOL     120  /* RFC 7301 */
 
@@ -410,77 +412,9 @@ SharkSslASN1Create_CSR(struct SharkSslASN1Create *o,
 
 #if SHARKSSL_ENABLE_CSR_SIGNING
 /** @ingroup SharkSslCertApi
-    CSR signing (if not specified, parameters are input parameters)
-
-    \param signedCSR [output variable] is a certificate in SharkSSL
-      format. Variable signedCSR will on successfull execution point
-      to allocated memory that can be freed by calling
-      baFree(signedCSR); Please notice that the SharkSSL
-      certificate format includes both the certificate and the private
-      key. See the privKey parameter for more information.
-
-    \param csrData pointer to a CSR, see #SharkSslASN1Create_CSR and
-      #SharkSslASN1Create_getDataLen. CSR is in binary DER format.
-
-    \param csrDataLen CSR length, see #SharkSslASN1Create_getDataLen
-
-    \param caCert: a CA certificate in SharkSSL format or NULL if the
-      CSR is to be self-signed -- that is, when issuer is the same as
-      subject. This certificate may be obtained by using the
-      [SharkSslParseCert](\ref SharkSslParseCert) tool. Note that the
-      SharkSSL certificate format includes both the CA certificate and
-      the CA private key, where the latter will be used to sign the
-      certificate obtained from the CSR.
-
-    \param privKey the private key (ECC or RSA) matching the CSR's
-      public key, in SharkSSL format. The key may for example be
-      obtained by using the [SharkSslParseKey](\ref SharkSslParseKey)
-      tool. if the parameter caCert is NULL (self-signing), this key
-      will be used to sign the certificate. This function is primarily
-      designed for creating SharkSSL certificates, which include both
-      the key and the certificate. The key should therefore normally
-      be provided for both self signed certificates and certificates
-      that is to be signed by the caCert (arg 4). However, the key may
-      be set to NULL when the caCert is provided. The produced
-      SharkSSL certificate will then include a combined
-      key/certificate, where the key is set to a dummy variable. This
-      mode is designed when one must save the certificate as a X.509
-      certificate. The produced certificate , with the dummy key,
-      cannot be used as argument to SharkSsl_addCertificate.
-
-    \param validFrom UTC date/time string in format YYYYMMDDHHMMSS. The
-    certificate is valid starting from this date. No timezone conversion is
-    performed.
-
-    \param validTo UTC date/time string in format YYYYMMDDHHMMSS. The
-    certificate is valid until this date. No timezone conversion is
-    performed.
-
-    \param serialNumber serial number for the generated certificate.
-
-    \param hashID an identifier for the digest function used in the
-      certificate signature. Allowed values are:
-         SHARKSSL_HASHID_SHA256
-         SHARKSSL_HASHID_SHA384
-         SHARKSSL_HASHID_SHA512
-
-    \return the number of allocated bytes for the signed certificate or
-      a negative value on error, where the typical reason would be
-      that allocation fails. This is a binary format that can be saved
-      to RAM or Flash by saving the returned allocated number of bytes
-      starting at the address pointed to by 'signedCSR'
+ * CSR signing policy and SharkSslCert_signCSR are declared in SharkSslCSR.h.
  */
-SHARKSSL_API int
-SharkSslCert_signCSR(SharkSslCert *signedCSR,
-                     const U8 *csrData,
-                     int csrDataLen,
-                     const SharkSslCert caCert,
-                     const SharkSslKey privKey,
-                     const char *validFrom,
-                     const char *validTo,
-                     SharkCertSerialNumber serialNumber,
-                     U8 hashID);
-#endif					 
+#endif
 
 #if SHARKSSL_ENABLE_ASN1_KEY_CREATION
 /** Convert a SharkSslKey to ASN.1 representation. See the example
@@ -715,6 +649,16 @@ typedef enum
 
 /** @} */ /* end group SharkSslCoreApi */
 
+/**
+ * Preserve 16-bit Subject Alternative Name lengths unless the configured
+ * handshake limit permits a certificate containing a larger extension.
+ */
+#if (SHARKSSL_MAX_HANDSHAKE_LENGTH > 0xFFFFUL)
+typedef U32 SharkSslSANLen;
+#else
+typedef U16 SharkSslSANLen;
+#endif
+
 #if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
 
 /** \defgroup SharkSslCertInfo Peer's certificate information
@@ -897,7 +841,7 @@ typedef struct SharkSslCertInfo
        \until xprintf(("\n"))
     */
    U8 *subjectAltNamesPtr;
-   U16 subjectAltNamesLen;
+   SharkSslSANLen subjectAltNamesLen;
 
    /** Length of 'timeFrom' */
    U8  timeFromLen;
@@ -1131,6 +1075,22 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 readLen);
     \sa SharkSslCon_getEncBufPtr, SharkSslCon_getEncBufSize, SharkSslCon_decrypt
  */
 SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 maxLen);
+
+
+/** Generates a close_notify alert and closes the local write direction.
+
+    The returned alert data must be sent using #SharkSslCon_getAlertData and
+    #SharkSslCon_getAlertDataLen. The peer may continue sending until its own
+    close_notify is received; subsequent calls to #SharkSslCon_encrypt fail.
+
+    \param o the SharkSslCon object returned by function #SharkSsl_createCon.
+
+    \return #SharkSslCon_AlertSend on success, or another
+    #SharkSslCon_RetVal error state.
+
+    \sa SharkSslCon_encrypt, SharkSslCon_decrypt
+ */
+SHARKSSL_API SharkSslCon_RetVal SharkSslCon_close(SharkSslCon *o);
 
 
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
@@ -1611,10 +1571,19 @@ SHARKSSL_API SharkSslSession *SharkSslCon_acquireSession(SharkSslCon *o);
 
 
 /** Resume an existing session.
+    For TLS 1.3, if SNI is set before the handshake, SharkSSL offers the PSK
+    only when the new name matches a dNSName in the original server certificate.
+    Otherwise it falls back to a full handshake. The caller should normally
+    reuse the original SNI name and must save only sessions whose original peer
+    certificate was authenticated. This function selects the session; the SNI
+    check occurs when the ClientHello is built, regardless of whether setSNI
+    was called before or after resumeSession.
+
     \param o the SharkSslCon object.
     \param s a session object created by function #SharkSslCon_acquireSession.
 
-    \returns TRUE on success or FALSE if the session cannot be resumed.
+    \returns TRUE if the session was selected for a resumption attempt, or FALSE
+    if it could not be selected. A later full handshake may still be required.
  */
 SHARKSSL_API U8 SharkSslCon_resumeSession(SharkSslCon *o, SharkSslSession *s); 
 
@@ -2416,6 +2385,7 @@ typedef U8* SharkSslECCKey;
  */
 SHARKSSL_API SharkSslECCKey sharkssl_PEM_to_ECCKey(
    const char *PEMKey, const char *passphrase);
+#endif  /* SHARKSSL_ENABLE_PEM_API */
 
 
 #if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
@@ -2458,7 +2428,6 @@ SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
     This function is useful to extract info from a key.
  */
 SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType, U8 *isKeyPrivate, U8 **d1, U16 *d1Len, U8 **d2, U16 *d2Len);
-#endif
 #endif
 
 #if SHARKSSL_ENABLE_ECCKEY_CREATE

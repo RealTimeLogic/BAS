@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: lxrc.h 6080 2026-09-21 07:06:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *               https://realtimelogic.com
@@ -53,27 +53,27 @@ extern "C" {
 /** Install the [forkpty Lua bindings](../../../lua/auxlua.html#forkptylib).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_forkpty(lua_State* L);
+BA_API void balua_forkpty(lua_State* L);
 
 /** Install the [httpc Lua bindings](../../../lua/auxlua.html#httpc).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_http(lua_State* L);
+BA_API void balua_http(lua_State* L);
 
 /** Install the [LuaIo Lua bindings](../../../lua/auxlua.html#luaio).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_luaio(lua_State *L);
+BA_API void balua_luaio(lua_State *L);
 
 /** Install the [SharkSSL Lua bindings](../../../lua/auxlua.html#sharkssl).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_sharkssl(lua_State *L);
+BA_API void balua_sharkssl(lua_State *L);
 
 /** Install the [socket Lua bindings](../../../lua/auxlua.html#socket).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_socket(lua_State* L);
+BA_API void balua_socket(lua_State* L);
 
 /** Notify registered coroutine sockets that the server is shutting down.
     @param L Required initialized BAS Lua state with the server mutex held.
@@ -81,12 +81,12 @@ void balua_socket(lua_State* L);
     before this function returns. Call before closing the VM; this function
     neither closes the VM nor waits for all application work to finish.
  */
-void balua_relsocket(lua_State* L);
+BA_API void balua_relsocket(lua_State* L);
 
 /** Install the [crypto Lua bindings](../../../lua/auxlua.html#crypto).
     @param L Required initialized BAS Lua state; borrowed for the call.
  */
-void balua_crypto(lua_State *L);
+BA_API void balua_crypto(lua_State *L);
 
 struct ThreadJob;
 struct LThreadMgr;
@@ -96,7 +96,7 @@ struct LThreadMgr;
     \param tmgr Borrowed manager, required for trlogger:onclient(cb); otherwise
     NULL is allowed. Keep it alive while the logger can schedule jobs.
  */
-void balua_tracelogger(lua_State *L, struct LThreadMgr* tmgr);
+BA_API void balua_tracelogger(lua_State *L, struct LThreadMgr* tmgr);
 
 /** @defgroup ThreadMgr The Lua Thread Library
     See Advanced Lua Bindings, section \ref fullsolution "Calling Lua Code Asynchronously From C Code" for how to use this class.

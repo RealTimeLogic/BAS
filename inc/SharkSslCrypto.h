@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 5944 2026-09-08 12:55:35Z gianluca $
+ *   $Id: SharkSslCrypto.h 6178 2026-09-26 20:17:17Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -243,6 +243,12 @@ extern "C" {
 #endif
 
 /* SharkSslCrypto.c */
+/**
+ * Mix 32 application-supplied bits into the default RNG state. Before any
+ * cryptographic use, call this function with sufficient unpredictable input
+ * from a platform CSPRNG or hardware entropy source. Time values, addresses,
+ * or counters alone do not provide an RFC 9846-compliant entropy source.
+ */
 SHARKSSL_API int   sharkssl_entropy(U32);
 SHARKSSL_API int   sharkssl_rng(U8*, U16);
 SHARKSSL_API int   sharkssl_kmemcmp(const void *a, const void *b, U32 n);
@@ -563,20 +569,24 @@ SHARKSSL_API int   SharkSslAesGcmCtx_encrypt(SharkSslAesGcmCtx *ctx,
                                              const U8 *input, U8 *output, U32 len);
 
 
-/** Decrypt data or a chunk of a large data set.
-    \ingroup RayCryptoAesGcm
-    \param ctx context initialized by SharkSslAesGcmCtx_constructor.
-    \param vect the same IV as used in SharkSslAesGcmCtx_encrypt.
-    \param tagin the tagout from SharkSslAesGcmCtx_encrypt. This data
-    will change for each call to SharkSslAesGcmCtx_decrypt.
-    \param auth the same auth as used in SharkSslAesGcmCtx_encrypt or
-    NULL if not used.
-    \param authlen the length of the 'auth' parameter.
-    \param input the data to be decrypted.
-    \param output the decrypted (plaintext) output data. This buffer
-    may be the same as the input buffer.
-    \param len the length of the input block.
-*/
+/**
+ * Decrypt data or a chunk of a large data set.
+ * \ingroup RayCryptoAesGcm
+ * \param ctx context initialized by SharkSslAesGcmCtx_constructor.
+ * \param vect the same IV as used in SharkSslAesGcmCtx_encrypt.
+ * \param tagin the tagout from SharkSslAesGcmCtx_encrypt. This data
+ * will change for each call to SharkSslAesGcmCtx_decrypt.
+ * \param auth the same auth as used in SharkSslAesGcmCtx_encrypt or
+ * NULL if not used.
+ * \param authlen the length of the 'auth' parameter.
+ * \param input the data to be decrypted.
+ * \param output the decrypted plaintext. This buffer may be the same as input.
+ * On authentication failure, its contents are invalid and may be modified.
+ * Discard them; in-place decryption may also destroy the ciphertext.
+ * \param len the length of the input block.
+ * \return 0 when the tag matches, nonzero otherwise. Do not access output
+ * until this function returns.
+ */
 SHARKSSL_API int   SharkSslAesGcmCtx_decrypt(SharkSslAesGcmCtx *ctx,
                                              const U8 vect[12], U8 tagin[16],
                                              const U8 *auth, U16 authlen,

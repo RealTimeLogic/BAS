@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpResRdr.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: HttpResRdr.h 6080 2026-09-21 07:06:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
@@ -341,10 +341,10 @@ BA_API void HttpResRdr_sendFile(IoIntf* io,const char* name,
 /* Shared resource/WebDAV helpers. Metadata is not a content revision, so the
    NUL-terminated tag is weak; buf must hold HttpResRdr_ETagSize bytes. */
 #define HttpResRdr_ETagSize 38
-BA_API void HttpResRdr_fmtETag(char* buf, const IoStat* st);
+BAI_FUNC void HttpResRdr_fmtETag(char* buf, const IoStat* st);
 /* Return 0 to proceed or an HTTP status (304/400/412). st is NULL for a
    nonexistent target; the caller performs normal method/access checks first. */
-BA_API int HttpResRdr_checkPreconditions(HttpRequest* req, const IoStat* st);
+BAI_FUNC int HttpResRdr_checkPreconditions(HttpRequest* req, const IoStat* st);
 BA_API void set_deflategzip(IoIntf_DeflateGzip ptr);
 BA_API IoIntf_DeflateGzip get_deflategzip(void);
 BA_API void HttpResRdr_setHeader(HttpResRdr* o, HttpResRdrHeader* headers);

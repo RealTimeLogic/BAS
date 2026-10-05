@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5496 2023-11-23 18:51:15Z wini $
+ *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2023
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -106,16 +106,13 @@
 #endif 
 
 
-/* BA_DLLBUILD defines import/export depending on whether
-   BA_LIB is defined. Modules that have BA_LIB defined will have
-   their BA_API functions exported. This scheme is similar to the
-   Lua scheme which uses LUA_BUILD_AS_DLL
+/* One BAS DLL: define BA_DLLBUILD for both producer and consumers.
+   Define BA_LIB for every source compiled into the DLL, before including
+   any BAS header. Only public APIs carry BA_API; private linkage uses BAI_FUNC.
 */
 
 #ifdef BA_DLLBUILD
 #if defined(BA_LIB)
-#define LUA_BUILD_AS_DLL
-#define LUA_LIB
 #define BA_API __declspec(dllexport)
 #else
 #define BA_API __declspec(dllimport)
@@ -153,9 +150,6 @@
 #define SHARKSSL_API BA_API
 #endif
 
-#ifndef BALUA_API
-#define BALUA_API BA_API
-#endif
 
 
 

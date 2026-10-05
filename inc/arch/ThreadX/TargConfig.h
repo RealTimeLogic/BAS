@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 5594 2024-12-12 16:18:11Z wini $
+ *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2023
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -142,11 +142,6 @@ U32 baMsTime2TxTicks(U32 msec);
 #endif
 #endif
 
-#if defined(BALUA_LIB)
-#if !defined(BA_LIB)
-#define BA_LIB BALUA_LIB
-#endif
-#endif
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.
@@ -166,9 +161,6 @@ U32 baMsTime2TxTicks(U32 msec);
 #define SHARKSSL_API BA_API
 #endif
 
-#ifndef BALUA_API
-#define BALUA_API BA_API
-#endif
 
 #include <BaErrorCodes.h>
 #include <BaSharkSslOpt.h>

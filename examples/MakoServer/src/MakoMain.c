@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 5711 2025-12-14 23:15:19Z wini $
+ *   $Id: MakoMain.c 6188M 2026-10-05 17:02:18Z (local) $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2025
+ *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -66,6 +66,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+
+#ifndef BA_MDNS
+#define BA_MDNS 1
+#endif
+#if BA_MDNS
+#include <BamDNS.h>
+#endif
 
 
 /* Version info */
@@ -1500,6 +1507,20 @@ static void installTPM(lua_State* L)
 #endif /* NO_ENCRYPTIONKEY */
 /*******************   End Trusted Platform Module ************************/
 
+#if BA_MDNS
+/* Install Lua binding ba.createmdns */ 
+static void bamDNS()
+{
+   /* Discover on construction and follow address changes in existing objects. */
+   BamDNS_luaopen(L, NULL);
+}
+#else
+#define bamDNS()
+#endif
+
+
+
+
 void
 runMako(int isWinService, int argc, char* argv[], char* envp[])
 {
@@ -1774,6 +1795,8 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 #if USE_OPCUA
    luaopen_opcua_ns0_static(L);
 #endif
+
+   bamDNS();
 
    /* Dispatcher mutex must be locked until the dispatcher starts
     */

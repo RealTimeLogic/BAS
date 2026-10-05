@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: balua.h 6080 2026-09-21 07:06:57Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2025
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -409,6 +409,11 @@ BA_API lua_Integer balua_checkIntField(lua_State *L, int ix, const char *k);
 
 
 /* Internally used by the xrc code */
+BAI_FUNC void balua_setEncodedField(
+   lua_State *L, int idx, const U8 k[], size_t kz);
+BAI_FUNC void balua_setEncodedFunc(
+   lua_State *L, lua_CFunction f, const U8 k[], size_t kz, int nup);
+
 #ifndef NO_SHARKSSL
 typedef struct
 {

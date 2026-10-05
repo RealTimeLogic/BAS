@@ -19,7 +19,7 @@
 #define LUA_FLOORN2I        1
 
 /* lstate.c : the seed is used to randomize hashes */
-BA_API unsigned int baluai_makeseed(void);
+BAI_FUNC unsigned int baluai_makeseed(void);
 #define luai_makeseed() baluai_makeseed()
 #if !defined(lua_writestringerror)
 #define lua_writestringerror(s,p) HttpTrace_printf(0, (s), (p))
@@ -35,8 +35,8 @@ BA_API unsigned int baluai_makeseed(void);
 
 #if USE_DBGMON
 struct lua_State;
-BA_API void LDbgMon_userstatethread(struct lua_State* L, struct lua_State* L1);
-BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
+BAI_FUNC void LDbgMon_userstatethread(struct lua_State* L, struct lua_State* L1);
+BAI_FUNC void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 #define luai_userstatethread(L,L1) LDbgMon_userstatethread(L,L1)
 #define luai_userstatefree(L,L1) LDbgMon_userstatefree(L,L1)
 #endif
@@ -333,24 +333,10 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 @@ LUA_API is a mark for all core API functions.
 @@ LUALIB_API is a mark for all auxiliary library functions.
 @@ LUAMOD_API is a mark for all standard library opening functions.
-** CHANGE them if you need to define those functions in some special way.
-** For instance, if you want to create one Windows DLL with the core and
-** the libraries, you may want to use the following definition (define
-** LUA_BUILD_AS_DLL to get it).
+** All public Lua APIs use the same import/export decision as BAS.
+** There is no separate Lua DLL ownership or build option.
 */
-#if defined(LUA_BUILD_AS_DLL)	/* { */
-
-#if defined(LUA_CORE) || defined(LUA_LIB)	/* { */
-#define LUA_API __declspec(dllexport)
-#else						/* }{ */
-#define LUA_API __declspec(dllimport)
-#endif						/* } */
-
-#else				/* }{ */
-
-#define LUA_API		extern
-
-#endif				/* } */
+#define LUA_API extern BA_API
 
 
 /*
@@ -360,7 +346,7 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 
 #if defined(__cplusplus)
 /* Lua uses the "C name" when calling open functions */
-#define LUAMOD_API	extern "C"
+#define LUAMOD_API extern "C" BA_API
 #else
 #define LUAMOD_API	LUA_API
 #endif
@@ -779,4 +765,3 @@ BA_API void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 
 
 #endif
-

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslSCMgr.h 5904 2026-09-01 07:23:35Z gianluca $
+ *   $Id: SharkSslSCMgr.h 6111 2026-09-23 18:49:11Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2026
  *
@@ -96,11 +96,14 @@ extern "C" {
 SHARKSSL_API void SharkSslSCMgr_constructor(
    SharkSslSCMgr* o, SharkSsl* ssl, U32 maxTime);
 
-/** Resume a session. The returned value is a handle and should not be
-    modified by the client. The method returns NULL if no session could
-    be resumed. The method must be called just after
-    SharkSslCon_isHandshakeComplete() returns true.
-*/
+/**
+ * Resume a session before starting the handshake. The returned handle
+ * must not be modified by the caller; NULL means no session was found.
+ * The host key must identify the same server name supplied as SNI in the
+ * new ClientHello, when SNI is used. Store only sessions whose original
+ * server certificate was authenticated for that name; this manager does
+ * not verify certificates.
+ */
 SHARKSSL_API SharkSslSCMgrNode* SharkSslSCMgr_get(
    SharkSslSCMgr* o,SharkSslCon* scon,const char* host,U16 port);
 
@@ -116,16 +119,18 @@ SHARKSSL_API SharkSslSCMgrNode* SharkSslSCMgr_get(
 SHARKSSL_API int SharkSslSCMgr_replace(
    SharkSslSCMgr* o, SharkSslSCMgrNode* n, SharkSslCon* scon);
 
-/** Save the session when #SharkSslSCMgr_get returns NULL. It is an
-    error calling this method if #SharkSslSCMgr_get returns a
-    handle. The method should be called when closing the connection
-    and just before terminating the SharkSslCon object.
-
-    \param o an initialized SharkSslSCMgrNode object
-    \param scon a valid SharkSslCon object.
-    \param host the server's domain name
-    \param port the server's port number e.g. 443
-    \return 0 if session was saved, otherwise -1 is returned.
+/**
+ * Save the session when #SharkSslSCMgr_get returns NULL. It is an
+ * error calling this method if #SharkSslSCMgr_get returns a
+ * handle. The method should be called when closing the connection
+ * and just before terminating the SharkSslCon object. For TLS 1.3, save
+ * it only after authenticating the server certificate for host.
+ *
+ * \param o an initialized SharkSslSCMgrNode object
+ * \param scon a valid SharkSslCon object.
+ * \param host the server's domain name
+ * \param port the server's port number e.g. 443
+ * \return 0 if session was saved, otherwise -1 is returned.
  */
 SHARKSSL_API int SharkSslSCMgr_save(
    SharkSslSCMgr* o, SharkSslCon* scon, const char* host, U16 port);

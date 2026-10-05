@@ -49,7 +49,7 @@
       <Optimization>Full</Optimization>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
       <AdditionalIncludeDirectories>..\..\..\inc;..\..\..\inc\arch\Windows;..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BAS_LOADED;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;NDEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -87,7 +87,7 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>..\..\..\inc;..\..\..\inc\arch\Windows;..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BAS_LOADED;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF;_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;_DEBUG;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>
@@ -123,6 +123,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\arch\NET\generic\SoDisp.c" />
+    <ClCompile Include="..\..\..\src\arch\NET\BamDNS-Sock.c" />
     <ClCompile Include="..\..\..\src\arch\Windows\ThreadLib.c" />
     <ClCompile Include="..\..\..\src\BAS.c" />
     <ClCompile Include="..\..\..\src\DiskIo\windows\BaFile.c" />
