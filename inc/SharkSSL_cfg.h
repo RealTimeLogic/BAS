@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 6269 2026-10-03 20:02:44Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6318 2026-10-05 22:07:01Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -201,7 +201,11 @@
  * Select 1 to enable client authentication from server
  */
 #ifndef SHARKSSL_ENABLE_CLIENT_AUTH
+#if (defined(SHARKSSL_PSA_CONSUMER) && SHARKSSL_PSA_CONSUMER)
+#define SHARKSSL_ENABLE_CLIENT_AUTH                      0
+#else
 #define SHARKSSL_ENABLE_CLIENT_AUTH                      1
+#endif
 #endif
 
 /**
@@ -313,7 +317,11 @@
  * Select 1 to enable session caching
  */
 #ifndef SHARKSSL_ENABLE_SESSION_CACHE
+#if (defined(SHARKSSL_PSA_CONSUMER) && SHARKSSL_PSA_CONSUMER)
+#define SHARKSSL_ENABLE_SESSION_CACHE                    0
+#else
 #define SHARKSSL_ENABLE_SESSION_CACHE                    1
+#endif
 #endif
 
 /**
@@ -373,6 +381,13 @@
  */
 #ifndef SHARKSSL_ENABLE_RSA_API
 #define SHARKSSL_ENABLE_RSA_API                          1
+#endif
+
+/**
+ * Enable the native RSA key generator. PSA library builds enable this option.
+ */
+#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
+#define SHARKSSL_ENABLE_RSAKEY_CREATE                   0
 #endif
 
 /**
@@ -842,7 +857,7 @@
 #undef  SHARKSSL_ENABLE_RSASSA_PSS
 #define SHARKSSL_ENABLE_RSASSA_PSS                       1
 #endif
-#if !SHARKSSL_TLS_1_2
+#if (!SHARKSSL_TLS_1_2)
 #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
 #undef SHARKSSL_ENABLE_SECURE_RENEGOTIATION
 #define SHARKSSL_ENABLE_SECURE_RENEGOTIATION             0
@@ -900,14 +915,15 @@
 #if ((!SHARKSSL_SSL_CLIENT_CODE) && (!SHARKSSL_SSL_SERVER_CODE))
 #error SHARKSSL_PSA_CONSUMER requires a TLS client or server role
 #endif
-#if ((!SHARKSSL_USE_AES_128) || (!SHARKSSL_USE_AES_256) || (!SHARKSSL_ENABLE_AES_GCM) || \
-     (!SHARKSSL_USE_SHA_256) || (!SHARKSSL_USE_SHA_384))
-#error SHARKSSL_PSA_CONSUMER requires AES-128/256-GCM and SHA-256/384
+#if ((!SHARKSSL_USE_AES_128) || (!SHARKSSL_ENABLE_AES_GCM) || (!SHARKSSL_USE_SHA_256))
+#error SHARKSSL_PSA_CONSUMER requires AES-128-GCM and SHA-256
 #endif
 #if (SHARKSSL_USE_AES_192 || SHARKSSL_ENABLE_AES_CCM || \
-     SHARKSSL_ENABLE_AES_CBC || SHARKSSL_ENABLE_AES_CTR_MODE || \
-     SHARKSSL_USE_CHACHA20 || SHARKSSL_USE_POLY1305)
-#error SHARKSSL_PSA_CONSUMER supports only AES-128/256-GCM
+     SHARKSSL_ENABLE_AES_CBC || SHARKSSL_ENABLE_AES_CTR_MODE)
+#error SHARKSSL_PSA_CONSUMER supports only AES-GCM and ChaCha20-Poly1305 records
+#endif
+#if (SHARKSSL_USE_CHACHA20 != SHARKSSL_USE_POLY1305)
+#error SHARKSSL_PSA_CONSUMER requires ChaCha20 and Poly1305 together
 #endif
 #if (SHARKSSL_USE_SHA1 || SHARKSSL_USE_SHA_512 || SHARKSSL_USE_MD5)
 #error SHARKSSL_PSA_CONSUMER supports only SHA-256/384
@@ -920,21 +936,25 @@
      (!SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY))
 #error SHARKSSL_PSA_CONSUMER requires X25519 with an initial single key share and HelloRetryRequest
 #endif
-#if (SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1 || \
+#if (SHARKSSL_ECC_USE_SECP521R1 || \
      SHARKSSL_ECC_USE_CURVE448 || \
      SHARKSSL_ECC_USE_BRAINPOOLP256R1 || SHARKSSL_ECC_USE_BRAINPOOLP384R1 || \
      SHARKSSL_ECC_USE_BRAINPOOLP512R1)
-#error SHARKSSL_PSA_CONSUMER supports only P-256 and X25519
+#error SHARKSSL_PSA_CONSUMER supports only P-256, P-384 and X25519
 #endif
-#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_RSA_PKCS1 || \
-     SHARKSSL_ENABLE_RSASSA_PSS || SHARKSSL_ENABLE_RSA_OAEP || \
+#if (SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_RSA_OAEP || \
      SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_DHE_RSA)
-#error SHARKSSL_PSA_CONSUMER does not support RSA
+#error SHARKSSL_PSA_CONSUMER excludes RSA encryption and TLS 1.2 RSA suites
 #endif
-#if (SHARKSSL_ENABLE_PEM_API || SHARKSSL_ENABLE_ECDSA_API || \
-     SHARKSSL_ENABLE_CLIENT_AUTH || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH || \
-     SHARKSSL_ENABLE_SESSION_CACHE)
-#error SHARKSSL_PSA_CONSUMER excludes PEM, standalone ECDSA, client auth, post-handshake auth, and session caching
+#if (SHARKSSL_ENABLE_RSA && ((!SHARKSSL_ENABLE_RSA_PKCS1) || (!SHARKSSL_ENABLE_RSASSA_PSS)))
+#error SHARKSSL_PSA_CONSUMER RSA requires PKCS1 certificate signatures and RSA-PSS
+#endif
+#if (SHARKSSL_ENABLE_PEM_API || SHARKSSL_ENABLE_ECDSA_API)
+#error SHARKSSL_PSA_CONSUMER excludes PEM and standalone ECDSA
+#endif
+#if (SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH && \
+     ((!SHARKSSL_ENABLE_CLIENT_AUTH) || (!SHARKSSL_SSL_SERVER_CODE)))
+#error SHARKSSL_PSA_CONSUMER post-handshake auth requires client auth and server code
 #endif
 #if (SHARKSSL_USE_RNG_TINYMT || SHARKSSL_USE_RNG_FORTUNA)
 #error SHARKSSL_PSA_CONSUMER uses the provider RNG

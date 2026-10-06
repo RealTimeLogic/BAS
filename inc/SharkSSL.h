@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6215 2026-10-02 15:24:56Z gianluca $
+ *   $Id: SharkSSL.h 6326 2026-10-06 20:17:23Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -54,6 +54,9 @@
 #endif
 
 #include "SharkSSL_cfg.h"    /* SharkSSL configuration */
+#if SHARKSSL_PSA_CONSUMER
+#include <psa/crypto.h>
+#endif
 #include <stddef.h>          /* size_t */
 
 #include "SharkSslCrypto.h"  /* Crypto API */
@@ -372,11 +375,14 @@ U32 baGetUnixTime(void);
     \param certDN pointer to an initialized #SharkSslCertDN instance.
 
     \param SAN pointer to a string where Subject Alternative Names are
-    listed.  Multiple names and/or IP addresses can be specified
-    separating them by semicolons. Note: SAN must include the common
-    name set in SharkSslCertDN. The subject alternative name may
-    include an IP address in the form "IP:IPv4"; example:
-    "localhost;IP:127.0.0.1"
+    listed, separated by semicolons (at most 255 bytes total). An unprefixed
+    entry is a DNS name; "IP:IPv4" supplies an IPv4 address and "URI:value"
+    supplies a URI. Prefixes are case-sensitive. Example:
+    "localhost;IP:127.0.0.1;URI:urn:example:application".
+    To request an OPC UA application certificate, include exactly one URI
+    equal to the ApplicationUri and the server's DNS name or IP address.
+    An empty string omits SANs for a CA request. Literal semicolons delimit
+    entries; percent-encode them when they belong to a URI.
 
     \param keyUsage flags used to specify the key usage. You may use
     the following flags and combine them by a bitwise OR:
@@ -1460,6 +1466,15 @@ SHARKSSL_API SharkSslCertInfo  *SharkSslCon_getCertInfo(SharkSslCon *o);
     fails if you have existing connections in the SharkSsl object.
  */
 SHARKSSL_API U8 SharkSsl_addCertificate(SharkSsl *o, SharkSslCert cert);
+
+#if SHARKSSL_PSA_CONSUMER
+/** Add an RSA or EC certificate with a provider-owned private signing key.
+    The caller retains ownership of psaKey and must keep it valid until the
+    SharkSsl object and all its connections are destroyed. The key must match
+    the certificate and permit signing with the negotiated hash algorithm.
+ */
+SHARKSSL_API U8 SharkSsl_addCertificatePSA(SharkSsl *o, SharkSslCert cert, psa_key_id_t psaKey);
+#endif
 
 #if SHARKSSL_ENABLE_CA_LIST
 

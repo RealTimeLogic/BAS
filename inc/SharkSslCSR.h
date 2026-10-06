@@ -56,11 +56,14 @@ extern "C" {
 #define SHARKSSL_CERT_PROFILE_INTERMEDIATE_CA  2
 #define SHARKSSL_CERT_PROFILE_TLS_SERVER       3
 #define SHARKSSL_CERT_PROFILE_TLS_CLIENT       4
+#define SHARKSSL_CERT_PROFILE_OPCUA_SERVER     5
+#define SHARKSSL_CERT_PROFILE_OPCUA_CLIENT     6
 
 #define SHARKSSL_CERT_SAN_DNS                  2
+#define SHARKSSL_CERT_SAN_URI                  6
 #define SHARKSSL_CERT_SAN_IP                   7
 
-/** DNS values are ASCII bytes; IP values are 4 or 16 network-order bytes. */
+/** DNS/URI values are ASCII bytes; IP values are 4 or 16 network-order bytes. */
 typedef struct SharkSslCertSAN
 {
    const U8 *value;
@@ -102,7 +105,7 @@ SharkSslCert_validateCAChain(const SharkSslCertDER *chain,
                             U16 count);
 
 /**
- * Check an issued leaf against the approved key, exact typed DNS/IP SAN
+ * Check an issued leaf against the approved key, exact typed DNS/URI/IP SAN
  * set, issuer, and validity timestamps. The issuer certificate must already
  * belong to a validated CA chain. The function verifies the leaf signature
  * with that issuer's public key and rejects cA=TRUE or keyCertSign. Profile
@@ -122,7 +125,7 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
 
 /**
  * Sign a verified CSR under an explicit issuer policy. For leaf certificates,
- * approveSANs must return zero only when all typed DNS/IP names in the CSR
+ * approveSANs must return zero only when all typed DNS/URI/IP names in the CSR
  * match the authorized enrollment identity. The callback receives pointers
  * into csrData that remain valid only during this call. No requested
  * extension bytes are copied to the certificate. Root CA requires caCert
@@ -130,6 +133,9 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
  * For non-root issuance, caCert must identify a CA permitted to sign and its
  * attached signing key must match the certificate's public key. The caller
  * must validate the issuer's trust chain and current validity separately.
+ * OPC UA profiles require exactly one absolute URI SAN, nonempty commonName
+ * and organization, and a DNS/IP SAN for servers. They select OPC UA Key
+ * Usage for the subject's RSA/ECC key; servers include both TLS EKU purposes.
  * validFrom and validTo use UTC YYYYMMDDHHMMSS. On success, signedCSR
  * receives an allocated SharkSSL certificate that the caller frees with
  * baFree; the return value is its size. A negative value indicates failure.
