@@ -71,7 +71,13 @@ pre.code { overflow-x: auto; }
 
 <h3>Select the Build Profile</h3>
 
-<p>Both build paths default to <code>SHARKTRUSTX_PRIVATE_CA=0</code>, which leaves the C macro undefined and uses SharkTrustX with Let's Encrypt staging. For Visual Studio, change the value in the <code>UserMacros</code> section of <code>VcMake/example.vcxproj</code> from <code>0</code> to <code>1</code>, then select <strong>Rebuild</strong>. Alternatively, run this command from a Visual Studio developer command prompt at the BAS root:</p>
+<p>Both build paths default to <code>SHARKTRUSTX_PRIVATE_CA=0</code>, which leaves the C macro undefined and uses SharkTrustX with Let's Encrypt staging.</p>
+
+<p>For Visual Studio, close the solution and <strong>manually open <code>VcMake/example.vcxproj</code> in a text editor</strong>. In the XML <code>UserMacros</code> section, change the value inside the <code>SHARKTRUSTX_PRIVATE_CA</code> element from <code>0</code> to <code>1</code>. Save the file, reopen the solution, and select <strong>Rebuild</strong>.</p>
+
+<p>This is an <strong>MSBuild project property</strong>. It includes the mDNS source files and required libraries and defines the C macro for all source files. Adding <code>SHARKTRUSTX_PRIVATE_CA=1</code> only under <strong>C/C++ &gt; Preprocessor &gt; Preprocessor Definitions</strong>, or adding a <code>#define</code> in <code>start.h</code>, does not include those files and can cause unresolved <code>BamDNS</code> linker errors.</p>
+
+<p>Alternatively, run this command from a Visual Studio developer command prompt at the BAS root:</p>
 
 <pre class="code">rem Use your SharkCA tokengen.c and a separate state directory before running.
 msbuild examples\SharkTrustX\VcMake\example.vcxproj /t:Rebuild ^

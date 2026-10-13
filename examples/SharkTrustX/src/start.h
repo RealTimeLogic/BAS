@@ -14,7 +14,7 @@
 #endif
 #ifndef SHARKTRUSTX_PRIVATE_CA
 #ifndef EXAMPLE_EMAIL
-/* Replace John Doe's placeholder with your own ACME contact email. */
+#error remove this line and replace John Doe's placeholder with your own ACME contact email.
 #define EXAMPLE_EMAIL "john.doe@example.com"
 #endif
 #endif
