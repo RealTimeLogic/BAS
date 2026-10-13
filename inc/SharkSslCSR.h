@@ -129,8 +129,10 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
  * match the authorized enrollment identity. The callback receives pointers
  * into csrData that remain valid only during this call. No requested
  * extension bytes are copied to the certificate. Root CA requires caCert
- * to be NULL and privKey to match the CSR; other profiles require caCert.
- * For non-root issuance, caCert must identify a CA permitted to sign and its
+ * to be NULL and privKey to match the CSR. OPC UA profiles also allow
+ * caCert=NULL with a matching privKey, producing a self-signed application
+ * leaf (cA=FALSE, keyCertSign present). TLS and intermediate profiles require
+ * caCert. When supplied, caCert must identify a CA permitted to sign and its
  * attached signing key must match the certificate's public key. The caller
  * must validate the issuer's trust chain and current validity separately.
  * OPC UA profiles require exactly one absolute URI SAN, nonempty commonName

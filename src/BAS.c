@@ -41426,7 +41426,7 @@ extern "\103" {
       xparser* parser,
       void* fixupfinal,
       xparser_event event,
-      const char* gpio1config, 
+      const char* name, 
       const char** attr, 
       const char* alloccontroller); 
 
@@ -42006,7 +42006,7 @@ typedef struct SharkSslECDSAParam
 #endif
 
 
-#if SHARKSSL_ENABLE_RSA
+#if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
 SHARKSSL_API int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker);
 int omap3430common(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U8 seepromprobe);
 int writemessage(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U8 seepromprobe);
@@ -42026,6 +42026,11 @@ int  SharkSslECDHParam_ECDH(const SharkSslECDHParam*, U8 op, U8*);
 #endif
 #if SHARKSSL_ENABLE_ECDSA
 int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam*, U8 op);
+#if (!SHARKSSL_PSA_CONSUMER)
+typedef int (*SharkSslECDSANonceFunc)(void *platformregister, U8 *broadcastenter, U16 traceleave);
+int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_XzY0x218,
+                               SharkSslECDSANonceFunc _XzY0x217, U8 op);
+#endif
 U16 relocationchain(SharkSslCertKey *disableclock);
 #endif
 
@@ -42321,7 +42326,6 @@ int     SharkSslECCurve_setPoint_ED(SharkSslECCurve *o, SharkSslECPoint *p);
 #define initialdomain(o, p) SharkSslECCurve_setPoint_NB(o, p)
 #endif
 
-#if (!SHARKSSL_ECDSA_ONLY_VERIFY)
 int     SharkSslECCurve_multiply_NB(SharkSslECCurve *o, shtype_t *k, 
                                    SharkSslECPoint *deltadevices);
 #if SHARKSSL_ECC_USE_EDWARDS
@@ -42330,7 +42334,6 @@ int     SharkSslECCurve_multiply_ED(SharkSslECCurve *o, shtype_t *k,
 #define unregisterskciphers(o,k,r) (o)->multiply(o, k, r)  
 #else
 #define unregisterskciphers(o,k,r) SharkSslECCurve_multiply_NB(o,k,r)
-#endif
 #endif
 
 #if SHARKSSL_ENABLE_ECDSA
@@ -42607,7 +42610,9 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define SHARKSSL_SEQ_NUM_LEN                       8    
 #define SHARKSSL_TLS_1_3_AES_GCM_RECORD_LIMIT      0x016A09E6UL  
 #define SHARKSSL_AES_GCM_EXPLICIT_IV_LEN           SHARKSSL_SEQ_NUM_LEN   
-#define SHARKSSL_TLS_1_3_STATIC_IV_LEN             12
+#define SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN      4
+#define SHARKSSL_TLS_AEAD_NONCE_LEN                12
+#define SHARKSSL_TLS_1_3_STATIC_IV_LEN             SHARKSSL_TLS_AEAD_NONCE_LEN
 #define SHARKSSL_RANDOM_LEN                        32   
 #define SHARKSSL_MASTER_SECRET_LEN                 48   
 #define SHARKSSL_CERT_LENGTH_LEN                   3   
@@ -42880,10 +42885,21 @@ typedef struct SharkSslHSParam
       {
          U8 clientRandom[SHARKSSL_RANDOM_LEN];
          U8 serverRandom[SHARKSSL_RANDOM_LEN];
+         #if SHARKSSL_PSA_CONSUMER
+         /* Derived before ChangeCipherSpec; transferred to the active record contexts. */
+         psa_key_id_t nextRRecordKey;
+         psa_key_id_t nextWRecordKey;
+         #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
+         U8 nextRIV[SHARKSSL_TLS_AEAD_NONCE_LEN];
+         U8 nextWIV[SHARKSSL_TLS_AEAD_NONCE_LEN];
+         #else
+         U8 nextRIV[SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN];
+         U8 nextWIV[SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN];
+         #endif
+         #else
          U8 masterSecret[SHARKSSL_MASTER_SECRET_LEN];
-         U8 sharedSecret[2 * (SHARKSSL_MAX_DIGEST_LEN +
-            SHARKSSL_MAX_KEY_LEN +
-            SHARKSSL_MAX_BLOCK_LEN) + SHARKSSL_MAX_DIGEST_LEN];
+         U8 sharedSecret[2 * (SHARKSSL_MAX_DIGEST_LEN + SHARKSSL_MAX_KEY_LEN + SHARKSSL_MAX_BLOCK_LEN) + SHARKSSL_MAX_DIGEST_LEN];
+         #endif
          #if SHARKSSL_USE_SHA_512
          SharkSslSha512Ctx sha512Ctx;
          #endif
@@ -42895,17 +42911,20 @@ typedef struct SharkSslHSParam
       #if SHARKSSL_TLS_1_3
       struct
       {
+         #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
          U8 HSSecret[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
-         U8 srvHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
-         U8 cliHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
-         #if SHARKSSL_USE_ECC
-         #if SHARKSSL_PSA_CONSUMER
-         #if SHARKSSL_ECC_USE_SECP384R1
-         U8 ecdhSecret[SHARKSSL_SECP384R1_POINTLEN];
-         #else
-         U8 ecdhSecret[SHARKSSL_SECP256R1_POINTLEN];
          #endif
-         #else
+         U8 srvHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+         #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
+         U8 cliHSTraffic[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+         #endif
+         #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         psa_key_id_t psaHSSecret;
+         psa_key_id_t psaSrvHSTraffic;
+         psa_key_id_t psaCliHSTraffic;
+         #endif
+         #if SHARKSSL_USE_ECC
+         #if (!SHARKSSL_PSA_CONSUMER)
          #if SHARKSSL_ECC_USE_CURVE448
          U8 privKeyCURVE448[SHARKSSL_CURVE448_POINTLEN];
          #endif
@@ -42918,7 +42937,7 @@ typedef struct SharkSslHSParam
          #if SHARKSSL_ECC_USE_SECP256R1
          U8 privKeySECP256R1[SHARKSSL_SECP256R1_POINTLEN];
          #endif
-         #endif  /* SHARKSSL_PSA_CONSUMER */
+         #endif  /* !SHARKSSL_PSA_CONSUMER */
          #endif  /* SHARKSSL_USE_ECC */
          #if SHARKSSL_ENABLE_CLIENT_AUTH
          U16 signatureScheme;
@@ -43024,13 +43043,21 @@ struct SharkSslSession
       {
          U32 latestAccess;
          U8  id[SHARKSSL_MAX_SESSION_ID_LEN];
+         #if SHARKSSL_PSA_CONSUMER
+         psa_key_id_t masterKey;
+         #else
          U8  masterSecret[SHARKSSL_MASTER_SECRET_LEN];
+         #endif
       } tls12;
       #endif
       #if SHARKSSL_TLS_1_3
       struct
       {
+         #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         psa_key_id_t PSK;
+         #else
          U8  PSK[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+         #endif
          union
          {
             #if SHARKSSL_SSL_CLIENT_CODE
@@ -43133,7 +43160,7 @@ struct SharkSslCon
    #elif (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
    U8 rIV[16];
    #endif
-   #if SHARKSSL_MAX_KEY_LEN
+   #if (SHARKSSL_MAX_KEY_LEN && (!SHARKSSL_PSA_CONSUMER))
    U8 rKey[SHARKSSL_MAX_KEY_LEN];
    #endif
 
@@ -43146,7 +43173,7 @@ struct SharkSslCon
    #elif  ((SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305) || SHARKSSL_ENABLE_AES_GCM)
    U8 wIV[16];
    #endif
-   #if SHARKSSL_MAX_KEY_LEN
+   #if (SHARKSSL_MAX_KEY_LEN && (!SHARKSSL_PSA_CONSUMER))
    U8 wKey[SHARKSSL_MAX_KEY_LEN];
    #endif
 
@@ -43156,11 +43183,25 @@ struct SharkSslCon
    #endif
 
    #if SHARKSSL_TLS_1_3
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
    U8  masterSecret[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
-   #if (SHARKSSL_ENABLE_KEY_UPDATE || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH)
+   #endif
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   psa_key_id_t psaEarlySecret;
+   #endif
+   psa_key_id_t psaMasterSecret;
+   psa_key_id_t psaRAppTrafficSecret;
+   psa_key_id_t psaWAppTrafficSecret;
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   psa_key_id_t psaResumptionMasterSecret;
+   #endif
+   U8 psaTLS13HSKeysActive;
+   #endif
+   #if ((SHARKSSL_ENABLE_KEY_UPDATE || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH) && (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES))
    U8  rAppTrafficSecret[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
    #endif
-   #if SHARKSSL_ENABLE_KEY_UPDATE
+   #if (SHARKSSL_ENABLE_KEY_UPDATE && (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES))
    U8  wAppTrafficSecret[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
    #endif
    #endif
@@ -43169,7 +43210,9 @@ struct SharkSslCon
    SharkSslCipherSuite *rCipherSuite, *wCipherSuite;
    #if SHARKSSL_ENABLE_SESSION_CACHE
    #if SHARKSSL_TLS_1_3
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
    U8  resumptionMasterSecret[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+   #endif
    #endif
    SharkSslSession *session;
    #endif
@@ -43196,6 +43239,12 @@ struct SharkSslCon
    psa_hash_operation_t psaTranscript384;
    #endif
    psa_key_id_t psaECDHKey;
+   psa_key_id_t psaRRecordKey;
+   psa_key_id_t psaWRecordKey;
+   #if SHARKSSL_TLS_1_2
+   psa_key_id_t psaTLS12MasterKey;
+   U8 psaTLS12OwnMasterKey;  /* 0 after the session cache takes ownership */
+   #endif
    #endif
    void *rCtx, *wCtx;
    #if SHARKSSL_UNALIGNED_MALLOC
@@ -43284,6 +43333,15 @@ void               conditionvalid(SharkSslCon *o, SharkSsl *resetcounters);
 void               localenable(SharkSslCon *o);
 #if SHARKSSL_PSA_CONSUMER
 int                SharkSslCon_destroyPSAECDHKey(SharkSslCon *o);
+#if (SHARKSSL_TLS_1_3 && SHARKSSL_USE_ECC)
+int                SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U16 _XzY0x1D4);
+#endif
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+int                SharkSslCon_destroyTLS13HSKeys(SharkSslCon *o);
+#endif
+#if SHARKSSL_TLS_1_2
+int                SharkSslCon_deriveTLS12Keys(SharkSslCon *o);
+#endif
 #endif
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_HELLO_RETRY_REQUEST)
 #if SHARKSSL_SSL_CLIENT_CODE
@@ -43310,9 +43368,6 @@ int                SharkSslCon_calcAppTrafficSecretRecv(SharkSslCon*, U8*);
 #if SHARKSSL_ENABLE_KEY_UPDATE
 int                SharkSslCon_updateAppTrafficSecretRecv(SharkSslCon*);
 int                SharkSslCon_isKeyUpdateEpochMax(SharkSslCon*);
-#if SHARKSSL_ENABLE_AES_GCM
-int                SharkSslCon_proactiveKeyUpdate(SharkSslCon*);
-#endif
 #endif
 int                SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon*);
 #define SharkSslCon_disablewCipherSuite(o) (o)->wCipherSuite = (void*)0
@@ -43321,12 +43376,17 @@ int                SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon*);
 #define SharkSslCon_enablerCipherSuite(o) (o)->rCipherSuite = (o)->wCipherSuite
 #if SHARKSSL_ENABLE_SESSION_CACHE
 int                SharkSslCon_calcResumptionSecret(SharkSslCon*, U8*);
-int                SharkSslCon_calcTicketPSK(SharkSslCon*, U8*, U8*, U8);
-int                SharkSslCon_calcEarlySecret(SharkSslCon*, U8*, U8);
+int                SharkSslCon_calcTicketPSK(SharkSslCon*, SharkSslSession*, U8*, U8);
+int                SharkSslCon_calcEarlySecret(SharkSslCon*, SharkSslSession*, U8);
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+int                SharkSslCon_calcBinder(SharkSslCon*, U8*, U8);
+#endif
 #endif
 #endif
 #if SHARKSSL_TLS_1_2
+#if (!SHARKSSL_PSA_CONSUMER)
 int                allocalloc(SharkSslCon*, U8*, U16, U8*, U16, U8[32], U8[32]);
+#endif
 int                sanitisependbaser(SharkSslCon *o, SharkSslCon_SendersRole, U8*);
 #endif
 #if SHARKSSL_ENABLE_SELECT_CIPHERSUITE
@@ -43653,81 +43713,106 @@ static int _XzY0x1C(SharkSslCon *o, U8 *xy, U16 _XzY0x1D4)
 }
 
 
-static int _XzY0x1BF(SharkSslCon *o, U8 *spi4000check,
-                                      const U8 *_XzY0x1E4, U16 _XzY0x1D4)
+#if SHARKSSL_TLS_1_2
+static int _XzY0x205(SharkSslCon *o, const U8 *_XzY0x1E4, U16 _XzY0x1D4)
 {
+   static const U8 clkdmoperations[] = "\155\141\163\164\145\162\040\163\145\143\162\145\164";
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   SharkSslHSParam *hs = hsParam(o);
    U8 _XzY0x1E7[SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN];
-   const U8 *_XzY0x1E3;
-   size_t peerLen;
-   size_t _XzY0x1EC = 0;
+   U8 suspendblock[2 * SHARKSSL_RANDOM_LEN];
+   psa_algorithm_t prf;
    psa_status_t sffsdrnandflash;
-   int _XzY0x1CD;
-   U8 savedsigmask, _XzY0x1E1 = 0;
-   size_t i;
+   size_t peerLen;
 
-   if (!o->psaECDHKey)
+   if (o->psaECDHKey == PSA_KEY_ID_NULL)
    {
       return 1;
    }
    if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
    {
-      _XzY0x1E3 = _XzY0x1E4;
       peerLen = SHARKSSL_CURVE25519_POINTLEN;
-      savedsigmask = SHARKSSL_CURVE25519_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
    }
    else if (_XzY0x1D4 == ucb1400pdata)
    {
-      savedsigmask = SHARKSSL_SECP256R1_POINTLEN;
       peerLen = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
    #if SHARKSSL_ECC_USE_SECP384R1
    else if (_XzY0x1D4 == pciercxcfg034)
    {
-      savedsigmask = SHARKSSL_SECP384R1_POINTLEN;
       peerLen = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
    #endif
    else
    {
       return 1;
    }
-   if (_XzY0x1D4 != TLS_NAMEDGROUP_CURVE25519)
+   sffsdrnandflash = PSA_SUCCESS;
+   if ((o->psaTLS12OwnMasterKey) && (o->psaTLS12MasterKey != PSA_KEY_ID_NULL))
    {
-      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
-      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
-      _XzY0x1E3 = _XzY0x1E7;
+      sffsdrnandflash = psa_destroy_key(o->psaTLS12MasterKey);
    }
-
-   sffsdrnandflash = psa_raw_key_agreement(PSA_ALG_ECDH, o->psaECDHKey,
-                                  _XzY0x1E3, peerLen, spi4000check,
-                                  savedsigmask, &_XzY0x1EC);
-   memset(_XzY0x1E7, 0, sizeof(_XzY0x1E7));
-   _XzY0x1CD = SharkSslCon_destroyPSAECDHKey(o);
-   if ((sffsdrnandflash == PSA_SUCCESS) &&
-       (_XzY0x1EC == savedsigmask) &&
-       (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519))
+   o->psaTLS12MasterKey = PSA_KEY_ID_NULL;
+   o->psaTLS12OwnMasterKey = 0;
+   if (sffsdrnandflash != PSA_SUCCESS)
    {
-      for (i = 0; i < _XzY0x1EC; ++i)
-      {
-         _XzY0x1E1 |= spi4000check[i];
-      }
-   }
-   if ((sffsdrnandflash != PSA_SUCCESS) ||
-       (_XzY0x1EC != savedsigmask) || _XzY0x1CD ||
-       ((_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519) && (!_XzY0x1E1)))
-   {
-      memset(spi4000check, 0, savedsigmask);
-      if ((!_XzY0x1CD) &&
-          ((sffsdrnandflash == PSA_SUCCESS) ||
-           (sffsdrnandflash == PSA_ERROR_INVALID_ARGUMENT) ||
-           (sffsdrnandflash == PSA_ERROR_DATA_INVALID)))
-      {
-         return SHARKSSL_ECDH_INVALID_KEY;
-      }
       return 1;
    }
+   prf = PSA_ALG_TLS12_PRF((hs->cipherSuite->hashID == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256);
+   memcpy(suspendblock, hs->prot.tls12.clientRandom, SHARKSSL_RANDOM_LEN);
+   memcpy(suspendblock + SHARKSSL_RANDOM_LEN, hs->prot.tls12.serverRandom, SHARKSSL_RANDOM_LEN);
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, prf));
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SEED, suspendblock, sizeof(suspendblock));
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_key_agreement(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET,
+                                                o->psaECDHKey, _XzY0x1E7, peerLen);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_LABEL, clkdmoperations, sizeof(clkdmoperations) - 1);
+   }
+   psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+   psa_set_key_bits(&attributes, SHARKSSL_MASTER_SECRET_LEN * 8u);
+   psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+   psa_set_key_algorithm(&attributes, prf);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, &o->psaTLS12MasterKey);
+   }
+   psa_reset_key_attributes(&attributes);
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   if (SharkSslCon_destroyPSAECDHKey(o))
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   sharkssl_clear(_XzY0x1E7, sizeof(_XzY0x1E7));
+   sharkssl_clear(suspendblock, sizeof(suspendblock));
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (o->psaTLS12MasterKey != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(o->psaTLS12MasterKey);
+         o->psaTLS12MasterKey = PSA_KEY_ID_NULL;
+      }
+      return ((sffsdrnandflash == PSA_ERROR_INVALID_ARGUMENT) || (sffsdrnandflash == PSA_ERROR_DATA_INVALID)) ? SHARKSSL_ECDH_INVALID_KEY : 1;
+   }
+   o->psaTLS12OwnMasterKey = 1;
    return 0;
 }
+#endif
 #undef SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN
 #endif
 
@@ -44008,7 +44093,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 {
    #if SHARKSSL_ENABLE_CA_LIST
    U32 uart2hwmod;
-   U8 *tp, gpio1config[SHARKSSL_CA_LIST_NAME_SIZE];
+   U8 *tp, name[SHARKSSL_CA_LIST_NAME_SIZE];
    #if SHARKSSL_ENABLE_CERTSTORE_API
    U8 *tb;
    U16 paramnamed;
@@ -44096,12 +44181,12 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
          if ((certParam->certInfo.issuer.commonName) && (certParam->certInfo.issuer.commonNameLen))
          {
             i = certParam->certInfo.issuer.commonNameLen;
-            memcpy(gpio1config, certParam->certInfo.issuer.commonName, SHARKSSL_CA_LIST_NAME_SIZE);
+            memcpy(name, certParam->certInfo.issuer.commonName, SHARKSSL_CA_LIST_NAME_SIZE);
          }
          else if ((certParam->certInfo.issuer.organization) && (certParam->certInfo.issuer.organizationLen))
          {
             i = certParam->certInfo.issuer.organizationLen;
-            memcpy(gpio1config, certParam->certInfo.issuer.organization, SHARKSSL_CA_LIST_NAME_SIZE);
+            memcpy(name, certParam->certInfo.issuer.organization, SHARKSSL_CA_LIST_NAME_SIZE);
          }
          
          if (i >= SHARKSSL_CA_LIST_NAME_SIZE)
@@ -44118,7 +44203,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 
          
          tp += uart2hwmod;
-         while ((*tp != gpio1config[0]) && (uart2hwmod > 0))
+         while ((*tp != name[0]) && (uart2hwmod > 0))
          {
             #if SHARKSSL_ENABLE_CERTSTORE_API
             tp -= paramnamed;
@@ -44130,9 +44215,9 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
          }
 
          
-         while (*tp == gpio1config[0])
+         while (*tp == name[0])
          {
-            if (0 == sharkssl_kmemcmp(tp, gpio1config, i))
+            if (0 == sharkssl_kmemcmp(tp, name, i))
             {
                #if SHARKSSL_ENABLE_CERTSTORE_API
                if (displaysetup[0] == SHARKSSL_CA_LIST_PTR_TYPE)
@@ -44304,7 +44389,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 
 #define SHARKSSL_TLS13_INITIAL_X25519_ONLY    (SHARKSSL_ENABLE_HELLO_RETRY_REQUEST && SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY && SHARKSSL_ECC_USE_CURVE25519)
 
-#if ((SHARKSSL_SSL_SERVER_CODE || (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH)) && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+#if ((SHARKSSL_SSL_SERVER_CODE || (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH && SHARKSSL_TLS_1_3)) && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
 static int dcdc4consumers(const U8 *dcdc2consumers, const SharkSslCertParsed *kernelvaddr, U8 disablenotrace)
 {
    if ((kernelvaddr->hashAlgo == skciphercreate) || ((disablenotrace) && (kernelvaddr->hashAlgo <= presentpages)))
@@ -44935,7 +45020,9 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
 {
 #endif
 
+   #if (SHARKSSL_SSL_SERVER_CODE || SHARKSSL_TLS_1_3)
    SharkSslHSParam *alignmentldrhstrh;
+   #endif
    U8 *_XzY0x18C;
    U16 prminstwrite, paramnamed;
    #if SHARKSSL_TLS_1_3
@@ -44951,7 +45038,9 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
 
    baAssert(o);
    baAssert(registeredevent);
+   #if (SHARKSSL_SSL_SERVER_CODE || SHARKSSL_TLS_1_3)
    alignmentldrhstrh = hsParam(o);
+   #endif
    #if SHARKSSL_USE_ECC
    baAssert(SHARKSSL_EC_CURVE_ID_SECP256R1 == spannedpages);
    baAssert(SHARKSSL_EC_CURVE_ID_SECP384R1 == restoretrace);
@@ -45401,9 +45490,7 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
             alignmentldrhstrh->ecdhParam.curveType = prminstwrite;  
             alignmentldrhstrh->ecdhParam.xLen = fixeddivisor;
             alignmentldrhstrh->ecdhParam.XY = registeredevent;        
-            #if SHARKSSL_PSA_CONSUMER
-            alignmentldrhstrh->ecdhParam.k = alignmentldrhstrh->prot.tls13.ecdhSecret;
-            #else
+            #if (!SHARKSSL_PSA_CONSUMER)
             switch (prminstwrite)
             {
                #if SHARKSSL_ECC_USE_SECP384R1
@@ -45435,19 +45522,13 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                   return -1;
             }
             #endif
-            #if SHARKSSL_SSL_CLIENT_CODE
+            #if (SHARKSSL_SSL_CLIENT_CODE && !SHARKSSL_PSA_CONSUMER)
             #if SHARKSSL_SSL_SERVER_CODE
             if (SharkSsl_isClient(o->sharkSsl))
             #endif
             {
                
-               #if SHARKSSL_PSA_CONSUMER
-               int sffsdrnandflash = _XzY0x1BF(o,
-                  alignmentldrhstrh->ecdhParam.k, alignmentldrhstrh->ecdhParam.XY,
-                  alignmentldrhstrh->ecdhParam.curveType);
-               #else
                int sffsdrnandflash = SharkSslECDHParam_ECDH(&(alignmentldrhstrh->ecdhParam), switcheractive, alignmentldrhstrh->ecdhParam.k);
-               #endif
                if (sffsdrnandflash)
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
@@ -46850,7 +46931,7 @@ static SharkSslCon_RetVal _XzY0x17A(SharkSslCon *o)
    SharkSslHSParam *timercancel = hsParam(o);
    U8 *mcasp2resources = o->hrrClientHello, *ext, *end, *_XzY0x162 = NULL, *_XzY0x1B4 = NULL, *p, *tp, *sp;
    #if SHARKSSL_ENABLE_SESSION_CACHE
-   U8 *psk = NULL, *binder = NULL;
+   U8 *psk = NULL, *_XzY0x20A = NULL;
    U32 _XzY0x1BA = 0;
    U16 _XzY0x1B = 0, ftraceupdate = 0;
    #endif
@@ -47071,7 +47152,7 @@ static SharkSslCon_RetVal _XzY0x17A(SharkSslCon *o)
       *p++ = (U8)(_XzY0x1BA >> 16);
       *p++ = (U8)(_XzY0x1BA >> 8);
       *p = (U8)_XzY0x1BA;
-      binder = tp - ftraceupdate;
+      _XzY0x20A = tp - ftraceupdate;
    }
    #endif
    baAssert((U32)(tp - sp) == _XzY0x18F);
@@ -47087,14 +47168,21 @@ static SharkSslCon_RetVal _XzY0x17A(SharkSslCon *o)
    #if SHARKSSL_ENABLE_SESSION_CACHE
    if ((psk) && (o->session))
    {
-      U32 _XzY0x1AE = (U32)(binder - sp - 3);
+      U32 _XzY0x1AE = (U32)(_XzY0x20A - sp - 3);
 
       if (ioremapresource(timercancel, sp, _XzY0x1AE))
       {
          return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
       }
-      if (wakeupvector(timercancel, binder, timercancel->cipherSuite->hashID) ||
-          (sharkssl_HMAC(timercancel->cipherSuite->hashID, binder, ftraceupdate, timercancel->prot.tls13.HSSecret, ftraceupdate, binder) < 0))
+      if (wakeupvector(timercancel, _XzY0x20A, timercancel->cipherSuite->hashID))
+      {
+         return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
+      }
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      if (SharkSslCon_calcBinder(o, _XzY0x20A, timercancel->cipherSuite->hashID))
+      #else
+      if (sharkssl_HMAC(timercancel->cipherSuite->hashID, _XzY0x20A, ftraceupdate, timercancel->prot.tls13.HSSecret, ftraceupdate, _XzY0x20A) < 0)
+      #endif
       {
          return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
       }
@@ -47403,6 +47491,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
 
    U32  now_ccLen, crLen;
    U8  *tp, *sp, *tb, *afterhandler;
+   #if (SHARKSSL_TLS_1_2 && SHARKSSL_SSL_CLIENT_CODE)
+   const U8 *serverRandom;
+   #endif
    SharkSslHSParam *alignmentldrhstrh;
    #if ((SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE) && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
    SharkSslCertParam *certParam;
@@ -48227,12 +48318,16 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                goto _sharkssl_create_client_hello_alert_internal_error;
             }
             
-            if (SharkSslCon_calcEarlySecret(o, o->session->prot.tls13.PSK, ics))
+            if (SharkSslCon_calcEarlySecret(o, o->session, ics))
             {
                return SharkSslCon_Error;
             }
             
+            #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+            if (SharkSslCon_calcBinder(o, tb, ics))
+            #else
             if (sharkssl_HMAC(ics, tb, paramnamed, alignmentldrhstrh->prot.tls13.HSSecret, paramnamed, tb) < 0)
+            #endif
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                goto _sharkssl_create_client_hello_alert_internal_error;
@@ -48457,7 +48552,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          sharkssl_clear(alignmentldrhstrh, (U32)((U8*)&alignmentldrhstrh->phaCtx - (U8*)alignmentldrhstrh));
          #endif
          alignmentldrhstrh->cipherSuite = o->rCipherSuite;  
+         #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
          memcpy(alignmentldrhstrh->prot.tls13.cliHSTraffic, o->rAppTrafficSecret, sharkssl_getHashLen(o->rCipherSuite->hashID));
+         #endif
 
          #if (!SHARKSSL_PSA_CONSUMER)
          if (o->rCipherSuite->hashID == domainnumber)
@@ -49493,11 +49590,15 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         }
                         if (0 == i)
                         {
-                           if (SharkSslCon_calcEarlySecret(o, o->session->prot.tls13.PSK, o->session->cipherSuite->hashID))
+                           if (SharkSslCon_calcEarlySecret(o, o->session, o->session->cipherSuite->hashID))
                            {
                               return SharkSslCon_Error;
                            }
+                           #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+                           if (SharkSslCon_calcBinder(o, afterhandler, o->session->cipherSuite->hashID))
+                           #else
                            if (sharkssl_HMAC(o->session->cipherSuite->hashID, afterhandler, paramnamed, alignmentldrhstrh->prot.tls13.HSSecret, paramnamed, afterhandler) < 0)
+                           #endif
                            {
                               i = SHARKSSL_ALERT_INTERNAL_ERROR;
                            }
@@ -49800,8 +49901,8 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
           
           {
             #if SHARKSSL_PSA_CONSUMER
-            int sffsdrnandflash = _XzY0x1BF(o,
-               alignmentldrhstrh->ecdhParam.k, alignmentldrhstrh->ecdhParam.XY,
+            int sffsdrnandflash = SharkSslCon_derivePSAHandshakeSecret(o,
+               alignmentldrhstrh->ecdhParam.XY,
                alignmentldrhstrh->ecdhParam.curveType);
             #else
             int sffsdrnandflash = SharkSslECDHParam_ECDH(&(alignmentldrhstrh->ecdhParam), switcheractive, alignmentldrhstrh->ecdhParam.k);
@@ -50424,6 +50525,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          if (o->flags & startqueue)
          {
             
+            #if SHARKSSL_PSA_CONSUMER
+            o->psaTLS12MasterKey = o->session->prot.tls12.masterKey;
+            o->psaTLS12OwnMasterKey = 0;
+            if (SharkSslCon_deriveTLS12Keys(o))
+            #else
             memcpy(alignmentldrhstrh->prot.tls12.masterSecret, o->session->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN);
             
             paramnamed = disableclean(alignmentldrhstrh->cipherSuite);
@@ -50431,6 +50537,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                                             alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
                                             alignmentldrhstrh->prot.tls12.serverRandom,
                                             alignmentldrhstrh->prot.tls12.clientRandom) < 0)
+            #endif
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                resvdexits(o);
@@ -50526,7 +50633,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   
                   {
                      int sffsdrnandflash;
+                     #if SHARKSSL_PSA_CONSUMER
+                     sffsdrnandflash = _XzY0x1C(o, tp, alignmentldrhstrh->ecdhParam.curveType);
+                     #else
                      sffsdrnandflash = SharkSslECDHParam_ECDH(&(alignmentldrhstrh->ecdhParam), signalpreserve, tp);
+                     #endif
                      if (sffsdrnandflash)
                      {
                         if (sffsdrnandflash == SHARKSSL_ECDH_INVALID_KEY)
@@ -50844,7 +50955,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                alignmentldrhstrh->ecdhParam.XY = registeredevent;      
                {
                   int sffsdrnandflash;
+                  #if SHARKSSL_PSA_CONSUMER
+                  sffsdrnandflash = _XzY0x205(o, alignmentldrhstrh->ecdhParam.XY, alignmentldrhstrh->ecdhParam.curveType);
+                  #else
                   sffsdrnandflash = SharkSslECDHParam_ECDH(&(alignmentldrhstrh->ecdhParam), switcheractive, afterhandler);
+                  #endif
                   if (sffsdrnandflash)
                   {
                      if (sffsdrnandflash == SHARKSSL_ECDH_INVALID_KEY)
@@ -50915,7 +51030,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          else
          #endif
          {
-            #if SHARKSSL_ENABLE_RSA
+            #if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
             int ret;
             paramnamed = supportedvector(alignmentldrhstrh->certKey.modLen);
             if (hsDataLen != paramnamed)
@@ -50951,6 +51066,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          }
 
          
+         #if SHARKSSL_PSA_CONSUMER
+         if (SharkSslCon_deriveTLS12Keys(o))
+         {
+            ics = 1;
+         }
+         #else
          if (allocalloc(o, alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
                                           tb, i, 
                                           alignmentldrhstrh->prot.tls12.clientRandom,
@@ -50970,8 +51091,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
             ics = 1;
          }
+         #endif
 
-         #if SHARKSSL_ENABLE_RSA
+         #if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
           _sharkssl_hs_clear_premaster:
          #endif
          sharkssl_clear(registeredevent, paramnamed);  
@@ -50988,7 +51110,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          {
             
             filtermatch(&o->sharkSsl->sessionCache);
+            #if SHARKSSL_PSA_CONSUMER
+            o->session->prot.tls12.masterKey = o->psaTLS12MasterKey;
+            o->psaTLS12OwnMasterKey = 0;
+            #else
             memcpy(o->session->prot.tls12.masterSecret, alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN);
+            #endif
             helperglobal(&o->sharkSsl->sessionCache);
          }
          #endif
@@ -51031,6 +51158,10 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
             goto regionfixed;
          }
+         #if SHARKSSL_TLS_1_2
+         
+         serverRandom = registeredevent;
+         #endif
          #if SHARKSSL_TLS_1_3
          isHRR = (U8)(0 == sharkssl_kmemcmp(registeredevent, random_hello_retry_request, SHARKSSL_RANDOM_LEN));
          #if SHARKSSL_ENABLE_HELLO_RETRY_REQUEST
@@ -51053,15 +51184,6 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             return savedconfig(o, SHARKSSL_ALERT_UNEXPECTED_MESSAGE);
          }
          #endif
-         #endif
-         #if SHARKSSL_TLS_1_2
-         #if SHARKSSL_TLS_1_3
-         
-         if (!isHRR)
-         #endif
-         {
-            memcpy(alignmentldrhstrh->prot.tls12.serverRandom, registeredevent, SHARKSSL_RANDOM_LEN);
-         }
          #endif
          registeredevent += SHARKSSL_RANDOM_LEN;
          setupinterface = *registeredevent++;
@@ -51246,8 +51368,8 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             if (o->minor == 0)
             {
                
-               if ((!sharkssl_kmemcmp(alignmentldrhstrh->prot.tls12.serverRandom + SHARKSSL_RANDOM_LEN - SHARKSSL_DIM_ARR(codecreset), codecreset, SHARKSSL_DIM_ARR(codecreset) - 1)) &&
-                   (alignmentldrhstrh->prot.tls12.serverRandom[SHARKSSL_RANDOM_LEN - 1] <= 1))
+               if ((!sharkssl_kmemcmp(serverRandom + SHARKSSL_RANDOM_LEN - SHARKSSL_DIM_ARR(codecreset), codecreset, SHARKSSL_DIM_ARR(codecreset) - 1)) &&
+                   (serverRandom[SHARKSSL_RANDOM_LEN - 1] <= 1))
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   goto regionfixed;
@@ -51400,8 +51522,8 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             if (o->minor == 0)
             {
                
-               if ((!sharkssl_kmemcmp(alignmentldrhstrh->prot.tls12.serverRandom + SHARKSSL_RANDOM_LEN - SHARKSSL_DIM_ARR(codecreset), codecreset, SHARKSSL_DIM_ARR(codecreset) - 1)) &&
-                   (alignmentldrhstrh->prot.tls12.serverRandom[SHARKSSL_RANDOM_LEN - 1] <= 1))
+               if ((!sharkssl_kmemcmp(serverRandom + SHARKSSL_RANDOM_LEN - SHARKSSL_DIM_ARR(codecreset), codecreset, SHARKSSL_DIM_ARR(codecreset) - 1)) &&
+                   (serverRandom[SHARKSSL_RANDOM_LEN - 1] <= 1))
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   goto regionfixed;
@@ -51556,6 +51678,23 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          #endif  
          #endif  
 
+         #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+         if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3))
+         {
+            
+            int sffsdrnandflash = SharkSslCon_derivePSAHandshakeSecret(o, alignmentldrhstrh->ecdhParam.XY, alignmentldrhstrh->ecdhParam.curveType);
+            if (sffsdrnandflash)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               if (SHARKSSL_ECDH_INVALID_KEY == sffsdrnandflash)
+               {
+                  goto regionfixed;
+               }
+               return SharkSslCon_AllocationError;
+            }
+         }
+         #endif
+
          if (ioremapresource(alignmentldrhstrh, tp, hsLen))
          {
             return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
@@ -51566,16 +51705,23 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
          #endif
          {
+            memcpy(alignmentldrhstrh->prot.tls12.serverRandom, serverRandom, SHARKSSL_RANDOM_LEN);
             #if SHARKSSL_ENABLE_SESSION_CACHE
             if (o->flags & startqueue)
             {
+               #if SHARKSSL_PSA_CONSUMER
+               o->psaTLS12MasterKey = o->session->prot.tls12.masterKey;
+               o->psaTLS12OwnMasterKey = 0;
+               if (SharkSslCon_deriveTLS12Keys(o))
+               #else
                memcpy(alignmentldrhstrh->prot.tls12.masterSecret, o->session->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN);
                
                paramnamed = disableclean(alignmentldrhstrh->cipherSuite);
                if (allocalloc(o, alignmentldrhstrh->prot.tls12.sharedSecret, paramnamed,
-                  alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
-                  alignmentldrhstrh->prot.tls12.serverRandom,
-                  alignmentldrhstrh->prot.tls12.clientRandom) < 0)
+                                               alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
+                                               alignmentldrhstrh->prot.tls12.serverRandom,
+                                               alignmentldrhstrh->prot.tls12.clientRandom) < 0)
+               #endif
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   resvdexits(o);
@@ -52093,7 +52239,15 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             {
                {
                   int sffsdrnandflash;
+                  #if SHARKSSL_PSA_CONSUMER
+                  sffsdrnandflash = _XzY0x1C(o, tp, alignmentldrhstrh->ecdhParam.curveType);
+                  if (!sffsdrnandflash)
+                  {
+                     sffsdrnandflash = _XzY0x205(o, alignmentldrhstrh->ecdhParam.XY, alignmentldrhstrh->ecdhParam.curveType);
+                  }
+                  #else
                   sffsdrnandflash = SharkSslECDHParam_ECDH(&(alignmentldrhstrh->ecdhParam), (signalpreserve + switcheractive), tp);
+                  #endif
                   if (sffsdrnandflash)
                   {
                      if (sffsdrnandflash == SHARKSSL_ECDH_INVALID_KEY)
@@ -52149,6 +52303,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                }
                #endif  
             }
+            #if (!SHARKSSL_PSA_CONSUMER)
             if (allocalloc(o, alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
                                             tb, paramnamed, 
                                             alignmentldrhstrh->prot.tls12.clientRandom,
@@ -52158,11 +52313,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                resvdexits(o);
                return SharkSslCon_Error;
             }
+            #endif
          }
          else
          #endif  
          {
-            #if SHARKSSL_ENABLE_RSA
+            #if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
             paramnamed = SHARKSSL_MASTER_SECRET_LEN;
             if (sharkssl_rng(tp, paramnamed) < 0)
             {
@@ -52174,6 +52330,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             tp[1] = o->reqMinor; 
 
             
+            #if (!SHARKSSL_PSA_CONSUMER)
             if (allocalloc(o, alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
                                             tp, paramnamed, 
                                             alignmentldrhstrh->prot.tls12.clientRandom,
@@ -52183,11 +52340,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                resvdexits(o);
                return SharkSslCon_Error;
             }
+            #endif
             #else
             return savedconfig(o, SHARKSSL_ALERT_HANDSHAKE_FAILURE);
             #endif
 
-            #if SHARKSSL_ENABLE_RSA
+            #if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
             
             {
                int ret;
@@ -52205,10 +52363,14 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          }
 
          paramnamed = disableclean(alignmentldrhstrh->cipherSuite);
+         #if SHARKSSL_PSA_CONSUMER
+         if (SharkSslCon_deriveTLS12Keys(o))
+         #else
          if (allocalloc(o, alignmentldrhstrh->prot.tls12.sharedSecret, paramnamed,
                                          alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN,
                                          alignmentldrhstrh->prot.tls12.serverRandom,
                                          alignmentldrhstrh->prot.tls12.clientRandom) < 0)
+         #endif
          {
             SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
             resvdexits(o);
@@ -52275,7 +52437,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          {
             
             filtermatch(&o->sharkSsl->sessionCache);
+            #if SHARKSSL_PSA_CONSUMER
+            o->session->prot.tls12.masterKey = o->psaTLS12MasterKey;
+            o->psaTLS12OwnMasterKey = 0;
+            #else
             memcpy(o->session->prot.tls12.masterSecret, alignmentldrhstrh->prot.tls12.masterSecret, SHARKSSL_MASTER_SECRET_LEN);
+            #endif
             helperglobal(&o->sharkSsl->sessionCache);
          }
          #endif
@@ -53716,7 +53883,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   }
                   #endif
                   o->session->prot.tls13.role.server.lifetime = SHARKSSL_TLS13_TICKET_LIFETIME;
-                  if (SharkSslCon_calcTicketPSK(o, o->session->prot.tls13.PSK, &o->session->prot.tls13.role.server.ticket[SHARKSSL_TLS13_SERVER_TICKET_LEN - setupinterface], setupinterface))
+                  if (SharkSslCon_calcTicketPSK(o, o->session, &o->session->prot.tls13.role.server.ticket[SHARKSSL_TLS13_SERVER_TICKET_LEN - setupinterface], setupinterface))
                   {
                      o->session->prot.tls13.role.server.lifetime = 0;
                      helperglobal(&o->sharkSsl->sessionCache);
@@ -53729,6 +53896,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   {
                      return SharkSslCon_AllocationError;
                   }
+                  #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+                  if (SharkSslCon_destroyTLS13HSKeys(o))
+                  {
+                     return SharkSslCon_Error;
+                  }
+                  #endif
                   alignmentldmstm(alignmentldrhstrh);
                   tb = o->outBuf.data;
                   tp = tb + clkctrlmanaged;
@@ -53779,6 +53952,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          }
          #endif  
 
+         #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         if (SharkSslCon_destroyTLS13HSKeys(o))
+         {
+            return SharkSslCon_Error;
+         }
+         #endif
          alignmentldmstm(alignmentldrhstrh);
          #if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SESSION_CACHE)
          _sharkssl_finished_cleanup:
@@ -54195,7 +54374,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                newSession->firstAccess = (U32)baGetUnixTime();
                newSession->prot.tls13.role.client.lifetime = now_ccLen;
                newSession->prot.tls13.role.client.ticketAgeAdd = crLen;
-               if (SharkSslCon_calcTicketPSK(o, newSession->prot.tls13.PSK, tp, setupinterface))
+               if (SharkSslCon_calcTicketPSK(o, newSession, tp, setupinterface))
                {
                   newSession->prot.tls13.role.client.lifetime = 0;
                   helperglobal(&o->sharkSsl->sessionCache);
@@ -58310,11 +58489,11 @@ DynBuffer_ecode2str(int serial8250device)
 
 BA_API void
 HashTableNode_constructor(HashTableNode* o,
-                          const char* gpio1config,
+                          const char* name,
                           HashTableNode_terminate sha512update)
 {
    SingleLink_constructor((SingleLink*)o);
-   o->name = gpio1config;
+   o->name = name;
    o->destructor = sha512update;
 }
 
@@ -59190,7 +59369,7 @@ HttpAsynchResp_setStatus(HttpAsynchResp* o,
 
 
 BA_API int
-HttpAsynchResp_setHeader(HttpAsynchResp* o,const char *gpio1config,const char *videoprobe)
+HttpAsynchResp_setHeader(HttpAsynchResp* o,const char *name,const char *videoprobe)
 {
    int handlersetup=0;
    if(o->headerSent)
@@ -59204,7 +59383,7 @@ HttpAsynchResp_setHeader(HttpAsynchResp* o,const char *gpio1config,const char *v
    }
    if( ! handlersetup )
    {
-      if(BufPrint_printf(&o->bufPrint,"\045\163\072\040\045\163\015\012",gpio1config,videoprobe))
+      if(BufPrint_printf(&o->bufPrint,"\045\163\072\040\045\163\015\012",name,videoprobe))
          handlersetup = -2;
    }
    return handlersetup;
@@ -60131,7 +60310,7 @@ HttpRdFilter_destructor(HttpRdFilter* o)
 static void
 dc21285enable(BaBool dm9000enable,
             HttpResponse* doublefsqrt,
-            const char* gpio1config,
+            const char* name,
             int sffsdrnandflash,
             const char* pendownstate)
 {
@@ -60155,7 +60334,7 @@ dc21285enable(BaBool dm9000enable,
             doublefsqrt,
             baErr2HttpCode(sffsdrnandflash),
             fmt,
-            gpio1config,
+            name,
             baErr2Str(sffsdrnandflash),
             pendownstate ? pendownstate : "");
       }
@@ -60188,7 +60367,7 @@ dummycontroller(HttpResRdr* o, HttpResponse* r3000write, BaBool preparesystem)
 
 static void
 cpuidleresources(IoIntf* io,
-                       const char* gpio1config,
+                       const char* name,
                        IoStat* st,
                        HttpResponse* doublefsqrt)
 {
@@ -60197,7 +60376,7 @@ cpuidleresources(IoIntf* io,
    int sffsdrnandflash;
    const char* ethernatenable;
    char* dbdmasyscore;
-   ResIntfPtr in = io->openResFp(io, gpio1config, OpenRes_READ, &sffsdrnandflash, &ethernatenable);
+   ResIntfPtr in = io->openResFp(io, name, OpenRes_READ, &sffsdrnandflash, &ethernatenable);
    if(in)
    {
       for(icachealiases = st->size; icachealiases != 0 ; )
@@ -60209,7 +60388,7 @@ cpuidleresources(IoIntf* io,
          sffsdrnandflash = in->readFp(in, dbdmasyscore, notifierretry, &notifierretry);
          if(sffsdrnandflash || notifierretry == 0)
          {
-            dc21285enable(FALSE, doublefsqrt, gpio1config, sffsdrnandflash, 0);
+            dc21285enable(FALSE, doublefsqrt, name, sffsdrnandflash, 0);
             goto L_close;
          }
          if(HttpResponse_dataAdded(doublefsqrt, (U32)notifierretry))
@@ -60222,7 +60401,7 @@ cpuidleresources(IoIntf* io,
    }
    else
    {
-      dc21285enable(TRUE, doublefsqrt, gpio1config, sffsdrnandflash, ethernatenable);
+      dc21285enable(TRUE, doublefsqrt, name, sffsdrnandflash, ethernatenable);
       return;
    }
 }
@@ -60242,16 +60421,16 @@ domainxlate(HttpRequest* r)
       p=HttpHeader_value(platformioremap+i,r);
       while(*p)
       {
-         const char* gpio1config;
+         const char* name;
          int len, q=1000, *quality=0;
          httpEatWhiteSpace(p);
-         gpio1config=p;
+         name=p;
          p+=strcspn(p,"\073\054\040\011");
-         len=(int)(p-gpio1config);
-         if((len==4 && !baStrnCaseCmp(gpio1config,"\147\172\151\160",4)) ||
-            (len==6 && !baStrnCaseCmp(gpio1config,"\170\055\147\172\151\160",6))) quality=&gzip;
-         else if(len==1 && *gpio1config=='\052') quality=&wildcard;
-         else if(len==8 && !baStrnCaseCmp(gpio1config,"\151\144\145\156\164\151\164\171",8)) quality=&identity;
+         len=(int)(p-name);
+         if((len==4 && !baStrnCaseCmp(name,"\147\172\151\160",4)) ||
+            (len==6 && !baStrnCaseCmp(name,"\170\055\147\172\151\160",6))) quality=&gzip;
+         else if(len==1 && *name=='\052') quality=&wildcard;
+         else if(len==8 && !baStrnCaseCmp(name,"\151\144\145\156\164\151\164\171",8)) quality=&identity;
          httpEatWhiteSpace(p);
          if(*p=='\073')
          {
@@ -60361,15 +60540,15 @@ HttpResRdr_checkPreconditions(HttpRequest* req, const IoStat* st)
    BaTime widgetactive;
    for(i=0;i<debugstart;i++)
    {
-      const char* gpio1config=HttpHeader_name(platformioremap+i,req);
+      const char* name=HttpHeader_name(platformioremap+i,req);
       const char* videoprobe;
       int* condition=0;
-      if(*gpio1config!='\111' && *gpio1config!='\151') continue;
+      if(*name!='\111' && *name!='\151') continue;
       videoprobe=HttpHeader_value(platformioremap+i,req);
-      if(!baStrCaseCmp(gpio1config+3,"\115\141\164\143\150")) condition=&ifMatch;
-      else if(!baStrCaseCmp(gpio1config+3,"\116\157\156\145\055\115\141\164\143\150")) condition=&ifNone;
-      else if(!baStrCaseCmp(gpio1config+3,"\125\156\155\157\144\151\146\151\145\144\055\123\151\156\143\145")) unmodified=videoprobe;
-      else if(!baStrCaseCmp(gpio1config+3,"\115\157\144\151\146\151\145\144\055\123\151\156\143\145")) modified=videoprobe;
+      if(!baStrCaseCmp(name+3,"\115\141\164\143\150")) condition=&ifMatch;
+      else if(!baStrCaseCmp(name+3,"\116\157\156\145\055\115\141\164\143\150")) condition=&ifNone;
+      else if(!baStrCaseCmp(name+3,"\125\156\155\157\144\151\146\151\145\144\055\123\151\156\143\145")) unmodified=videoprobe;
+      else if(!baStrCaseCmp(name+3,"\115\157\144\151\146\151\145\144\055\123\151\156\143\145")) modified=videoprobe;
       if(condition)
       {
          int match;
@@ -60405,7 +60584,7 @@ HttpResRdr_checkPreconditions(HttpRequest* req, const IoStat* st)
 
 BA_API void
 HttpResRdr_sendFile(IoIntf* io,
-                    const char* gpio1config,
+                    const char* name,
                     IoStat* st,
                     HttpCommand* cmd)
 {
@@ -60417,7 +60596,7 @@ HttpResRdr_sendFile(IoIntf* io,
    
    if(HttpResponse_isInclude(&cmd->response))
    {
-      cpuidleresources(io, gpio1config, st, &cmd->response);
+      cpuidleresources(io, name, st, &cmd->response);
       return;
    }
 
@@ -60490,7 +60669,7 @@ HttpResRdr_sendFile(IoIntf* io,
          {
             domainstart = io->openResGzipFp(
                io,
-               gpio1config,
+               name,
                SoDisp_getMutex(HttpConnection_getDispatcher(cmd->con)),
                &icachealiases,
                &sffsdrnandflash,
@@ -60501,17 +60680,17 @@ HttpResRdr_sendFile(IoIntf* io,
             }
             else if(sffsdrnandflash != IOINTF_NOTCOMPRESSED)
             {
-               dc21285enable(TRUE, &cmd->response, gpio1config, sffsdrnandflash, flushoffset);
+               dc21285enable(TRUE, &cmd->response, name, sffsdrnandflash, flushoffset);
                return;
             }
          }
       }
       if( ! domainstart )
       {   
-         domainstart = io->openResFp(io,gpio1config,OpenRes_READ,&sffsdrnandflash,&flushoffset);
+         domainstart = io->openResFp(io,name,OpenRes_READ,&sffsdrnandflash,&flushoffset);
          if(!domainstart)
          {
-            dc21285enable(TRUE, &cmd->response, gpio1config, sffsdrnandflash, flushoffset);
+            dc21285enable(TRUE, &cmd->response, name, sffsdrnandflash, flushoffset);
             return;
          }
          icachealiases = st->size;
@@ -60562,7 +60741,7 @@ HttpResRdr_sendFile(IoIntf* io,
                sffsdrnandflash=0;
             if(sffsdrnandflash)
             {
-               dc21285enable(FALSE, &cmd->response, gpio1config, sffsdrnandflash, 0);
+               dc21285enable(FALSE, &cmd->response, name, sffsdrnandflash, 0);
                domainstart->closeFp(domainstart);
                return;
             }
@@ -60584,13 +60763,13 @@ HttpResRdr_sendFile(IoIntf* io,
                BaBool emulateloregs;
                domainstart = IoIntf_deflateGzipFp(
                   domainstart, 
-                  gpio1config,
+                  name,
                   SoDisp_getMutex(HttpConnection_getDispatcher(cmd->con)),
                   &icachealiases, 
                   &emulateloregs);
                if(!domainstart) 
                {
-                  dc21285enable(FALSE, &cmd->response, gpio1config,
+                  dc21285enable(FALSE, &cmd->response, name,
                               IOINTF_IOERROR, "\144\145\146\154\141\164\145");
                   return;
                }
@@ -60618,7 +60797,7 @@ HttpResRdr_sendFile(IoIntf* io,
             sffsdrnandflash = domainstart->readFp(domainstart, ptr, notifierretry, &notifierretry);
             if(sffsdrnandflash)
             {
-               dc21285enable(FALSE, &cmd->response, gpio1config, sffsdrnandflash, 0);
+               dc21285enable(FALSE, &cmd->response, name, sffsdrnandflash, 0);
                break;
             }
             if(HttpResponse_send(&cmd->response,ptr,notifierretry))
@@ -60644,7 +60823,7 @@ HttpResRdr_sendFile(IoIntf* io,
                {
                   if (0 == sffsdrnandflash)
                      sffsdrnandflash = IOINTF_IOERROR;
-                  dc21285enable(FALSE, &cmd->response, gpio1config, sffsdrnandflash, 0);
+                  dc21285enable(FALSE, &cmd->response, name, sffsdrnandflash, 0);
                   break;
                }
                if( (sffsdrnandflash=HttpConnection_asyncSend(con, (int)notifierretry)) <= 0 )
@@ -61452,8 +61631,8 @@ HttpServCon_destructor(HttpServCon* o)
 #define HttpAllocator_reclaim(httpAllocator) (httpAllocator).index = 0
 #define HttpAllocator_isEmpty(httpAllocator) ((httpAllocator).index == 0)
 
-#define HttpHeader_constructor(o, httpInData, gpio1config, videoprobe) do { \
-   (o)->nameI = HttpInData_2Index(httpInData, gpio1config); \
+#define HttpHeader_constructor(o, httpInData, name, videoprobe) do { \
+   (o)->nameI = HttpInData_2Index(httpInData, name); \
    (o)->valueI = HttpInData_2Index(httpInData, videoprobe); \
 } while(0)
 #define HttpHeader_nameM(o,httpInData) HttpInData_2Ptr(httpInData, (o)->nameI)
@@ -61467,7 +61646,7 @@ HttpServCon_destructor(HttpServCon* o)
 #define HttpInData_2Index(o, ptr) HttpAllocator_2Index(&(o)->allocator, ptr)
 static void read64uint64(HttpInData* o);
 static void flashwrite16(HttpInData*,HttpRequest*,HttpServerConfig*);
-static void misalignedaccess(HttpDir* o, const char *gpio1config, S8 gpio1resources);
+static void misalignedaccess(HttpDir* o, const char *name, S8 gpio1resources);
 
 #define HttpRequest_2Ptr(o, uart2hwmod) HttpAllocator_2Ptr(&(o)->allocator, uart2hwmod)
 #define HttpRequest_2Index(o, ptr) HttpAllocator_2Index(&(o)->allocator, ptr)
@@ -61480,12 +61659,12 @@ static void misalignedaccess(HttpDir* o, const char *gpio1config, S8 gpio1resour
 
 #define HttpRequest_sendDefaultMethodsAllowed(o) \
    _z_3(HttpRequest_getCommand(o))
-static int registerclocks(HttpRequest* o, const char* gpio1config,
+static int registerclocks(HttpRequest* o, const char* name,
                                  const char*  videoprobe);
-static int mappingerror(HttpRequest* o, const char* gpio1config,
+static int mappingerror(HttpRequest* o, const char* name,
                                    const char* videoprobe);
 static void regmaplookup(HttpResponse* o, HttpCookie* gpioliblbank);
-static HttpCookie* HttpResponse_getCookie(HttpResponse* o, const char* gpio1config);
+static HttpCookie* HttpResponse_getCookie(HttpResponse* o, const char* name);
 static int valueformula(HttpResponse* o);
 static int timer0clockevent(
    HttpRootDir* o,const char* driverstate,HttpCommand* cmd);
@@ -61656,9 +61835,9 @@ typedef struct
 
 static void
 nativeassign(InternalFormElement* o, HttpInData* registeredevent,
-                           const char* gpio1config, const char* videoprobe)
+                           const char* name, const char* videoprobe)
 {
-   o->nameI = HttpInData_2Index(registeredevent, gpio1config);
+   o->nameI = HttpInData_2Index(registeredevent, name);
    o->valueI = HttpInData_2Index(registeredevent, videoprobe);
 }
 
@@ -62115,7 +62294,7 @@ registerlookup(HttpInData* o, char* dbdmaresume)
 {
    while(*dbdmaresume)
    {
-      char* gpio1config = dbdmaresume;
+      char* name = dbdmaresume;
       char* videoprobe=0;
       for(dbdmaresume++;*dbdmaresume;dbdmaresume++)
       {
@@ -62131,29 +62310,29 @@ registerlookup(HttpInData* o, char* dbdmaresume)
                videoprobe=dbdmaresume; 
             else if(!httpFormUnescape(videoprobe))
                return -1;
-            if(!httpFormUnescape(gpio1config))
+            if(!httpFormUnescape(name))
                return -1;
-            if(mappingerror(o->request, gpio1config, videoprobe))
+            if(mappingerror(o->request, name, videoprobe))
                return -1;
 #ifndef NO_HTTP_SESSION
-            if(*gpio1config == '\172' && ! strcmp(BA_COOKIE_ID, gpio1config))
+            if(*name == '\172' && ! strcmp(BA_COOKIE_ID, name))
                HttpRequest_session(o->request, videoprobe,strlen(videoprobe),TRUE);
 #endif
             videoprobe=0;
-            gpio1config = dbdmaresume+1;
+            name = dbdmaresume+1;
          }
       }
-      if(*gpio1config)
+      if(*name)
       {
-         if(!videoprobe) videoprobe = gpio1config+strlen(gpio1config); 
+         if(!videoprobe) videoprobe = name+strlen(name); 
          else if(!httpFormUnescape(videoprobe))
             return -1;
-         if(!httpFormUnescape(gpio1config))
+         if(!httpFormUnescape(name))
             return -1;
-         if(mappingerror(o->request, gpio1config, videoprobe))
+         if(mappingerror(o->request, name, videoprobe))
             return -1;
 #ifndef NO_HTTP_SESSION
-         if(*gpio1config == '\172' && ! strcmp(BA_COOKIE_ID, gpio1config))
+         if(*name == '\172' && ! strcmp(BA_COOKIE_ID, name))
             HttpRequest_session(o->request, videoprobe,strlen(videoprobe),TRUE);
 #endif
       }
@@ -62308,13 +62487,13 @@ _XzY0x106(HttpRequest* req)
    int i;
    for(i=0; i < req->headerLen; i++)
    {
-      const char* gpio1config=HttpHeader_nameM(platformioremap+i, &req->inData);
+      const char* name=HttpHeader_nameM(platformioremap+i, &req->inData);
       const char* videoprobe=HttpHeader_valueM(platformioremap+i, &req->inData);
-      switch(*gpio1config)
+      switch(*name)
       {
          case '\143':
          case '\103':
-            if(!baStrCaseCmp(gpio1config, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150"))
+            if(!baStrCaseCmp(name, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150"))
             {
                for(;;)
                {
@@ -62339,7 +62518,7 @@ _XzY0x106(HttpRequest* req)
 
          case '\145':
          case '\105':
-            if(!baStrCaseCmp(gpio1config, "\105\170\160\145\143\164") &&
+            if(!baStrCaseCmp(name, "\105\170\160\145\143\164") &&
                !strcmp(HttpRequest_getVersion(req), "\061\056\061"))
             {
                while(*videoprobe)
@@ -62357,7 +62536,7 @@ _XzY0x106(HttpRequest* req)
 
          case '\164':
          case '\124':
-            if(!baStrCaseCmp(gpio1config, "\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147"))
+            if(!baStrCaseCmp(name, "\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147"))
             {
                haveTE=TRUE;
                while(*videoprobe)
@@ -62844,12 +63023,12 @@ HttpParameterIterator_getParameter(HttpParameterIterator* o,
 
 static HttpCookie*
 HttpCookie_constructor(HttpCookie* o, struct HttpResponse* doublefsqrt,
-                       const char* gpio1config)
+                       const char* name)
 {
    if(o)
    {
       memset(o, 0, sizeof(HttpCookie));
-      o->name = baStrdup(gpio1config);
+      o->name = baStrdup(name);
       if(!o->name)
       {
          baFree(o);
@@ -62954,10 +63133,10 @@ HttpCookie_activate(HttpCookie* o)
 
 
 static char*
-HttpCookie_CreateAvPair(char*buf, const char* gpio1config, const char* videoprobe,
+HttpCookie_CreateAvPair(char*buf, const char* name, const char* videoprobe,
                          const char sep)
 {
-   basnprintf(buf, 10000, "\045\163\045\163\075", sep ? "\073\040" : "", gpio1config);
+   basnprintf(buf, 10000, "\045\163\045\163\075", sep ? "\073\040" : "", name);
    buf += strlen(buf);
    if(videoprobe)
       httpEscape(buf, videoprobe);
@@ -63301,7 +63480,7 @@ HttpRequest_getVersion(HttpRequest* o)
 }
 
 static int
-registerclocks(HttpRequest* o, const char* gpio1config, const char*  videoprobe)
+registerclocks(HttpRequest* o, const char* name, const char*  videoprobe)
 {
    HttpStdHeaders* stdH = &o->stdH;
    HttpHeader* rtcmatch2clockdev = (HttpHeader*)HttpAllocator_alloc(
@@ -63309,7 +63488,7 @@ registerclocks(HttpRequest* o, const char* gpio1config, const char*  videoprobe)
    if(!rtcmatch2clockdev) return -1;
 
    o->headerLen++;
-   HttpHeader_constructor(rtcmatch2clockdev, &o->inData, gpio1config, videoprobe);
+   HttpHeader_constructor(rtcmatch2clockdev, &o->inData, name, videoprobe);
 #ifndef NDEBUG
    {
       const HttpHeader* hBase = HttpRequest_getHeadersM(o);
@@ -63317,21 +63496,21 @@ registerclocks(HttpRequest* o, const char* gpio1config, const char*  videoprobe)
    }
 #endif
    
-   if( (gpio1config[0] == '\143' || gpio1config[0] == '\103') &&
-       ! baStrCaseCmp("\103\157\156\156\145\143\164\151\157\156", gpio1config) &&
+   if( (name[0] == '\143' || name[0] == '\103') &&
+       ! baStrCaseCmp("\103\157\156\156\145\143\164\151\157\156", name) &&
        (!stdH->connectionHOffs || _XzY0x107(videoprobe,"\143\154\157\163\145")) )
    {
       stdH->connectionHOffs = HttpInData_2Index(&o->inData, videoprobe);
    }
    else if( ! stdH->hostHOffs &&
-            (gpio1config[0] == '\110' || gpio1config[0] == '\150') &&
-            ! baStrCaseCmp("\110\157\163\164", gpio1config) )
+            (name[0] == '\110' || name[0] == '\150') &&
+            ! baStrCaseCmp("\110\157\163\164", name) )
    {
       stdH->hostHOffs = HttpInData_2Index(&o->inData, videoprobe);
    }
    else if( ! stdH->contentTypeHOffs &&
-            (gpio1config[0] == '\143' || gpio1config[0] == '\103') &&
-            ! baStrCaseCmp("\143\157\156\164\145\156\164\055\164\171\160\145", gpio1config) )
+            (name[0] == '\143' || name[0] == '\103') &&
+            ! baStrCaseCmp("\143\157\156\164\145\156\164\055\164\171\160\145", name) )
    {
       stdH->contentTypeHOffs = HttpInData_2Index(&o->inData, videoprobe);
    }
@@ -63341,12 +63520,12 @@ registerclocks(HttpRequest* o, const char* gpio1config, const char*  videoprobe)
 
 
 static int
-mappingerror(HttpRequest* o, const char* gpio1config, const char* videoprobe)
+mappingerror(HttpRequest* o, const char* name, const char* videoprobe)
 {
    InternalFormElement* formElement=(InternalFormElement*)HttpAllocator_alloc(
       &o->formAlloc, sizeof(InternalFormElement), 0);
    if(!formElement) return -1;
-   nativeassign(formElement, &o->inData, gpio1config, videoprobe);
+   nativeassign(formElement, &o->inData, name, videoprobe);
    o->formLen++;
    {
 #ifndef NDEBUG
@@ -63358,7 +63537,7 @@ mappingerror(HttpRequest* o, const char* gpio1config, const char* videoprobe)
 }
 
 BA_API const char*
-HttpRequest_getHeaderValue(HttpRequest* o, const char* gpio1config)
+HttpRequest_getHeaderValue(HttpRequest* o, const char* name)
 {
    if(o->headerLen)
    {
@@ -63367,9 +63546,9 @@ HttpRequest_getHeaderValue(HttpRequest* o, const char* gpio1config)
       for(len=0 ; len < o->headerLen ; len++)
       {
          const char* h=HttpHeader_nameM(platformioremap+len,&o->inData);
-         if((*h == *gpio1config ||
-             (*h > *gpio1config ? *gpio1config + ('\141'-'\101') == *h : *h + ('\141'-'\101') == *gpio1config))
-            && !baStrCaseCmp(gpio1config+1,h+1))
+         if((*h == *name ||
+             (*h > *name ? *name + ('\141'-'\101') == *h : *h + ('\141'-'\101') == *name))
+            && !baStrCaseCmp(name+1,h+1))
          {
             return HttpHeader_valueM(platformioremap+len, &o->inData);
          }
@@ -63380,9 +63559,9 @@ HttpRequest_getHeaderValue(HttpRequest* o, const char* gpio1config)
 
 
 BA_API HttpCookie*
-HttpRequest_getCookie(HttpRequest* o, const char* gpio1config)
+HttpRequest_getCookie(HttpRequest* o, const char* name)
 {
-   HttpCookie* helperrgmii=HttpResponse_getCookie(HttpRequest_getResponse(o),gpio1config);
+   HttpCookie* helperrgmii=HttpResponse_getCookie(HttpRequest_getResponse(o),name);
    if(!helperrgmii)
    {
       char* nhpoly1305update;
@@ -63406,7 +63585,7 @@ HttpRequest_getCookie(HttpRequest* o, const char* gpio1config)
          ads7846platform++;
          httpEatWhiteSpace(ads7846platform);
          prctlenable = bStrchr(ads7846platform, '\073');
-         if( ! (bStrncmp(ads7846platform, gpio1config, strlen(gpio1config))) )
+         if( ! (bStrncmp(ads7846platform, name, strlen(name))) )
          { 
             nhpoly1305update = HttpCookie_ExtractAvPair(ads7846platform);
             if(!nhpoly1305update)
@@ -63602,27 +63781,27 @@ HttpRequest_wsUpgrade(HttpRequest* o)
    BaBool _XzY0x174=FALSE, connection=FALSE, duplicate=FALSE;
    for(i=0; i<o->headerLen; i++)
    {
-      const char* gpio1config=HttpHeader_nameM(platformioremap+i,&o->inData);
+      const char* name=HttpHeader_nameM(platformioremap+i,&o->inData);
       const char* videoprobe=HttpHeader_valueM(platformioremap+i,&o->inData);
-      if(!baStrCaseCmp(gpio1config,"\123\145\143\055\127\145\142\123\157\143\153\145\164\055\113\145\171"))
+      if(!baStrCaseCmp(name,"\123\145\143\055\127\145\142\123\157\143\153\145\164\055\113\145\171"))
       {
          if(sourcerouting) duplicate=TRUE;
          sourcerouting=videoprobe;
       }
-      else if(!baStrCaseCmp(gpio1config,"\123\145\143\055\127\145\142\123\157\143\153\145\164\055\126\145\162\163\151\157\156"))
+      else if(!baStrCaseCmp(name,"\123\145\143\055\127\145\142\123\157\143\153\145\164\055\126\145\162\163\151\157\156"))
       {
          if(ver) duplicate=TRUE;
          ver=videoprobe;
       }
-      else if(!baStrCaseCmp(gpio1config,"\110\157\163\164"))
+      else if(!baStrCaseCmp(name,"\110\157\163\164"))
       {
          if(writereg16) duplicate=TRUE;
          writereg16=videoprobe;
       }
       else
       {
-         BaBool _XzY0x16B=!baStrCaseCmp(gpio1config,"\125\160\147\162\141\144\145");
-         if(_XzY0x16B || !baStrCaseCmp(gpio1config,"\103\157\156\156\145\143\164\151\157\156"))
+         BaBool _XzY0x16B=!baStrCaseCmp(name,"\125\160\147\162\141\144\145");
+         if(_XzY0x16B || !baStrCaseCmp(name,"\103\157\156\156\145\143\164\151\157\156"))
          {
             BaBool setupiocoherency=_XzY0x107(
                videoprobe,_XzY0x16B ? "\167\145\142\163\157\143\153\145\164" : "\125\160\147\162\141\144\145");
@@ -63758,10 +63937,10 @@ NameValMMNode_deleteAndLink(NameValMMNode* o, NameValMMNode* setupmemory,
 
 
 static char*
-NameValMMNode_set(NameValMMNode* o, const char* gpio1config)
+NameValMMNode_set(NameValMMNode* o, const char* name)
 {
-   o->value = (U16)strlen(gpio1config)+1;
-   strcpy(NameValMMNode_getName(o), gpio1config);
+   o->value = (U16)strlen(name)+1;
+   strcpy(NameValMMNode_getName(o), name);
    return NameValMMNode_getValue(o);
 }
 
@@ -63808,7 +63987,7 @@ NameValMM_getFirstNode(NameValMM* o)
    NameValMMNode_getNext(nameValMMNode, &(o)->data)
 
 static char*
-NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool legacywrite)
+NameValMM_set(NameValMM* o, const char* name, size_t wm5110device, BaBool legacywrite)
 {
    int mappingnoalloc;
    U16 doublefnmul;
@@ -63818,7 +63997,7 @@ NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool
    NameValMMNode* h2 = NameValMM_getFirstNode(o);
    BaBool timer0state = FALSE;
    BaBool flushmemslot = legacywrite ? FALSE : TRUE;
-   size_t alignresource = strlen(gpio1config);
+   size_t alignresource = strlen(name);
    size_t masterclock = ((size_t)0xFFFF & ~(sizeof(void*)-1)) -
       sizeof(NameValMMNode) - 2;
    U16 cpuidlepdata;
@@ -63836,7 +64015,7 @@ NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool
             if( !timer0state && timer9hwmod(h2, &o->data) >= cpuidlepdata )
             {
                timer0state = TRUE;
-               handlersetup = NameValMMNode_set(h2, gpio1config);
+               handlersetup = NameValMMNode_set(h2, name);
                if(h2->next)
                {
                   if(flushmemslot) return handlersetup;
@@ -63851,7 +64030,7 @@ NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool
             }
          }
          else if( !flushmemslot &&
-                  !baStrCaseCmp(gpio1config, NameValMMNode_getName(h2)) )
+                  !baStrCaseCmp(name, NameValMMNode_getName(h2)) )
          {
             flushmemslot = TRUE;
             h2 = NameValMMNode_deleteAndLink(h2, h1, &o->data);
@@ -63864,7 +64043,7 @@ NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool
                   doublefnmul = NameValMMNode_calcNodeSize(cpuidlepdata);
                   o->data.index = uart2hwmod + doublefnmul;
                }
-               return NameValMMNode_set(h2, gpio1config);
+               return NameValMMNode_set(h2, name);
             }
          }
          h1 = h2;
@@ -63884,7 +64063,7 @@ NameValMM_set(NameValMM* o, const char* gpio1config, size_t wm5110device, BaBool
    doublefnmul = NameValMMNode_calcNodeSize(cpuidlepdata);
    h2 = (NameValMMNode*)HttpAllocator_alloc(&o->data,doublefnmul,o->maxResponseHeader);
    if( !h2 ) return 0; 
-   handlersetup = NameValMMNode_set(h2, gpio1config);
+   handlersetup = NameValMMNode_set(h2, name);
    h2->next=0;
    if(mappingnoalloc)
    {
@@ -63901,7 +64080,7 @@ static int disabledevice(BufPrint* stealclock, int accesssubid);
 static int vmallocbranch(BufPrint* stealclock, int accesssubid);
 static int cacheprobe(HttpResponse* o);
 static int devicecamif(
-   HttpResponse* o, const char* gpio1config, const char* videoprobe, BaBool legacywrite);
+   HttpResponse* o, const char* name, const char* videoprobe, BaBool legacywrite);
 
 static void
 ejtaghandler(HttpResponse* o, HttpServerConfig* cfg)
@@ -64138,12 +64317,12 @@ valueformula(HttpResponse* o)
 
 
 static HttpCookie*
-HttpResponse_getCookie(HttpResponse* o, const char* gpio1config)
+HttpResponse_getCookie(HttpResponse* o, const char* name)
 {
    HttpCookie* instructioncounter = o->cookieList;
    while(instructioncounter)
    {
-      if( ! strcmp(instructioncounter->name, gpio1config) )
+      if( ! strcmp(instructioncounter->name, name) )
          return instructioncounter;
       instructioncounter = instructioncounter->next;
    }
@@ -64356,13 +64535,13 @@ HttpResponse_getRespData(HttpResponse* o, int* len)
 
 
 BA_API HttpCookie*
-HttpResponse_createCookie(struct HttpResponse* o, const char* gpio1config)
+HttpResponse_createCookie(struct HttpResponse* o, const char* name)
 {
-   HttpCookie* c = HttpResponse_getCookie(o, gpio1config);
+   HttpCookie* c = HttpResponse_getCookie(o, name);
    if(c)
       return c;
    return HttpCookie_constructor(
-      (HttpCookie*)baMalloc(sizeof(HttpCookie)), o, gpio1config);
+      (HttpCookie*)baMalloc(sizeof(HttpCookie)), o, name);
 }
 
 
@@ -64389,13 +64568,13 @@ HttpResponse_dataAdded(HttpResponse* o, U32 icachealiases)
 
 
 BA_API const char*
-HttpResponse_containsHeader(HttpResponse* o, const char* gpio1config)
+HttpResponse_containsHeader(HttpResponse* o, const char* name)
 {
    NameValMMNode* n = NameValMM_getFirstNode(&o->nameValMM);
    while(n)
    {
       if(!NameValMMNode_isEmpty(n) &&
-         !baStrCaseCmp(gpio1config, NameValMMNode_getName(n)) )
+         !baStrCaseCmp(name, NameValMMNode_getName(n)) )
       {
          return NameValMMNode_getValue(n);
       }
@@ -64457,12 +64636,12 @@ HttpResponse_encodeRedirectURLWithParamOrSessionURL(HttpResponse* o,
       {
          for(;;)
          {
-            const char* gpio1config = HttpParameterIterator_getName(instructioncounter);
-            if( !flashcommon || (flashcommon && strcmp(gpio1config,BA_COOKIE_ID)) )
+            const char* name = HttpParameterIterator_getName(instructioncounter);
+            if( !flashcommon || (flashcommon && strcmp(name,BA_COOKIE_ID)) )
             {
                if(regionshift)
                   *ptr++ = regionshift;
-               ptr = httpEscape(ptr, gpio1config);
+               ptr = httpEscape(ptr, name);
                *ptr++ = '\075';
                ptr = httpEscape(ptr, HttpParameterIterator_getValue(instructioncounter));
                regionshift='\046';
@@ -65114,11 +65293,11 @@ HttpResponse_checkContentType(HttpResponse* o, const char* rightsvalid)
 }
 
 BA_API int
-HttpResponse_setDateHeader(HttpResponse* o, const char* gpio1config, BaTime t)
+HttpResponse_setDateHeader(HttpResponse* o, const char* name, BaTime t)
 {
    char ktextsource[40];
    httpFmtDate(ktextsource, sizeof(ktextsource), t);
-   return devicecamif(o, gpio1config, ktextsource, TRUE);
+   return devicecamif(o, name, ktextsource, TRUE);
 }
 
 
@@ -65163,12 +65342,12 @@ HttpResponse_setUserObj(HttpResponse* o, void* touchpdata, BaBool clockcheck)
 
 static int
 devicecamif(
-   HttpResponse* o, const char* gpio1config, const char* videoprobe, BaBool legacywrite)
+   HttpResponse* o, const char* name, const char* videoprobe, BaBool legacywrite)
 {
    size_t wm5110device;
    char* hardirqenter;
    wm5110device = videoprobe ? strlen(videoprobe) : 0;
-   hardirqenter = NameValMM_set(&o->nameValMM, gpio1config, wm5110device, legacywrite);
+   hardirqenter = NameValMM_set(&o->nameValMM, name, wm5110device, legacywrite);
    if(hardirqenter)
    {
       strcpy(hardirqenter, videoprobe);
@@ -65185,9 +65364,9 @@ devicecamif(
 
 BA_API int
 HttpResponse_setHeader(
-   HttpResponse* o, const char* gpio1config, const char* videoprobe, BaBool legacywrite)
+   HttpResponse* o, const char* name, const char* videoprobe, BaBool legacywrite)
 {
-   if(gpio1config==0 || *gpio1config==0)
+   if(name==0 || *name==0)
    {
       TRPR(("\163\145\164\110\145\141\144\145\162\072\040\105\137\111\116\126\101\114\111\104\137\120\101\122\101\115\012"));
       return E_INVALID_PARAM;
@@ -65197,7 +65376,7 @@ HttpResponse_setHeader(
       TRPR(("\163\145\164\110\145\141\144\145\162\072\040\105\137\111\123\137\103\117\115\115\111\124\124\105\104\012"));
       return E_IS_COMMITTED;
    }
-   if( ! baStrCaseCmp(gpio1config, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150") )
+   if( ! baStrCaseCmp(name, "\103\157\156\164\145\156\164\055\114\145\156\147\164\150") )
    {
       if(!videoprobe || !*videoprobe)
       {
@@ -65212,15 +65391,15 @@ HttpResponse_setHeader(
       }
       return HttpResponse_setContentLength(o,U32_atoi(videoprobe));
    }
-   return devicecamif(o, gpio1config, videoprobe, legacywrite);
+   return devicecamif(o, name, videoprobe, legacywrite);
 }
 
 
 BA_API char*
 HttpResponse_fmtHeader(
-   HttpResponse* o, const char* gpio1config, int wm5110device, BaBool legacywrite)
+   HttpResponse* o, const char* name, int wm5110device, BaBool legacywrite)
 {
-   if(gpio1config==0 || *gpio1config==0)
+   if(name==0 || *name==0)
       return 0;
    if(o->includeCounter) 
       return 0;
@@ -65228,7 +65407,7 @@ HttpResponse_fmtHeader(
       return 0;
    if(wm5110device < 0)
       return 0;
-   return NameValMM_set(&o->nameValMM, gpio1config, (size_t)wm5110device, legacywrite);
+   return NameValMM_set(&o->nameValMM, name, (size_t)wm5110device, legacywrite);
 }
 
 BA_API int
@@ -65442,11 +65621,11 @@ pciercxcfg010(HttpCommand* o)
 
 
 BA_API void
-HttpPage_constructor(HttpPage* o, HttpPage_Service keypadresource, const char* gpio1config)
+HttpPage_constructor(HttpPage* o, HttpPage_Service keypadresource, const char* name)
 {
    ((HttpPageNode*)o)->next = 0;
    o->serviceCB = keypadresource;
-   o->name = gpio1config;
+   o->name = name;
 }
 
 
@@ -65617,10 +65796,10 @@ ioremapsetup(HttpDir* o, const char* driverregister, HttpCommand* cmd)
 #define HttpDir_getPrio(o) (o)->priority
 
 BA_API void
-HttpDir_constructor(HttpDir* o, const char* gpio1config, S8 gpio1resources)
+HttpDir_constructor(HttpDir* o, const char* name, S8 gpio1resources)
 {
    memset(o, 0, sizeof(HttpDir));
-   o->name = gpio1config ? gpio1config : "";
+   o->name = name ? name : "";
    o->service = ioremapsetup;
    o->pageList.next=&o->pageList;
    o->priority = gpio1resources;
@@ -65757,14 +65936,14 @@ HttpDir_unlink(HttpDir* o)
 }
 
 
-BA_API HttpDir* HttpDir_getDir(HttpDir* o, const char* gpio1config)
+BA_API HttpDir* HttpDir_getDir(HttpDir* o, const char* name)
 {
-   return HttpDir_findDir(o->dirList, gpio1config, iStrlen(gpio1config));
+   return HttpDir_findDir(o->dirList, name, iStrlen(name));
 }
 
-BA_API HttpPage* HttpDir_getPage(HttpDir* o, const char* gpio1config)
+BA_API HttpPage* HttpDir_getPage(HttpDir* o, const char* name)
 {
-   return HttpDir_findPage(o, (HttpPage*)o->pageList.next, gpio1config);
+   return HttpDir_findPage(o, (HttpPage*)o->pageList.next, name);
 }
 
 BA_API int
@@ -65785,12 +65964,12 @@ HttpDir_insertPage(HttpDir* o, HttpPage* bootmemunlock)
 
 
 BA_API HttpPage*
-HttpDir_findPage(HttpDir* o, HttpPage* bootmemunlock, const char* gpio1config)
+HttpDir_findPage(HttpDir* o, HttpPage* bootmemunlock, const char* name)
 {
    HttpPageNode* instructioncounter = (HttpPageNode*)bootmemunlock;
    while(instructioncounter != &o->pageList)
    {
-      if( ! strcmp(gpio1config, ((HttpPage*)instructioncounter)->name) )
+      if( ! strcmp(name, ((HttpPage*)instructioncounter)->name) )
          return (HttpPage*)instructioncounter;
       instructioncounter = instructioncounter->next;
    }
@@ -65799,13 +65978,13 @@ HttpDir_findPage(HttpDir* o, HttpPage* bootmemunlock, const char* gpio1config)
 
 
 BA_API HttpDir*
-HttpDir_findDir(HttpDir* instructioncounter, const char* gpio1config, unsigned int alignresource)
+HttpDir_findDir(HttpDir* instructioncounter, const char* name, unsigned int alignresource)
 {
    for( ; instructioncounter ; instructioncounter = instructioncounter->next)
    {
       if(alignresource == strlen(instructioncounter->name))
       {
-         if( ! bStrncmp(gpio1config, instructioncounter->name, alignresource) )
+         if( ! bStrncmp(name, instructioncounter->name, alignresource) )
             return instructioncounter;
       }
    }
@@ -65833,10 +66012,10 @@ HttpDir_createOrGet(HttpDir* o, const char* timerregister)
       dir = (HttpDir*)baMalloc(sizeof(HttpDir) + len +1);
       if(dir)
       {
-         char* gpio1config = (char*)(dir+1);
-         memcpy(gpio1config, timerregister, len);
-         gpio1config[len]=0;
-         misalignedaccess(dir, gpio1config, 0);
+         char* name = (char*)(dir+1);
+         memcpy(name, timerregister, len);
+         name[len]=0;
+         misalignedaccess(dir, name, 0);
          HttpDir_insertDir(o, dir);
       }
    }
@@ -65924,9 +66103,9 @@ doubleftoui(HttpDir* o,
 }
 
 static void
-misalignedaccess(HttpDir* o, const char *gpio1config, S8 gpio1resources)
+misalignedaccess(HttpDir* o, const char *name, S8 gpio1resources)
 {
-   HttpDir_constructor(o, gpio1config, gpio1resources);
+   HttpDir_constructor(o, name, gpio1resources);
    HttpDir_setService(o, doubleftoui);
 }
 
@@ -68119,28 +68298,28 @@ HttpSessionContainer_sessionTimer(HttpSessionContainer* o)
 
 BA_API void
 HttpSessionAttribute_constructor(HttpSessionAttribute* o,
-                                 const char* gpio1config,
+                                 const char* name,
                                  HttpSessionAttribute_Destructor d)
 {
    o->next = 0;
    o->session=0;
    o->destructor = d;
-   o->name = baStrdup(gpio1config);
+   o->name = baStrdup(name);
 }
 
 
 BA_API void
 HttpSessionAttribute_destructor(HttpSessionAttribute* o)
 {
-   char* gpio1config = o->name;
+   char* name = o->name;
    if(o->destructor)
    {
       HttpSessionAttribute_Destructor d = o->destructor;
       o->destructor=0;
       (*d)(o);
    }
-   if(gpio1config)
-      baFree(gpio1config);
+   if(name)
+      baFree(name);
 }
 
 
@@ -68271,7 +68450,7 @@ HttpSession_terminate(HttpSession* o)
 
 
 BA_API HttpSessionAttribute*
-HttpSession_getAttribute(HttpSession* o, const char* gpio1config)
+HttpSession_getAttribute(HttpSession* o, const char* name)
 {
    if(o)
    {
@@ -68279,7 +68458,7 @@ HttpSession_getAttribute(HttpSession* o, const char* gpio1config)
       instructioncounter = o->attrList;
       while(instructioncounter)
       {
-         if( ! strcmp(gpio1config, instructioncounter->name) )
+         if( ! strcmp(name, instructioncounter->name) )
          {
             return instructioncounter;
          }
@@ -68312,7 +68491,7 @@ HttpSession_getMaxInactiveInterval(HttpSession* o)
 
 
 BA_API int
-HttpSession_removeAttribute(HttpSession* o, const char* gpio1config)
+HttpSession_removeAttribute(HttpSession* o, const char* name)
 {
    if(o->attrList)
    {
@@ -68320,7 +68499,7 @@ HttpSession_removeAttribute(HttpSession* o, const char* gpio1config)
       HttpSessionAttribute* instructioncounter = o->attrList;
       while(instructioncounter)
       {
-         if( ! strcmp(gpio1config, instructioncounter->name) )
+         if( ! strcmp(name, instructioncounter->name) )
          {
             if(instructioncounter == o->attrList) 
             {
@@ -68338,7 +68517,7 @@ HttpSession_removeAttribute(HttpSession* o, const char* gpio1config)
          instructioncounter = instructioncounter->next;
       }
    }
-   TRPR(("\110\164\164\160\123\145\163\163\151\157\156\072\072\162\145\155\157\166\145\101\164\164\162\151\142\165\164\145\072\040\045\163\040\156\157\164\040\146\157\165\156\144\012",gpio1config));
+   TRPR(("\110\164\164\160\123\145\163\163\151\157\156\072\072\162\145\155\157\166\145\101\164\164\162\151\142\165\164\145\072\040\045\163\040\156\157\164\040\146\157\165\156\144\012",name));
    return -1;
 }
 
@@ -69418,16 +69597,16 @@ mailboxentry(const char* defaultcache)
 
 
 static ResIntfPtr
-openFile(IoIntf* io, const char* gpio1config, BaBool openAsGzip,
+openFile(IoIntf* io, const char* name, BaBool openAsGzip,
          int* sffsdrnandflash, const char** ethernatenable)
 {
 
    return
 #ifndef NO_ZLIB
       openAsGzip && IoIntf_inflateGzipFp ?
-      IoIntf_inflateGzipFp(io, gpio1config, sffsdrnandflash, ethernatenable) :
+      IoIntf_inflateGzipFp(io, name, sffsdrnandflash, ethernatenable) :
 #endif
-      io->openResFp(io, gpio1config, OpenRes_WRITE, sffsdrnandflash, ethernatenable);
+      io->openResFp(io, name, OpenRes_WRITE, sffsdrnandflash, ethernatenable);
 
 
 }
@@ -69565,11 +69744,11 @@ gpio4hwmod(
 
 static int
 clusterunused(MultipartUpload* fdc37m81xconfig,
-                            const char* gpio1config,
+                            const char* name,
                             const char* videoprobe)
 {
    (void)fdc37m81xconfig;
-   (void)gpio1config;
+   (void)name;
    (void)videoprobe;
    return 0; 
 }
@@ -69578,7 +69757,7 @@ clusterunused(MultipartUpload* fdc37m81xconfig,
 
 static int
 dummydevice(MultipartUpload* fdc37m81xconfig,
-                             const char* gpio1config,
+                             const char* name,
                              const char* timerregister,
                              const char* defaultattrs,
                              const char* rm200disable)
@@ -69588,7 +69767,7 @@ dummydevice(MultipartUpload* fdc37m81xconfig,
    HttpUploadNode* o = (HttpUploadNode*)fdc37m81xconfig;  
    o->refCtr++;
    o->needLingeringClose=TRUE;
-   (void)gpio1config;
+   (void)name;
    (void)defaultattrs;
    if(timerregister)
    {
@@ -69788,7 +69967,7 @@ HttpUploadNode_getdata(HttpUploadNode* o)
 static int
 pcmciaconfig(HttpUploadNode* o,
                            HttpUpload* checkstack,
-                           char* gpio1config,
+                           char* name,
                            char* url,
                            BaBool dcacherange,
                            HttpCommand* cmd,
@@ -69805,7 +69984,7 @@ pcmciaconfig(HttpUploadNode* o,
    DoubleList_insertLast(&checkstack->uploadNodeList, &o->link);
    o->userdata=fixupfinal;
    o->parent=checkstack;
-   o->path=gpio1config;
+   o->path=name;
    o->url=url;
    o->sessionID = func2fixup ? HttpSession_getId(func2fixup) : 0;
    o->refCtr=0;
@@ -69913,7 +70092,7 @@ HttpUploadNode_incRef(HttpUploadNode* o)
 
 static int
 cachelouis(
-   HttpUpload* o, const char* gpio1config, HttpCommand* cmd,
+   HttpUpload* o, const char* name, HttpCommand* cmd,
    void* fixupfinal, BaBool dcacherange)
 {
    if(o->uploadsLeft)
@@ -69927,7 +70106,7 @@ cachelouis(
          smartreflexhwmod = (HttpUploadNode*)AllocatorIntf_malloc(o->alloc, &icachealiases);
          if(smartreflexhwmod)
          {
-            char* serial1pdata = baStrdup2(o->alloc, gpio1config);
+            char* serial1pdata = baStrdup2(o->alloc, name);
             if(serial1pdata)
             {
                o->uploadsLeft--;
@@ -69952,11 +70131,11 @@ cachelouis(
 }
 
 BA_API int
-HttpUpload_service(HttpUpload* o, const char* gpio1config, HttpCommand* cmd, void* fixupfinal)
+HttpUpload_service(HttpUpload* o, const char* name, HttpCommand* cmd, void* fixupfinal)
 {
    if(HttpRequest_getMethodType(&cmd->request) == HttpMethod_Put)
    {
-      return cachelouis(o, gpio1config, cmd, fixupfinal, FALSE);
+      return cachelouis(o, name, cmd, fixupfinal, FALSE);
    }
    else if(HttpRequest_getMethodType(&cmd->request) == HttpMethod_Post)
    {
@@ -69964,7 +70143,7 @@ HttpUpload_service(HttpUpload* o, const char* gpio1config, HttpCommand* cmd, voi
       HttpRequest_getStdHeaders(&cmd->request));
       if( modulefunction && ! baStrnCaseCmp(modulefunction, "\155\165\154\164\151\160\141\162\164\057\146\157\162\155\055\144\141\164\141", 19))
       {
-         return cachelouis(o, gpio1config, cmd, fixupfinal, TRUE);
+         return cachelouis(o, name, cmd, fixupfinal, TRUE);
       }
    }
    return -1;
@@ -70022,10 +70201,10 @@ BA_API IoBufPrint*
 IoBufPrint_create(AllocatorIntf* unmapaliases,
                   IoIntf* io,
                   size_t lsdc2format,
-                  const char* gpio1config)
+                  const char* name)
 {
    int sffsdrnandflash;
-   ResIntfPtr out = io->openResFp(io, gpio1config, OpenRes_WRITE, &sffsdrnandflash, 0);
+   ResIntfPtr out = io->openResFp(io, name, OpenRes_WRITE, &sffsdrnandflash, 0);
    if(out)
    {
       IoBufPrint* o = IoBufPrint_create2(unmapaliases,lsdc2format,out);
@@ -70110,9 +70289,9 @@ IoIntf_getType(IoIntfPtr o, const char** rightsvalid, const char** eventupdate)
 
 
 BA_API int
-IoIntf_isEncrypted(IoIntfPtr o, const char* gpio1config, BaBool* updatelimit)
+IoIntf_isEncrypted(IoIntfPtr o, const char* name, BaBool* updatelimit)
 {
-   return o->propertyFp(o, "\141\145\163", (void*)gpio1config, (void*)updatelimit);
+   return o->propertyFp(o, "\141\145\163", (void*)name, (void*)updatelimit);
 }
 
 
@@ -70847,7 +71026,7 @@ clearcontext(MultipartUpload* o)
    int sffsdrnandflash;
    char* videoprobe;
    char* doublefnmul;
-   char* gpio1config=0; 
+   char* name=0; 
 
    for(;;)
    {
@@ -70867,7 +71046,7 @@ clearcontext(MultipartUpload* o)
       if(o->state != MultipartUpload_ReadFileData &&
          o->state != MultipartUpload_ReadFormData)
       {
-         if( (gpio1config = MultipartUpload_getNextLine(o)) == 0)
+         if( (name = MultipartUpload_getNextLine(o)) == 0)
          {
             sffsdrnandflash = octeonsystem(o);
             if(sffsdrnandflash <= 0)
@@ -70882,9 +71061,9 @@ clearcontext(MultipartUpload* o)
       {
          int sffsdrnandflash;
          case MultipartUpload_ReadBoundaryTag:
-            if(*gpio1config == 0) 
+            if(*name == 0) 
                break;
-            if( (sffsdrnandflash=emupagequeue(o, gpio1config)) != 0)
+            if( (sffsdrnandflash=emupagequeue(o, name)) != 0)
             {
                return sffsdrnandflash;
             }
@@ -70896,7 +71075,7 @@ clearcontext(MultipartUpload* o)
             break;
 
          case MultipartUpload_ReadHeaders:
-            if(*gpio1config == 0) 
+            if(*name == 0) 
             {
                if(o->newBoundaryTag)
                {
@@ -70921,11 +71100,11 @@ clearcontext(MultipartUpload* o)
                   o->state = MultipartUpload_ReadFormData;
                break;
             }
-            if((videoprobe=MultipartUpload_splitLineAndGetVal(o, gpio1config)) == 0)
+            if((videoprobe=MultipartUpload_splitLineAndGetVal(o, name)) == 0)
             {
                return MultipartUpload_ParseError5;
             }
-            if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\104\151\163\160\157\163\151\164\151\157\156", gpio1config))
+            if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\104\151\163\160\157\163\151\164\151\157\156", name))
             {
                if((doublefnmul = strstr(videoprobe, "\040\146\151\154\145\156\141\155\145\075")) != 0)
                {
@@ -70938,9 +71117,9 @@ clearcontext(MultipartUpload* o)
                   o->name = baStrdup2(o->alloc,extractString(doublefnmul));
                }
             }
-            else if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147", gpio1config))
+            else if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147", name))
                o->contentTransferEncoding = baStrdup2(o->alloc,videoprobe);
-            else if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\124\171\160\145", gpio1config))
+            else if(!baStrCaseCmp("\103\157\156\164\145\156\164\055\124\171\160\145", name))
             {
                if((doublefnmul = strstr(videoprobe, "\155\165\154\164\151\160\141\162\164\057\155\151\170\145\144")) != 0)
                {
@@ -72032,15 +72211,15 @@ SplayTree_iterate(SplayTree* o, void* touchpdata, SplayTree_Iter i)
 #include <string.h>
 
 void
-VirFileNode_constructor(VirFileNode* o, const char* gpio1config)
+VirFileNode_constructor(VirFileNode* o, const char* name)
 {
    o->next=0;
-   o->name=gpio1config;
+   o->name=name;
 }
 
 
 static VirFileNode*
-VirFileNode_find(VirFileNode* o, const char* gpio1config)
+VirFileNode_find(VirFileNode* o, const char* name)
 {
    while(o)
    {
@@ -72054,7 +72233,7 @@ VirFileNode_find(VirFileNode* o, const char* gpio1config)
             if(n4)
             {
                int n;
-               if((n=strcmp(gpio1config, n4->name)) == 0)
+               if((n=strcmp(name, n4->name)) == 0)
                   return n4;
                if(n > 0)
                {
@@ -72062,13 +72241,13 @@ VirFileNode_find(VirFileNode* o, const char* gpio1config)
                   continue;
                }
             }
-            if(strcmp(n3->name, gpio1config) == 0)
+            if(strcmp(n3->name, name) == 0)
                return n3;
          }
-         if(strcmp(n2->name, gpio1config) == 0)
+         if(strcmp(n2->name, name) == 0)
             return n2;
       }
-      if(strcmp(o->name, gpio1config) == 0)
+      if(strcmp(o->name, name) == 0)
          return o;
       return 0; 
    }
@@ -72092,12 +72271,12 @@ unregisterguest(VirFileNode* o,AllocatorIntf* unmapaliases,VirFileNode_Free loca
 
 
 void
-VirDirNode_constructor(VirDirNode* o, const char* gpio1config, size_t len)
+VirDirNode_constructor(VirDirNode* o, const char* name, size_t len)
 {
    memset(o, 0, sizeof(VirDirNode));
-   if(gpio1config) 
+   if(name) 
    {
-      strncpy(o->name, gpio1config, len);
+      strncpy(o->name, name, len);
       o->name[len]=0;
    }
 }
@@ -72180,7 +72359,7 @@ entrypoint(const char* n, const char* rp, size_t translationcache)
 
 
 static VirDirNode*
-VirDirNode_findDir(VirDirNode* o, const char* gpio1config, size_t len)
+VirDirNode_findDir(VirDirNode* o, const char* name, size_t len)
 {
    while(o)
    {
@@ -72194,7 +72373,7 @@ VirDirNode_findDir(VirDirNode* o, const char* gpio1config, size_t len)
             if(n4)
             {
                int n;
-               if((n=entrypoint(n4->name, gpio1config, len)) == 0)
+               if((n=entrypoint(n4->name, name, len)) == 0)
                   return n4;
                if(n < 0)
                {
@@ -72202,13 +72381,13 @@ VirDirNode_findDir(VirDirNode* o, const char* gpio1config, size_t len)
                   continue;
                }
             }
-            if(entrypoint(n3->name, gpio1config, len) == 0)
+            if(entrypoint(n3->name, name, len) == 0)
                return n3;
          }
-         if(entrypoint(n2->name, gpio1config, len) == 0)
+         if(entrypoint(n2->name, name, len) == 0)
             return n2;
       }
-      if(entrypoint(o->name, gpio1config, len) == 0)
+      if(entrypoint(o->name, name, len) == 0)
          return o;
       return 0; 
    }
@@ -72217,16 +72396,16 @@ VirDirNode_findDir(VirDirNode* o, const char* gpio1config, size_t len)
 
 
 VirDirNode*
-VirDirNode_findSubDir(VirDirNode* o, const char* gpio1config, size_t len)
+VirDirNode_findSubDir(VirDirNode* o, const char* name, size_t len)
 {
-   if(len == 0) len = strlen(gpio1config);
-   return VirDirNode_findDir(o->subDir, gpio1config, len);
+   if(len == 0) len = strlen(name);
+   return VirDirNode_findDir(o->subDir, name, len);
 }
 
 VirFileNode*
-VirDirNode_findFile(VirDirNode* o, const char* gpio1config)
+VirDirNode_findFile(VirDirNode* o, const char* name)
 {
-   return VirFileNode_find(o->firstFile, gpio1config);
+   return VirFileNode_find(o->firstFile, name);
 }
 
 
@@ -72938,9 +73117,9 @@ typedef struct
 
 static void
 mappedflash(
-   ZipFileNode* o, ZipFileHeader* labelapply, const char* gpio1config, U8* doublefnmac)
+   ZipFileNode* o, ZipFileHeader* labelapply, const char* name, U8* doublefnmac)
 {
-   VirFileNode_constructor((VirFileNode*)o, gpio1config);
+   VirFileNode_constructor((VirFileNode*)o, name);
    ZipFileInfo_constructor(&o->zfi, labelapply, doublefnmac);
    o->zfi.flag&=~0x8000; 
 }
@@ -73801,19 +73980,19 @@ do {\
 
 
 static VirDir_Type
-ZipIo_findResource(ZipIo* o, const char* gpio1config, void** deltadevices)
+ZipIo_findResource(ZipIo* o, const char* name, void** deltadevices)
 {
-   VirDir_Type t = VirDirNode_find(&o->root, gpio1config, deltadevices);
+   VirDir_Type t = VirDirNode_find(&o->root, name, deltadevices);
    if(t == VirDir_NotFound)
    {
-      size_t icachealiases = strlen(gpio1config) + 1;
+      size_t icachealiases = strlen(name) + 1;
       char* n = (char*)AllocatorIntf_malloc(o->alloc, &icachealiases);
       if(n)
       {
-         strcpy(n, gpio1config);
+         strcpy(n, name);
          baElideDotDot(n);
-         gpio1config = (*n == '\057') ? n+1 : n;
-         t = VirDirNode_find(&o->root, gpio1config, deltadevices);
+         name = (*n == '\057') ? n+1 : n;
+         t = VirDirNode_find(&o->root, name, deltadevices);
          AllocatorIntf_free(o->alloc, n);
       }
    }
@@ -73821,14 +74000,14 @@ ZipIo_findResource(ZipIo* o, const char* gpio1config, void** deltadevices)
 }
 
 static int
-aliasboundary(IoIntfPtr fdc37m81xconfig, const char* gpio1config, IoStat* st)
+aliasboundary(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
 {
    ZipIo* o = (ZipIo*)fdc37m81xconfig;
    void* deltadevices;
    VirDir_Type t;
-   if(*gpio1config == '\057')
-      gpio1config++;
-   t = ZipIo_findResource(o, gpio1config, &deltadevices);
+   if(*name == '\057')
+      name++;
+   t = ZipIo_findResource(o, name, &deltadevices);
    if(t == VirDir_IsFile)
    {
       ZipFileInfo* zfi = &((ZipFileNode*)deltadevices)->zfi;
@@ -73868,13 +74047,13 @@ ZipIo_createZipResCompr(
 
 
 static ZipFileNode*
-ZipIo_open(ZipIo* o, const char* gpio1config, int* sffsdrnandflash, const char** flushoffset)
+ZipIo_open(ZipIo* o, const char* name, int* sffsdrnandflash, const char** flushoffset)
 {
    ZipFileNode* zfn;
    VirDir_Type t;
-   if(*gpio1config == '\057')
-      gpio1config++;
-   t = ZipIo_findResource(o, gpio1config, (void**)&zfn);
+   if(*name == '\057')
+      name++;
+   t = ZipIo_findResource(o, name, (void**)&zfn);
    if(t == VirDir_IsFile)
    {
       ZipFileInfo* zfi=&zfn->zfi;
@@ -73897,13 +74076,13 @@ ZipIo_open(ZipIo* o, const char* gpio1config, int* sffsdrnandflash, const char**
 
 
 static ResIntfPtr
-ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* gpio1config, U32 shashdigestsize,
+ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
               int* sffsdrnandflash, const char** flushoffset)
 {
    ZipIo* o = (ZipIo*)fdc37m81xconfig;
    if(shashdigestsize == OpenRes_READ)
    {
-      ZipFileNode* zfn = ZipIo_open(o, gpio1config, sffsdrnandflash, flushoffset);
+      ZipFileNode* zfn = ZipIo_open(o, name, sffsdrnandflash, flushoffset);
       if(zfn)
       {
          if(zfn->zfi.comprMethod == ZipComprMethod_AES)
@@ -73989,11 +74168,11 @@ ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* gpio1config, U32 shashdiges
 
 
 static ResIntfPtr
-ZipIo_openResGzip(IoIntfPtr fdc37m81xconfig, const char* gpio1config, ThreadMutex* m,
+ZipIo_openResGzip(IoIntfPtr fdc37m81xconfig, const char* name, ThreadMutex* m,
                   BaFileSize* icachealiases, int* sffsdrnandflash, const char** flushoffset)
 {
    ZipIo* o = (ZipIo*)fdc37m81xconfig;
-   ZipFileNode* zfn = ZipIo_open(o, gpio1config, sffsdrnandflash, flushoffset);
+   ZipFileNode* zfn = ZipIo_open(o, name, sffsdrnandflash, flushoffset);
    (void)m;
    if(zfn)
    {
@@ -74114,10 +74293,10 @@ createresource(IoIntfPtr fdc37m81xconfig, DirIntfPtr* ghashupdate)
 }
 
 static int
-cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
+cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* name,void* a,void* b)
 {
    ZipIo* o = (ZipIo*)fdc37m81xconfig;
-   if( ! strcmp(gpio1config, "\160\154") )
+   if( ! strcmp(name, "\160\154") )
    {
       size_t len=(size_t)b;
       size_t icachealiases;
@@ -74138,13 +74317,13 @@ cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       o->passwordLen=(U16)len;
       return 0;
    }
-   else if( ! strcmp(gpio1config, "\160\160") )
+   else if( ! strcmp(name, "\160\160") )
    {
       o->passwordRequired = a ? TRUE : FALSE;
       o->passwordBin      = b ? TRUE : FALSE;
       return 0;
    }
-   else if( ! strcmp(gpio1config, "\164\171\160\145") )
+   else if( ! strcmp(name, "\164\171\160\145") )
    {
       if(a)
       {
@@ -74157,7 +74336,7 @@ cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
          return 0;
       }
    }
-   else if( ! strcmp(gpio1config, "\141\145\163") )
+   else if( ! strcmp(name, "\141\145\163") )
    {
       int sffsdrnandflash=0;
       ZipFileNode* zfn = ZipIo_open(o, (const char*)a, &sffsdrnandflash, 0);
@@ -74169,7 +74348,7 @@ cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       return sffsdrnandflash;
    }
 
-   if( ! strcmp(gpio1config, "\141\164\164\141\143\150") )
+   if( ! strcmp(name, "\141\164\164\141\143\150") )
    {
       if(a)
       {
@@ -74186,7 +74365,7 @@ cpuidleenter(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       return 0;
    }
 
-   else if( ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
+   else if( ! strcmp(name, "\144\145\163\164\162\165\143\164\157\162") )
    {
       ZipIo_destructor(o);
       return 0;
@@ -76327,8 +76506,8 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *_XzY0x1D6, const Shar
 
 static int _XzY0x1EF(const U8 *alloccontroller, U16 rebootnotifier, SharkSslCertSAN *panelshutdown, U16 *_XzY0x1E)
 {
-   const U8 *p = alloccontroller, *end = alloccontroller + rebootnotifier, *_XzY0x188, *ext, *_XzY0x18C, *oid, *videoprobe, *previous, *prevExt, *prevOID;
-   const U8 *gpio1config, *nameEnd, *nameValue, *octetEnd;
+   const U8 *p = alloccontroller, *end = alloccontroller + rebootnotifier, *_XzY0x188, *ext, *_XzY0x18C, *oid, *videoprobe, *_XzY0x21E, *prevExt, *prevOID;
+   const U8 *name, *nameEnd, *nameValue, *octetEnd;
    U32 cachelmiss, fieldvalue, wm5110device, prevLen, prevOIDLen;
    U32 alignresource;
    U8 debugstart = 0;
@@ -76347,14 +76526,14 @@ static int _XzY0x1EF(const U8 *alloccontroller, U16 rebootnotifier, SharkSslCert
       {
          return -1;
       }
-      previous = alloccontroller;
-      while (previous < _XzY0x188)
+      _XzY0x21E = alloccontroller;
+      while (_XzY0x21E < _XzY0x188)
       {
-         if (sharkssl_CSR_getTLV(&previous, _XzY0x188, SHARKSSL_ASN1_CONSTRUCTED | SHARKSSL_ASN1_SEQUENCE, &prevExt, &prevLen))
+         if (sharkssl_CSR_getTLV(&_XzY0x21E, _XzY0x188, SHARKSSL_ASN1_CONSTRUCTED | SHARKSSL_ASN1_SEQUENCE, &prevExt, &prevLen))
          {
             return -1;
          }
-         if (sharkssl_CSR_getTLV(&prevExt, previous, SHARKSSL_ASN1_OID, &prevOID, &prevOIDLen))
+         if (sharkssl_CSR_getTLV(&prevExt, _XzY0x21E, SHARKSSL_ASN1_OID, &prevOID, &prevOIDLen))
          {
             return -1;
          }
@@ -76377,23 +76556,23 @@ static int _XzY0x1EF(const U8 *alloccontroller, U16 rebootnotifier, SharkSslCert
       }
       if ((sizeof(sharkssl_oid_san) == fieldvalue) && (0 == sharkssl_kmemcmp(oid, sharkssl_oid_san, fieldvalue)))
       {
-         gpio1config = videoprobe;
+         name = videoprobe;
          octetEnd = videoprobe + wm5110device;
-         if (sharkssl_CSR_getTLV(&gpio1config, octetEnd, SHARKSSL_ASN1_CONSTRUCTED | SHARKSSL_ASN1_SEQUENCE,
-                                &nameValue, &alignresource) || (gpio1config != octetEnd))
+         if (sharkssl_CSR_getTLV(&name, octetEnd, SHARKSSL_ASN1_CONSTRUCTED | SHARKSSL_ASN1_SEQUENCE,
+                                &nameValue, &alignresource) || (name != octetEnd))
          {
             return -1;
          }
-         gpio1config = nameValue;
+         name = nameValue;
          nameEnd = nameValue + alignresource;
-         while (gpio1config < nameEnd)
+         while (name < nameEnd)
          {
-            U8 rightsvalid = (U8)(*gpio1config & 0x1F);
-            if (((SHARKSSL_ASN1_CONTEXT_SPECIFIC | rightsvalid) != *gpio1config) ||
+            U8 rightsvalid = (U8)(*name & 0x1F);
+            if (((SHARKSSL_ASN1_CONTEXT_SPECIFIC | rightsvalid) != *name) ||
                 ((SHARKSSL_CERT_SAN_DNS != rightsvalid) && (SHARKSSL_CERT_SAN_IP != rightsvalid) &&
                  (SHARKSSL_CERT_SAN_URI != rightsvalid)) ||
                 (16 == *_XzY0x1E) ||
-                sharkssl_CSR_getTLV(&gpio1config, nameEnd, (U8)(SHARKSSL_ASN1_CONTEXT_SPECIFIC | rightsvalid), &nameValue, &alignresource) ||
+                sharkssl_CSR_getTLV(&name, nameEnd, (U8)(SHARKSSL_ASN1_CONTEXT_SPECIFIC | rightsvalid), &nameValue, &alignresource) ||
                 (alignresource > 0xFFFF))
             {
                return -1;
@@ -76434,7 +76613,8 @@ static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert use
    else if ((SHARKSSL_CERT_PROFILE_TLS_SERVER == _XzY0x1E5->type) ||
             (SHARKSSL_CERT_PROFILE_TLS_CLIENT == _XzY0x1E5->type) || _XzY0x1FF)
    {
-      if ((NULL == userspacememory) || (0xFFFF != _XzY0x1E5->pathLenConstraint) ||
+      if (((NULL == userspacememory) && (!_XzY0x1FF || (NULL == mcbspplatform))) ||
+          (0xFFFF != _XzY0x1E5->pathLenConstraint) ||
           (0 == _XzY0x1E) || (NULL == _XzY0x1E5->approveSANs))
       {
          return -1;
@@ -76453,8 +76633,8 @@ static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert use
       }
       if (SHARKSSL_CERT_SAN_DNS == san->type)
       {
-         hostCount++;
          U16 _XzY0x1D9 = 0;
+         hostCount++;
          if ((0 == san->length) || (san->length > 253) || ('\056' == san->value[0]) ||
              ('\056' == san->value[san->length - 1]) || ('\055' == san->value[0]) ||
              ('\055' == san->value[san->length - 1]))
@@ -76699,7 +76879,7 @@ static int sharkssl_CSR_issuerKeyID(const SharkSslCert kernelvaddr, U8 keyID[64]
 static int sharkssl_CSR_addProfileExtensions(SharkSslASN1Create *o, const SharkSslCertProfile *_XzY0x1E5,
                                             const SharkSslCertSAN *panelshutdown, U16 _XzY0x1E,
                                             const U8 _XzY0x1F6[20], const U8 *issuerKeyID, U16 _XzY0x1D8,
-                                            U8 isRSA)
+                                            U8 isRSA, U8 selfSigned)
 {
    static const U8 _XzY0x1D[3] = {0x55, 0x1D, 0x25};
    static const U8 _XzY0x1F5[3] = {0x55, 0x1D, 0x0E};
@@ -76779,6 +76959,11 @@ static int sharkssl_CSR_addProfileExtensions(SharkSslASN1Create *o, const SharkS
       ku[0] = 4;
       ku[1] |= SHARKSSL_X509_KU_NON_REPUDIATION |
                   SHARKSSL_X509_KU_KEY_ENCIPHERMENT | SHARKSSL_X509_KU_DATA_ENCIPHERMENT;
+   }
+   if (_XzY0x1FF && selfSigned)
+   {
+      ku[0] = 2;
+      ku[1] |= SHARKSSL_X509_KU_KEY_CERT_SIGN;
    }
    sffsdrnandflash = SharkSslASN1Create_raw(o, &ku[1], 1) || SharkSslASN1Create_raw(o, &ku[0], 1) ||
       SharkSslASN1Create_length(o, 2) || SharkSslASN1Create_bitString(o) ||
@@ -77008,6 +77193,13 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    {
       return -1;
    }
+   if ((NULL == userspacememory) &&
+       ((SHARKSSL_CERT_PROFILE_OPCUA_SERVER == _XzY0x1E5->type) ||
+        (SHARKSSL_CERT_PROFILE_OPCUA_CLIENT == _XzY0x1E5->type)))
+   {
+      memcpy(issuerKeyID, _XzY0x1F6, sizeof(_XzY0x1F6));
+      _XzY0x1D8 = sizeof(_XzY0x1F6);
+   }
 
    
    sffsdrnandflash = (U16)(cachelmiss >> 16);  
@@ -77110,7 +77302,8 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    ref = fixupconfig.ptr;
    sffsdrnandflash = sharkssl_CSR_addProfileExtensions(&fixupconfig, _XzY0x1E5, panelshutdown, _XzY0x1E,
                                               _XzY0x1F6, issuerKeyID, _XzY0x1D8,
-                                              (U8)machinekexec(certParam.certKey.expLen));
+                                              (U8)machinekexec(certParam.certKey.expLen),
+                                              (U8)(NULL == userspacememory));
    
 
    if ( !sffsdrnandflash )
@@ -78216,7 +78409,7 @@ gpiolibgetchip(const char* writereg16, U16* updateentries)
    if((!writereg16) || (!updateentries))
       return -1;
    len=strlen(writereg16);
-   if(len > 0xFFFFU)
+   if(len > 0xFFFF)
       return -1;
    *updateentries=(U16)len;
    return 0;
@@ -78921,7 +79114,7 @@ JConstrCont_setConstraints(JConstrCont* o, JVal* segbitsfault, JErr* err)
    for(; resArrayVal && JErr_noError(err) ;
        resArrayVal = JVal_getNextElem(resArrayVal))
    {
-      const char* gpio1config;
+      const char* name;
       JVal* urlsVal;
       JVal* methodsVal;
       JVal* domaincreate;
@@ -78976,10 +79169,10 @@ JConstrCont_setConstraints(JConstrCont* o, JVal* segbitsfault, JErr* err)
                 val && JErr_noError(err) ;
                 i++, val=JVal_getNextElem(val))
             {
-               gpio1config = JVal_getString(val, err);
-               if(gpio1config)
+               name = JVal_getString(val, err);
+               if(name)
                {
-                  newRes->methods[i]=(U16)HttpMethod_a2m(gpio1config);
+                  newRes->methods[i]=(U16)HttpMethod_a2m(name);
                }
             }
          }
@@ -79138,10 +79331,10 @@ JUserCont_copyRoles(
    int i;
    for(i=0; domaincreate; i++, domaincreate = JVal_getNextElem(domaincreate))
    {
-      const char* gpio1config = JVal_getString(domaincreate, err);
-      if(!gpio1config)
+      const char* name = JVal_getString(domaincreate, err);
+      if(!name)
          return pciercxcfg515; 
-      pciercxcfg515[i] = JUserCont_role2Id(o, gpio1config);
+      pciercxcfg515[i] = JUserCont_role2Id(o, name);
    }
    return pciercxcfg515+i;
 }
@@ -79824,19 +80017,19 @@ int SharkSslASN1Create_raw(SharkSslASN1Create *o, const void *alloccontroller, i
 
 
 #if (SHARKSSL_ENABLE_CSR_CREATION || SHARKSSL_ENABLE_CSR_SIGNING)
-static int countusable(SharkSslASN1Create *o, const U8 *gpio1config, int len)
+static int countusable(SharkSslASN1Create *o, const U8 *name, int len)
 {
    return
-      SharkSslASN1Create_raw(o, gpio1config, len) ||
+      SharkSslASN1Create_raw(o, name, len) ||
       SharkSslASN1Create_length(o, len) ||
       SharkSslASN1Create_printableString(o);
 }
 
 
-static int supportsstage2(SharkSslASN1Create *o, const U8 *gpio1config, int len)
+static int supportsstage2(SharkSslASN1Create *o, const U8 *name, int len)
 {
    return
-      SharkSslASN1Create_raw(o, gpio1config, len) ||
+      SharkSslASN1Create_raw(o, name, len) ||
       SharkSslASN1Create_length(o, len) ||
       SharkSslASN1Create_IA5String(o);
 }
@@ -79854,11 +80047,11 @@ int SharkSslASN1Create_email(SharkSslASN1Create *o, const U8 *oid, int fieldvalu
       SharkSslASN1Create_set(o);
 }
 
-int SharkSslASN1Create_name(SharkSslASN1Create *o, const U8 *oid, int fieldvalue, const U8 *gpio1config, int alignresource)
+int SharkSslASN1Create_name(SharkSslASN1Create *o, const U8 *oid, int fieldvalue, const U8 *name, int alignresource)
 {
    U8 *ref = o->ptr;
    return 
-      countusable(o, gpio1config, alignresource) ||
+      countusable(o, name, alignresource) ||
       SharkSslASN1Create_oid(o, oid, fieldvalue) ||
       SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
       SharkSslASN1Create_sequence(o) ||
@@ -79977,16 +80170,16 @@ DeadProp_save(DeadProp* o)
 
 U8*
 DeadProp_readFile(IoIntf* io, AllocatorIntf* unmapaliases,
-                  const char* gpio1config, size_t* icachealiases)
+                  const char* name, size_t* icachealiases)
 {
    IoStat st;
    U8* buf=0;
-   if( ! io->statFp(io, gpio1config, &st) )
+   if( ! io->statFp(io, name, &st) )
    {
       int sffsdrnandflash;
       ResIntfPtr in;
       *icachealiases = (size_t)st.size;
-      in = io->openResFp(io, gpio1config, OpenRes_READ, &sffsdrnandflash, 0);
+      in = io->openResFp(io, name, OpenRes_READ, &sffsdrnandflash, 0);
       if(in)
       {
          size_t rsize=(size_t)st.size;
@@ -80111,7 +80304,7 @@ DeadProp_setFile(DeadProp* o, char* writedisable)
 
 
 SXmlNode*
-DeadProp_getProp(DeadProp* o, const char* ns, const char* gpio1config)
+DeadProp_getProp(DeadProp* o, const char* ns, const char* name)
 {
    if( ! timer12hwmod(o) )
    {
@@ -80121,8 +80314,8 @@ DeadProp_getProp(DeadProp* o, const char* ns, const char* gpio1config)
       {
          const char* lns = SXmlNode_getNs(instructioncounter, or);
          const char* buttonssimpletech = SXmlNode_getName(instructioncounter, or);
-         if( *gpio1config == *buttonssimpletech && *ns == *lns &&
-             ! strcmp(gpio1config, buttonssimpletech) && ! strcmp(ns, lns) )
+         if( *name == *buttonssimpletech && *ns == *lns &&
+             ! strcmp(name, buttonssimpletech) && ! strcmp(ns, lns) )
          {
             return instructioncounter;
          }
@@ -80137,13 +80330,13 @@ int
 DeadProp_setProp(DeadProp* o, SXmlNode* nn, SXmlRoot* nr)
 {
    const char* ns;
-   const char* gpio1config;
+   const char* name;
    SXmlNode* on;
    if( ! o->noPropFile )
       timer12hwmod(o);
    ns = SXmlNode_getNs(nn, nr);
-   gpio1config = SXmlNode_getName(nn, nr);
-   on = DeadProp_getProp(o, ns, gpio1config);
+   name = SXmlNode_getName(nn, nr);
+   on = DeadProp_getProp(o, ns, name);
    if(on)
    {  
       SXmlNode_unlinkChild(SXmlRoot_firstChild(&o->op), on, &o->op);
@@ -80168,13 +80361,13 @@ int
 DeadProp_removeProp(DeadProp* o, SXmlNode* nn, SXmlRoot* nr)
 {
    const char* ns;
-   const char* gpio1config;
+   const char* name;
    SXmlNode* on;
    if( ! o->noPropFile )
       timer12hwmod(o);
    ns = SXmlNode_getNs(nn, nr);
-   gpio1config = SXmlNode_getName(nn, nr);
-   on = DeadProp_getProp(o, ns, gpio1config);
+   name = SXmlNode_getName(nn, nr);
+   on = DeadProp_getProp(o, ns, name);
    if(on)
    {  
       SXmlNode_unlinkChild(SXmlRoot_firstChild(&o->op), on, &o->op);
@@ -81348,7 +81541,9 @@ static void _XzY0x1BD(shtype_t *o, const shtype_t *_XzY0x1C0,
 #endif
 
 
-int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
+
+int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_XzY0x218,
+                             SharkSslECDSANonceFunc _XzY0x217, U8 op)
 {
    shtype_t e, w, u1, u2, R, S;
    #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
@@ -81369,6 +81564,8 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
 
    baAssert(audioshutdown);
    #if SHARKSSL_ECDSA_ONLY_VERIFY
+   (void)_XzY0x218;
+   (void)_XzY0x217;
    baAssert(op == fixupdevices);
    #else
    baAssert((op == iommupdata) || (op == fixupdevices));
@@ -81462,8 +81659,8 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
    #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    if (op & iommupdata)
    {
-      #if SHARKSSL_ECC_TIMING_RESISTANT
       U8 *_XzY0x1E0 = temporaryentry;
+      #if SHARKSSL_ECC_TIMING_RESISTANT
       shtype_tWord maskWord;
       U16 blindBits, blindLen;
       U8 _XzY0x1C6 = 0;
@@ -81471,14 +81668,23 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
       U8 cnt = 0;
 
       _SharkSslECDSAParam_ECDSA_rng:
-      #if SHARKSSL_ECC_TIMING_RESISTANT
       temporaryentry = _XzY0x1E0;
-      #endif
-      if (sharkssl_rng(temporaryentry, k_lenk) < 0)
+      if (_XzY0x217)
       {
-         goto _SharkSslECDSAParam_ECDSA_end;
+         memset(temporaryentry, 0, k_lenk);
+         if (_XzY0x217(_XzY0x218, temporaryentry + k_lenk - k_len, k_len) < 0)
+         {
+            goto _SharkSslECDSAParam_ECDSA_end;
+         }
       }
-      temporaryentry[k_lenk - k_len] |= 0x01;  
+      else
+      {
+         if (sharkssl_rng(temporaryentry, k_lenk) < 0)
+         {
+            goto _SharkSslECDSAParam_ECDSA_end;
+         }
+         temporaryentry[k_lenk - k_len] |= 0x01;  
+      }
 
       #if SHARKSSL_ECC_USE_SECP521R1
       
@@ -81493,7 +81699,15 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
       memcpy(temporaryentry, (U8*)consoledevice(&u1), k_lenk);
       #endif
       onenandpartitions(&K, (k_lenk * 8), temporaryentry);
-      if (_XzY0x1BE(&K, &G.order, audioshutdown->curveType))
+      if ((_XzY0x217) && ((eventtimeout(&K)) || (timerwrite(&K, &G.order))))
+      {
+         if (++cnt >= 8)
+         {
+            goto _SharkSslECDSAParam_ECDSA_end;
+         }
+         goto _SharkSslECDSAParam_ECDSA_rng;
+      }
+      if ((!_XzY0x217) && (_XzY0x1BE(&K, &G.order, audioshutdown->curveType)))
       {
          offsetarray = (int)SharkSslCon_AllocationError;
          goto _SharkSslECDSAParam_ECDSA_end;
@@ -81583,7 +81797,7 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
             memmove(u2.mem, (U8*)u2.mem + k_lenk - k_lenr, k_lenr);
          }
          memset(u2.mem, 0, k_lenr - blindLen);
-         ((U8*)u2.mem)[k_lenr - blindLen] &= (U8)(0xFFU >> ((8 - (blindBits & 7)) & 7));
+         ((U8*)u2.mem)[k_lenr - blindLen] &= (U8)(0xFF >> ((8 - (blindBits & 7)) & 7));
          memmove_endianess(_XzY0x1C5, (U8*)u2.mem, k_lenr);
          onenandpartitions(&B, (k_lenr * 8), _XzY0x1C5);
       }
@@ -81794,6 +82008,12 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
    baFree(afterhandler);
    return offsetarray;
 }
+
+
+int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
+{
+   return SharkSslECDSAParam_ECDSAEx(audioshutdown, NULL, NULL, op);
+}
 #endif  
 #endif  
 
@@ -81992,6 +82212,8 @@ iommucreate:
 }
 
 
+
+#if (!defined(SHARKSSL_PSA_PROVIDER_PRIVATE))
 SHARKSSL_API U8 *SharkSslRSAKey_getPublic(SharkSslRSAKey mcbspplatform)
 {
    SharkSslCertKey disableclock;
@@ -82003,6 +82225,7 @@ SHARKSSL_API U8 *SharkSslRSAKey_getPublic(SharkSslRSAKey mcbspplatform)
 
    return NULL;
 }
+#endif
 #endif  
 
 
@@ -82061,7 +82284,7 @@ static const char responseFooter[] = {"\074\057\104\072\162\145\163\160\157\156\
 
 static const char* WebDAV_ioName2URL(
    WebDAV* o, const char* driverregister, HttpCommand* cmd);
-static BaBool resourceflags(WebDAV* o, const char* gpio1config);
+static BaBool resourceflags(WebDAV* o, const char* name);
 
 struct IoCtrl;
 static void secureupdate(struct IoCtrl* o,
@@ -82099,9 +82322,9 @@ allocahash(HttpCommand* cmd)
 
 
 static const char*
-getContentType(const char* gpio1config)
+getContentType(const char* name)
 {
-   char* ext = strrchr(gpio1config, '\056');
+   char* ext = strrchr(name, '\056');
    if(ext)
       return httpFindMime(++ext);
    return 0;
@@ -82503,7 +82726,7 @@ wm97xxprobe(LockContainer* o, LockNode* ln)
 
 
 static LockNode*
-LockContainer_createLN(LockContainer* o, BaTime moduledbetables, const char* gpio1config)
+LockContainer_createLN(LockContainer* o, BaTime moduledbetables, const char* name)
 {
    size_t icachealiases;
    LockNode* ln;
@@ -82529,12 +82752,12 @@ LockContainer_createLN(LockContainer* o, BaTime moduledbetables, const char* gpi
          return 0;
    }
    o->locksLeft--;
-   icachealiases = sizeof(LockNode) + strlen(gpio1config);
+   icachealiases = sizeof(LockNode) + strlen(name);
    ln = (LockNode*)AllocatorIntf_malloc(o->webDAV->alloc, &icachealiases);
    if(ln)
    {
       IoIntf* io = o->webDAV->io;
-      strcpy(ln->name, gpio1config);
+      strcpy(ln->name, name);
       SplayTreeNode_constructor((SplayTreeNode*)ln, ln->name);
       SingleLink_constructor(&ln->slink);
       SplayTree_insert(&o->lTree, (SplayTreeNode*)ln);
@@ -82550,9 +82773,9 @@ LockContainer_createLN(LockContainer* o, BaTime moduledbetables, const char* gpi
 
 
 static LockNode*
-LockContainer_find(LockContainer* o, const char* gpio1config)
+LockContainer_find(LockContainer* o, const char* name)
 {
-   LockNode* ln = (LockNode*)SplayTree_find(&o->lTree, gpio1config);
+   LockNode* ln = (LockNode*)SplayTree_find(&o->lTree, name);
    if(ln)
    {
       if(ln->expireTime <= baGetUnixTime())
@@ -82566,9 +82789,9 @@ LockContainer_find(LockContainer* o, const char* gpio1config)
 
 
 static int
-LockContainer_isLocked(LockContainer* o, const char* gpio1config, const char** ethernatenable)
+LockContainer_isLocked(LockContainer* o, const char* name, const char** ethernatenable)
 {
-   if(LockContainer_isEnabled(o) && LockContainer_find(o, gpio1config))
+   if(LockContainer_isEnabled(o) && LockContainer_find(o, name))
    {
       if(ethernatenable) *ethernatenable="\114\157\143\153\145\144";
       return IOINTF_LOCKED;
@@ -82628,10 +82851,10 @@ IoAuth_onResponse2(RecIoIter* fdc37m81xconfig,const char* forcereload,const char
 
 
 static int
-IoAuth_onErr(RecIoIter* fdc37m81xconfig,const char* gpio1config,int err,const char* msg)
+IoAuth_onErr(RecIoIter* fdc37m81xconfig,const char* name,int err,const char* msg)
 {
    (void)fdc37m81xconfig;
-   (void)gpio1config;
+   (void)name;
    (void)msg;
    return err == IOINTF_EXIST ? 403 : baErr2HttpCode(err);
 }
@@ -82651,18 +82874,18 @@ typedef struct IoCtrl
 
 
 static char*
-IoCtrl_rmResource(IoCtrl* o, const char* gpio1config)
+IoCtrl_rmResource(IoCtrl* o, const char* name)
 {
-   if(resourceflags(o->webDAV, gpio1config))
+   if(resourceflags(o->webDAV, name))
    {
-      char* buf = baStrdup2(o->webDAV->alloc, gpio1config);
+      char* buf = baStrdup2(o->webDAV->alloc, name);
       if(buf)
       {
          IoCtrl ctrl;
          if(buf[strlen(buf)-1] == '\057')
             buf[strlen(buf)-1]=0;
          secureupdate(&ctrl, o->webDAV,o->cmd, HttpMethod_Delete);
-         if( ! IoCtrl_doResource(&ctrl, gpio1config, 0) )
+         if( ! IoCtrl_doResource(&ctrl, name, 0) )
             return buf;
          AllocatorIntf_free(o->webDAV->alloc,buf);
       }
@@ -82855,11 +83078,11 @@ resetbluetooth(RecIoIter* fdc37m81xconfig,const char* forcereload,const char* to
 
 
 static int
-graphenter(RecIoIter* fdc37m81xconfig,const char* gpio1config,int err,const char* msg)
+graphenter(RecIoIter* fdc37m81xconfig,const char* name,int err,const char* msg)
 {
    int sffsdrnandflash = err == IOINTF_EXIST ? 403 : baErr2HttpCode(err);
    if(!msg) msg = baErr2Str(err);
-   sendHttpResp(((IoCtrl*)fdc37m81xconfig)->cmd, sffsdrnandflash, "\105\162\162\157\162\072\040\045\163\056\040\045\163", msg,gpio1config);
+   sendHttpResp(((IoCtrl*)fdc37m81xconfig)->cmd, sffsdrnandflash, "\105\162\162\157\162\072\040\045\163\056\040\045\163", msg,name);
    return err;
 }
 
@@ -82932,12 +83155,12 @@ entersuspend(DynBuffer* fdc37m81xconfig, int serial8250device)
 
 
 static SXmlNode*
-Propfind_checkNode(Propfind* o, SXmlNode* n, const char* gpio1config)
+Propfind_checkNode(Propfind* o, SXmlNode* n, const char* name)
 {
 
    if(!n ||
       strcmp(SXmlNode_getNs(n,o->r), "\104\101\126\072") ||
-      strcmp(SXmlNode_getName(n,o->r), gpio1config))
+      strcmp(SXmlNode_getName(n,o->r), name))
    {
       netdevicenotifier(o);
    }
@@ -82945,12 +83168,12 @@ Propfind_checkNode(Propfind* o, SXmlNode* n, const char* gpio1config)
 }
 
 static BaBool
-relocbegin(Propfind* o, SXmlNode* n, const char* gpio1config)
+relocbegin(Propfind* o, SXmlNode* n, const char* name)
 {
 
    if(!n ||
       strcmp(SXmlNode_getNs(n,o->r), "\104\101\126\072") ||
-      strcmp(SXmlNode_getName(n,o->r), gpio1config))
+      strcmp(SXmlNode_getName(n,o->r), name))
    {
       return FALSE;
    }
@@ -83007,29 +83230,29 @@ tps65021consumers(Propfind* o,
       
       for(o->deadPropCount = 0; n; n = SXmlNode_next(n, o->r))
       {
-         const char* gpio1config = SXmlNode_getName(n,o->r);
+         const char* name = SXmlNode_getName(n,o->r);
          if( ! strcmp("\104\101\126\072", SXmlNode_getNs(n,o->r)) )
          {
-            if(gpio1config[0]=='\154' && !strcmp("\154\157\143\153\144\151\163\143\157\166\145\162\171",gpio1config))
+            if(name[0]=='\154' && !strcmp("\154\157\143\153\144\151\163\143\157\166\145\162\171",name))
                o->liveProp |= LivePropT_Lockdiscovery;
             else if(alignmentfault)
             {
-               if(gpio1config[0]=='\162' && !strcmp("\162\145\163\157\165\162\143\145\164\171\160\145",gpio1config))
+               if(name[0]=='\162' && !strcmp("\162\145\163\157\165\162\143\145\164\171\160\145",name))
                   o->liveProp |= LivePropT_Resourcetype;
-               else if(gpio1config[3]=='\145' && !strcmp("\147\145\164\145\164\141\147",gpio1config))
+               else if(name[3]=='\145' && !strcmp("\147\145\164\145\164\141\147",name))
                   o->liveProp |= LivePropT_Getetag;
-               else if(gpio1config[3]=='\154' && !strcmp("\147\145\164\154\141\163\164\155\157\144\151\146\151\145\144",gpio1config))
+               else if(name[3]=='\154' && !strcmp("\147\145\164\154\141\163\164\155\157\144\151\146\151\145\144",name))
                   o->liveProp |= LivePropT_Getlastmodified;
-               else if(gpio1config[11]=='\145' && !strcmp("\147\145\164\143\157\156\164\145\156\164\154\145\156\147\164\150",gpio1config))
+               else if(name[11]=='\145' && !strcmp("\147\145\164\143\157\156\164\145\156\164\154\145\156\147\164\150",name))
                   o->liveProp |= LivePropT_Getcontentlength;
-               else if(gpio1config[10]=='\164' && !strcmp("\147\145\164\143\157\156\164\145\156\164\164\171\160\145",gpio1config))
+               else if(name[10]=='\164' && !strcmp("\147\145\164\143\157\156\164\145\156\164\164\171\160\145",name))
                   o->liveProp |= LivePropT_Getcontenttype;
-               else if(gpio1config[0]=='\163' && !strcmp("\163\165\160\160\157\162\164\145\144\154\157\143\153",gpio1config))
+               else if(name[0]=='\163' && !strcmp("\163\165\160\160\157\162\164\145\144\154\157\143\153",name))
                   o->liveProp |= LivePropT_Supportedlock;
                
-               else if((gpio1config[0]=='\143' && !strcmp("\143\162\145\141\164\151\157\156\144\141\164\145",gpio1config)) ||
-                       (gpio1config[0]=='\144' && !strcmp("\144\151\163\160\154\141\171\156\141\155\145",gpio1config)) ||
-                       (gpio1config[11]=='\141' && !strcmp("\147\145\164\143\157\156\164\145\156\164\154\141\156\147\165\141\147\145",gpio1config)))
+               else if((name[0]=='\143' && !strcmp("\143\162\145\141\164\151\157\156\144\141\164\145",name)) ||
+                       (name[0]=='\144' && !strcmp("\144\151\163\160\154\141\171\156\141\155\145",name)) ||
+                       (name[11]=='\141' && !strcmp("\147\145\164\143\157\156\164\145\156\164\154\141\156\147\165\141\147\145",name)))
                {
                   
                  L_add2NotFoundBuf:
@@ -83082,7 +83305,7 @@ vgg2432a4display(Propfind* o)
 
 
 static int
-cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
+cachelevel(Propfind* o, const char* name, IoStat* st)
 {
    static const char needsbounce[] = {
       "\074\104\072\160\162\157\160\163\164\141\164\076\012"
@@ -83118,7 +83341,7 @@ cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
    LockNode* volatile devicepanel;
 
    if( ! HttpDir_isAuthorized(
-          (HttpDir*)o->webDAV,o->user,HttpMethod_Propfind,gpio1config) )
+          (HttpDir*)o->webDAV,o->user,HttpMethod_Propfind,name) )
    {
       return -1;
    }
@@ -83134,14 +83357,14 @@ cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
    validcache=FALSE;
    chargermachinfo=o->deadPropCount;
    out = HttpResponse_getWriter(&o->cmd->response);
-   url = WebDAV_ioName2URL(o->webDAV, gpio1config, o->cmd);
+   url = WebDAV_ioName2URL(o->webDAV, name, o->cmd);
    if(!url) netdevicenotifier(o);
 
    
    if(o->deadPropCount || o->liveProp==LivePropT_AllProp)
    {   
       DeadProp_constructor(&dp, o->webDAV->io, o->webDAV->alloc);
-      disablecounter = DeadProp_fname2PropFName(o->webDAV->alloc, gpio1config);
+      disablecounter = DeadProp_fname2PropFName(o->webDAV->alloc, name);
       if(!disablecounter) netdevicenotifier(o);
       if( ! DeadProp_setFile(&dp, (char*)disablecounter) )
       { 
@@ -83217,7 +83440,7 @@ cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
          if((o->liveProp & LivePropT_Lockdiscovery) ||
             (o->liveProp == LivePropT_AllProp))
          {
-            devicepanel = LockContainer_find(&o->webDAV->lock, gpio1config);
+            devicepanel = LockContainer_find(&o->webDAV->lock, name);
             if(devicepanel)
             {
                printboard(
@@ -83258,7 +83481,7 @@ cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
             if((o->liveProp & LivePropT_Getcontenttype) ||
                (o->liveProp == LivePropT_AllProp))
             {
-               defaultattrs = getContentType(gpio1config);
+               defaultattrs = getContentType(name);
                if(defaultattrs)
                   printDavElem(out,"\147\145\164\143\157\156\164\145\156\164\164\171\160\145","\045\163",defaultattrs);
             }
@@ -83355,10 +83578,10 @@ cachelevel(Propfind* o, const char* gpio1config, IoStat* st)
 
 
 static BaBool
-resourceflags(WebDAV* o, const char* gpio1config)
+resourceflags(WebDAV* o, const char* name)
 {
    IoStat st;
-   return o->io->statFp(o->io, gpio1config, &st) ? FALSE : TRUE;
+   return o->io->statFp(o->io, name, &st) ? FALSE : TRUE;
 }
 
 
@@ -83548,12 +83771,12 @@ resetstate(WebDAV* o, const char* driverregister, HttpCommand* cmd, IoStat* st)
                IoStat sst;
                while ( ! dir->readFp(dir) )
                {
-                  const char* gpio1config = dir->getNameFp(dir);
+                  const char* name = dir->getNameFp(dir);
                   
-                  if( (   gpio1config[0]== '\056'&&
-                        ( ! gpio1config[1]||
-                           (gpio1config[1]=='\056'&&!gpio1config[2]) ||
-                           (gpio1config[1]=='\104'&&gpio1config[2]=='\101'&&gpio1config[3]=='\126'&&!gpio1config[4])
+                  if( (   name[0]== '\056'&&
+                        ( ! name[1]||
+                           (name[1]=='\056'&&!name[2]) ||
+                           (name[1]=='\104'&&name[2]=='\101'&&name[3]=='\126'&&!name[4])
                         )
                       )
                     )
@@ -83562,7 +83785,7 @@ resetstate(WebDAV* o, const char* driverregister, HttpCommand* cmd, IoStat* st)
                   }
                   if( ! dir->statFp(dir, &sst) )
                   {
-                     size_t len = strlen(driverregister) + strlen(gpio1config) + 3;
+                     size_t len = strlen(driverregister) + strlen(name) + 3;
                      char* n2 = AllocatorIntf_malloc(o->alloc,&len);
                      if(n2)
                      {
@@ -83575,7 +83798,7 @@ resetstate(WebDAV* o, const char* driverregister, HttpCommand* cmd, IoStat* st)
                         {
                            fmt = sst.isDir ? "\045\163\057\045\163\057" : "\045\163\057\045\163";
                         }
-                        basnprintf(n2, (int)len,fmt,driverregister,gpio1config);
+                        basnprintf(n2, (int)len,fmt,driverregister,name);
                         cachelevel(&propfind, n2, &sst);
                         AllocatorIntf_free(o->alloc, n2);
                      }
@@ -83595,7 +83818,7 @@ resetstate(WebDAV* o, const char* driverregister, HttpCommand* cmd, IoStat* st)
 }
 
 static int
-buildmpidr(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
+buildmpidr(WebDAV* o, const char* name, HttpCommand* cmd)
 {
    U16 simulatebxblx;
    Propfind propfind;
@@ -83609,7 +83832,7 @@ buildmpidr(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
       sendHttpResp(cmd,404,0);
       return 0;
    }
-   ln = LockContainer_find(&o->lock, gpio1config);
+   ln = LockContainer_find(&o->lock, name);
    if(ln)
    {
       SlException ex;
@@ -83641,7 +83864,7 @@ buildmpidr(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
          }
          blocksha512(&cmd->response);
          uart2resources(out);
-         cachelevel(&propfind, gpio1config, &st);
+         cachelevel(&propfind, name, &st);
          uninstallidmap(out);
          sffsdrnandflash=0;
       }
@@ -83652,7 +83875,7 @@ buildmpidr(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
 
 
 static void
-accessfault(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
+accessfault(WebDAV* o, const char* name, HttpCommand* cmd)
 {
    SXmlRoot r;
    DeadProp dp;
@@ -83682,7 +83905,7 @@ accessfault(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
          simulatebxblx,
          (U16)(simulatebxblx/4),
          &ex);
-      disablecounter = DeadProp_fname2PropFName(o->alloc, gpio1config);
+      disablecounter = DeadProp_fname2PropFName(o->alloc, name);
       SlException_assertE(&ex, disablecounter, SXmlErrT_Mem);
       devicesm501=TRUE;
       DeadProp_constructor(&dp, o->io, o->alloc);
@@ -83709,20 +83932,20 @@ accessfault(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
       while(setRemPropN)
       {
          SXmlNode* propN;
-         const char* gpio1config;
+         const char* name;
          propN = SXmlNode_firstChild(setRemPropN,&r); 
          SlException_assertE(&ex, propN, SXmlErrT_Err);
          propN = SXmlNode_firstChild(propN,&r); 
          SlException_assertE(&ex, propN, SXmlErrT_Err);
-         gpio1config = SXmlNode_getName(setRemPropN,&r);
-         if(!strcmp(gpio1config, "\163\145\164"))
+         name = SXmlNode_getName(setRemPropN,&r);
+         if(!strcmp(name, "\163\145\164"))
          {
             if(DeadProp_setProp(&dp, propN, &r))
                SlException_set(&ex, SXmlErrT_Mem);
          }
          else
          {
-            SlException_assertE(&ex, !strcmp(gpio1config, "\162\145\155\157\166\145"), SXmlErrT_Err);
+            SlException_assertE(&ex, !strcmp(name, "\162\145\155\157\166\145"), SXmlErrT_Err);
             DeadProp_removeProp(&dp, propN, &r);
          }
 
@@ -83757,7 +83980,7 @@ accessfault(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
 
 
 static void
-nhpoly1305final(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
+nhpoly1305final(WebDAV* o, const char* name, HttpCommand* cmd)
 {
    const char* ethernatenable;
    int sffsdrnandflash;
@@ -83769,7 +83992,7 @@ nhpoly1305final(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
       return;
    }
 
-   sffsdrnandflash = o->io->mkDirFp(o->io, gpio1config, &ethernatenable);
+   sffsdrnandflash = o->io->mkDirFp(o->io, name, &ethernatenable);
    if(sffsdrnandflash)
    {
       HttpResponse_sendError2(&cmd->response,
@@ -83783,7 +84006,7 @@ nhpoly1305final(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
 
 static void
 defaultvector(WebDAV* o,
-                  const char* gpio1config,
+                  const char* name,
                   HttpCommand* cmd,
                   BaBool alignmentfault)
 {
@@ -83796,7 +84019,7 @@ defaultvector(WebDAV* o,
       sendHttpResp(cmd,403,0);
       return;
    }
-   ln = LockContainer_find(&o->lock, gpio1config);
+   ln = LockContainer_find(&o->lock, name);
    if(simulatebxblx) 
    {
       SlException ex;
@@ -83850,7 +84073,7 @@ defaultvector(WebDAV* o,
                &o->lock,
                
                pciercxcfg035 > 60*60 ? 60*60 : (pciercxcfg035 < 5*60 ? 5*60 : pciercxcfg035),
-               gpio1config);
+               name);
             if(ln)
             {
                if( ! n || ! LockNode_setOwner(ln,&o->lock, n, &r) )
@@ -83893,7 +84116,7 @@ defaultvector(WebDAV* o,
 
 
 static void
-omap3630toggle(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
+omap3630toggle(WebDAV* o, const char* name, HttpCommand* cmd)
 {
    LockNode* ln;
    U16 simulatebxblx;
@@ -83904,7 +84127,7 @@ omap3630toggle(WebDAV* o, const char* gpio1config, HttpCommand* cmd)
       sendHttpResp(cmd,403,0);
       return;
    }
-   ln = LockContainer_find(&o->lock, gpio1config);
+   ln = LockContainer_find(&o->lock, name);
    if(ln)
    {
       wm97xxprobe(&o->lock,ln);
@@ -84487,7 +84710,8 @@ void sharkssl_clear(void *alloccontroller, U32 len)
 }
 
 
-#if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA || \
+
+#if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA || SHARKSSL_USE_RNG_FORTUNA || \
     (SHARKSSL_ENABLE_ECDSA && (!SHARKSSL_ECDSA_ONLY_VERIFY)) || \
     (SHARKSSL_USE_ECC && SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ENABLE_X25519_API))
 #if SHARKSSL_PSA_CONSUMER
@@ -89196,13 +89420,13 @@ async3pdata(SXmlRoot* o)
 
 
 static BaBool
-flashdevice(SXmlRoot* o, U16 nsp, U16 gpio1config, U16 val)
+flashdevice(SXmlRoot* o, U16 nsp, U16 name, U16 val)
 {
    U16 pos;
    if(nsp)
       pos = nsp;
    else
-      pos=gpio1config;
+      pos=name;
    if( ! strcmp(SXmlRoot_dOffs2Str(o, pos), "\170\155\154\156\163") )
    {
       Xmlns* xmlns;
@@ -89218,7 +89442,7 @@ flashdevice(SXmlRoot* o, U16 nsp, U16 gpio1config, U16 val)
          xmlns = SXmlRoot_eOffs2Xmlns(o,o->xmlElemBufNextPos);
          o->xmlElemBufNextPos+=sizeof(Xmlns);
       }
-      xmlns->nsp= nsp ? gpio1config : 0; 
+      xmlns->nsp= nsp ? name : 0; 
       xmlns->ns=val;
       xmlns->next=0;
       xmlns->sl=o->csl; 
@@ -89377,7 +89601,7 @@ registerclient(SXmlRoot* o, U16 pos, U8 ch)
 
 
 static U16
-blockcontents(SXmlRoot* o, U16 sep, U16* nsp, U16* gpio1config)
+blockcontents(SXmlRoot* o, U16 sep, U16* nsp, U16* name)
 {
    U16 pos, prctlenable;
    
@@ -89390,12 +89614,12 @@ blockcontents(SXmlRoot* o, U16 sep, U16* nsp, U16* gpio1config)
    {
       o->xmlData[pos++] = 0;
       *nsp=sep;
-      *gpio1config=pos;
+      *name=pos;
    }
    else 
    {
       *nsp=0;
-      *gpio1config=sep;
+      *name=sep;
    }
    return prctlenable;
 }
@@ -89411,11 +89635,11 @@ SXmlRoot_mkAttr(SXmlRoot* o, U16 sep, U16 unusableexits)
    if(o->xmlData[sep] && sep < o->endTagPos) 
    {
       SXmlNode* ducaticlkdm;
-      U16 nsp, gpio1config, val;
+      U16 nsp, name, val;
       val = registerclient(o, sep, '\075');
       SXmlRoot_assert(o, val, SXmlErrT_Lex);
       o->xmlData[val++]=0;
-      blockcontents(o, sep, &nsp, &gpio1config); 
+      blockcontents(o, sep, &nsp, &name); 
       val = capabilitiesfinalized(o,val);
       if(o->xmlData[val] == '\047' || o->xmlData[val] == '\042')
       {
@@ -89438,12 +89662,12 @@ SXmlRoot_mkAttr(SXmlRoot* o, U16 sep, U16 unusableexits)
          if(o->xmlData[sep]) 
             o->xmlData[sep++] = 0;
       }
-      if(flashdevice(o, nsp, gpio1config, val))
+      if(flashdevice(o, nsp, name, val))
          goto L_start; 
       ducaticlkdm = SXmlRoot_mkAttr(o, sep, (U16)(unusableexits+1));
       ducaticlkdm->attributes[1+(3*unusableexits)] =
          nsp ? controlassert(o, nsp) : async3pdata(o);
-      ducaticlkdm->attributes[2+(3*unusableexits)] = gpio1config;
+      ducaticlkdm->attributes[2+(3*unusableexits)] = name;
       ducaticlkdm->attributes[3+(3*unusableexits)] = val;
       return ducaticlkdm;
    }
@@ -89575,11 +89799,11 @@ SXmlRoot_mkElem(SXmlRoot* o, U16 sep, SXmlNode* ducaticlkdm)
 {
    SXmlNode* nelem;
    U16 nsp; 
-   U16 gpio1config;
+   U16 name;
    sep = capabilitiesfinalized(o, sep);
-   sep = blockcontents(o, sep, &nsp, &gpio1config);
+   sep = blockcontents(o, sep, &nsp, &name);
    nelem = SXmlRoot_mkAttr(o, sep, 0);
-   nelem->name = gpio1config;
+   nelem->name = name;
    if(ducaticlkdm)
       ducaticlkdm->next = SXmlRoot_ePtr2Offs(o, nelem);
    nelem->ns = nsp ? controlassert(o, nsp) : async3pdata(o);
@@ -89592,18 +89816,18 @@ static void
 allocgeneric(SXmlRoot* o, SXmlNode* ducaticlkdm)
 {
    U16 sep; 
-   U16 nsp, gpio1config;
+   U16 nsp, name;
    SXmlRoot_eatWhitespace2(o);
    sep = o->parserPos; 
    if(timershould(o) != SXmlNodeT_EndTag)
       SXmlRoot_exception(o, SXmlErrT_Lex);
-   blockcontents(o, sep, &nsp, &gpio1config);
+   blockcontents(o, sep, &nsp, &name);
    if(nsp && ducaticlkdm->ns)
    {
       if(controlassert(o, nsp) != ducaticlkdm->ns)
          SXmlRoot_exception(o, SXmlErrT_NsNotFound);
    }
-   if(strcmp(SXmlRoot_dOffs2Str(o, gpio1config),SXmlRoot_dOffs2Str(o, ducaticlkdm->name)))
+   if(strcmp(SXmlRoot_dOffs2Str(o, name),SXmlRoot_dOffs2Str(o, ducaticlkdm->name)))
       SXmlRoot_exception(o, SXmlErrT_NameNotFound);
 }
 
@@ -91080,7 +91304,7 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
 
    if (l == 0)  
    {
-      SharkSslParseASN1 previous;
+      SharkSslParseASN1 _XzY0x21E;
       U8 *extensions, *extension;
       U8 _XzY0x18B = 0;
 
@@ -91144,26 +91368,26 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
             }
 
             
-            previous.ptr = extensions;
-            previous.len = (U32)(extension - extensions);
-            while (previous.len)
+            _XzY0x21E.ptr = extensions;
+            _XzY0x21E.len = (U32)(extension - extensions);
+            while (_XzY0x21E.len)
             {
-               if ((l = SharkSslParseASN1_getSequence(&previous)) <= 0)
+               if ((l = SharkSslParseASN1_getSequence(&_XzY0x21E)) <= 0)
                {
                   return -1;
                }
-               previous.len = (U32)l;
-               if (SharkSslParseASN1_getOID(&previous) < 0)
+               _XzY0x21E.len = (U32)l;
+               if (SharkSslParseASN1_getOID(&_XzY0x21E) < 0)
                {
                   return -1;
                }
-               if ((previous.datalen == parseBitString.datalen) &&
-                   (0 == sharkssl_kmemcmp(previous.dataptr, parseBitString.dataptr, previous.datalen)))
+               if ((_XzY0x21E.datalen == parseBitString.datalen) &&
+                   (0 == sharkssl_kmemcmp(_XzY0x21E.dataptr, parseBitString.dataptr, _XzY0x21E.datalen)))
                {
                   return -1;
                }
-               previous.ptr += previous.len;
-               previous.len = (U32)(extension - previous.ptr);
+               _XzY0x21E.ptr += _XzY0x21E.len;
+               _XzY0x21E.len = (U32)(extension - _XzY0x21E.ptr);
             }
 
             v = 0;
@@ -91449,6 +91673,27 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
 }
 
 
+#if (SHARKSSL_ENABLE_CERTINFO_PARSE_API && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+SHARKSSL_API int SharkSslCertInfo_parseCert(SharkSslCertInfo *o, const U8 *der, U32 len)
+{
+   SharkSslCertParam kernelvaddr;
+
+   if ((!o) || (!der) || (len >= (U32)-5))
+   {
+      return -1;
+   }
+   memset(&kernelvaddr, 0, sizeof(kernelvaddr));
+   if (spromregister(&kernelvaddr, der, len, NULL) != 0)
+   {
+      return -1;
+   }
+   *o = kernelvaddr.certInfo;
+   return 0;
+}
+#endif
+
+
+
 SharkSslCert removerecursive(SharkSslCertEnum *o)
 {
    #if SHARKSSL_ENABLE_CERT_CHAIN
@@ -91577,14 +91822,14 @@ U8 SharkSslCertDN_equal(const SharkSslCertDN *o1, const SharkSslCertDN *o2)
 
 
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_SESSION_CACHE && SHARKSSL_ENABLE_SNI && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
-static U8 _XzY0x1F4(const U8 *_XzY0x1CF, U32 _XzY0x1CE, const char *gpio1config, U16 alignresource)
+static U8 _XzY0x1F4(const U8 *_XzY0x1CF, U32 _XzY0x1CE, const char *name, U16 alignresource)
 {
    U16 i;
 
    if ((_XzY0x1CE > 2) && ('\052' == _XzY0x1CF[0]) && ('\056' == _XzY0x1CF[1]))
    {
       i = 0;
-      while ((i < alignresource) && ('\056' != gpio1config[i]))
+      while ((i < alignresource) && ('\056' != name[i]))
       {
          i++;
       }
@@ -91592,7 +91837,7 @@ static U8 _XzY0x1F4(const U8 *_XzY0x1CF, U32 _XzY0x1CE, const char *gpio1config,
       {
          return 0;
       }
-      gpio1config += i + 1;
+      name += i + 1;
       alignresource -= i + 1;
       _XzY0x1CF += 2;
       _XzY0x1CE -= 2;
@@ -91604,7 +91849,7 @@ static U8 _XzY0x1F4(const U8 *_XzY0x1CF, U32 _XzY0x1CE, const char *gpio1config,
    }
    for (i = 0; i < alignresource; i++)
    {
-      U8 _XzY0x1C8 = _XzY0x1CF[i], nameByte = (U8)gpio1config[i];
+      U8 _XzY0x1C8 = _XzY0x1CF[i], nameByte = (U8)name[i];
       if (('\101' <= _XzY0x1C8) && (_XzY0x1C8 <= '\132'))
       {
          _XzY0x1C8 += '\141' - '\101';
@@ -91623,19 +91868,19 @@ static U8 _XzY0x1F4(const U8 *_XzY0x1CF, U32 _XzY0x1CE, const char *gpio1config,
 
 
 
-U8 SharkSslCertInfo_matchesSNI(const SharkSslCertInfo *o, const char *gpio1config, U16 alignresource)
+U8 SharkSslCertInfo_matchesSNI(const SharkSslCertInfo *o, const char *name, U16 alignresource)
 {
    SharkSslParseASN1 panelshutdown;
    U16 i;
    U8 tag, auxdatalookup = 0, _XzY0x1DC = 0;
 
-   if ((!o) || (!gpio1config) || (!alignresource) || (!o->subjectAltNamesPtr) || (!o->subjectAltNamesLen))
+   if ((!o) || (!name) || (!alignresource) || (!o->subjectAltNamesPtr) || (!o->subjectAltNamesLen))
    {
       return 0;
    }
    for (i = 0; i < alignresource; i++)
    {
-      U8 ch = (U8)gpio1config[i];
+      U8 ch = (U8)name[i];
       
       if ('\056' == ch)
       {
@@ -91649,11 +91894,11 @@ U8 SharkSslCertInfo_matchesSNI(const SharkSslCertInfo *o, const char *gpio1confi
       {
          continue;
       }
-      if (('\055' == ch) && (0 != i) && (i + 1 < alignresource) && ('\056' != gpio1config[i - 1]) && ('\056' != gpio1config[i + 1]))
+      if (('\055' == ch) && (0 != i) && (i + 1 < alignresource) && ('\056' != name[i - 1]) && ('\056' != name[i + 1]))
       {
          continue;
       }
-      if (('\056' == ch) && (0 != i) && (i + 1 < alignresource) && ('\056' != gpio1config[i - 1]))
+      if (('\056' == ch) && (0 != i) && (i + 1 < alignresource) && ('\056' != name[i - 1]))
       {
          continue;
       }
@@ -91681,7 +91926,7 @@ U8 SharkSslCertInfo_matchesSNI(const SharkSslCertInfo *o, const char *gpio1confi
       {
          return 0;
       }
-      if ((SUBJECTALTNAME_DNSNAME == tag) && (_XzY0x1F4(panelshutdown.dataptr, panelshutdown.datalen, gpio1config, alignresource)))
+      if ((SUBJECTALTNAME_DNSNAME == tag) && (_XzY0x1F4(panelshutdown.dataptr, panelshutdown.datalen, name, alignresource)))
       {
          _XzY0x1DC = 1;
       }
@@ -91866,12 +92111,12 @@ static int _XzY0x1FC(const SharkSslSignParam *o, U16 *cachemumbojumbo)
    {
       return -1;
    }
-   _XzY0x200 = (U8*)baMalloc((U32)modulusLen + exponentLen + 16u);
+   _XzY0x200 = (U8*)baMalloc((U32)modulusLen + exponentLen + 16);
    if (!_XzY0x200)
    {
       return -1;
    }
-   SharkSslASN1Create_constructor(&fixupconfig, _XzY0x200, (int)((U32)modulusLen + exponentLen + 16u));
+   SharkSslASN1Create_constructor(&fixupconfig, _XzY0x200, (int)((U32)modulusLen + exponentLen + 16));
    if (SharkSslASN1Create_int(&fixupconfig, o->pCertKey->exp, exponentLen) ||
        SharkSslASN1Create_int(&fixupconfig, o->pCertKey->mod, modulusLen) ||
        SharkSslASN1Create_length(&fixupconfig, SharkSslASN1Create_getLen(&fixupconfig)) ||
@@ -91880,7 +92125,7 @@ static int _XzY0x1FC(const SharkSslSignParam *o, U16 *cachemumbojumbo)
       goto _SharkSslSignParam_psaRSA_cleanup;
    }
    psa_set_key_type(&attributes, PSA_KEY_TYPE_RSA_PUBLIC_KEY);
-   psa_set_key_bits(&attributes, (size_t)modulusLen * 8u);
+   psa_set_key_bits(&attributes, (size_t)modulusLen * 8);
    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_HASH);
    psa_set_key_algorithm(&attributes, algorithm);
    sffsdrnandflash = psa_import_key(&attributes, SharkSslASN1Create_getData(&fixupconfig),
@@ -93949,7 +94194,7 @@ SHARKSSL_API SharkSslKey sharkssl_PEM_extractPublicKey(const char *allowresize)
 #endif  
 
 
-#if SHARKSSL_ENABLE_RSA
+#if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
 static int populatekernel(int sffsdrnandflash)
 {
    return ((int)SharkSslCon_AllocationError == sffsdrnandflash) ? (int)SHARKSSL_RSA_ALLOCATION_ERROR : (int)SHARKSSL_RSA_INTERNAL_ERROR;
@@ -94838,7 +95083,7 @@ static U16 serialdevice(SharkSslCertStore *o, SharkSslParseASN1 *p, U8 timer5hwm
 {
    SharkSslCSCert *newCert = 0;
    SharkSslCertDN  issuerDN, subjectDN;
-   U8 *gpio1config, *cp, *cr, *newCertMem;
+   U8 *name, *cp, *cr, *newCertMem;
    int rc, ls;
    U16 nc = 0;  
 
@@ -94925,12 +95170,12 @@ static U16 serialdevice(SharkSslCertStore *o, SharkSslParseASN1 *p, U8 timer5hwm
       if ((subjectDN.commonName) && (subjectDN.commonNameLen))
       {
          ls = subjectDN.commonNameLen;
-         gpio1config = (U8*)subjectDN.commonName;
+         name = (U8*)subjectDN.commonName;
       }
       else if ((subjectDN.organization) && (subjectDN.organizationLen))
       {
          ls = subjectDN.organizationLen;
-         gpio1config = (U8*)subjectDN.organization;
+         name = (U8*)subjectDN.organization;
       }
       else
       {
@@ -94951,7 +95196,7 @@ static U16 serialdevice(SharkSslCertStore *o, SharkSslParseASN1 *p, U8 timer5hwm
       {
          memset(newCert->name, 0, (SHARKSSL_MAX_SNAME_LEN + 1));
       }
-      memcpy(newCert->name, gpio1config, ls);
+      memcpy(newCert->name, name, ls);
 
       o->elements++;
       nc++;
@@ -95865,7 +96110,7 @@ int suspendfinish(shtype_t *injectexception,
 void shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
 {
    shtype_tWord remainder[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
-   shtype_tWord difference[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
+   shtype_tWord _XzY0x20E[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
    shtype_tDoubleWord subtraction;
    shtype_tWord updatecause, carry, nextCarry, _XzY0x184, fpemulthreshold;
    U16 i, j, bit, inputWords;
@@ -95896,13 +96141,13 @@ void shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
          {
             subtraction = (shtype_tDoubleWord)remainder[j] -
                           (j == writepmresrn ? 0 : _XzY0x1E2->beg[writepmresrn - 1 - j]) - _XzY0x184;
-            difference[j] = (shtype_tWord)subtraction;
+            _XzY0x20E[j] = (shtype_tWord)subtraction;
             _XzY0x184 = (shtype_tWord)((subtraction >> SHARKSSL_BIGINT_WORDSIZE) & 1);
          }
          fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(_XzY0x184 ^ 1));
          for (j = 0; j <= writepmresrn; j++)
          {
-            remainder[j] = (shtype_tWord)((difference[j] & fpemulthreshold) | (remainder[j] & ~fpemulthreshold));
+            remainder[j] = (shtype_tWord)((_XzY0x20E[j] & fpemulthreshold) | (remainder[j] & ~fpemulthreshold));
          }
       }
    }
@@ -95914,7 +96159,7 @@ void shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
    o->beg = o->mem;
    o->len = writepmresrn;
    sharkssl_clear(remainder, (U32)sizeof(remainder));
-   sharkssl_clear(difference, (U32)sizeof(difference));
+   sharkssl_clear(_XzY0x20E, (U32)sizeof(_XzY0x20E));
 }
 
 
@@ -96429,7 +96674,7 @@ static void ic0r1dispatch(shtype_t *o)
 {
    
    backlightpdata(o);
-   o->beg[0] |= ((o->beg[0] << 1) & ((shtype_tWord)1u << (SHARKSSL_BIGINT_WORDSIZE - 1)));
+   o->beg[0] |= ((o->beg[0] << 1) & ((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1)));
 }
 
 
@@ -96510,6 +96755,8 @@ static void shtype_t_invmod_buf_even(shtype_t *u,
    {
       resolverelocs(&C, mod);
    }
+   
+   envdatamcheck(&C, mod, brightnesslimit.mem);
    blastscache(&C);
    while ((C.len < mod->len) && (C.beg > C.mem))
    {
@@ -96679,7 +96926,7 @@ static U16 pc104irqmasks(shtype_t *o, U16 div)
    {
       #if (SHARKSSL_BIGINT_WORDSIZE == 32)
       mod = ((mod << 16) | (o->beg[i] >> 16)) % div;
-      mod = ((mod << 16) | (o->beg[i] & 0xffffu)) % div;
+      mod = ((mod << 16) | (o->beg[i] & 0xffff)) % div;
       #else
       mod = ((mod << SHARKSSL_BIGINT_WORDSIZE) | o->beg[i]) % div;
       #endif
@@ -96745,13 +96992,13 @@ int aemifdevice(shtype_t *o)
    o->beg = o->mem;
    for (_XzY0x1FE = 0; _XzY0x1FE < 65536u; ++_XzY0x1FE)
    {
-      if ((0 == _XzY0x1FE) || (0 == (o->beg[0] & ((shtype_tWord)1u << (SHARKSSL_BIGINT_WORDSIZE - 1)))))
+      if ((0 == _XzY0x1FE) || (0 == (o->beg[0] & ((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1)))))
       {
          if (sharkssl_rng((U8*)o->beg, o->len * SHARKSSL__M) < 0)
          {
             return -1;
          }
-         o->beg[0] |= ((shtype_tWord)1u << (SHARKSSL_BIGINT_WORDSIZE - 1));
+         o->beg[0] |= ((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
          o->beg[o->len - 1] |= 1;
       }
       sffsdrnandflash = mcaspresources(o);
@@ -96821,8 +97068,8 @@ int translateaddress(const shtype_t *o1,
 #endif
 
 #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_X25519_DEDICATED)
-#if (SHARKSSL_X25519_ASM && !defined(__ARM_FEATURE_DSP))
-#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support
+#if (SHARKSSL_X25519_ASM && (!defined(__ARM_FEATURE_DSP)) && ((!defined(__RX__)) || (!defined(__RX_LITTLE_ENDIAN__))) && ((!defined(__ICCRX__)) || (!__LITTLE_ENDIAN__)))
+#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support or little-granuleshift GNU/IAR RX
 #endif
 #if SHARKSSL_X25519_ASM
 typedef struct { U32 w[8]; } fe25519;
@@ -96858,7 +97105,7 @@ static void _XzY0x15B(fe25519 *o, const U8 s[32])
    {
       cleanupcount(o->w[i], s + (i << 2), 0);
    }
-   o->w[7] &= 0x7FFFFFFFU;
+   o->w[7] &= 0x7FFFFFFF;
 }
 
 
@@ -96866,8 +97113,8 @@ static void _XzY0x160(U8 s[32], const fe25519 *a)
 {
    static const U32 p[8] = 
    {
-      0xFFFFFFEDU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU,
-      0xFFFFFFFFU, 0xFFFFFFFFU, 0xFFFFFFFFU, 0x7FFFFFFFU
+      0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+      0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x7FFFFFFF
    };
    U32 r[8];
    int i;
@@ -98318,17 +98565,17 @@ sharkStrCaseCmp(const char *a, int enableblock, const char *b, int timerinterrup
 
 
 static int
-memblockregions(const char* cn, int cnl, const char* gpio1config, int alignresource)
+memblockregions(const char* cn, int cnl, const char* name, int alignresource)
 {
    if((cn[0] == '\052') && (cn[1] == '\056') && (cnl > 2)) 
    {
       char *writereg16;
       
-      writereg16=sharkStrchr(gpio1config, '\056');
-      if(writereg16 && (writereg16 != gpio1config))
+      writereg16=sharkStrchr(name, '\056');
+      if(writereg16 && (writereg16 != name))
       {
          
-         if( ! sharkStrCaseCmp(cn+2,(cnl-2),writereg16+1,alignresource - (int)(writereg16 - gpio1config) -1) )
+         if( ! sharkStrCaseCmp(cn+2,(cnl-2),writereg16+1,alignresource - (int)(writereg16 - name) -1) )
             return 0;
       }
    }
@@ -98339,7 +98586,7 @@ memblockregions(const char* cn, int cnl, const char* gpio1config, int alignresou
 
 int 
 sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattributes,
-                          SharkSslSANLen smemcresume, const char* gpio1config, U16 alignresource)
+                          SharkSslSANLen smemcresume, const char* name, U16 alignresource)
 {
    U8 ip[4];
    int i, pos = 0;
@@ -98348,21 +98595,21 @@ sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattribu
    {
       unsigned int videoprobe = 0;
       int cachesysfs = pos;
-      while(pos < alignresource && gpio1config[pos] >= '\060' && gpio1config[pos] <= '\071')
+      while(pos < alignresource && name[pos] >= '\060' && name[pos] <= '\071')
       {
-         videoprobe = videoprobe * 10 + (unsigned int)(gpio1config[pos++] - '\060');
+         videoprobe = videoprobe * 10 + (unsigned int)(name[pos++] - '\060');
          if(videoprobe > 255) break;
       }
-      if(pos == cachesysfs || videoprobe > 255 || (pos-cachesysfs > 1 && gpio1config[cachesysfs] == '\060'))
+      if(pos == cachesysfs || videoprobe > 255 || (pos-cachesysfs > 1 && name[cachesysfs] == '\060'))
          break;
       ip[i] = (U8)videoprobe;
-      if(i == 3 ? pos != alignresource : (pos == alignresource || gpio1config[pos++] != '\056'))
+      if(i == 3 ? pos != alignresource : (pos == alignresource || name[pos++] != '\056'))
          break;
    }
    if(i != 4 && cn && registermmcsd1)
    {
-      if( ! sharkStrCaseCmp(cn, registermmcsd1, gpio1config, alignresource) || 
-          ! memblockregions(cn, registermmcsd1, gpio1config, alignresource))
+      if( ! sharkStrCaseCmp(cn, registermmcsd1, name, alignresource) || 
+          ! memblockregions(cn, registermmcsd1, name, alignresource))
       {
          return 0;
       }
@@ -98386,9 +98633,9 @@ sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattribu
          else if (SUBJECTALTNAME_DNSNAME == SubjectAltName_getTag(&s))
          {
             if( ! sharkStrCaseCmp((const char*)SubjectAltName_getPtr(&s),
-                                  SubjectAltName_getLen(&s),gpio1config,alignresource) ||
+                                  SubjectAltName_getLen(&s),name,alignresource) ||
                   ! memblockregions((const char*)SubjectAltName_getPtr(&s),
-                                 SubjectAltName_getLen(&s),gpio1config, alignresource) )
+                                 SubjectAltName_getLen(&s),name, alignresource) )
             {
                return 0;
             }
@@ -98517,7 +98764,7 @@ dbdmastart(SharkSslCertInfo* ci)
 
 
 SHARKSSL_API SharkSslConTrust
-SharkSslCon_trusted(SharkSslCon *o, const char *gpio1config, SharkSslCertInfo **cPtr)
+SharkSslCon_trusted(SharkSslCon *o, const char *name, SharkSslCertInfo **cPtr)
 {
    if(o) 
    {
@@ -98529,7 +98776,7 @@ SharkSslCon_trusted(SharkSslCon *o, const char *gpio1config, SharkSslCertInfo **
       if(ci)
       {
          int usbsshwmod = SharkSslCon_trustedCA(o);
-         if( !gpio1config )
+         if( !name )
          {
             return usbsshwmod ? SharkSslConTrust_CertCn : SharkSslConTrust_None;
          }
@@ -98537,7 +98784,7 @@ SharkSslCon_trusted(SharkSslCon *o, const char *gpio1config, SharkSslCertInfo **
                                         ci->subject.commonNameLen, 
                                         ci->subjectAltNamesPtr,
                                         ci->subjectAltNamesLen,
-                                        gpio1config, (U16)strlen(gpio1config)))
+                                        name, (U16)strlen(name)))
          {
             return usbsshwmod ?
                dbdmastart(ci) : SharkSslConTrust_Cn;
@@ -98593,7 +98840,7 @@ permissionfault(JEncoder* o)
 }
 
 static int JEncoder_setNameLen(
-   JEncoder* o, const char* gpio1config, size_t len);
+   JEncoder* o, const char* name, size_t len);
 
 static int
 timerdispatch(JEncoder* o)
@@ -98873,11 +99120,11 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
 #endif
 
 static int
-JEncoder_setNameLen(JEncoder* o, const char* gpio1config, size_t len)
+JEncoder_setNameLen(JEncoder* o, const char* name, size_t len)
 {
    if(fixupdevice(o, TRUE))
    {
-      if(BufPrint_jsonString(o->out,gpio1config,len)<0 ||
+      if(BufPrint_jsonString(o->out,name,len)<0 ||
          BufPrint_putc(o->out, '\072')<0)
          return permissionfault(o);
       return 0;
@@ -98887,9 +99134,9 @@ JEncoder_setNameLen(JEncoder* o, const char* gpio1config, size_t len)
 
 
 int
-JEncoder_setName(JEncoder* o, const char* gpio1config)
+JEncoder_setName(JEncoder* o, const char* name)
 {
-   return JEncoder_setNameLen(o,gpio1config,strlen(gpio1config));
+   return JEncoder_setNameLen(o,name,strlen(name));
 }
 
 
@@ -99679,12 +99926,12 @@ JVal_extractObject(JVal* o,JErr* err,const char** fmt,va_list* breakpointthread)
    for( ; **fmt && **fmt != '\175' && JErr_noError(err) ; (*fmt)++)
    {
       const char* n;
-      const char* gpio1config = va_arg(*breakpointthread, const char*);
-      size_t alignresource=strlen(gpio1config);
+      const char* name = va_arg(*breakpointthread, const char*);
+      size_t alignresource=strlen(name);
       JVal* instructioncounter = o;
       while(instructioncounter && (n = JVal_getName(instructioncounter))!=0 &&
             (JVal_getNameLen(instructioncounter) != alignresource ||
-             memcmp(gpio1config,n,alignresource)))
+             memcmp(name,n,alignresource)))
          instructioncounter = JVal_getNextElem(instructioncounter);
       if(!instructioncounter)
       {
@@ -100299,7 +100546,7 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
 #include <HttpSharkSslServCon.h>
 #include <HttpServer.h>
 #include <HttpTrace.h>
- 
+#include <SharkSSL.h>
 
 #if SHARKSSL_ENABLE_SESSION_CACHE
 #include <SharkSslSCMgr.h>
@@ -100307,27 +100554,57 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
 
 typedef struct
 {
-   SharkSslCon super;
+   SharkSslCon* sslCon;
+   SharkSsl* sharkSsl;
    DoubleLink link;
    SoDispCon* con; /* Owner of BaSharkSslCon */
    char* host;
    U16 port;
-   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-   U8 asynchState; /* Pending output, not ownership of a borrowed buffer. */
-   #endif
+   U16 txLen, txOffset, rxPending;
+   U8 asynchState;
+   U8 handshakePending;
 } BaSharkSslCon;
 
-#if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-#define BA_SHARKSSL_ASYNCH_IDLE       0
-#define BA_SHARKSSL_ASYNCH_SENDING    1
-#endif
+#define BA_SHARKSSL_ASYNCH_IDLE          0
+#define BA_SHARKSSL_ASYNCH_APPLICATION   1
+#define BA_SHARKSSL_ASYNCH_KEYUPDATE     2
+#define BA_SHARKSSL_ASYNCH_HANDSHAKE     3
 
 
 static SoDispCon*
-BaSharkSslCon_getOwner(SharkSslCon* s)
+BaSharkSslCon_getOwner(BaSharkSslCon* o)
 {
-   BaSharkSslCon* bs=(BaSharkSslCon*)s;
-   return ((bs->con) && (bs->con->sslData == s)) ? bs->con : 0;
+   return ((o->con) && (o->con->sslData == o)) ? o->con : 0;
+}
+
+
+static BaSharkSslCon*
+SharkSsl_createBaCon(SharkSsl* o)
+{
+   BaSharkSslCon* bs=(BaSharkSslCon*)baMalloc(sizeof(BaSharkSslCon));
+   if (!bs)
+   {
+      return 0;
+   }
+   memset(bs,0,sizeof(BaSharkSslCon));
+   bs->sslCon=SharkSsl_createCon(o);
+   if (!bs->sslCon)
+   {
+      baFree(bs);
+      return 0;
+   }
+   bs->sharkSsl=o;
+   DoubleLink_constructor(&bs->link);
+   return bs;
+}
+
+
+static void
+_XzY0x204(BaSharkSslCon* o)
+{
+   DoubleLink_destructor(&o->link);
+   SharkSsl_terminateCon(o->sharkSsl,o->sslCon);
+   baFree(o);
 }
 
 
@@ -100352,7 +100629,7 @@ SoDispCon_getSharkAlert(SoDispCon* o, U8* disableerrgen, U8* local1irqdispatch)
 {
    if(o->sslData) 
    {
-      SharkSslCon *s = (SharkSslCon*)o->sslData;
+      SharkSslCon *s = ((BaSharkSslCon*)o->sslData)->sslCon;
       *disableerrgen=SharkSslCon_getAlertLevel(s);
       *local1irqdispatch=SharkSslCon_getAlertDescription(s);
       return 0;
@@ -100365,7 +100642,7 @@ static int
 tsx09parse(SoDispCon* con, int handlersetup)
 {
    int x,desc;
-   SharkSslCon *s = (SharkSslCon*)con->sslData;
+   SharkSslCon *s = ((BaSharkSslCon*)con->sslData)->sslCon;
 
    switch (handlersetup)
    {
@@ -100385,7 +100662,7 @@ tsx09parse(SoDispCon* con, int handlersetup)
          x = SharkSslCon_getAlertDataLen(s);
          baAssert(x);
          HttpSocket_send(&con->httpSocket, m, &queueevent,
-                         SharkSslCon_getAlertData(s),
+                         (const char*)SharkSslCon_getAlertData(s),
                          x,
                          &x);
          (void)queueevent;
@@ -100411,9 +100688,7 @@ tsx09parse(SoDispCon* con, int handlersetup)
       case SharkSslCon_Error:
 #ifdef HTTP_TRACE
          gpio6resources(12, con);
-         HttpTrace_printf(
-            11,"\040\123\150\141\162\153\123\123\114\072\040\103\162\171\160\164\157\040\146\141\151\154\165\162\145\040\144\165\162\151\156\147\040\145\156\143\162\171\160\164\057\144\145\143\162\171\160\164\040\157\160\145\162\141\164\151\157\156\040"
-            "\050\045\144\051\012", debugdestroy(s));
+         HttpTrace_printf(11,"\040\123\150\141\162\153\123\123\114\072\040\103\162\171\160\164\157\040\146\141\151\154\165\162\145\040\144\165\162\151\156\147\040\145\156\143\162\171\160\164\057\144\145\143\162\171\160\164\040\157\160\145\162\141\164\151\157\156\012");
 #endif
          return E_TLS_CRYPTOERR;
 
@@ -100441,55 +100716,77 @@ tsx09parse(SoDispCon* con, int handlersetup)
 static int
 coherentiommu(SoDispCon* con, ThreadMutex* m, BaBool consoleenabled)
 {
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
+   SharkSslCon* s=bs->sslCon;
+   SoDispCon* owner=BaSharkSslCon_getOwner(bs);
    int nb, sockLen;
    BaBool queueevent=FALSE, restoreNonblocking=FALSE;
-   SharkSslCon *s = (SharkSslCon*)con->sslData;
-   SoDispCon* owner=BaSharkSslCon_getOwner(s);
 
-   if(con->sendTermPtr || (owner != con))
+   if ((con->sendTermPtr) || (owner != con))
+   {
       return E_SOCKET_WRITE_FAILED;
+   }
+   if (!bs->handshakePending)
+   {
+      return 1;
+   }
    con->sendTermPtr=&queueevent;
-   while((nb=SharkSslCon_getHandshakeDataLen(s)) != 0)
+   while ((nb=SharkSslCon_getHandshakeDataLen(s)) != 0)
    {
       const U8* alloccontroller=SharkSslCon_getHandshakeData(s);
-      HttpSocket_send(&con->httpSocket,m,&queueevent,alloccontroller,nb,&sockLen);
-      if(queueevent)
-         return E_SOCKET_WRITE_FAILED;
-      owner=BaSharkSslCon_getOwner(s);
-      if( ! owner )
-         return E_SOCKET_WRITE_FAILED;
-      if((sockLen < 0) || (sockLen > nb))
-         goto L_sendFailed;
-      SharkSslCon_setHandshakeDataSent(s,(U16)sockLen);
-      if(owner != con)
+      HttpSocket_send(&con->httpSocket,m,&queueevent,(const char*)alloccontroller,nb,&sockLen);
+      if (queueevent)
       {
-         if(restoreNonblocking && SoDispCon_setNonblocking(owner))
+         return E_SOCKET_WRITE_FAILED;
+      }
+      owner=BaSharkSslCon_getOwner(bs);
+      if (!owner)
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      if ((sockLen < 0) || (sockLen > nb))
+      {
+         goto L_sendFailed;
+      }
+      bs->handshakePending=(SharkSslCon_setHandshakeDataSent(s,(U16)sockLen) != 0);
+      if (owner != con)
+      {
+         if ((restoreNonblocking) && (SoDispCon_setNonblocking(owner)))
          {
             owner->sendTermPtr=0;
             return E_SOCKET_WRITE_FAILED;
          }
-         if(consoleenabled)
+         if (consoleenabled)
+         {
             SoDispCon_setDispHasRecData(owner);
+         }
          owner->sendTermPtr=0;
          return 0;
       }
-      if(sockLen == nb)
+      if (sockLen == nb)
+      {
          continue;
-      if( ! consoleenabled )
+      }
+      if (!consoleenabled)
       {
          owner->sendTermPtr=0;
          return 0;
       }
-      if(SoDispCon_isNonBlocking(con))
+      if (SoDispCon_isNonBlocking(con))
       {
-         if(SoDispCon_setBlocking(con))
+         if (SoDispCon_setBlocking(con))
+         {
             goto L_sendFailed;
+         }
          restoreNonblocking=TRUE;
       }
-      else if( ! sockLen )
+      else if (!sockLen)
+      {
          goto L_sendFailed;
+      }
    }
-   if(restoreNonblocking && SoDispCon_setNonblocking(con))
+   bs->handshakePending=FALSE;
+   if ((restoreNonblocking) && (SoDispCon_setNonblocking(con)))
    {
       owner->sendTermPtr=0;
       return E_SOCKET_WRITE_FAILED;
@@ -100498,8 +100795,10 @@ coherentiommu(SoDispCon* con, ThreadMutex* m, BaBool consoleenabled)
    return 1;
 
  L_sendFailed:
-   if(restoreNonblocking)
+   if (restoreNonblocking)
+   {
       SoDispCon_setNonblocking(owner);
+   }
    owner->sendTermPtr=0;
    return E_SOCKET_WRITE_FAILED;
 }
@@ -100508,118 +100807,121 @@ coherentiommu(SoDispCon* con, ThreadMutex* m, BaBool consoleenabled)
 static int
 belowstart(SoDispCon* con, ThreadMutex* m, void* buf, int masterclock)
 {
-   int sockLen, nb, handlersetup;
-   SharkSslCon *s = (SharkSslCon*)con->sslData;
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
+   SharkSslCon* s=bs->sslCon;
    SoDispCon* owner;
+   int sockLen, nb, handlersetup;
    BaBool queueevent=FALSE;
-   sockLen=0;
+
+   if (con->recTermPtr)
+   {
+      return E_SOCKET_READ_FAILED;
+   }
    for (;;)
    {
-      if(con->isSending || con->sendTermPtr
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-         || ((BaSharkSslCon*)s)->asynchState
-         #endif
-        )
+      if ((con->isSending) || (con->sendTermPtr) || (bs->asynchState))
       {
-         if(sockLen > 0)
-         {
-            baAssert((U16)sockLen <= SharkSslCon_getBufLen(s));
-            s->inBuf.dataLen += (U16)sockLen;
-         }
          SoDispCon_setDispHasRecData(con);
          return 0;
       }
-      switch (handlersetup = SharkSslCon_decrypt(s, (U16)sockLen))
+      if (bs->handshakePending)
+      {
+         handlersetup=coherentiommu(con,m,TRUE);
+         if (handlersetup <= 0)
+         {
+            return handlersetup;
+         }
+         continue;
+      }
+      sockLen=bs->rxPending;
+      bs->rxPending=0;
+      switch (handlersetup=SharkSslCon_decrypt(s,(U16)sockLen))
       {
          case SharkSslCon_NeedMoreData:
-            if(con->recTermPtr) 
-               return E_SOCKET_READ_FAILED;
-            if( ! SoDispCon_socketHasNonBlockData(con) )
+            if (!SoDispCon_socketHasNonBlockData(con))
             {
                SoDispCon_clearHasMoreData(con);
-               if( ! SoDispCon_isNonBlocking(con) )
+               if (!SoDispCon_isNonBlocking(con))
+               {
                   return 0;
+               }
             }
-            if(BaSharkSslCon_getOwner(s) != con)
-               return E_SOCKET_READ_FAILED;
-            con->recTermPtr=&queueevent;
-            sockLen=SoDispCon_platReadData(con,m,&queueevent,
-                                           SharkSslCon_getBuf(s),
-                                           SharkSslCon_getBufLen(s));
-            if(queueevent)
-               return E_SOCKET_READ_FAILED;
-            owner=BaSharkSslCon_getOwner(s);
-            if( ! owner )
-               return E_SOCKET_READ_FAILED;
-            if(sockLen > 0)
+            if (BaSharkSslCon_getOwner(bs) != con)
             {
-               if((U16)sockLen > SharkSslCon_getBufLen(s))
+               return E_SOCKET_READ_FAILED;
+            }
+            nb=SharkSslCon_getBufLen(s);
+            con->recTermPtr=&queueevent;
+            sockLen=SoDispCon_platReadData(con,m,&queueevent,SharkSslCon_getBuf(s),nb);
+            if (queueevent)
+            {
+               return E_SOCKET_READ_FAILED;
+            }
+            owner=BaSharkSslCon_getOwner(bs);
+            if (!owner)
+            {
+               return E_SOCKET_READ_FAILED;
+            }
+            if (sockLen > 0)
+            {
+               if (sockLen > nb)
                {
                   owner->recTermPtr=0;
                   return E_SOCKET_READ_FAILED;
                }
-               s->inBuf.dataLen += (U16)sockLen;
+               bs->rxPending=(U16)sockLen;
             }
-            if(owner != con)
+            owner->recTermPtr=0;
+            if (owner != con)
             {
-               if(sockLen > 0)
+               if (sockLen > 0)
                {
                   SoDispCon_setDispHasRecData(owner);
                }
-               owner->recTermPtr=0;
                return (sockLen < 0) ? sockLen : 0;
             }
             if (sockLen <= 0)
             {
                SoDispCon_clearHasMoreData(con);
-               owner->recTermPtr=0;
                return sockLen;
             }
-            sockLen=0;
-            owner->recTermPtr=0;
-            break; 
+            break;
 
          case SharkSslCon_Decrypted:
-            if( ! buf )
-               return TRUE; 
-            sockLen = SharkSslCon_copyDecData(s, buf, (U16)masterclock);
-            if (SharkSslCon_decryptMore(s))
+            if (!buf)
             {
-               if ((sockLen == 0) && (masterclock > 0))
-               {
-                  break; 
-               }
+               return TRUE;
+            }
+            sockLen=SharkSslCon_copyDecData(s,buf,(U16)masterclock);
+            if ((SharkSslCon_decryptMore(s)) && (0 == sockLen) && (masterclock > 0))
+            {
+               break;
             }
             return sockLen;
 
-            
-
          case SharkSslCon_Handshake:
+            bs->handshakePending=TRUE;
             handlersetup=coherentiommu(con,m,TRUE);
-            if(handlersetup <= 0)
+            if (handlersetup <= 0)
+            {
                return handlersetup;
-            nb = SharkSslCon_isHandshakeComplete(s);
+            }
+            nb=SharkSslCon_isHandshakeComplete(s);
             if (nb)
             {
-               if (!buf)
+               if ((!buf) && (nb > 1))
                {
-                  sockLen = 0;
-                  if (nb > 1)  
-                  {
-                     continue;  
-                  }
+                  continue;
                }
-
                if ((!buf) || (!masterclock))
                {
                   return 0;
                }
             }
-            sockLen = 0;
             break;
 
          default:
-            return tsx09parse(con, handlersetup);
+            return tsx09parse(con,handlersetup);
       }
    }
 }
@@ -100629,15 +100931,21 @@ static int
 handlerfixup(SoDispCon* con,ThreadMutex* m,void* buf,int masterclock)
 {
    int bytes, nb, handlersetup;
-   SharkSslCon *s = (SharkSslCon*)con->sslData;
-   SoDispCon* owner=BaSharkSslCon_getOwner(s);
-   if(con->sendTermPtr
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-      || ((BaSharkSslCon*)s)->asynchState
-      #endif
-      || (owner != con)
-     ) 
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
+   SharkSslCon* s=bs->sslCon;
+   SoDispCon* owner=BaSharkSslCon_getOwner(bs);
+   if ((con->sendTermPtr) || (bs->asynchState) || (owner != con))
+   {
       return E_SOCKET_WRITE_FAILED;
+   }
+   if (bs->handshakePending)
+   {
+      handlersetup=coherentiommu(con,m,TRUE);
+      if (handlersetup <= 0)
+      {
+         return handlersetup ? handlersetup : E_SOCKET_WRITE_FAILED;
+      }
+   }
    for (;;)
    {
       switch (handlersetup = SharkSslCon_encrypt(s, buf, (U16)masterclock))
@@ -100648,10 +100956,10 @@ handlerfixup(SoDispCon* con,ThreadMutex* m,void* buf,int masterclock)
             BaBool queueevent=FALSE;
             nb = SharkSslCon_getEncDataLen(s);
             con->sendTermPtr=&queueevent;
-            HttpSocket_send(&con->httpSocket,m,&queueevent,configwindow,nb,&bytes);
+            HttpSocket_send(&con->httpSocket,m,&queueevent,(const char*)configwindow,nb,&bytes);
             if(queueevent)
                return E_SOCKET_WRITE_FAILED;
-            owner=BaSharkSslCon_getOwner(s);
+            owner=BaSharkSslCon_getOwner(bs);
             if( ! owner )
                return E_SOCKET_WRITE_FAILED;
             if(bytes != nb)
@@ -100659,7 +100967,6 @@ handlerfixup(SoDispCon* con,ThreadMutex* m,void* buf,int masterclock)
                owner->sendTermPtr=0;
                return E_SOCKET_WRITE_FAILED;
             }
-            s->outBuf.dataLen=0;
             if(owner != con)
             {
                owner->sendTermPtr=0;
@@ -100672,10 +100979,30 @@ handlerfixup(SoDispCon* con,ThreadMutex* m,void* buf,int masterclock)
             {
                break;
             }
+            #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE && SHARKSSL_ENABLE_AES_GCM)
+            if (!buf)
+            {
+               handlersetup=SharkSslCon_proactiveKeyUpdate(s);
+               if (handlersetup < 0)
+               {
+                  return tsx09parse(con,SharkSslCon_Error);
+               }
+               if (handlersetup > 0)
+               {
+                  bs->handshakePending=TRUE;
+                  handlersetup=coherentiommu(con,m,TRUE);
+                  if (handlersetup <= 0)
+                  {
+                     return handlersetup ? handlersetup : E_SOCKET_WRITE_FAILED;
+                  }
+               }
+            }
+            #endif
             return masterclock; 
          }
 
          case SharkSslCon_Handshake:
+            bs->handshakePending=TRUE;
             handlersetup=coherentiommu(con,m,TRUE);
             if(handlersetup <= 0)
                return handlersetup ? handlersetup : E_SOCKET_WRITE_FAILED;
@@ -100691,158 +101018,129 @@ handlerfixup(SoDispCon* con,ThreadMutex* m,void* buf,int masterclock)
 static int
 timerretrigger(SoDispCon* con, int len)
 {
-   int rebootnotifier, handlersetup, sendLen;
-   U16* enablelevel;
-   BaBool queueevent=FALSE;
-   ThreadMutex* m=0;
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
    SharkSslCon* s;
    SoDispCon* owner;
-   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-   BaSharkSslCon* bs;
-   #endif
+   ThreadMutex* m=0;
+   int handlersetup, sendLen;
+   BaBool queueevent=FALSE;
 
-   if( ! SoDispCon_isValid(con) )
+   if ((!bs) || (!SoDispCon_isValid(con)))
+   {
       return -1;
-   if(con->sendTermPtr)
+   }
+   s=bs->sslCon;
+   if (con->sendTermPtr)
+   {
       return len ? E_SOCKET_WRITE_FAILED : 0;
-   s=(SharkSslCon*)con->sslData;
-   if(BaSharkSslCon_getOwner(s) != con)
+   }
+   if (BaSharkSslCon_getOwner(bs) != con)
+   {
       return E_SOCKET_WRITE_FAILED;
-   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-   bs=(BaSharkSslCon*)s;
-   if(bs->asynchState)
-      len=0; 
-   if(len)
+   }
+   if (bs->asynchState)
    {
-      if(con->isSending ||
-         ((s->flags & createmappings) && s->inBuf.temp))
+      len=0;
+   }
+   else if (bs->handshakePending)
+   {
+      if (len)
+      {
          return E_SOCKET_WRITE_FAILED;
-      bs->asynchState=BA_SHARKSSL_ASYNCH_SENDING;
-   }
-   else if((s->flags & createmappings) && s->inBuf.temp)
-   {
-      bs->asynchState=BA_SHARKSSL_ASYNCH_SENDING;
-      handlersetup=coherentiommu(con,m,FALSE);
-      if(handlersetup <= 0)
-      {
-         return handlersetup;
       }
-      bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-      return 1;
+      bs->asynchState=BA_SHARKSSL_ASYNCH_HANDSHAKE;
    }
-   #endif
-
-   baAssert(len <= SharkSslCon_getEncBufSize(s));
-   rebootnotifier = SharkSslCon_getEncDataLen(s);
-   if ( ! rebootnotifier )
+   else if (len)
    {
-      if (len == 0) 
+      if ((con->isSending) || (len < 0) || (len > SharkSslCon_getEncBufSize(s)))
       {
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-         #if SHARKSSL_ENABLE_AES_GCM
-         if(bs->asynchState == BA_SHARKSSL_ASYNCH_SENDING)
-         {
-            handlersetup=SharkSslCon_proactiveKeyUpdate(s);
-            if(handlersetup < 0)
-            {
-               bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-               return tsx09parse(con,SharkSslCon_Error);
-            }
-            if(handlersetup > 0)
-            {
-               handlersetup=coherentiommu(con,m,FALSE);
-               if(handlersetup <= 0)
-                  return handlersetup;
-            }
-         }
-         #endif
-         bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-         #endif
-         return 1;  
+         return E_SOCKET_WRITE_FAILED;
       }
-      handlersetup = SharkSslCon_encrypt(s, 0, (U16)len);
+      handlersetup=SharkSslCon_encrypt(s,0,(U16)len);
       if (handlersetup != SharkSslCon_Encrypted)
       {
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-         bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-         #endif
-         return tsx09parse(con, handlersetup);
+         return tsx09parse(con,handlersetup);
       }
-      rebootnotifier = SharkSslCon_getEncDataLen(s);
+      bs->txLen=SharkSslCon_getEncDataLen(s);
+      bs->txOffset=0;
+      bs->asynchState=BA_SHARKSSL_ASYNCH_APPLICATION;
    }
-   enablelevel = &s->outBuf.temp;
-   if(*enablelevel > rebootnotifier)
+   else
    {
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-      bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-      #endif
-      return E_SOCKET_WRITE_FAILED;
-   }
-   sendLen = rebootnotifier - *enablelevel;
-   con->sendTermPtr=&queueevent;
-   HttpSocket_send(&con->httpSocket, m, &queueevent,
-                    SharkSslCon_getEncData(s)+*enablelevel, sendLen, &len);
-   if(queueevent)
-      return E_SOCKET_WRITE_FAILED;
-   owner=BaSharkSslCon_getOwner(s);
-   if( ! owner )
-      return E_SOCKET_WRITE_FAILED;
-   if((len < 0) || (len > sendLen))
-   {
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-      bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-      #endif
-      owner->sendTermPtr=0;
-      return E_SOCKET_WRITE_FAILED; 
-   }
-   *enablelevel += (U16)len;
-   baAssert(*enablelevel <= rebootnotifier);
-   if(owner != con)
-   {
-      if(*enablelevel == rebootnotifier)
-         *enablelevel = s->outBuf.dataLen = 0;
-      owner->sendTermPtr=0;
-      return 0;
-   }
-   if( ! SoDispCon_isValid(con) )
-   {
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-      bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-      #endif
-      owner->sendTermPtr=0;
-      return E_SOCKET_WRITE_FAILED;
-   }
-   if (*enablelevel == rebootnotifier)
-   {
-      *enablelevel = s->outBuf.dataLen = 0;
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE && SHARKSSL_ENABLE_AES_GCM)
-      handlersetup=SharkSslCon_proactiveKeyUpdate(s);
-      if(handlersetup < 0)
-      {
-         bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-         owner->sendTermPtr=0;
-         return tsx09parse(con,SharkSslCon_Error);
-      }
-      owner->sendTermPtr=0;
-      if(handlersetup > 0)
-      {
-         handlersetup=coherentiommu(con,m,FALSE);
-         if(handlersetup <= 0)
-         {
-            return handlersetup;
-         }
-      }
-      #else
-      owner->sendTermPtr=0;
-      #endif
-      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-      bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-      #endif
-      return 1; 
+      return 1;
    }
 
-   owner->sendTermPtr=0;
-   return 0; 
+   if (BA_SHARKSSL_ASYNCH_APPLICATION == bs->asynchState)
+   {
+      if (bs->txOffset > bs->txLen)
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      sendLen=bs->txLen-bs->txOffset;
+      con->sendTermPtr=&queueevent;
+      HttpSocket_send(&con->httpSocket,m,&queueevent,(const char*)(SharkSslCon_getEncData(s)+bs->txOffset),sendLen,&len);
+      if (queueevent)
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      owner=BaSharkSslCon_getOwner(bs);
+      if (!owner)
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      owner->sendTermPtr=0;
+      if ((len < 0) || (len > sendLen))
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      bs->txOffset+=(U16)len;
+      if (bs->txOffset == bs->txLen)
+      {
+         bs->txLen=bs->txOffset=0;
+         bs->asynchState=BA_SHARKSSL_ASYNCH_KEYUPDATE;
+      }
+      if (owner != con)
+      {
+         return 0;
+      }
+      if (!SoDispCon_isValid(con))
+      {
+         return E_SOCKET_WRITE_FAILED;
+      }
+      if (BA_SHARKSSL_ASYNCH_APPLICATION == bs->asynchState)
+      {
+         return 0;
+      }
+   }
+
+   if (BA_SHARKSSL_ASYNCH_KEYUPDATE == bs->asynchState)
+   {
+      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE && SHARKSSL_ENABLE_AES_GCM)
+      handlersetup=SharkSslCon_proactiveKeyUpdate(s);
+      if (handlersetup < 0)
+      {
+         return tsx09parse(con,SharkSslCon_Error);
+      }
+      if (handlersetup > 0)
+      {
+         bs->handshakePending=TRUE;
+         bs->asynchState=BA_SHARKSSL_ASYNCH_HANDSHAKE;
+      }
+      else
+      #endif
+      {
+         bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
+         return 1;
+      }
+   }
+
+   handlersetup=coherentiommu(con,m,FALSE);
+   if (handlersetup <= 0)
+   {
+      return handlersetup;
+   }
+   bs->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
+   return 1;
 }
 
 
@@ -100850,6 +101148,7 @@ static int
 registersubpacket(
    SoDispCon* con,ThreadMutex* m,SoDispCon_ExType s,void* alloccontroller,int len)
 {
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
    if( ! con->sslData )
    {
       if(s == SoDispCon_GetSharkSslCon)
@@ -100889,27 +101188,19 @@ registersubpacket(
          }
          return handlerfixup(con, m, alloccontroller, len);
 
-      case SoDispCon_ExTypeIdle: 
-         
-         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-         ((BaSharkSslCon*)con->sslData)->asynchState=BA_SHARKSSL_ASYNCH_IDLE;
-         #endif
-         ((SharkSslCon*)con->sslData)->outBuf.temp =
-            ((SharkSslCon*)con->sslData)->outBuf.dataLen = 0;
+      case SoDispCon_ExTypeIdle:
          return FALSE; 
 
       case SoDispCon_GetSharkSslCon:
          if(alloccontroller)
          {
-            *((SharkSslCon**)alloccontroller) = (SharkSslCon*)con->sslData;
+            *((SharkSslCon**)alloccontroller) = bs->sslCon;
          }
          return TRUE;
 
       case SoDispCon_ExTypeClose:
       {
-         BaSharkSslCon* bs;
          baAssert(con->sslData);
-         bs=(BaSharkSslCon*)con->sslData;
          if( con->sendTermPtr )
          {
             *con->sendTermPtr=TRUE;
@@ -100921,23 +101212,24 @@ registersubpacket(
             con->recTermPtr=0;
          }
          con->sslData=0;
+         #if SHARKSSL_ENABLE_SESSION_CACHE
          if(bs->host)
          { 
             SharkSslSCMgr* scMgr =
-               (SharkSslSCMgr*)SharkSsl_getIntf(((SharkSslCon*)bs)->sharkSsl);
-            if(scMgr && SharkSslCon_isHandshakeComplete((SharkSslCon*)bs))
+               (SharkSslSCMgr*)SharkSsl_getIntf(bs->sharkSsl);
+            if(scMgr && SharkSslCon_isHandshakeComplete(bs->sslCon))
             {
                if( ! SharkSslSCMgr_get(
-                  scMgr, (SharkSslCon*)bs, bs->host, bs->port) )
+                  scMgr, bs->sslCon, bs->host, bs->port) )
                {
-                  SharkSslSCMgr_save(scMgr,(SharkSslCon*)bs,bs->host,bs->port);
+                  SharkSslSCMgr_save(scMgr,bs->sslCon,bs->host,bs->port);
                }
             }
             baFree(bs->host);
             bs->host=0;
          }
-         DoubleLink_destructor(&bs->link);
-         SharkSslCon_terminate((SharkSslCon*)bs);
+         #endif
+         _XzY0x204(bs);
          return 0;
       }
 
@@ -100954,24 +101246,17 @@ registersubpacket(
          return 0;
 
       case SoDispCon_ExTypeAllocAsynchBuf:
-         if(con->isSending || con->sendTermPtr || con->recTermPtr ||
-            SharkSslCon_getEncDataLen(con->sslData) ||
-            ((((SharkSslCon*)con->sslData)->flags &
-              createmappings) &&
-             ((SharkSslCon*)con->sslData)->inBuf.temp)
-            #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
-            || ((BaSharkSslCon*)con->sslData)->asynchState
-            #endif
-           )
+         if ((con->isSending) || (con->sendTermPtr) || (con->recTermPtr) ||
+             (bs->asynchState) || (bs->handshakePending) || (!SharkSslCon_isHandshakeComplete(bs->sslCon)))
          {
             ((AllocAsynchBufArgs*)alloccontroller)->retVal=0;
             ((AllocAsynchBufArgs*)alloccontroller)->size=0;
             return 0;
          }
          ((AllocAsynchBufArgs*)alloccontroller)->retVal =
-            SharkSslCon_getEncBufPtr(con->sslData);
+            SharkSslCon_getEncBufPtr(bs->sslCon);
          ((AllocAsynchBufArgs*)alloccontroller)->size =
-            (SharkSslCon_getEncBufSize(con->sslData));
+            (SharkSslCon_getEncBufSize(bs->sslCon));
          
          return 0;
 
@@ -100999,13 +101284,15 @@ erratumworkaround(HttpSharkSslServCon* o)
       HttpSocket_accept(&fdc37m81xconfig->httpSocket, &boardmanufacturer->httpSocket, &sffsdrnandflash);
       if( ! sffsdrnandflash )
       {
-         BaSharkSslCon* bs = (BaSharkSslCon*)baMalloc(sizeof(BaSharkSslCon));
+         BaSharkSslCon* bs=SharkSsl_createBaCon(o->sharkSsl);
          if (bs)
          {
-            memset(bs, 0, sizeof(BaSharkSslCon));
-            SharkSsl_createCon2(o->sharkSsl,(SharkSslCon*)bs);
-            if(o->favorRSA) SharkSslCon_favorRSA((SharkSslCon*)bs, TRUE);
-            DoubleLink_constructor(&bs->link);
+            #if SHARKSSL_SSL_SERVER_CODE
+         if (o->favorRSA)
+         {
+            SharkSslCon_favorRSA(bs->sslCon,TRUE);
+         }
+         #endif
             DoubleList_insertLast(&o->sharkSslConList, &bs->link);
             boardmanufacturer->sslData = bs;
             bs->con=boardmanufacturer;
@@ -101058,13 +101345,15 @@ L_tryAgain:
    HttpSocket_accept(&soCon->httpSocket, &newSoCon->httpSocket, &sffsdrnandflash);
    if( ! sffsdrnandflash )
    {
-      BaSharkSslCon* bs = (BaSharkSslCon*)baMalloc(sizeof(BaSharkSslCon));
+      BaSharkSslCon* bs=SharkSsl_createBaCon(o->sharkSsl);
       if (bs)
       {
-         memset(bs, 0, sizeof(BaSharkSslCon));
-         SharkSsl_createCon2(o->sharkSsl,(SharkSslCon*)bs);
-         if(o->favorRSA) SharkSslCon_favorRSA((SharkSslCon*)bs, TRUE);
-         DoubleLink_constructor(&bs->link);
+         #if SHARKSSL_SSL_SERVER_CODE
+         if (o->favorRSA)
+         {
+            SharkSslCon_favorRSA(bs->sslCon,TRUE);
+         }
+         #endif
          DoubleList_insertLast(&o->sharkSslConList, &bs->link);
          if(SoDispCon_isIP6(soCon))
             SoDispCon_setIP6(newSoCon);
@@ -101083,8 +101372,7 @@ L_tryAgain:
 #endif
          
          
-         DoubleLink_unlink(&bs->link);
-         SharkSsl_terminateCon(o->sharkSsl, (SharkSslCon*)bs);
+         _XzY0x204(bs);
       }
       HttpSocket_close(&newSoCon->httpSocket);
    }
@@ -101106,28 +101394,26 @@ HttpSharkSslServCon_bindExec(
 {
    int rsp;
    ThreadMutex* m=0;
+   BaSharkSslCon* bs=(BaSharkSslCon*)con->sslData;
    SharkSslCon* mmcsd0resources;
-   if(con->sslData)
-      mmcsd0resources = con->sslData;
-   else
+   if (!bs)
    {
-      baAssert(con->exec != registersubpacket );
-      
-      mmcsd0resources = (SharkSslCon*)baMalloc(sizeof(BaSharkSslCon));
-      if(!mmcsd0resources) return E_MALLOC;
-      
-      memset(mmcsd0resources, 0, sizeof(BaSharkSslCon));
-      SharkSsl_createCon2(ssl, mmcsd0resources);
-      DoubleLink_constructor(&((BaSharkSslCon*)mmcsd0resources)->link);
-      con->sslData = mmcsd0resources;
+      baAssert(con->exec != registersubpacket);
+      bs=SharkSsl_createBaCon(ssl);
+      if (!bs)
+      {
+         return E_MALLOC;
+      }
+      con->sslData=bs;
       con->exec=registersubpacket;
-      m = con->dispatcher ? SoDisp_getMutex(con->dispatcher) : 0;
+      m=con->dispatcher ? SoDisp_getMutex(con->dispatcher) : 0;
    }
-   ((BaSharkSslCon*)mmcsd0resources)->con=con;
+   mmcsd0resources=bs->sslCon;
+   bs->con=con;
 #if SHARKSSL_ENABLE_SESSION_CACHE
    if(writereg16)
    {
-      #if SHARKSSL_ENABLE_SNI
+      #if (SHARKSSL_ENABLE_SNI && SHARKSSL_SSL_CLIENT_CODE)
       U8 aLvl, aDsc;
       #endif
       SharkSslSCMgrNode* scn;
@@ -101142,12 +101428,16 @@ HttpSharkSslServCon_bindExec(
          SharkSsl_setIntf(ssl,(SharkSslIntf*)scMgr);
       }
       scn = SharkSslSCMgr_get(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert);
-#if SHARKSSL_ENABLE_SNI
+#if (SHARKSSL_ENABLE_SNI && SHARKSSL_SSL_CLIENT_CODE)
       SharkSslCon_setSNI(mmcsd0resources, writereg16, (U16)strlen(writereg16)); 
       _skipWarning112:
 #endif
-      if(disableswapping)
-         SharkSslCon_setALPNProtocols(mmcsd0resources, disableswapping);
+      #if (SHARKSSL_ENABLE_ALPN_EXTENSION && SHARKSSL_SSL_CLIENT_CODE)
+      if (disableswapping)
+      {
+         SharkSslCon_setALPNProtocols(mmcsd0resources,disableswapping);
+      }
+      #endif
       if( SoDispCon_isNonBlocking(con) )
       {
          do
@@ -101164,7 +101454,7 @@ HttpSharkSslServCon_bindExec(
             rsp=belowstart(con, m, 0, 0);
          } while( ! rsp && ! SharkSslCon_isHandshakeComplete(mmcsd0resources) );
       }
-#if SHARKSSL_ENABLE_SNI
+#if (SHARKSSL_ENABLE_SNI && SHARKSSL_SSL_CLIENT_CODE)
       
       if ((rsp == E_SHARK_ALERT_RECV) &&
           (0 == SoDispCon_getSharkAlert(con, &aLvl, &aDsc)) &&
@@ -101176,13 +101466,11 @@ HttpSharkSslServCon_bindExec(
 #endif
       if(SharkSslCon_isHandshakeComplete(mmcsd0resources))
       {
-         
-         mmcsd0resources->outBuf.temp=mmcsd0resources->outBuf.dataLen=0;
          if(!scn && SharkSslSCMgr_save(scMgr, mmcsd0resources, writereg16, (U16)hwmoddeassert))
          { 
-            ((BaSharkSslCon*)mmcsd0resources)->host = baMalloc(strlen(writereg16)+1);
-            strcpy(((BaSharkSslCon*)mmcsd0resources)->host, writereg16);
-            ((BaSharkSslCon*)mmcsd0resources)->port=(U16)hwmoddeassert;
+            bs->host = baMalloc(strlen(writereg16)+1);
+            strcpy(bs->host, writereg16);
+            bs->port=(U16)hwmoddeassert;
          }
          return 1;
       }
@@ -101207,7 +101495,6 @@ HttpSharkSslServCon_bindExec(
    }
    if(rsp == 0 && SharkSslCon_isHandshakeComplete(mmcsd0resources))
    {
-      mmcsd0resources->outBuf.temp=mmcsd0resources->outBuf.dataLen=0;
       return 1;
    }
    return rsp;
@@ -101224,8 +101511,16 @@ HttpSharkSslServCon_constructor(HttpSharkSslServCon* o,
                                 const void* sanitiseouter,
                                 HttpServCon_AcceptNewCon emulateeffective)
 {
+#if (!SHARKSSL_SSL_SERVER_CODE)
+   return;
+#else
+#if (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_NOPACK)
    baAssert(resetcounters->role == SharkSsl_Server);
-   if(resetcounters->role != SharkSsl_Server) return;
+   if (resetcounters->role != SharkSsl_Server)
+   {
+      return;
+   }
+#endif
 #ifdef NO_BA_SERVER
    if(!emulateeffective) baFatalE(FE_INCORRECT_USE,0);
    HttpConnection_constructor((HttpConnection*)o,uarchbuild,sha256start,
@@ -101249,6 +101544,7 @@ HttpSharkSslServCon_constructor(HttpSharkSslServCon* o,
    }
    SoDisp_addConnection(sha256start, (SoDispCon*)o);
    SoDisp_activateRec(sha256start, (SoDispCon*)o);
+#endif
 }
 
 
@@ -101333,24 +101629,30 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
          if ((o->rCtx) && (op & populatebasepages))
          {
             #if SHARKSSL_PSA_CONSUMER
-            (void)psa_destroy_key(*(psa_key_id_t*)o->rCtx);
+            psa_status_t sffsdrnandflash = psa_destroy_key(*(psa_key_id_t*)o->rCtx);
             sharkssl_clear(o->rCtx, sizeof(psa_key_id_t));
             #else
             SharkSslAesGcmCtx_destructor((SharkSslAesGcmCtx*)selectaudio(o->rCtx));
-            #endif
             baFree(o->rCtx);
+            #endif
             o->rCtx = 0;
+            #if SHARKSSL_PSA_CONSUMER
+            return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
+            #endif
          }
          else if ((o->wCtx) && (op & ptraceregsets))
          {
             #if SHARKSSL_PSA_CONSUMER
-            (void)psa_destroy_key(*(psa_key_id_t*)o->wCtx);
+            psa_status_t sffsdrnandflash = psa_destroy_key(*(psa_key_id_t*)o->wCtx);
             sharkssl_clear(o->wCtx, sizeof(psa_key_id_t));
             #else
             SharkSslAesGcmCtx_destructor((SharkSslAesGcmCtx*)selectaudio(o->wCtx));
-            #endif
             baFree(o->wCtx);
+            #endif
             o->wCtx = 0;
+            #if SHARKSSL_PSA_CONSUMER
+            return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
+            #endif
          }
          return 0;
       }
@@ -101359,28 +101661,9 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
       {
          baAssert(!registermcasp);
          #if SHARKSSL_PSA_CONSUMER
-         psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
-         psa_status_t sffsdrnandflash;
-         U8 *sourcerouting = (op & populatebasepages) ? o->rKey : o->wKey;
-         U8 creategroup = (op & populatebasepages) ? o->rCipherSuite->keyLen : o->wCipherSuite->keyLen;
-         registermcasp = (psa_key_id_t*)baMalloc(sizeof(psa_key_id_t));
-         if (!registermcasp)
+         registermcasp = (op & populatebasepages) ? &o->psaRRecordKey : &o->psaWRecordKey;
+         if (!*registermcasp)
          {
-            return -1;
-         }
-         sffsdrnandflash = psa_crypto_init();
-         if (PSA_SUCCESS == sffsdrnandflash)
-         {
-            psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
-            psa_set_key_bits(&attr, (size_t)creategroup * 8u);
-            psa_set_key_usage_flags(&attr, (op & populatebasepages) ? PSA_KEY_USAGE_DECRYPT : PSA_KEY_USAGE_ENCRYPT);
-            psa_set_key_algorithm(&attr, PSA_ALG_GCM);
-            sffsdrnandflash = psa_import_key(&attr, sourcerouting, creategroup, registermcasp);
-         }
-         psa_reset_key_attributes(&attr);
-         if (PSA_SUCCESS != sffsdrnandflash)
-         {
-            baFree(registermcasp);
             return -1;
          }
          if (op & populatebasepages)
@@ -101431,7 +101714,7 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
          #if SHARKSSL_PSA_CONSUMER
          ret = (int)psa_aead_decrypt(*registermcasp, PSA_ALG_GCM, o->rIV, SHARKSSL_TLS_1_3_STATIC_IV_LEN,
                                      stackchecker - clkctrlmanaged, clkctrlmanaged,
-                                     stackchecker, (size_t)len + 16u, stackchecker, len, &psaLen);
+                                     stackchecker, (size_t)len + 16, stackchecker, len, &psaLen);
          if ((PSA_SUCCESS != ret) || (psaLen != len))
          {
             sharkssl_clear(stackchecker, len);
@@ -101484,8 +101767,8 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
       #if SHARKSSL_PSA_CONSUMER
       ret = (int)psa_aead_encrypt(*registermcasp, PSA_ALG_GCM, o->wIV, SHARKSSL_TLS_1_3_STATIC_IV_LEN,
                                   stackchecker - clkctrlmanaged, clkctrlmanaged,
-                                  stackchecker, len, stackchecker, (size_t)len + 16u, &psaLen);
-      ret = ((PSA_SUCCESS == ret) && (psaLen == (size_t)len + 16u)) ? 0 : -1;
+                                  stackchecker, len, stackchecker, (size_t)len + 16, &psaLen);
+      ret = ((PSA_SUCCESS == ret) && (psaLen == (size_t)len + 16)) ? 0 : -1;
       #else
       ret = SharkSslAesGcmCtx_encrypt((SharkSslAesGcmCtx*)selectaudio(registermcasp), o->wIV, &stackchecker[len], stackchecker - clkctrlmanaged, clkctrlmanaged, stackchecker, stackchecker, len);
       #endif
@@ -101512,10 +101795,32 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
          
          *(U32*)&branchtarget[-8] = *(U32*)&o->rSeqNum[0];
          *(U32*)&branchtarget[-4] = *(U32*)&o->rSeqNum[4];
+         #if SHARKSSL_PSA_CONSUMER
+         if ((psa_aead_decrypt(*registermcasp, PSA_ALG_GCM, o->rIV, SHARKSSL_TLS_AEAD_NONCE_LEN,
+                               branchtarget - SHARKSSL_SEQ_NUM_LEN, SHARKSSL_SEQ_NUM_LEN + clkctrlmanaged,
+                               stackchecker, (size_t)len + 16, stackchecker, len, &psaLen) != PSA_SUCCESS) || (psaLen != len))
+         {
+            sharkssl_clear(stackchecker, len);
+            return -1;
+         }
+         return 0;
+         #else
          return SharkSslAesGcmCtx_decrypt((SharkSslAesGcmCtx*)selectaudio(registermcasp), o->rIV, &stackchecker[len], branchtarget - SHARKSSL_AES_GCM_EXPLICIT_IV_LEN, SHARKSSL_AES_GCM_EXPLICIT_IV_LEN + clkctrlmanaged, stackchecker, stackchecker, len);
+         #endif
       }
 
+      #if SHARKSSL_PSA_CONSUMER
+      {
+         U8 aad[SHARKSSL_SEQ_NUM_LEN + clkctrlmanaged];
+         memcpy(aad, &o->wIV[4], SHARKSSL_SEQ_NUM_LEN);
+         memcpy(aad + SHARKSSL_SEQ_NUM_LEN, stackchecker - clkctrlmanaged, clkctrlmanaged);
+         return ((psa_aead_encrypt(*registermcasp, PSA_ALG_GCM, o->wIV, SHARKSSL_TLS_AEAD_NONCE_LEN,
+                                   aad, sizeof(aad), stackchecker, len, stackchecker, (size_t)len + 16, &psaLen) == PSA_SUCCESS) &&
+                 (psaLen == (size_t)len + 16)) ? 0 : -1;
+      }
+      #else
       return SharkSslAesGcmCtx_encrypt((SharkSslAesGcmCtx*)selectaudio(registermcasp), o->wIV, &stackchecker[len], stackchecker - (SHARKSSL_AES_GCM_EXPLICIT_IV_LEN + clkctrlmanaged), SHARKSSL_AES_GCM_EXPLICIT_IV_LEN + clkctrlmanaged, stackchecker, stackchecker, len);
+      #endif
    }
    #endif
 }
@@ -101526,14 +101831,14 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
 int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
 {
    #if SHARKSSL_PSA_CONSUMER
-   U8 broadcastenter[SHARKSSL_TLS_1_3_STATIC_IV_LEN];
+   U8 broadcastenter[SHARKSSL_TLS_AEAD_NONCE_LEN];
    psa_key_id_t *registermcasp;
    size_t psaLen;
    int ret;
    U8 i;
 
    baAssert(o);
-   baAssert(o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3));
+   baAssert(o->minor >= 2);
 
    registermcasp = (psa_key_id_t*)((op & populatebasepages) ? o->rCtx : o->wCtx);
    if (op & bcm1x80bcm1x55)
@@ -101542,9 +101847,8 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
       {
          if (registermcasp)
          {
-            (void)psa_destroy_key(*registermcasp);
+            psa_status_t sffsdrnandflash = psa_destroy_key(*registermcasp);
             sharkssl_clear(registermcasp, sizeof(*registermcasp));
-            baFree(registermcasp);
             if (op & populatebasepages)
             {
                o->rCtx = 0;
@@ -101553,33 +101857,16 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
             {
                o->wCtx = 0;
             }
+            return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
          }
          return 0;
       }
       else
       {
-         psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
-         psa_status_t sffsdrnandflash;
-
          baAssert(!registermcasp);
-         registermcasp = (psa_key_id_t*)baMalloc(sizeof(*registermcasp));
-         if (!registermcasp)
+         registermcasp = (op & populatebasepages) ? &o->psaRRecordKey : &o->psaWRecordKey;
+         if (!*registermcasp)
          {
-            return -1;
-         }
-         sffsdrnandflash = psa_crypto_init();
-         if (PSA_SUCCESS == sffsdrnandflash)
-         {
-            psa_set_key_type(&attr, PSA_KEY_TYPE_CHACHA20);
-            psa_set_key_bits(&attr, 256);
-            psa_set_key_usage_flags(&attr, (op & populatebasepages) ? PSA_KEY_USAGE_DECRYPT : PSA_KEY_USAGE_ENCRYPT);
-            psa_set_key_algorithm(&attr, PSA_ALG_CHACHA20_POLY1305);
-            sffsdrnandflash = psa_import_key(&attr, (op & populatebasepages) ? o->rKey : o->wKey, 32, registermcasp);
-         }
-         psa_reset_key_attributes(&attr);
-         if (PSA_SUCCESS != sffsdrnandflash)
-         {
-            baFree(registermcasp);
             return -1;
          }
          if (op & populatebasepages)
@@ -101603,6 +101890,35 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
    {
       broadcastenter[sizeof(broadcastenter) - SHARKSSL_SEQ_NUM_LEN + i] ^= (op & populatebasepages) ? o->rSeqNum[i] : o->wSeqNum[i];
    }
+   #if SHARKSSL_TLS_1_2
+   if (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2))
+   {
+      U8 aad[SHARKSSL_SEQ_NUM_LEN + clkctrlmanaged];
+      memcpy(aad, (op & populatebasepages) ? o->rSeqNum : o->wSeqNum, SHARKSSL_SEQ_NUM_LEN);
+      memcpy(aad + SHARKSSL_SEQ_NUM_LEN, stackchecker - clkctrlmanaged, clkctrlmanaged);
+      if (op & populatebasepages)
+      {
+         if (len < 16)
+         {
+            return -1;
+         }
+         len -= 16;
+         aad[sizeof(aad) - 2] = (U8)(len >> 8);
+         aad[sizeof(aad) - 1] = (U8)len;
+         ret = (int)psa_aead_decrypt(*registermcasp, PSA_ALG_CHACHA20_POLY1305, broadcastenter, sizeof(broadcastenter),
+                                     aad, sizeof(aad), stackchecker, (size_t)len + 16, stackchecker, len, &psaLen);
+         if ((ret != PSA_SUCCESS) || (psaLen != len))
+         {
+            sharkssl_clear(stackchecker, len);
+            return -1;
+         }
+         return 0;
+      }
+      ret = (int)psa_aead_encrypt(*registermcasp, PSA_ALG_CHACHA20_POLY1305, broadcastenter, sizeof(broadcastenter),
+                                  aad, sizeof(aad), stackchecker, len, stackchecker, (size_t)len + 16, &psaLen);
+      return ((ret == PSA_SUCCESS) && (psaLen == (size_t)len + 16)) ? 0 : -1;
+   }
+   #endif
    if (op & populatebasepages)
    {
       if (len < 16)
@@ -101612,7 +101928,7 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
       len -= 16;
       ret = (int)psa_aead_decrypt(*registermcasp, PSA_ALG_CHACHA20_POLY1305, broadcastenter, sizeof(broadcastenter),
                                   stackchecker - clkctrlmanaged, clkctrlmanaged,
-                                  stackchecker, (size_t)len + 16u, stackchecker, len, &psaLen);
+                                  stackchecker, (size_t)len + 16, stackchecker, len, &psaLen);
       if ((PSA_SUCCESS != ret) || (psaLen != len))
       {
          sharkssl_clear(stackchecker, len);
@@ -101648,8 +101964,8 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
    templateentry(o, polledbutton, stackchecker - clkctrlmanaged, len + 16);
    ret = (int)psa_aead_encrypt(*registermcasp, PSA_ALG_CHACHA20_POLY1305, broadcastenter, sizeof(broadcastenter),
                                stackchecker - clkctrlmanaged, clkctrlmanaged,
-                               stackchecker, len, stackchecker, (size_t)len + 16u, &psaLen);
-   return ((PSA_SUCCESS == ret) && (psaLen == (size_t)len + 16u)) ? 0 : -1;
+                               stackchecker, len, stackchecker, (size_t)len + 16, &psaLen);
+   return ((PSA_SUCCESS == ret) && (psaLen == (size_t)len + 16)) ? 0 : -1;
    #else
    SharkSslPoly1305Ctx timer8hwmod;
    SharkSslChaChaCtx  *registermcasp;
@@ -101902,16 +102218,65 @@ void counter1clocksource(SharkSslSessionCache *commoncontiguous, U16 detectbootw
 }
 
 
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2)
+static int _XzY0x207(SharkSslSession *o)
+{
+   if (!o->cipherSuite)
+   {
+      return 0;
+   }
+   #if SHARKSSL_TLS_1_3
+   if (!SharkSslSession_isProtocol(o, SHARKSSL_PROTOCOL_TLS_1_2))
+   {
+      return 0;
+   }
+   #endif
+   if (o->prot.tls12.masterKey != PSA_KEY_ID_NULL)
+   {
+      psa_status_t sffsdrnandflash = psa_destroy_key(o->prot.tls12.masterKey);
+      o->prot.tls12.masterKey = PSA_KEY_ID_NULL;
+      return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
+   }
+   return 0;
+}
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER_SECRET_HANDLES && SHARKSSL_TLS_1_3)
+static int _XzY0x208(SharkSslSession *o)
+{
+   if ((!o->cipherSuite) || (!SharkSslSession_isProtocol(o, SHARKSSL_PROTOCOL_TLS_1_3)))
+   {
+      return 0;
+   }
+   if (o->prot.tls13.PSK != PSA_KEY_ID_NULL)
+   {
+      psa_status_t sffsdrnandflash = psa_destroy_key(o->prot.tls13.PSK);
+      o->prot.tls13.PSK = PSA_KEY_ID_NULL;
+      return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
+   }
+   return 0;
+}
+#endif
+
+
 void defaultsdhci0(SharkSslSessionCache *commoncontiguous)
 {
    baAssert(commoncontiguous);
    if (commoncontiguous->cacheSize != 0)
    {
-      #if (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH))
+      #if ((SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH)) || (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2) || SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
       U32 uart2hwmod;
       SharkSslSession *func2fixup = (SharkSslSession*)selectaudio(commoncontiguous->cache);
       for (uart2hwmod = commoncontiguous->cacheSize; uart2hwmod > 0; uart2hwmod--, func2fixup++)
       {
+         #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2)
+         (void)_XzY0x207(func2fixup);
+         #endif
+         #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         (void)_XzY0x208(func2fixup);
+         #endif
+         #if (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH))
          SHARKDBG_PRINTF(("\106\162\145\145\151\156\147\040\163\145\163\163\151\157\156\040\045\160\057\163\145\163\163\151\157\156\055\076\143\154\157\156\145\144\103\145\162\164\111\156\146\157\040\045\160\054\040\045\163\072\040\045\144\040\050\045\163\051\012", (void*)func2fixup, (void*)func2fixup->clonedCertInfo, __FILE__, __LINE__, "\123\150\141\162\153\123\163\154\123\145\163\163\151\157\156\103\141\143\150\145\137\144\145\163\164\162\165\143\164\157\162"));
          if (func2fixup->clonedCertInfo)
          {
@@ -101944,8 +102309,9 @@ void defaultsdhci0(SharkSslSessionCache *commoncontiguous)
             baFree((void*)func2fixup->prot.tls13.role.client.ticket);
          }
          #endif
+         #endif
       }
-      #endif  
+      #endif
       sharkssl_clear(selectaudio(commoncontiguous->cache), (U32)commoncontiguous->cacheSize * (U32)sizeof(SharkSslSession));
       baFree(commoncontiguous->cache);
    }
@@ -102038,6 +102404,22 @@ SharkSslSession *sa1111device(SharkSslSessionCache *commoncontiguous,
                   swizzleinterrupt(func2fixup->clonedCertInfo);
                }
                func2fixup->clonedCertInfo = (SharkSslClonedCertInfo*)0;
+            }
+            #endif
+            #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2)
+            if (_XzY0x207(func2fixup))
+            {
+               sharkssl_clear(func2fixup, sizeof(*func2fixup));
+               helperglobal(commoncontiguous);
+               return 0;
+            }
+            #endif
+            #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+            if (_XzY0x208(func2fixup))
+            {
+               sharkssl_clear(func2fixup, sizeof(*func2fixup));
+               helperglobal(commoncontiguous);
+               return 0;
             }
             #endif
             sharkssl_clear(func2fixup, sizeof(*func2fixup));
@@ -102239,6 +102621,12 @@ static int decodethumb16(SharkSslSession *func2fixup, SharkSslCon *o, U8 *id, U1
    }
    #endif
 
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (func2fixup->prot.tls13.PSK == PSA_KEY_ID_NULL)
+   {
+      return 0;
+   }
+   #endif
    return ((validbugaddr) && (ckctlvalue == setupinterface) && (0 == sharkssl_kmemcmp(validbugaddr, id, setupinterface)) && ((U32)(now - func2fixup->firstAccess) < computevalue));
 }
 #endif  
@@ -102940,14 +103328,39 @@ int SharkSslCon_destroyPSAECDHKey(SharkSslCon *o)
    baAssert(o);
    if (o->psaECDHKey)
    {
-      if (PSA_SUCCESS != psa_destroy_key(o->psaECDHKey))
-      {
-         return -1;
-      }
+      
+      psa_status_t sffsdrnandflash = psa_destroy_key(o->psaECDHKey);
       o->psaECDHKey = 0;
+      return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
    }
    return 0;
 }
+
+
+#if SHARKSSL_TLS_1_2
+static void _XzY0x206(SharkSslCon *o)
+{
+   SharkSslHSParam *hs;
+
+   if ((o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)) ||
+       (microresources(&o->outBuf)) ||
+       (SharkSslBuf_available(&o->outBuf, (U8*)hsParam(o)) < sizeof(SharkSslHSParam)))
+   {
+      return;
+   }
+   hs = hsParam(o);
+   if (hs->prot.tls12.nextRRecordKey != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(hs->prot.tls12.nextRRecordKey);
+      hs->prot.tls12.nextRRecordKey = PSA_KEY_ID_NULL;
+   }
+   if (hs->prot.tls12.nextWRecordKey != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(hs->prot.tls12.nextWRecordKey);
+      hs->prot.tls12.nextWRecordKey = PSA_KEY_ID_NULL;
+   }
+}
+#endif
 #endif
 
 
@@ -103028,8 +103441,42 @@ void SharkSslCon_clearHRRServerPSK(SharkSslCon *o)
 void localenable(SharkSslCon *o)
 {
    baAssert(o);
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   SharkSslCon_destroyTLS13HSKeys(o);
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->psaEarlySecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaEarlySecret);
+   }
+   #endif
+   if (o->psaMasterSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaMasterSecret);
+   }
+   if (o->psaRAppTrafficSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaRAppTrafficSecret);
+   }
+   if (o->psaWAppTrafficSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaWAppTrafficSecret);
+   }
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->psaResumptionMasterSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaResumptionMasterSecret);
+   }
+   #endif
+   #endif
    #if SHARKSSL_PSA_CONSUMER
    (void)SharkSslCon_destroyPSAECDHKey(o);
+   #if SHARKSSL_TLS_1_2
+   _XzY0x206(o);
+   if ((o->psaTLS12OwnMasterKey) && (o->psaTLS12MasterKey))
+   {
+      (void)psa_destroy_key(o->psaTLS12MasterKey);
+   }
+   #endif
    (void)psa_hash_abort(&o->psaTranscript);
    #if SHARKSSL_USE_SHA_384
    (void)psa_hash_abort(&o->psaTranscript384);
@@ -103106,10 +103553,77 @@ static int buttonsdevice(SharkSslCon *o)
 #endif
 
 
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+int SharkSslCon_destroyTLS13HSKeys(SharkSslCon *o)
+{
+   SharkSslHSParam *hs;
+   int sha512final = 0;
+
+   if (!o->psaTLS13HSKeysActive)
+   {
+      return 0;
+   }
+   #if SHARKSSL_TLS_1_2
+   if (o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3))
+   {
+      return -1;
+   }
+   #endif
+   if (microresources(&o->outBuf) || (SharkSslBuf_available(&o->outBuf, (U8*)hsParam(o)) < sizeof(SharkSslHSParam)))
+   {
+      return -1;
+   }
+   hs = hsParam(o);
+   if (hs->prot.tls13.psaHSSecret != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(hs->prot.tls13.psaHSSecret) != PSA_SUCCESS)
+      {
+         sha512final = -1;
+      }
+      hs->prot.tls13.psaHSSecret = PSA_KEY_ID_NULL;
+   }
+   if (hs->prot.tls13.psaSrvHSTraffic != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(hs->prot.tls13.psaSrvHSTraffic) != PSA_SUCCESS)
+      {
+         sha512final = -1;
+      }
+      hs->prot.tls13.psaSrvHSTraffic = PSA_KEY_ID_NULL;
+   }
+   if (hs->prot.tls13.psaCliHSTraffic != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(hs->prot.tls13.psaCliHSTraffic) != PSA_SUCCESS)
+      {
+         sha512final = -1;
+      }
+      hs->prot.tls13.psaCliHSTraffic = PSA_KEY_ID_NULL;
+   }
+   o->psaTLS13HSKeysActive = 0;
+   return sha512final;
+}
+#endif
+
+
 static void _XzY0x17D(SharkSslCon *o)
 {
+   #if (SHARKSSL_PSA_CONSUMER_SECRET_HANDLES && SHARKSSL_ENABLE_SESSION_CACHE)
+   if (o->psaEarlySecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaEarlySecret);
+      o->psaEarlySecret = PSA_KEY_ID_NULL;
+   }
+   #endif
    #if SHARKSSL_PSA_CONSUMER
    (void)SharkSslCon_destroyPSAECDHKey(o);
+   #if SHARKSSL_TLS_1_2
+   _XzY0x206(o);
+   if ((o->psaTLS12OwnMasterKey) && (o->psaTLS12MasterKey))
+   {
+      (void)psa_destroy_key(o->psaTLS12MasterKey);
+   }
+   o->psaTLS12MasterKey = PSA_KEY_ID_NULL;
+   o->psaTLS12OwnMasterKey = 0;
+   #endif
    (void)psa_hash_abort(&o->psaTranscript);
    #if SHARKSSL_USE_SHA_384
    (void)psa_hash_abort(&o->psaTranscript384);
@@ -103129,6 +103643,9 @@ static void _XzY0x17D(SharkSslCon *o)
    }
    if (SharkSslBuf_available(&o->outBuf, (U8*)hsParam(o)) >= sizeof(SharkSslHSParam))
    {
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      (void)SharkSslCon_destroyTLS13HSKeys(o);
+      #endif
       sharkssl_clear(hsParam(o), sizeof(SharkSslHSParam));
    }
 }
@@ -104272,12 +104789,13 @@ SharkSslCon_RetVal SharkSslCon_decrypt(SharkSslCon *o, U16 pmattrstore)
 
 
 #if SHARKSSL_TLS_1_3
+#if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
 
 static int _XzY0x1F3(U8 *softresetcomplete, U16 singleftoui, U8 *spi4000check,
                                  U16 _XzY0x1EC, U8 *out, U8 configwrite)
 {
    #if SHARKSSL_PSA_CONSUMER
-   psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
    psa_algorithm_t algorithm;
    psa_status_t sffsdrnandflash;
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
@@ -104291,20 +104809,20 @@ static int _XzY0x1F3(U8 *softresetcomplete, U16 singleftoui, U8 *spi4000check,
       return -1;
    }
    algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-   sffsdrnandflash = psa_key_derivation_setup(&operation, PSA_ALG_HKDF_EXTRACT(algorithm));
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(algorithm));
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_SALT, softresetcomplete, singleftoui);
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, softresetcomplete, singleftoui);
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_input_bytes(&operation, PSA_KEY_DERIVATION_INPUT_SECRET, spi4000check, _XzY0x1EC);
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, spi4000check, _XzY0x1EC);
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_output_bytes(&operation, out, ftraceupdate);
+      sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, out, ftraceupdate);
    }
-   if (psa_key_derivation_abort(&operation) != PSA_SUCCESS)
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
    {
       sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
    }
@@ -104399,7 +104917,7 @@ static int bgezllabel(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *
 
    #if SHARKSSL_PSA_CONSUMER
    {
-      psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
+      psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
       psa_algorithm_t algorithm;
       psa_status_t psaStatus;
 
@@ -104408,24 +104926,24 @@ static int bgezllabel(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *
          goto _sharkssl_HKDF_cleanup;
       }
       algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-      psaStatus = psa_key_derivation_setup(&operation,
+      psaStatus = psa_key_derivation_setup(&_XzY0x219,
                      PSA_ALG_HKDF_EXPAND(algorithm));
       if (psaStatus == PSA_SUCCESS)
       {
-         psaStatus = psa_key_derivation_input_bytes(&operation,
+         psaStatus = psa_key_derivation_input_bytes(&_XzY0x219,
                         PSA_KEY_DERIVATION_INPUT_SECRET, spi4000check, ftraceupdate);
       }
       if (psaStatus == PSA_SUCCESS)
       {
-         psaStatus = psa_key_derivation_input_bytes(&operation,
+         psaStatus = psa_key_derivation_input_bytes(&_XzY0x219,
                         PSA_KEY_DERIVATION_INPUT_INFO,
                         &memblocksteal[SHARKSSL_MAX_HASH_LEN], _XzY0x1BC - 1);
       }
       if (psaStatus == PSA_SUCCESS)
       {
-         psaStatus = psa_key_derivation_output_bytes(&operation, out, cachemumbojumbo);
+         psaStatus = psa_key_derivation_output_bytes(&_XzY0x219, out, cachemumbojumbo);
       }
-      if (psa_key_derivation_abort(&operation) != PSA_SUCCESS)
+      if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
       {
          psaStatus = PSA_ERROR_GENERIC_ERROR;
       }
@@ -104474,26 +104992,691 @@ static int bgezllabel(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *
    #endif
    return sffsdrnandflash;
 }
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+typedef enum
+{
+   SHARKSSL_PSA_KEY_DERIVE_EXPAND,
+   SHARKSSL_PSA_KEY_DERIVE_EXTRACT,
+   SHARKSSL_PSA_KEY_RAW_EXTRACT,
+   SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT,
+   SHARKSSL_PSA_KEY_HMAC_SIGN
+} SharkSslPsaLabelKeyPolicy;
+
+
+static psa_status_t _XzY0x22C(psa_key_derivation_operation_t *_XzY0x219,
+                                                 psa_key_id_t spi4000check, const char *clkdmoperations,
+                                                 const U8 *context, U8 ptrauthdisable,
+                                                 U16 cachemumbojumbo, U8 configwrite)
+{
+   U8 memblocksteal[2 + 1 + 6 + 12 + 1 + 255];
+   psa_algorithm_t hashAlg;
+   psa_status_t sffsdrnandflash;
+   size_t auxdatalookup;
+   size_t infoLen;
+
+   if ((!spi4000check) || (!clkdmoperations) || ((ptrauthdisable != 0) && (!context)) || ((configwrite != SHARKSSL_HASHID_SHA256) && (configwrite != SHARKSSL_HASHID_SHA384)))
+   {
+      return PSA_ERROR_INVALID_ARGUMENT;
+   }
+   auxdatalookup = strlen(clkdmoperations);
+   if (auxdatalookup > 12)
+   {
+      return PSA_ERROR_INVALID_ARGUMENT;
+   }
+   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   memblocksteal[0] = (U8)(cachemumbojumbo >> 8);
+   memblocksteal[1] = (U8)cachemumbojumbo;
+   memblocksteal[2] = (U8)(auxdatalookup + 6);
+   memcpy(memblocksteal + 3, "\164\154\163\061\063\040", 6);
+   memcpy(memblocksteal + 9, clkdmoperations, auxdatalookup);
+   memblocksteal[9 + auxdatalookup] = ptrauthdisable;
+   if (ptrauthdisable)
+   {
+      memcpy(memblocksteal + 10 + auxdatalookup, context, ptrauthdisable);
+   }
+   infoLen = 10 + auxdatalookup + ptrauthdisable;
+   sffsdrnandflash = psa_key_derivation_setup(_XzY0x219, PSA_ALG_HKDF_EXPAND(hashAlg));
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, spi4000check);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(_XzY0x219, PSA_KEY_DERIVATION_INPUT_INFO, memblocksteal, infoLen);
+   }
+   sharkssl_clear(memblocksteal, sizeof(memblocksteal));
+   return sffsdrnandflash;
+}
+
+
+static int _XzY0x228(psa_key_id_t spi4000check, const char *clkdmoperations,
+                                        const U8 *context, U8 ptrauthdisable,
+                                        U8 *out, U16 cachemumbojumbo, U8 configwrite)
+{
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_status_t sffsdrnandflash;
+
+   if (!out)
+   {
+      return -1;
+   }
+   sffsdrnandflash = _XzY0x22C(&_XzY0x219, spi4000check, clkdmoperations, context, ptrauthdisable, cachemumbojumbo, configwrite);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, out, cachemumbojumbo);
+   }
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      sharkssl_clear(out, cachemumbojumbo);
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x229(psa_key_id_t spi4000check, const char *clkdmoperations,
+                                      const U8 *context, U8 ptrauthdisable, U8 configwrite,
+                                      SharkSslPsaLabelKeyPolicy _XzY0x21D, psa_key_id_t *_XzY0x21A)
+{
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_algorithm_t hashAlg;
+   psa_status_t sffsdrnandflash;
+   U16 ftraceupdate = sharkssl_getHashLen(configwrite);
+
+   if ((!_XzY0x21A) || (*_XzY0x21A != PSA_KEY_ID_NULL))
+   {
+      return -1;
+   }
+   sffsdrnandflash = _XzY0x22C(&_XzY0x219, spi4000check, clkdmoperations, context, ptrauthdisable, ftraceupdate, configwrite);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+      psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+      switch (_XzY0x21D)
+      {
+         case SHARKSSL_PSA_KEY_DERIVE_EXPAND:
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+            break;
+         case SHARKSSL_PSA_KEY_DERIVE_EXTRACT:
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+            break;
+         case SHARKSSL_PSA_KEY_RAW_EXTRACT:
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_RAW_DATA);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+            break;
+         case SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT:
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_RAW_DATA);
+            psa_set_key_algorithm(&attributes,
+               PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+            break;
+         case SHARKSSL_PSA_KEY_HMAC_SIGN:
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(hashAlg));
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
+            break;
+         default:
+            sffsdrnandflash = PSA_ERROR_INVALID_ARGUMENT;
+            break;
+      }
+      if (sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, _XzY0x21A);
+      }
+   }
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   psa_reset_key_attributes(&attributes);
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (*_XzY0x21A != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*_XzY0x21A);
+         *_XzY0x21A = PSA_KEY_ID_NULL;
+      }
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x22B(psa_key_id_t _XzY0x221, U8 configwrite,
+                                     psa_key_id_t *_XzY0x215)
+{
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_id_t zeroKey = PSA_KEY_ID_NULL;
+   U8 _XzY0x257[SHARKSSL_MAX_HASH_LEN] = {0};
+   U16 ftraceupdate = sharkssl_getHashLen(configwrite);
+   psa_algorithm_t hashAlg;
+   psa_status_t sffsdrnandflash;
+
+   if ((!_XzY0x215) || (*_XzY0x215 != PSA_KEY_ID_NULL) || (!_XzY0x221) ||
+       (!ftraceupdate) || (ftraceupdate > sizeof(_XzY0x257)) ||
+       ((configwrite != SHARKSSL_HASHID_SHA256) && (configwrite != SHARKSSL_HASHID_SHA384)))
+   {
+      return -1;
+   }
+   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+   psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+   psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+   psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+   sffsdrnandflash = psa_import_key(&attributes, _XzY0x257, ftraceupdate, &zeroKey);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(hashAlg));
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, _XzY0x221);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, zeroKey);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, _XzY0x215);
+   }
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   if ((zeroKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroKey) != PSA_SUCCESS))
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   psa_reset_key_attributes(&attributes);
+   sharkssl_clear(_XzY0x257, sizeof(_XzY0x257));
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (*_XzY0x215 != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*_XzY0x215);
+         *_XzY0x215 = PSA_KEY_ID_NULL;
+      }
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x22A(psa_key_id_t _XzY0x223, U8 configwrite, psa_key_id_t *_XzY0x20F)
+{
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_algorithm_t hashAlg;
+   psa_status_t sffsdrnandflash;
+   U8 _XzY0x257 = 0;
+   U16 ftraceupdate = sharkssl_getHashLen(configwrite);
+
+   if ((_XzY0x223 == PSA_KEY_ID_NULL) || (!_XzY0x20F) || (*_XzY0x20F != PSA_KEY_ID_NULL) ||
+       ((configwrite != SHARKSSL_HASHID_SHA256) && (configwrite != SHARKSSL_HASHID_SHA384)))
+   {
+      return -1;
+   }
+   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(hashAlg));
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, &_XzY0x257, 1);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, _XzY0x223);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+      psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+      psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, _XzY0x20F);
+   }
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   psa_reset_key_attributes(&attributes);
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (*_XzY0x20F != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*_XzY0x20F);
+         *_XzY0x20F = PSA_KEY_ID_NULL;
+      }
+      return -1;
+   }
+   return 0;
+}
+#endif
+
+
+#if SHARKSSL_USE_ECC
+int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U16 _XzY0x1D4)
+{
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   SharkSslHSParam *hs = hsParam(o);
+   #if SHARKSSL_ECC_USE_SECP384R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP384R1_POINTLEN)];
+   #else
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP256R1_POINTLEN)];
+   #endif
+   U8 _XzY0x257[SHARKSSL_MAX_HASH_LEN] = {0};
+   U8 _XzY0x210[SHARKSSL_MAX_HASH_LEN];
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   U8 _XzY0x209[16], zeroCanary[16];
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_derivation_operation_t zeroOperation = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_id_t zeroKey = PSA_KEY_ID_NULL;
+   psa_key_id_t _XzY0x20F = PSA_KEY_ID_NULL;
+   psa_key_id_t derivedSaltKey = PSA_KEY_ID_NULL;
+   psa_key_id_t zeroSaltKey = PSA_KEY_ID_NULL;
+   psa_key_id_t zeroSharedKey = PSA_KEY_ID_NULL;
+   psa_key_id_t zeroResultKey = PSA_KEY_ID_NULL;
+   #else
+   U8 _XzY0x21[SHARKSSL_MAX_HASH_LEN];
+   U8 _XzY0x20D[SHARKSSL_MAX_HASH_LEN];
+   U8 _XzY0x258[SHARKSSL_MAX_HASH_LEN];
+   #endif
+   psa_algorithm_t hashAlg;
+   psa_status_t psaStatus = PSA_ERROR_GENERIC_ERROR;
+   U16 ftraceupdate = 0;
+   size_t peerLen = 0;
+   U8 _XzY0x20E = 0;
+   U16 i;
+   int deltadevices = 1;
+
+   if ((!o->psaECDHKey) || (!_XzY0x1E4) || (!hs->cipherSuite))
+   {
+      goto iommucreate;
+   }
+   ftraceupdate = sharkssl_getHashLen(hs->cipherSuite->hashID);
+   if ((!ftraceupdate) || (ftraceupdate > SHARKSSL_MAX_HASH_LEN) ||
+       ((hs->cipherSuite->hashID != SHARKSSL_HASHID_SHA256) &&
+        (hs->cipherSuite->hashID != SHARKSSL_HASHID_SHA384)))
+   {
+      goto iommucreate;
+   }
+   hashAlg = (hs->cipherSuite->hashID == SHARKSSL_HASHID_SHA384) ?
+             PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   {
+      peerLen = SHARKSSL_CURVE25519_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
+   }
+   else if (_XzY0x1D4 == ucb1400pdata)
+   {
+      peerLen = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #if SHARKSSL_ECC_USE_SECP384R1
+   else if (_XzY0x1D4 == pciercxcfg034)
+   {
+      peerLen = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   else
+   {
+      goto iommucreate;
+   }
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->flags & startqueue)
+   {
+      _XzY0x20F = o->psaEarlySecret;
+      o->psaEarlySecret = PSA_KEY_ID_NULL;
+      if (_XzY0x20F == PSA_KEY_ID_NULL)
+      {
+         goto iommucreate;
+      }
+   }
+   else
+   {
+      if (o->psaEarlySecret != PSA_KEY_ID_NULL)
+      {
+         if (psa_destroy_key(o->psaEarlySecret) != PSA_SUCCESS)
+         {
+            o->psaEarlySecret = PSA_KEY_ID_NULL;
+            goto iommucreate;
+         }
+         o->psaEarlySecret = PSA_KEY_ID_NULL;
+      }
+   }
+   if (_XzY0x20F == PSA_KEY_ID_NULL)
+   #endif
+   {
+      psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+      psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+      psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+      if ((psa_import_key(&attributes, _XzY0x257, ftraceupdate, &zeroKey) != PSA_SUCCESS) || _XzY0x22A(zeroKey, hs->cipherSuite->hashID, &_XzY0x20F))
+      {
+         goto iommucreate;
+      }
+   }
+   if (sharkssl_hash(_XzY0x210, _XzY0x257, 0, hs->cipherSuite->hashID) ||
+       _XzY0x229(_XzY0x20F, "\144\145\162\151\166\145\144", _XzY0x210,
+                                  (U8)ftraceupdate, hs->cipherSuite->hashID,
+                                  SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT, &derivedSaltKey))
+   {
+      goto iommucreate;
+   }
+   #else
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->flags & startqueue)
+   {
+      memcpy(_XzY0x21, o->masterSecret, ftraceupdate);
+   }
+   else
+   #endif
+   {
+      if (_XzY0x1F3(_XzY0x257, 1, _XzY0x257, ftraceupdate,
+                                _XzY0x21, hs->cipherSuite->hashID))
+      {
+         goto iommucreate;
+      }
+   }
+   if (sharkssl_hash(_XzY0x210, _XzY0x257, 0, hs->cipherSuite->hashID) ||
+       bgezllabel(_XzY0x21, "\144\145\162\151\166\145\144", _XzY0x210,
+                                  _XzY0x20D, ftraceupdate, hs->cipherSuite->hashID))
+   {
+      goto iommucreate;
+   }
+   #endif
+   psaStatus = psa_key_derivation_setup(&_XzY0x219,
+      PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
+   if (psaStatus == PSA_SUCCESS)
+   {
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      psaStatus = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, derivedSaltKey);
+      #else
+      psaStatus = psa_key_derivation_input_bytes(&_XzY0x219,
+         PSA_KEY_DERIVATION_INPUT_SALT, _XzY0x20D, ftraceupdate);
+      #endif
+   }
+   if (psaStatus == PSA_SUCCESS)
+   {
+      psaStatus = psa_key_derivation_key_agreement(&_XzY0x219,
+         PSA_KEY_DERIVATION_INPUT_SECRET, o->psaECDHKey, _XzY0x1E7, peerLen);
+      if ((psaStatus == PSA_ERROR_INVALID_ARGUMENT) ||
+          (psaStatus == PSA_ERROR_DATA_INVALID))
+      {
+         deltadevices = SHARKSSL_ECDH_INVALID_KEY;
+      }
+   }
+   if (psaStatus == PSA_SUCCESS)
+   {
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+      psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+      psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      psaStatus = psa_key_derivation_output_key(&attributes, &_XzY0x219, &hs->prot.tls13.psaHSSecret);
+      #else
+      psaStatus = psa_key_derivation_output_bytes(&_XzY0x219, hs->prot.tls13.HSSecret, ftraceupdate);
+      #endif
+   }
+   if (psaStatus == PSA_SUCCESS)
+   {
+      deltadevices = 0;
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      o->psaTLS13HSKeysActive = 1;
+      #endif
+      if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+      {
+         #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         
+         if (_XzY0x229(_XzY0x20F, "\144\145\162\151\166\145\144", _XzY0x210,
+                                        (U8)ftraceupdate, hs->cipherSuite->hashID,
+                                        SHARKSSL_PSA_KEY_RAW_EXTRACT, &zeroSaltKey))
+         {
+            deltadevices = 1;
+         }
+         psaStatus = psa_key_derivation_setup(&zeroOperation, PSA_ALG_HKDF_EXTRACT(hashAlg));
+         if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
+         {
+            psaStatus = psa_key_derivation_input_key(&zeroOperation,
+               PSA_KEY_DERIVATION_INPUT_SALT, zeroSaltKey);
+         }
+         if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
+         {
+            
+            psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
+            psa_set_key_bits(&attributes, SHARKSSL_CURVE25519_POINTLEN * 8);
+            psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+            psaStatus = psa_import_key(&attributes, _XzY0x257, SHARKSSL_CURVE25519_POINTLEN, &zeroSharedKey);
+         }
+         if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
+         {
+            psaStatus = psa_key_derivation_input_key(&zeroOperation,
+               PSA_KEY_DERIVATION_INPUT_SECRET, zeroSharedKey);
+         }
+         if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
+         {
+            psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+            psaStatus = psa_key_derivation_output_key(&attributes, &zeroOperation, &zeroResultKey);
+         }
+         if (deltadevices || (psaStatus != PSA_SUCCESS) ||
+             _XzY0x228(hs->prot.tls13.psaHSSecret,
+                                          "\172\145\162\157\040\143\150\145\143\153", NULL, 0, _XzY0x209,
+                                          sizeof(_XzY0x209), hs->cipherSuite->hashID) ||
+             _XzY0x228(zeroResultKey,
+                                          "\172\145\162\157\040\143\150\145\143\153", NULL, 0, zeroCanary,
+                                          sizeof(zeroCanary), hs->cipherSuite->hashID))
+         {
+            deltadevices = 1;
+         }
+         else
+         {
+            for (i = 0; i < sizeof(_XzY0x209); ++i)
+            {
+               _XzY0x20E |= _XzY0x209[i] ^ zeroCanary[i];
+            }
+         }
+         #else
+         if (_XzY0x1F3(_XzY0x20D, ftraceupdate, _XzY0x257,
+                                   SHARKSSL_CURVE25519_POINTLEN, _XzY0x258,
+                                   hs->cipherSuite->hashID))
+         {
+            deltadevices = 1;
+         }
+         else
+         {
+            for (i = 0; i < ftraceupdate; ++i)
+            {
+               _XzY0x20E |= hs->prot.tls13.HSSecret[i] ^ _XzY0x258[i];
+            }
+         }
+         #endif
+         if ((!_XzY0x20E) && (!deltadevices))
+         {
+            deltadevices = SHARKSSL_ECDH_INVALID_KEY;
+         }
+      }
+   }
+iommucreate:
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      deltadevices = 1;
+   }
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (psa_key_derivation_abort(&zeroOperation) != PSA_SUCCESS)
+   {
+      deltadevices = 1;
+   }
+   if ((zeroResultKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroResultKey) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   if ((zeroSharedKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroSharedKey) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   if ((derivedSaltKey != PSA_KEY_ID_NULL) && (psa_destroy_key(derivedSaltKey) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   if ((zeroSaltKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroSaltKey) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   if ((_XzY0x20F != PSA_KEY_ID_NULL) && (psa_destroy_key(_XzY0x20F) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   if ((zeroKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroKey) != PSA_SUCCESS))
+   {
+      deltadevices = 1;
+   }
+   #endif
+   if (SharkSslCon_destroyPSAECDHKey(o))
+   {
+      deltadevices = 1;
+   }
+   if (deltadevices)
+   {
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      if (hs->prot.tls13.psaHSSecret != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(hs->prot.tls13.psaHSSecret);
+         hs->prot.tls13.psaHSSecret = PSA_KEY_ID_NULL;
+      }
+      o->psaTLS13HSKeysActive = 0;
+      #else
+      sharkssl_clear(hs->prot.tls13.HSSecret, sizeof(hs->prot.tls13.HSSecret));
+      #endif
+   }
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   psa_reset_key_attributes(&attributes);
+   sharkssl_clear(_XzY0x209, sizeof(_XzY0x209));
+   sharkssl_clear(zeroCanary, sizeof(zeroCanary));
+   #endif
+   sharkssl_clear(_XzY0x1E7, sizeof(_XzY0x1E7));
+   sharkssl_clear(_XzY0x257, sizeof(_XzY0x257));
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
+   sharkssl_clear(_XzY0x21, sizeof(_XzY0x21));
+   sharkssl_clear(_XzY0x20D, sizeof(_XzY0x20D));
+   sharkssl_clear(_XzY0x258, sizeof(_XzY0x258));
+   #endif
+   sharkssl_clear(_XzY0x210, sizeof(_XzY0x210));
+   return deltadevices;
+}
+#endif
+#endif
 
 
 #if SHARKSSL_ENABLE_SESSION_CACHE
 int SharkSslCon_calcResumptionSecret(SharkSslCon *o, U8 *chargerplatform)
 {
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   return _XzY0x229(o->psaMasterSecret, "\162\145\163\040\155\141\163\164\145\162", chargerplatform,
+                                     (U8)sharkssl_getHashLen(o->rCipherSuite->hashID),
+                                     o->rCipherSuite->hashID, SHARKSSL_PSA_KEY_DERIVE_EXPAND,
+                                     &o->psaResumptionMasterSecret);
+   #else
    return bgezllabel(o->masterSecret, "\162\145\163\040\155\141\163\164\145\162", chargerplatform, o->resumptionMasterSecret, sharkssl_getHashLen(o->rCipherSuite->hashID), o->rCipherSuite->hashID);
+   #endif
 }
 
 
-int SharkSslCon_calcTicketPSK(SharkSslCon *o, U8 *PSK, U8 *broadcastenter, U8 unmapunlock)
+int SharkSslCon_calcTicketPSK(SharkSslCon *o, SharkSslSession *func2fixup, U8 *broadcastenter, U8 unmapunlock)
 {
    if (0 == unmapunlock)
    {
-      broadcastenter = NULL;  
+      broadcastenter = NULL;
    }
-   return brespdisable(o->resumptionMasterSecret, "\162\145\163\165\155\160\164\151\157\156", broadcastenter, PSK, sharkssl_getHashLen(o->rCipherSuite->hashID), unmapunlock, o->rCipherSuite->hashID);
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   return _XzY0x229(o->psaResumptionMasterSecret, "\162\145\163\165\155\160\164\151\157\156", broadcastenter,
+                                     unmapunlock, o->rCipherSuite->hashID,
+                                     SHARKSSL_PSA_KEY_DERIVE_EXTRACT, &func2fixup->prot.tls13.PSK);
+   #else
+   return brespdisable(o->resumptionMasterSecret, "\162\145\163\165\155\160\164\151\157\156", broadcastenter, func2fixup->prot.tls13.PSK, sharkssl_getHashLen(o->rCipherSuite->hashID), unmapunlock, o->rCipherSuite->hashID);
+   #endif
 }
 
 
-int SharkSslCon_calcEarlySecret(SharkSslCon *o, U8 *PSK, U8 configwrite)
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+int SharkSslCon_calcEarlySecret(SharkSslCon *o, SharkSslSession *func2fixup, U8 configwrite)
+{
+   if (o->psaEarlySecret != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(o->psaEarlySecret) != PSA_SUCCESS)
+      {
+         o->psaEarlySecret = PSA_KEY_ID_NULL;
+         return -1;
+      }
+      o->psaEarlySecret = PSA_KEY_ID_NULL;
+   }
+   return _XzY0x22A(func2fixup->prot.tls13.PSK, configwrite, &o->psaEarlySecret);
+}
+
+
+int SharkSslCon_calcBinder(SharkSslCon *o, U8 *chargerplatform, U8 configwrite)
+{
+   psa_key_id_t binderKey = PSA_KEY_ID_NULL;
+   psa_key_id_t finishedKey = PSA_KEY_ID_NULL;
+   U8 _XzY0x210[SHARKSSL_MAX_HASH_LEN];
+   U8 _XzY0x20A[SHARKSSL_MAX_HASH_LEN];
+   U16 ftraceupdate = sharkssl_getHashLen(configwrite);
+   size_t macLen = 0;
+   psa_algorithm_t hashAlg;
+   int deltadevices = -1;
+
+   if ((o->psaEarlySecret == PSA_KEY_ID_NULL) || (!chargerplatform) || ((configwrite != SHARKSSL_HASHID_SHA256) && (configwrite != SHARKSSL_HASHID_SHA384)))
+   {
+      return -1;
+   }
+   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   if (sharkssl_hash(_XzY0x210, chargerplatform, 0, configwrite) ||
+       _XzY0x229(o->psaEarlySecret, "\162\145\163\040\142\151\156\144\145\162", _XzY0x210, (U8)ftraceupdate, configwrite, SHARKSSL_PSA_KEY_DERIVE_EXPAND, &binderKey) ||
+       _XzY0x229(binderKey, "\146\151\156\151\163\150\145\144", NULL, 0, configwrite, SHARKSSL_PSA_KEY_HMAC_SIGN, &finishedKey))
+   {
+      goto iommucreate;
+   }
+   if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(hashAlg), chargerplatform, ftraceupdate, _XzY0x20A, sizeof(_XzY0x20A), &macLen) == PSA_SUCCESS) && (macLen == ftraceupdate))
+   {
+      memcpy(chargerplatform, _XzY0x20A, ftraceupdate);
+      deltadevices = 0;
+   }
+iommucreate:
+   if ((finishedKey != PSA_KEY_ID_NULL) && (psa_destroy_key(finishedKey) != PSA_SUCCESS))
+   {
+      deltadevices = -1;
+   }
+   if ((binderKey != PSA_KEY_ID_NULL) && (psa_destroy_key(binderKey) != PSA_SUCCESS))
+   {
+      deltadevices = -1;
+   }
+   sharkssl_clear(_XzY0x210, sizeof(_XzY0x210));
+   sharkssl_clear(_XzY0x20A, sizeof(_XzY0x20A));
+   return deltadevices;
+}
+#else
+int SharkSslCon_calcEarlySecret(SharkSslCon *o, SharkSslSession *func2fixup, U8 configwrite)
 {
    SharkSslHSParam *alignmentldrhstrh = hsParam(o);
    U8 t1[SHARKSSL_MAX_HASH_LEN];
@@ -104502,7 +105685,7 @@ int SharkSslCon_calcEarlySecret(SharkSslCon *o, U8 *PSK, U8 configwrite)
 
    ftraceupdate = sharkssl_getHashLen(configwrite);
    t1[0] = 0;
-   if (sharkssl_HMAC(configwrite, PSK, ftraceupdate, t1, 1, o->masterSecret))  
+   if (sharkssl_HMAC(configwrite, func2fixup->prot.tls13.PSK, ftraceupdate, t1, 1, o->masterSecret))  
    {
       goto _sharkssl_early_secret_cleanup;
    }
@@ -104524,26 +105707,242 @@ int SharkSslCon_calcEarlySecret(SharkSslCon *o, U8 *PSK, U8 configwrite)
    sharkssl_clear(t1, sizeof(t1));
    return sffsdrnandflash;
 }
+#endif
 #endif  
 
 
-static int deepeststate(U8 *delaytimer, U8 *sourcerouting, U8 *iv, SharkSslCipherSuite *clockmodtable)
+#if SHARKSSL_PSA_CONSUMER
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+static int sharkssl_deriveRecordKey(psa_key_id_t delaytimer, SharkSslCipherSuite *clockmodtable,
+#else
+static int sharkssl_deriveRecordKey(U8 *delaytimer, SharkSslCipherSuite *clockmodtable,
+#endif
+                                    U8 op, psa_key_id_t *sourcerouting)
 {
-   if (bgezllabel(delaytimer, "\153\145\171", NULL, sourcerouting, clockmodtable->keyLen, clockmodtable->hashID))
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
+   psa_key_attributes_t secretAttr = PSA_KEY_ATTRIBUTES_INIT;
+   #endif
+   psa_key_attributes_t recordAttr = PSA_KEY_ATTRIBUTES_INIT;
+   
+   U8 memblocksteal[13] = {0, 0, 9, '\164', '\154', '\163', '\061', '\063', '\040', '\153', '\145', '\171', 0};
+   psa_key_id_t _XzY0x223 = PSA_KEY_ID_NULL;
+   psa_algorithm_t hashAlg, cipherAlg;
+   psa_key_type_t earlyconsole;
+   psa_status_t sffsdrnandflash;
+   U16 ftraceupdate = sharkssl_getHashLen(clockmodtable->hashID);
+
+   *sourcerouting = PSA_KEY_ID_NULL;
+   if (((clockmodtable->hashID != SHARKSSL_HASHID_SHA256) && (clockmodtable->hashID != SHARKSSL_HASHID_SHA384)) ||
+       (!ftraceupdate) || (ftraceupdate > SHARKSSL_MAX_HASH_LEN) ||
+       (psa_crypto_init() != PSA_SUCCESS))
    {
       return -1;
    }
-   if (bgezllabel(delaytimer, "\151\166", NULL, iv, SHARKSSL_TLS_1_3_STATIC_IV_LEN, clockmodtable->hashID))
+   if (clockmodtable->flags & framekernel)
    {
+      earlyconsole = PSA_KEY_TYPE_AES;
+      cipherAlg = PSA_ALG_GCM;
+   }
+   #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
+   else if (clockmodtable->flags & suspendenter)
+   {
+      earlyconsole = PSA_KEY_TYPE_CHACHA20;
+      cipherAlg = PSA_ALG_CHACHA20_POLY1305;
+   }
+   #endif
+   else
+   {
+      return -1;
+   }
+   hashAlg = (clockmodtable->hashID == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   memblocksteal[1] = clockmodtable->keyLen;
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   _XzY0x223 = delaytimer;
+   sffsdrnandflash = (delaytimer != PSA_KEY_ID_NULL) ? PSA_SUCCESS : PSA_ERROR_INVALID_ARGUMENT;
+   #else
+   psa_set_key_type(&secretAttr, PSA_KEY_TYPE_DERIVE);
+   psa_set_key_bits(&secretAttr, (size_t)ftraceupdate * 8u);
+   psa_set_key_usage_flags(&secretAttr, PSA_KEY_USAGE_DERIVE);
+   psa_set_key_algorithm(&secretAttr, PSA_ALG_HKDF_EXPAND(hashAlg));
+   sffsdrnandflash = psa_import_key(&secretAttr, delaytimer, ftraceupdate, &_XzY0x223);
+   #endif
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXPAND(hashAlg));
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219,
+                                           PSA_KEY_DERIVATION_INPUT_SECRET, _XzY0x223);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219,
+                                             PSA_KEY_DERIVATION_INPUT_INFO, memblocksteal, sizeof(memblocksteal));
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_set_key_type(&recordAttr, earlyconsole);
+      psa_set_key_bits(&recordAttr, (size_t)clockmodtable->keyLen * 8u);
+      psa_set_key_usage_flags(&recordAttr, (op & populatebasepages) ? PSA_KEY_USAGE_DECRYPT : PSA_KEY_USAGE_ENCRYPT);
+      psa_set_key_algorithm(&recordAttr, cipherAlg);
+      sffsdrnandflash = psa_key_derivation_output_key(&recordAttr, &_XzY0x219, sourcerouting);
+   }
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
+   if ((_XzY0x223 != PSA_KEY_ID_NULL) && (psa_destroy_key(_XzY0x223) != PSA_SUCCESS))
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   psa_reset_key_attributes(&secretAttr);
+   #endif
+   psa_reset_key_attributes(&recordAttr);
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (*sourcerouting != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*sourcerouting);
+         *sourcerouting = PSA_KEY_ID_NULL;
+      }
+      return -1;
+   }
+   return 0;
+}
+#endif
+
+
+#if SHARKSSL_PSA_CONSUMER
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+static int deepeststate(psa_key_id_t delaytimer, psa_key_id_t *sourcerouting, U8 *iv,
+                                     SharkSslCipherSuite *clockmodtable, U8 op)
+#else
+static int deepeststate(U8 *delaytimer, psa_key_id_t *sourcerouting, U8 *iv,
+                                     SharkSslCipherSuite *clockmodtable, U8 op)
+#endif
+#else
+static int deepeststate(U8 *delaytimer, U8 *sourcerouting, U8 *iv,
+                                     SharkSslCipherSuite *clockmodtable)
+#endif
+{
+   #if SHARKSSL_PSA_CONSUMER
+   if (sharkssl_deriveRecordKey(delaytimer, clockmodtable, op, sourcerouting))
+   #else
+   if (bgezllabel(delaytimer, "\153\145\171", NULL, sourcerouting, clockmodtable->keyLen, clockmodtable->hashID))
+   #endif
+   {
+      return -1;
+   }
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (_XzY0x228(delaytimer, "\151\166", NULL, 0, iv, SHARKSSL_TLS_1_3_STATIC_IV_LEN, clockmodtable->hashID))
+   #else
+   if (bgezllabel(delaytimer, "\151\166", NULL, iv, SHARKSSL_TLS_1_3_STATIC_IV_LEN, clockmodtable->hashID))
+   #endif
+   {
+      #if SHARKSSL_PSA_CONSUMER
+      (void)psa_destroy_key(*sourcerouting);
+      *sourcerouting = PSA_KEY_ID_NULL;
+      #endif
       return -1;
    }
    return 0;
 }
 
 
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+static int _XzY0x227(SharkSslCon *o, U8 *chargerplatform, U8 _XzY0x225)
+{
+   SharkSslCipherSuite *suite = _XzY0x225 ? o->wCipherSuite : o->rCipherSuite;
+   psa_key_id_t *recordSlot = _XzY0x225 ? &o->psaWRecordKey : &o->psaRRecordKey;
+   psa_key_id_t *trafficSlot = _XzY0x225 ? &o->psaWAppTrafficSecret : &o->psaRAppTrafficSecret;
+   U8 *iv = _XzY0x225 ? o->wIV : o->rIV;
+   psa_key_id_t traffic = PSA_KEY_ID_NULL, record = PSA_KEY_ID_NULL;
+   U8 flashmatch;
+   U8 op = _XzY0x225 ? ptraceregsets : populatebasepages;
+   const char *clkdmoperations;
+   int sffsdrnandflash = -1;
+
+   #if SHARKSSL_SSL_CLIENT_CODE
+   #if SHARKSSL_SSL_SERVER_CODE
+   flashmatch = SharkSsl_isClient(o->sharkSsl);
+   #else
+   flashmatch = 1;
+   #endif
+   #else
+   flashmatch = 0;
+   #endif
+   clkdmoperations = (_XzY0x225 == flashmatch) ? "\143\040\141\160\040\164\162\141\146\146\151\143" : "\163\040\141\160\040\164\162\141\146\146\151\143";
+   if (_XzY0x229(o->psaMasterSecret, clkdmoperations, chargerplatform,
+                                  (U8)sharkssl_getHashLen(suite->hashID), suite->hashID,
+                                  SHARKSSL_PSA_KEY_DERIVE_EXPAND, &traffic))
+   {
+      goto iommucreate;
+   }
+   if (deepeststate(traffic, &record, iv, suite, op))
+   {
+      goto iommucreate;
+   }
+   if (suite->cipherFunc(o, chargerworker | op, (U8*)0, 0))
+   {
+      goto iommucreate;
+   }
+   *recordSlot = record;
+   if (suite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | op, (U8*)0, 0))
+   {
+      *recordSlot = PSA_KEY_ID_NULL;
+      goto iommucreate;
+   }
+   record = PSA_KEY_ID_NULL;
+   if (*trafficSlot != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(*trafficSlot) != PSA_SUCCESS)
+      {
+         *trafficSlot = PSA_KEY_ID_NULL;
+         goto iommucreate;
+      }
+   }
+   *trafficSlot = traffic;
+   traffic = PSA_KEY_ID_NULL;
+   if (_XzY0x225)
+   {
+      #if SHARKSSL_ENABLE_KEY_UPDATE
+      o->wTrafficEpochLo = 0;
+      o->wTrafficEpochHi = 0;
+      #endif
+      disablelevel(o->wSeqNum);
+   }
+   else
+   {
+      disablelevel(o->rSeqNum);
+   }
+   sffsdrnandflash = 0;
+
+iommucreate:
+   if (record != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(record);
+   }
+   if (traffic != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(traffic);
+   }
+   return sffsdrnandflash;
+}
+#endif
+
+
 int SharkSslCon_calcAppTrafficSecretSend(SharkSslCon *o, U8 *chargerplatform)
 {
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   return _XzY0x227(o, chargerplatform, 1);
+   #else
    U8 delaytimer[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+   #if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t createsingle = PSA_KEY_ID_NULL;
+   #endif
    int sffsdrnandflash = -1;
    U16 ftraceupdate = sharkssl_getHashLen(o->wCipherSuite->hashID);
 
@@ -104569,15 +105968,31 @@ int SharkSslCon_calcAppTrafficSecretSend(SharkSslCon *o, U8 *chargerplatform)
       }
    }
    #endif
+   #if SHARKSSL_PSA_CONSUMER
+   if (deepeststate(delaytimer, &createsingle, o->wIV, o->wCipherSuite, ptraceregsets))
+   #else
    if (deepeststate(delaytimer, o->wKey, o->wIV, o->wCipherSuite))
+   #endif
    {
       goto _sharkssl_app_send_cleanup;
    }
-   o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0);
+   if (o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0))
+   {
+      goto _sharkssl_app_send_cleanup;
+   }
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaWRecordKey = createsingle;
+   #endif
    if (o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0))
    {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaWRecordKey = PSA_KEY_ID_NULL;
+      #endif
       goto _sharkssl_app_send_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   createsingle = PSA_KEY_ID_NULL;
+   #endif
    #if SHARKSSL_ENABLE_KEY_UPDATE
    memcpy(o->wAppTrafficSecret, delaytimer, ftraceupdate);
    o->wTrafficEpochLo = 0;
@@ -104587,14 +106002,27 @@ int SharkSslCon_calcAppTrafficSecretSend(SharkSslCon *o, U8 *chargerplatform)
    sffsdrnandflash = 0;
 
    _sharkssl_app_send_cleanup:
+   #if SHARKSSL_PSA_CONSUMER
+   if (createsingle != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(createsingle);
+   }
+   #endif
    sharkssl_clear(delaytimer, sizeof(delaytimer));
    return sffsdrnandflash;
+   #endif
 }
 
 
 int SharkSslCon_calcAppTrafficSecretRecv(SharkSslCon *o, U8 *chargerplatform)
 {
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   return _XzY0x227(o, chargerplatform, 0);
+   #else
    U8 delaytimer[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
+   #if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t createsingle = PSA_KEY_ID_NULL;
+   #endif
    int sffsdrnandflash = -1;
    U16 ftraceupdate = sharkssl_getHashLen(o->rCipherSuite->hashID);
 
@@ -104620,15 +106048,31 @@ int SharkSslCon_calcAppTrafficSecretRecv(SharkSslCon *o, U8 *chargerplatform)
       }
    }
    #endif
+   #if SHARKSSL_PSA_CONSUMER
+   if (deepeststate(delaytimer, &createsingle, o->rIV, o->rCipherSuite, populatebasepages))
+   #else
    if (deepeststate(delaytimer, o->rKey, o->rIV, o->rCipherSuite))
+   #endif
    {
       goto _sharkssl_app_recv_cleanup;
    }
-   o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0);
+   if (o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0))
+   {
+      goto _sharkssl_app_recv_cleanup;
+   }
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaRRecordKey = createsingle;
+   #endif
    if (o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0))
    {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaRRecordKey = PSA_KEY_ID_NULL;
+      #endif
       goto _sharkssl_app_recv_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   createsingle = PSA_KEY_ID_NULL;
+   #endif
    #if (SHARKSSL_ENABLE_KEY_UPDATE || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH)
    memcpy(o->rAppTrafficSecret, delaytimer, ftraceupdate);
    #endif
@@ -104636,52 +106080,158 @@ int SharkSslCon_calcAppTrafficSecretRecv(SharkSslCon *o, U8 *chargerplatform)
    sffsdrnandflash = 0;
 
    _sharkssl_app_recv_cleanup:
+   #if SHARKSSL_PSA_CONSUMER
+   if (createsingle != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(createsingle);
+   }
+   #endif
    sharkssl_clear(delaytimer, sizeof(delaytimer));
    return sffsdrnandflash;
+   #endif
 }
 
 
 #if SHARKSSL_ENABLE_KEY_UPDATE
+#if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+static int defaultpriorities(psa_key_id_t configaddress,
+                                             psa_key_id_t *dcacheclean,
+                                             psa_key_id_t *createsingle, U8 *crashshutdown,
+                                             SharkSslCipherSuite *clockmodtable, U8 op)
+#elif SHARKSSL_PSA_CONSUMER
+static int defaultpriorities(U8 *configaddress, U8 *dcacheclean,
+                                             psa_key_id_t *createsingle, U8 *crashshutdown,
+                                             SharkSslCipherSuite *clockmodtable, U8 op)
+#else
 static int defaultpriorities(U8 *configaddress, U8 *dcacheclean, U8 *createsingle, U8 *crashshutdown, SharkSslCipherSuite *clockmodtable)
+#endif
 {
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (_XzY0x229(configaddress, "\164\162\141\146\146\151\143\040\165\160\144", NULL, 0,
+                                  clockmodtable->hashID, SHARKSSL_PSA_KEY_DERIVE_EXPAND, dcacheclean))
+   {
+      return -1;
+   }
+   return deepeststate(*dcacheclean, createsingle, crashshutdown, clockmodtable, op);
+   #else
    if (bgezllabel(configaddress, "\164\162\141\146\146\151\143\040\165\160\144", NULL, dcacheclean, sharkssl_getHashLen(clockmodtable->hashID), clockmodtable->hashID))
    {
       return -1;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   return deepeststate(dcacheclean, createsingle, crashshutdown, clockmodtable, op);
+   #else
    return deepeststate(dcacheclean, createsingle, crashshutdown, clockmodtable);
+   #endif
+   #endif
 }
 
 
 int SharkSslCon_updateAppTrafficSecretRecv(SharkSslCon *o)
 {
-   U8 dcacheclean[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH], createsingle[SHARKSSL_MAX_KEY_LEN], crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN];
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   psa_key_id_t dcacheclean = PSA_KEY_ID_NULL, createsingle = PSA_KEY_ID_NULL;
+   U8 crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN];
+   int sffsdrnandflash = -1;
+
+   if (defaultpriorities(o->psaRAppTrafficSecret, &dcacheclean,
+         &createsingle, crashshutdown, o->rCipherSuite, populatebasepages))
+   {
+      goto iommucreate;
+   }
+   if (o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0))
+   {
+      goto iommucreate;
+   }
+   o->psaRRecordKey = createsingle;
+   memcpy(o->rIV, crashshutdown, sizeof(crashshutdown));
+   if (o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0))
+   {
+      o->psaRRecordKey = PSA_KEY_ID_NULL;
+      goto iommucreate;
+   }
+   createsingle = PSA_KEY_ID_NULL;
+   if (psa_destroy_key(o->psaRAppTrafficSecret) != PSA_SUCCESS)
+   {
+      o->psaRAppTrafficSecret = PSA_KEY_ID_NULL;
+      goto iommucreate;
+   }
+   o->psaRAppTrafficSecret = dcacheclean;
+   dcacheclean = PSA_KEY_ID_NULL;
+   disablelevel(o->rSeqNum);
+   sffsdrnandflash = 0;
+
+iommucreate:
+   if (createsingle != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(createsingle);
+   }
+   if (dcacheclean != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(dcacheclean);
+   }
+   sharkssl_clear(crashshutdown, sizeof(crashshutdown));
+   return sffsdrnandflash;
+   #else
+   U8 dcacheclean[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH], crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN];
+   #if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t createsingle = PSA_KEY_ID_NULL;
+   #else
+   U8 createsingle[SHARKSSL_MAX_KEY_LEN];
+   #endif
    int sffsdrnandflash = -1;
    U16 ftraceupdate;
 
+   #if SHARKSSL_PSA_CONSUMER
+   if (defaultpriorities(o->rAppTrafficSecret, dcacheclean, &createsingle, crashshutdown, o->rCipherSuite, populatebasepages))
+   #else
    if (defaultpriorities(o->rAppTrafficSecret, dcacheclean, createsingle, crashshutdown, o->rCipherSuite))
+   #endif
    {
       goto _sharkssl_update_app_recv_cleanup;
    }
    ftraceupdate = sharkssl_getHashLen(o->rCipherSuite->hashID);
-   o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0);
+   if (o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0))
+   {
+      goto _sharkssl_update_app_recv_cleanup;
+   }
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaRRecordKey = createsingle;
+   #else
    memcpy(o->rKey, createsingle, o->rCipherSuite->keyLen);
+   #endif
    memcpy(o->rIV, crashshutdown, SHARKSSL_TLS_1_3_STATIC_IV_LEN);
    if (o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0))
    {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaRRecordKey = PSA_KEY_ID_NULL;
+      #else
       sharkssl_clear(o->rKey, sizeof(o->rKey));
+      #endif
       sharkssl_clear(o->rIV, sizeof(o->rIV));
       sharkssl_clear(o->rAppTrafficSecret, sizeof(o->rAppTrafficSecret));
       goto _sharkssl_update_app_recv_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   createsingle = PSA_KEY_ID_NULL;
+   #endif
    memcpy(o->rAppTrafficSecret, dcacheclean, ftraceupdate);
    disablelevel(o->rSeqNum);
    sffsdrnandflash = 0;
 
    _sharkssl_update_app_recv_cleanup:
    sharkssl_clear(dcacheclean, sizeof(dcacheclean));
+   #if SHARKSSL_PSA_CONSUMER
+   if (createsingle != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(createsingle);
+   }
+   #else
    sharkssl_clear(createsingle, sizeof(createsingle));
+   #endif
    sharkssl_clear(crashshutdown, sizeof(crashshutdown));
    return sffsdrnandflash;
+   #endif
 }
 
 
@@ -104706,6 +106256,12 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
    SharkSslHSParam *alignmentldrhstrh = hsParam(o);
    U8 chargerplatform[SHARKSSL_MAX_HASH_LEN];
    U8 t1[SHARKSSL_MAX_HASH_LEN], t2[SHARKSSL_MAX_HASH_LEN];
+   #if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t rRecordKey = PSA_KEY_ID_NULL, wRecordKey = PSA_KEY_ID_NULL;
+   #endif
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   psa_key_id_t derivedSaltKey = PSA_KEY_ID_NULL;
+   #endif
    int sffsdrnandflash = -1;
    U16 ftraceupdate;
 
@@ -104716,6 +106272,27 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
       goto _sharkssl_handshake_secret_cleanup;
    }
    memset(t1, 0, ftraceupdate = sharkssl_getHashLen(o->rCipherSuite->hashID));
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if ((!alignmentldrhstrh->prot.tls13.psaHSSecret) ||
+       sharkssl_hash(t1, t1, 0, o->rCipherSuite->hashID) ||
+       _XzY0x229(alignmentldrhstrh->prot.tls13.psaHSSecret, "\144\145\162\151\166\145\144", t1, (U8)ftraceupdate, o->rCipherSuite->hashID, SHARKSSL_PSA_KEY_RAW_EXTRACT, &derivedSaltKey) || 
+       _XzY0x22B(derivedSaltKey, o->rCipherSuite->hashID, &o->psaMasterSecret))
+   {
+      goto _sharkssl_handshake_secret_cleanup;
+   }
+   if (_XzY0x229(alignmentldrhstrh->prot.tls13.psaHSSecret,
+                                  "\163\040\150\163\040\164\162\141\146\146\151\143", chargerplatform, (U8)ftraceupdate, o->rCipherSuite->hashID,
+                                  SHARKSSL_PSA_KEY_DERIVE_EXPAND,
+                                  &alignmentldrhstrh->prot.tls13.psaSrvHSTraffic) ||
+       _XzY0x229(alignmentldrhstrh->prot.tls13.psaHSSecret,
+                                  "\143\040\150\163\040\164\162\141\146\146\151\143", chargerplatform, (U8)ftraceupdate, o->rCipherSuite->hashID,
+                                  SHARKSSL_PSA_KEY_DERIVE_EXPAND,
+                                  &alignmentldrhstrh->prot.tls13.psaCliHSTraffic))
+   {
+      goto _sharkssl_handshake_secret_cleanup;
+   }
+   #else
+   #if (!SHARKSSL_PSA_CONSUMER)
    #if SHARKSSL_ENABLE_SESSION_CACHE
    if (o->flags & startqueue)
    {
@@ -104746,6 +106323,12 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
    {
       goto _sharkssl_handshake_secret_cleanup;
    }
+   #else
+   if (sharkssl_hash(t1, t1, 0, o->rCipherSuite->hashID))
+   {
+      goto _sharkssl_handshake_secret_cleanup;
+   }
+   #endif
    if (bgezllabel(alignmentldrhstrh->prot.tls13.HSSecret, "\144\145\162\151\166\145\144", t1, t2, ftraceupdate, o->rCipherSuite->hashID))  
    {
       goto _sharkssl_handshake_secret_cleanup;
@@ -104764,6 +106347,46 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
    {
       goto _sharkssl_handshake_secret_cleanup;
    }
+   #endif
+   #if SHARKSSL_PSA_CONSUMER
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   #define SHARKSSL_SRV_HS_TRAFFIC alignmentldrhstrh->prot.tls13.psaSrvHSTraffic
+   #define SHARKSSL_CLI_HS_TRAFFIC alignmentldrhstrh->prot.tls13.psaCliHSTraffic
+   #else
+   #define SHARKSSL_SRV_HS_TRAFFIC alignmentldrhstrh->prot.tls13.srvHSTraffic
+   #define SHARKSSL_CLI_HS_TRAFFIC alignmentldrhstrh->prot.tls13.cliHSTraffic
+   #endif
+   #if SHARKSSL_SSL_CLIENT_CODE
+   #if SHARKSSL_SSL_SERVER_CODE
+   if (SharkSsl_isClient(o->sharkSsl))
+   #endif
+   {
+      if (deepeststate(SHARKSSL_SRV_HS_TRAFFIC,
+                                     &rRecordKey, o->rIV, o->rCipherSuite, populatebasepages) ||
+          deepeststate(SHARKSSL_CLI_HS_TRAFFIC,
+                                     &wRecordKey, o->wIV, o->wCipherSuite, ptraceregsets))
+      {
+         goto _sharkssl_handshake_secret_cleanup;
+      }
+   }
+   #if SHARKSSL_SSL_SERVER_CODE
+   else
+   #endif
+   #endif
+   #if SHARKSSL_SSL_SERVER_CODE
+   {
+      if (deepeststate(SHARKSSL_SRV_HS_TRAFFIC,
+                                     &wRecordKey, o->wIV, o->wCipherSuite, ptraceregsets) ||
+          deepeststate(SHARKSSL_CLI_HS_TRAFFIC,
+                                     &rRecordKey, o->rIV, o->rCipherSuite, populatebasepages))
+      {
+         goto _sharkssl_handshake_secret_cleanup;
+      }
+   }
+   #endif
+   #undef SHARKSSL_SRV_HS_TRAFFIC
+   #undef SHARKSSL_CLI_HS_TRAFFIC
+   #else
    #if SHARKSSL_SSL_CLIENT_CODE
    #if SHARKSSL_SSL_SERVER_CODE
    if (SharkSsl_isClient(o->sharkSsl))
@@ -104810,19 +106433,59 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
       }
    }
    #endif
+   #endif
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaRRecordKey = rRecordKey;
+   #endif
    if (o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0))
    {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaRRecordKey = PSA_KEY_ID_NULL;
+      #endif
       goto _sharkssl_handshake_secret_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   rRecordKey = PSA_KEY_ID_NULL;
+   o->psaWRecordKey = wRecordKey;
+   #endif
    if (o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0))
    {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaWRecordKey = PSA_KEY_ID_NULL;
+      #endif
       goto _sharkssl_handshake_secret_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   wRecordKey = PSA_KEY_ID_NULL;
+   #endif
    disablelevel(o->rSeqNum);
    disablelevel(o->wSeqNum);
    sffsdrnandflash = 0;
 
    _sharkssl_handshake_secret_cleanup:
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (derivedSaltKey != PSA_KEY_ID_NULL)
+   {
+      if (psa_destroy_key(derivedSaltKey) != PSA_SUCCESS)
+      {
+         sffsdrnandflash = -1;
+      }
+   }
+   #endif
+   #if SHARKSSL_PSA_CONSUMER
+   if (sffsdrnandflash && (o->rCtx == &o->psaRRecordKey))
+   {
+      o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0);
+   }
+   if (rRecordKey != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(rRecordKey);
+   }
+   if (wRecordKey != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(wRecordKey);
+   }
+   #endif
    sharkssl_clear(chargerplatform, sizeof(chargerplatform));
    sharkssl_clear(t1, sizeof(t1));
    sharkssl_clear(t2, sizeof(t2));
@@ -104873,21 +106536,32 @@ SharkSslCon_RetVal kexecprotect(SharkSslCon *o,
    if (o->rCipherSuite)  
    {
       baAssert(o->flags & platformdevice);
-      o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0);
+      if (o->rCipherSuite->cipherFunc(o, chargerworker | populatebasepages, (U8*)0, 0))
+      {
+         return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
+      }
    }
    #endif
    o->rCipherSuite = alignmentldrhstrh->cipherSuite;
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaRRecordKey = alignmentldrhstrh->prot.tls12.nextRRecordKey;
+   alignmentldrhstrh->prot.tls12.nextRRecordKey = PSA_KEY_ID_NULL;
+   #endif
 
    #if SHARKSSL_ENABLE_AES_GCM
    if (o->rCipherSuite->flags & framekernel)
    {
       baAssert(SHARKSSL_MAX_KEY_LEN);
+      #if SHARKSSL_PSA_CONSUMER
+      memcpy(o->rIV, alignmentldrhstrh->prot.tls12.nextRIV, SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN);
+      #else
       memcpy(o->rKey,
              alignmentldrhstrh->prot.tls12.sharedSecret + (SharkSsl_isClient(o->sharkSsl) ? o->rCipherSuite->keyLen : 0),
              o->rCipherSuite->keyLen);
       memcpy(o->rIV,
              alignmentldrhstrh->prot.tls12.sharedSecret + (2 * o->rCipherSuite->keyLen) + (SharkSsl_isClient(o->sharkSsl) ? 4 : 0),
              4);
+      #endif
       memset(&(o->rIV[4]), 0, 8);  
    }
    #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
@@ -104900,12 +106574,16 @@ SharkSslCon_RetVal kexecprotect(SharkSslCon *o,
    #endif
    {
       baAssert(SHARKSSL_MAX_KEY_LEN);
+      #if SHARKSSL_PSA_CONSUMER
+      memcpy(o->rIV, alignmentldrhstrh->prot.tls12.nextRIV, SHARKSSL_TLS_AEAD_NONCE_LEN);
+      #else
       memcpy(o->rKey,
              alignmentldrhstrh->prot.tls12.sharedSecret + (SharkSsl_isClient(o->sharkSsl) ? o->rCipherSuite->keyLen : 0),
              o->rCipherSuite->keyLen);
       memcpy(o->rIV,
              alignmentldrhstrh->prot.tls12.sharedSecret + (2 * o->rCipherSuite->keyLen) + (SharkSsl_isClient(o->sharkSsl) ? 12 : 0),
              12);
+      #endif
    }
    #if SHARKSSL_ENABLE_AES_GCM
    else
@@ -104917,7 +106595,14 @@ SharkSslCon_RetVal kexecprotect(SharkSslCon *o,
    #endif
 
    
+   #if SHARKSSL_PSA_CONSUMER
+   if (o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0))
+   {
+      return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
+   }
+   #else
    o->rCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | populatebasepages, (U8*)0, 0);
+   #endif
    disablelevel(o->rSeqNum);
    o->inBuf.temp = 0; 
    return SharkSslCon_Handshake;
@@ -104959,22 +106644,33 @@ int sanitisependbaser(SharkSslCon *o,
       o->inBuf.temp += o->outBuf.dataLen;
       pciercxcfg448 += o->outBuf.dataLen;
 
-      o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0);
+      if (o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0))
+      {
+         return -1;
+      }
    }
    #endif
    o->wCipherSuite = alignmentldrhstrh->cipherSuite;
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaWRecordKey = alignmentldrhstrh->prot.tls12.nextWRecordKey;
+   alignmentldrhstrh->prot.tls12.nextWRecordKey = PSA_KEY_ID_NULL;
+   #endif
 
    #if SHARKSSL_ENABLE_AES_GCM
    if (o->wCipherSuite->flags & framekernel)
    {
       baAssert(o->minor >= 3);
       baAssert(SHARKSSL_MAX_KEY_LEN);
+      #if SHARKSSL_PSA_CONSUMER
+      memcpy(o->wIV, alignmentldrhstrh->prot.tls12.nextWIV, SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN);
+      #else
       memcpy(o->wKey,
              alignmentldrhstrh->prot.tls12.sharedSecret + (SharkSsl_isServer(o->sharkSsl) ? o->wCipherSuite->keyLen : 0),
              o->wCipherSuite->keyLen);
       memcpy(o->wIV,
              alignmentldrhstrh->prot.tls12.sharedSecret + (2 * o->wCipherSuite->keyLen) + (SharkSsl_isServer(o->sharkSsl) ? 4 : 0),
              4);
+      #endif
       memset(&o->wIV[4], 0, 8);
    }
    #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
@@ -104987,12 +106683,16 @@ int sanitisependbaser(SharkSslCon *o,
    #endif
    {
       baAssert(SHARKSSL_MAX_KEY_LEN);
+      #if SHARKSSL_PSA_CONSUMER
+      memcpy(o->wIV, alignmentldrhstrh->prot.tls12.nextWIV, SHARKSSL_TLS_AEAD_NONCE_LEN);
+      #else
       memcpy(o->wKey,
              alignmentldrhstrh->prot.tls12.sharedSecret + (SharkSsl_isServer(o->sharkSsl) ? o->wCipherSuite->keyLen : 0),
              o->wCipherSuite->keyLen);
       memcpy(o->wIV,
                alignmentldrhstrh->prot.tls12.sharedSecret + (2 * o->wCipherSuite->keyLen) + (SharkSsl_isServer(o->sharkSsl) ? 12 : 0),
                12);
+      #endif
       disablelevel(o->wSeqNum);
    }
    #if SHARKSSL_ENABLE_AES_GCM
@@ -105004,7 +106704,14 @@ int sanitisependbaser(SharkSslCon *o,
    #endif
    #endif
 
+   #if SHARKSSL_PSA_CONSUMER
+   if (o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0))
+   {
+      return -1;
+   }
+   #else
    o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0);
+   #endif
    tp = o->outBuf.data;
    i = SHARKSSL_FINISHED_MSG_LEN_TLS_1_2;
 
@@ -105229,7 +106936,7 @@ static void _XzY0x17E(SharkSslCon *o, U8 _XzY0x1AF)
    #if (SHARKSSL_MAX_BLOCK_LEN || (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305) || SHARKSSL_ENABLE_AES_GCM)
    sharkssl_clear(o->wIV, sizeof(o->wIV));
    #endif
-   #if SHARKSSL_MAX_KEY_LEN
+   #if (SHARKSSL_MAX_KEY_LEN && (!SHARKSSL_PSA_CONSUMER))
    sharkssl_clear(o->rKey, sizeof(o->rKey));
    sharkssl_clear(o->wKey, sizeof(o->wKey));
    #endif
@@ -105238,14 +106945,47 @@ static void _XzY0x17E(SharkSslCon *o, U8 _XzY0x1AF)
    sharkssl_clear(o->wSeqNum, sizeof(o->wSeqNum));
    #endif
    #if SHARKSSL_TLS_1_3
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->psaEarlySecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaEarlySecret);
+      o->psaEarlySecret = PSA_KEY_ID_NULL;
+   }
+   #endif
+   if (o->psaMasterSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaMasterSecret);
+      o->psaMasterSecret = PSA_KEY_ID_NULL;
+   }
+   if (o->psaRAppTrafficSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaRAppTrafficSecret);
+      o->psaRAppTrafficSecret = PSA_KEY_ID_NULL;
+   }
+   if (o->psaWAppTrafficSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaWAppTrafficSecret);
+      o->psaWAppTrafficSecret = PSA_KEY_ID_NULL;
+   }
+   #if SHARKSSL_ENABLE_SESSION_CACHE
+   if (o->psaResumptionMasterSecret != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(o->psaResumptionMasterSecret);
+      o->psaResumptionMasterSecret = PSA_KEY_ID_NULL;
+   }
+   #endif
+   #endif
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
    sharkssl_clear(o->masterSecret, sizeof(o->masterSecret));
-   #if (SHARKSSL_ENABLE_KEY_UPDATE || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH)
+   #endif
+   #if ((SHARKSSL_ENABLE_KEY_UPDATE || SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH) && (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES))
    sharkssl_clear(o->rAppTrafficSecret, sizeof(o->rAppTrafficSecret));
    #endif
-   #if SHARKSSL_ENABLE_KEY_UPDATE
+   #if (SHARKSSL_ENABLE_KEY_UPDATE && (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES))
    sharkssl_clear(o->wAppTrafficSecret, sizeof(o->wAppTrafficSecret));
    #endif
-   #if SHARKSSL_ENABLE_SESSION_CACHE
+   #if (SHARKSSL_ENABLE_SESSION_CACHE && (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES))
    sharkssl_clear(o->resumptionMasterSecret, sizeof(o->resumptionMasterSecret));
    #endif
    #if SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH
@@ -105292,6 +107032,110 @@ U16 disableclean(SharkSslCipherSuite* c)
 }
 
 
+#if SHARKSSL_PSA_CONSUMER
+int SharkSslCon_deriveTLS12Keys(SharkSslCon *o)
+{
+   static const U8 clkdmoperations[] = "\153\145\171\040\145\170\160\141\156\163\151\157\156";
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   SharkSslHSParam *hs = hsParam(o);
+   psa_key_id_t *clientKey, *serverKey;
+   U8 suspendblock[2 * SHARKSSL_RANDOM_LEN];
+   U8 *clientIV, *serverIV;
+   psa_algorithm_t recordAlg;
+   psa_key_type_t earlyconsole;
+   psa_status_t sffsdrnandflash;
+   U8 _XzY0x213;
+
+   if ((o->psaTLS12MasterKey == PSA_KEY_ID_NULL) ||
+       (hs->prot.tls12.nextRRecordKey != PSA_KEY_ID_NULL) ||
+       (hs->prot.tls12.nextWRecordKey != PSA_KEY_ID_NULL))
+   {
+      return -1;
+   }
+   if (hs->cipherSuite->flags & framekernel)
+   {
+      earlyconsole = PSA_KEY_TYPE_AES;
+      recordAlg = PSA_ALG_GCM;
+      _XzY0x213 = SHARKSSL_TLS_1_2_AES_GCM_FIXED_IV_LEN;
+   }
+   #if (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)
+   else if (hs->cipherSuite->flags & suspendenter)
+   {
+      earlyconsole = PSA_KEY_TYPE_CHACHA20;
+      recordAlg = PSA_ALG_CHACHA20_POLY1305;
+      _XzY0x213 = SHARKSSL_TLS_AEAD_NONCE_LEN;
+   }
+   #endif
+   else
+   {
+      return -1;
+   }
+   clientKey = SharkSsl_isClient(o->sharkSsl) ? &hs->prot.tls12.nextWRecordKey : &hs->prot.tls12.nextRRecordKey;
+   serverKey = SharkSsl_isClient(o->sharkSsl) ? &hs->prot.tls12.nextRRecordKey : &hs->prot.tls12.nextWRecordKey;
+   clientIV = SharkSsl_isClient(o->sharkSsl) ? hs->prot.tls12.nextWIV : hs->prot.tls12.nextRIV;
+   serverIV = SharkSsl_isClient(o->sharkSsl) ? hs->prot.tls12.nextRIV : hs->prot.tls12.nextWIV;
+   memcpy(suspendblock, hs->prot.tls12.serverRandom, SHARKSSL_RANDOM_LEN);
+   memcpy(suspendblock + SHARKSSL_RANDOM_LEN, hs->prot.tls12.clientRandom, SHARKSSL_RANDOM_LEN);
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_TLS12_PRF((hs->cipherSuite->hashID == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256));
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SEED, suspendblock, sizeof(suspendblock));
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, o->psaTLS12MasterKey);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_LABEL, clkdmoperations, sizeof(clkdmoperations) - 1);
+   }
+   psa_set_key_type(&attributes, earlyconsole);
+   psa_set_key_bits(&attributes, (size_t)hs->cipherSuite->keyLen * 8u);
+   psa_set_key_algorithm(&attributes, recordAlg);
+   psa_set_key_usage_flags(&attributes, SharkSsl_isClient(o->sharkSsl) ? PSA_KEY_USAGE_ENCRYPT : PSA_KEY_USAGE_DECRYPT);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, clientKey);
+   }
+   psa_set_key_usage_flags(&attributes, SharkSsl_isClient(o->sharkSsl) ? PSA_KEY_USAGE_DECRYPT : PSA_KEY_USAGE_ENCRYPT);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, serverKey);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, clientIV, _XzY0x213);
+   }
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, serverIV, _XzY0x213);
+   }
+   psa_reset_key_attributes(&attributes);
+   if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   sharkssl_clear(suspendblock, sizeof(suspendblock));
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      if (*clientKey != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*clientKey);
+         *clientKey = PSA_KEY_ID_NULL;
+      }
+      if (*serverKey != PSA_KEY_ID_NULL)
+      {
+         (void)psa_destroy_key(*serverKey);
+         *serverKey = PSA_KEY_ID_NULL;
+      }
+      sharkssl_clear(hs->prot.tls12.nextRIV, sizeof(hs->prot.tls12.nextRIV));
+      sharkssl_clear(hs->prot.tls12.nextWIV, sizeof(hs->prot.tls12.nextWIV));
+      return -1;
+   }
+   return 0;
+}
+#else
 int allocalloc(SharkSslCon *o, U8 *pciercxcfg448, U16 len,
                                 U8 *s, U16 sLen, U8 r1[32], U8 r2[32])
 {
@@ -105357,6 +107201,7 @@ int allocalloc(SharkSslCon *o, U8 *pciercxcfg448, U16 len,
    #endif
    return offsetarray;
 }
+#endif
 #endif  
 
 
@@ -105378,6 +107223,35 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
    {
       U8 buf[SHARKSSL_MAX_HASH_LEN];
       int sffsdrnandflash = -1;
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      psa_key_id_t traffic, finishedKey = PSA_KEY_ID_NULL;
+      psa_algorithm_t hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+
+      traffic = (fixupcy82c693 == tvp5146routes) ? hsParam(o)->prot.tls13.psaCliHSTraffic : hsParam(o)->prot.tls13.psaSrvHSTraffic;
+      #if SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH
+      if ((fixupcy82c693 == tvp5146routes) && (o->flags & SHARKSSL_FLAG_POST_HANDSHAKE_CERT_REQ))
+      {
+         traffic = o->psaRAppTrafficSecret;
+      }
+      #endif
+      if (_XzY0x229(traffic, "\146\151\156\151\163\150\145\144", NULL, 0, configwrite, SHARKSSL_PSA_KEY_HMAC_SIGN, &finishedKey))
+      {
+         goto _SharkSslCon_calcFinishedHash_tls13_exit;
+      }
+      if (wakeupvector(hsParam(o), chargerplatform, configwrite))
+      {
+         goto _SharkSslCon_calcFinishedHash_tls13_exit;
+      }
+      {
+         size_t macLen = 0;
+         if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(hashAlg), chargerplatform, ftraceupdate, buf, sizeof(buf), &macLen) != PSA_SUCCESS) || (macLen != ftraceupdate))
+         {
+            goto _SharkSslCon_calcFinishedHash_tls13_exit;
+         }
+      }
+      memcpy(chargerplatform, buf, ftraceupdate);
+      sffsdrnandflash = 0;
+      #else
       if (bgezllabel((fixupcy82c693 == tvp5146routes) ? hsParam(o)->prot.tls13.cliHSTraffic : hsParam(o)->prot.tls13.srvHSTraffic, "\146\151\156\151\163\150\145\144", NULL, buf, ftraceupdate, configwrite))
       {
          goto _SharkSslCon_calcFinishedHash_tls13_exit;
@@ -105391,8 +107265,18 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
          goto _SharkSslCon_calcFinishedHash_tls13_exit;
       }
       sffsdrnandflash = 0;
+      #endif
 
       _SharkSslCon_calcFinishedHash_tls13_exit:
+      #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      if (finishedKey != PSA_KEY_ID_NULL)
+      {
+         if (psa_destroy_key(finishedKey) != PSA_SUCCESS)
+         {
+            sffsdrnandflash = -1;
+         }
+      }
+      #endif
       sharkssl_clear(buf, sizeof(buf));
       return sffsdrnandflash;
    }
@@ -105402,6 +107286,47 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
    #endif  
    #if SHARKSSL_TLS_1_2
    {
+      #if SHARKSSL_PSA_CONSUMER
+      static const U8 _XzY0x20C[] = "\143\154\151\145\156\164\040\146\151\156\151\163\150\145\144";
+      static const U8 _XzY0x226[] = "\163\145\162\166\145\162\040\146\151\156\151\163\150\145\144";
+      psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+      U8 _XzY0x255[SHARKSSL_MAX_HASH_LEN];
+      const U8 *clkdmoperations;
+      psa_status_t sffsdrnandflash;
+
+      if (o->psaTLS12MasterKey == PSA_KEY_ID_NULL)
+      {
+         return -1;
+      }
+      clkdmoperations = (fixupcy82c693 == tvp5146routes) ? _XzY0x20C : _XzY0x226;
+      if (wakeupvector(hsParam(o), _XzY0x255, configwrite))
+      {
+         return -1;
+      }
+      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_TLS12_PRF((configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256));
+      if (sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SEED, _XzY0x255, ftraceupdate);
+      }
+      if (sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, o->psaTLS12MasterKey);
+      }
+      if (sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_LABEL, clkdmoperations, 15);
+      }
+      if (sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, chargerplatform, SHARKSSL_FINISHED_MSG_LEN_TLS_1_2);
+      }
+      if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+      {
+         sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+      }
+      sharkssl_clear(_XzY0x255, sizeof(_XzY0x255));
+      return (sffsdrnandflash == PSA_SUCCESS) ? 0 : -1;
+      #else
       U8  *buf;
       buf = (U8*)baMalloc((ftraceupdate << 1) + 16 );
       if (buf)
@@ -105425,6 +107350,7 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
          sharkssl_clear(buf, (ftraceupdate << 1) + 16);
          baFree(buf);
       }
+      #endif
    }
    return offsetarray;
    #endif
@@ -105812,6 +107738,10 @@ U8 *SharkSslCon_getHandshakeData(SharkSslCon *o)
 U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o)
 {
    baAssert(o);
+   if (o->flags & firstcomponent)
+   {
+      return 0;
+   }
    if (!(o->flags & SHARKSSL_FLAG_HANDSHAKE_DATA_PENDING))
    {
       if ((o->state == loongson3notifier)
@@ -105965,7 +107895,7 @@ SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 masterclock)
 
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_KEY_UPDATE)
 #if SHARKSSL_ENABLE_AES_GCM
-int SharkSslCon_proactiveKeyUpdate(SharkSslCon *o)
+SHARKSSL_API int SharkSslCon_proactiveKeyUpdate(SharkSslCon *o)
 {
    #if SHARKSSL_TLS_1_2
    if (o->minor != SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3))
@@ -105979,8 +107909,7 @@ int SharkSslCon_proactiveKeyUpdate(SharkSslCon *o)
    {
       return 0;
    }
-   if ((o->inBuf.temp) ||
-       (o->flags & (createmappings | SHARKSSL_FLAG_HANDSHAKE_DATA_PENDING | audiosuspend)))
+   if ((o->inBuf.temp) || (o->flags & (createmappings | SHARKSSL_FLAG_HANDSHAKE_DATA_PENDING | audiosuspend)))
    {
       return 0;
    }
@@ -105998,8 +107927,20 @@ int SharkSslCon_proactiveKeyUpdate(SharkSslCon *o)
 
 SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 dcacheguest)
 {
-   U8 dcacheclean[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH], createsingle[SHARKSSL_MAX_KEY_LEN], crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN], *tp;
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   psa_key_id_t dcacheclean = PSA_KEY_ID_NULL;
+   U8 crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN], *tp;
+   #else
+   U8 dcacheclean[SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH], crashshutdown[SHARKSSL_TLS_1_3_STATIC_IV_LEN], *tp;
+   #endif
+   #if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t createsingle = PSA_KEY_ID_NULL;
+   #else
+   U8 createsingle[SHARKSSL_MAX_KEY_LEN];
+   #endif
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
    U16 ftraceupdate;
+   #endif
    U8 sffsdrnandflash = 0;
 
    if ((!o) || (dcacheguest > SHARKSSL_KEY_UPDATE_REQUESTED))
@@ -106023,7 +107964,13 @@ SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 dcacheguest)
    {
       goto _sharkssl_key_update_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (defaultpriorities(o->psaWAppTrafficSecret, &dcacheclean, &createsingle, crashshutdown, o->wCipherSuite, ptraceregsets))
+   #elif SHARKSSL_PSA_CONSUMER
+   if (defaultpriorities(o->wAppTrafficSecret, dcacheclean, &createsingle, crashshutdown, o->wCipherSuite, ptraceregsets))
+   #else
    if (defaultpriorities(o->wAppTrafficSecret, dcacheclean, createsingle, crashshutdown, o->wCipherSuite))
+   #endif
    {
       goto _sharkssl_key_update_cleanup;
    }
@@ -106040,20 +107987,52 @@ SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 dcacheguest)
       goto _sharkssl_key_update_cleanup;
    }
 
+   #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
    ftraceupdate = sharkssl_getHashLen(o->wCipherSuite->hashID);
-   o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0);
-   memcpy(o->wKey, createsingle, o->wCipherSuite->keyLen);
-   memcpy(o->wIV, crashshutdown, SHARKSSL_TLS_1_3_STATIC_IV_LEN);
-   if (o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0))
+   #endif
+   if (o->wCipherSuite->cipherFunc(o, chargerworker | ptraceregsets, (U8*)0, 0))
    {
-      sharkssl_clear(o->wKey, sizeof(o->wKey));
-      sharkssl_clear(o->wIV, sizeof(o->wIV));
-      sharkssl_clear(o->wAppTrafficSecret, sizeof(o->wAppTrafficSecret));
       o->outBuf.dataLen = 0;
       fpemureturn(o);
       goto _sharkssl_key_update_cleanup;
    }
+   #if SHARKSSL_PSA_CONSUMER
+   o->psaWRecordKey = createsingle;
+   #else
+   memcpy(o->wKey, createsingle, o->wCipherSuite->keyLen);
+   #endif
+   memcpy(o->wIV, crashshutdown, SHARKSSL_TLS_1_3_STATIC_IV_LEN);
+   if (o->wCipherSuite->cipherFunc(o, SHARKSSL_OP_CONSTRUCTOR | ptraceregsets, (U8*)0, 0))
+   {
+      #if SHARKSSL_PSA_CONSUMER
+      o->psaWRecordKey = PSA_KEY_ID_NULL;
+      #else
+      sharkssl_clear(o->wKey, sizeof(o->wKey));
+      #endif
+      sharkssl_clear(o->wIV, sizeof(o->wIV));
+      #if (!SHARKSSL_PSA_CONSUMER_SECRET_HANDLES)
+      sharkssl_clear(o->wAppTrafficSecret, sizeof(o->wAppTrafficSecret));
+      #endif
+      o->outBuf.dataLen = 0;
+      fpemureturn(o);
+      goto _sharkssl_key_update_cleanup;
+   }
+   #if SHARKSSL_PSA_CONSUMER
+   createsingle = PSA_KEY_ID_NULL;
+   #endif
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (psa_destroy_key(o->psaWAppTrafficSecret) != PSA_SUCCESS)
+   {
+      o->psaWAppTrafficSecret = PSA_KEY_ID_NULL;
+      o->outBuf.dataLen = 0;
+      fpemureturn(o);
+      goto _sharkssl_key_update_cleanup;
+   }
+   o->psaWAppTrafficSecret = dcacheclean;
+   dcacheclean = PSA_KEY_ID_NULL;
+   #else
    memcpy(o->wAppTrafficSecret, dcacheclean, ftraceupdate);
+   #endif
    cefuseclkdm(o);
    disablelevel(o->wSeqNum);
    o->inBuf.temp = o->outBuf.dataLen;
@@ -106065,8 +108044,22 @@ SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 dcacheguest)
    sffsdrnandflash = 1;
 
    _sharkssl_key_update_cleanup:
+   #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+   if (dcacheclean != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(dcacheclean);
+   }
+   #else
    sharkssl_clear(dcacheclean, sizeof(dcacheclean));
+   #endif
+   #if SHARKSSL_PSA_CONSUMER
+   if (createsingle != PSA_KEY_ID_NULL)
+   {
+      (void)psa_destroy_key(createsingle);
+   }
+   #else
    sharkssl_clear(createsingle, sizeof(createsingle));
+   #endif
    sharkssl_clear(crashshutdown, sizeof(crashshutdown));
    return sffsdrnandflash;
 }
@@ -106619,10 +108612,10 @@ U8 SharkSslCon_selectProtocol(SharkSslCon *o, U8 ejtagsetup)
 
 #if SHARKSSL_SSL_CLIENT_CODE
 #if SHARKSSL_ENABLE_SNI
-U8 SharkSslCon_setSNI(SharkSslCon *o, const char *gpio1config, U16 traceleave)
+U8 SharkSslCon_setSNI(SharkSslCon *o, const char *name, U16 traceleave)
 {
    baAssert(o);
-   baAssert(gpio1config || !traceleave);
+   baAssert(name || !traceleave);
 
    #if SHARKSSL_SSL_SERVER_CODE
    if (SharkSsl_isClient(o->sharkSsl))
@@ -106633,7 +108626,7 @@ U8 SharkSslCon_setSNI(SharkSslCon *o, const char *gpio1config, U16 traceleave)
          
          baAssert(traceleave < 0x100);
          o->padLen = traceleave;
-         o->rCtx = (void*)gpio1config;
+         o->rCtx = (void*)name;
          return 1;  
       }
    }
@@ -106885,58 +108878,58 @@ U32 SharkSslSession_getLatestAccessTime(SharkSslSession *o)
 
 
 #if (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)
-#define SharkSslECCurve_constructor1_(c, i, gpio1config) do {     \
+#define SharkSslECCurve_constructor1_(c, i, name) do {     \
    c->bits = i;                                            \
-   fpscroffset(&c->prime, gpio1config##_prime);   \
-   fpscroffset(&c->order, gpio1config##_order);   \
-   fpscroffset(&c->G.x,   gpio1config##_Gx);      \
-   fpscroffset(&c->G.y,   gpio1config##_Gy);      \
-   fpscroffset(&c->a,     gpio1config##_a);       \
+   fpscroffset(&c->prime, name##_prime);   \
+   fpscroffset(&c->order, name##_order);   \
+   fpscroffset(&c->G.x,   name##_Gx);      \
+   fpscroffset(&c->G.y,   name##_Gy);      \
+   fpscroffset(&c->a,     name##_a);       \
 } while (0)
 
 #else
-#define SharkSslECCurve_constructor1_(c, i, gpio1config) do {     \
+#define SharkSslECCurve_constructor1_(c, i, name) do {     \
    c->bits = i;                                            \
-   fpscroffset(&c->prime, gpio1config##_prime);   \
-   fpscroffset(&c->order, gpio1config##_order);   \
-   fpscroffset(&c->G.x,   gpio1config##_Gx);      \
-   fpscroffset(&c->G.y,   gpio1config##_Gy);      \
+   fpscroffset(&c->prime, name##_prime);   \
+   fpscroffset(&c->order, name##_order);   \
+   fpscroffset(&c->G.x,   name##_Gx);      \
+   fpscroffset(&c->G.y,   name##_Gy);      \
 } while (0)
 
 #endif
 
 
 #if SHARKSSL_ECC_VERIFY_POINT_REQUIRED
-#define SharkSslECCurve_constructor_(c, i, gpio1config) do {      \
-   SharkSslECCurve_constructor1_(c, i, gpio1config);              \
-   fpscroffset(&c->b, gpio1config##_b);           \
+#define SharkSslECCurve_constructor_(c, i, name) do {      \
+   SharkSslECCurve_constructor1_(c, i, name);              \
+   fpscroffset(&c->b, name##_b);           \
 } while (0)
 
 #else
-#define SharkSslECCurve_constructor_(c, i, gpio1config)           \
-   SharkSslECCurve_constructor1_(c, i, gpio1config);
+#define SharkSslECCurve_constructor_(c, i, name)           \
+   SharkSslECCurve_constructor1_(c, i, name);
 
 #endif
 
 
-#define SharkSslECCurve_constructor_mont1_(c, i, gpio1config) do {    \
+#define SharkSslECCurve_constructor_mont1_(c, i, name) do {    \
    c->bits = i;                                                \
-   fpscroffset(&c->prime, gpio1config##_prime);       \
-   fpscroffset(&c->G.x,   gpio1config##_Gx);          \
+   fpscroffset(&c->prime, name##_prime);       \
+   fpscroffset(&c->G.x,   name##_Gx);          \
    c->order.len = 0; c->order.mem = NULL; c->order.beg = NULL; \
    c->G.y.len   = 0; c->G.y.mem   = NULL; c->G.y.beg   = NULL; \
    c->a.len     = 0; c->a.mem     = NULL; c->a.beg     = NULL; \
 } while (0)
 
 #if SHARKSSL_ECC_VERIFY_POINT_REQUIRED
-#define SharkSslECCurve_constructor_mont_(c, i, gpio1config) do {     \
-   SharkSslECCurve_constructor_mont1_(c, i, gpio1config);             \
+#define SharkSslECCurve_constructor_mont_(c, i, name) do {     \
+   SharkSslECCurve_constructor_mont1_(c, i, name);             \
    c->b.len     = 0; c->b.mem     = NULL; c->b.beg     = NULL; \
 } while (0)
 
 #else
-#define SharkSslECCurve_constructor_mont_(c, i, gpio1config) \
-   SharkSslECCurve_constructor_mont1_(c, i, gpio1config);
+#define SharkSslECCurve_constructor_mont_(c, i, name) \
+   SharkSslECCurve_constructor_mont1_(c, i, name);
 
 #endif
 
@@ -108087,7 +110080,7 @@ typedef struct
 #define SharkSslECPointJ_copy(s,d) \
         unassignedvector(&((s)->x), &((d)->x)); unassignedvector(&((s)->y), &((d)->y)); unassignedvector(&((s)->z), &((d)->z))
 
-#if (SHARKSSL_ECC_TIMING_RESISTANT && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+#if SHARKSSL_ECC_TIMING_RESISTANT
 
 static void _XzY0x180(SharkSslECPointJ *o, const SharkSslECPointJ *candidate, U32 selected, U16 writepmresrn)
 {
@@ -108264,7 +110257,7 @@ static void panicblink(SharkSslECPointJ *j,
 #undef traceguest
 
 
-#if (!SHARKSSL_ECDSA_ONLY_VERIFY)
+
 int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
                                 shtype_t *k,
                                 SharkSslECPoint *deltadevices)
@@ -108276,7 +110269,7 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
    #elif ((SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1) && (SHARKSSL_ECC_TIMING_RESISTANT))
    #error SHARKSSL_ECC_MULT_SLIDING_WINDOW_K must be 0 when SHARKSSL_ECC_TIMING_RESISTANT is enabled
    #endif
-   #if (SHARKSSL_ECC_TIMING_RESISTANT)
+   #if SHARKSSL_ECC_TIMING_RESISTANT
    shtype_tWord m0, afterreset, scalarBit;
    SharkSslECPointJ point[3];
    #else
@@ -108772,7 +110765,6 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    #endif
 }
 #endif
-#endif  
 
 
 #if SHARKSSL_ENABLE_ECDSA
@@ -110517,11 +112509,11 @@ rdhwrnormal(lua_State *L)
 {
    int i;
    const char* panelshutdown[2];
-   const char *gpio1config = luaL_checkstring(L, 1);
+   const char *name = luaL_checkstring(L, 1);
    IoIntf* io =  baluaENV_getparam(L)->vmio;
-   gpio1config = luaL_gsub(L, gpio1config, "\056", "\057");
-   panelshutdown[0] = lua_pushfstring(L, "\056\154\165\141\057\045\163\056\154\165\141", gpio1config);
-   panelshutdown[1] = lua_pushfstring(L, "\056\154\165\141\057\045\163\056\154\142", gpio1config);
+   name = luaL_gsub(L, name, "\056", "\057");
+   panelshutdown[0] = lua_pushfstring(L, "\056\154\165\141\057\045\163\056\154\165\141", name);
+   panelshutdown[1] = lua_pushfstring(L, "\056\154\165\141\057\045\163\056\154\142", name);
    for(i=0 ; i < 2 ; i++)
    {
       if(clearcache(L, io, panelshutdown[i]))
@@ -111341,25 +113333,25 @@ typedef struct
 
 
 static int
-xilinxtimecounter(IoIntfPtr fdc37m81xconfig, const char* gpio1config, void* a, void* b)
+xilinxtimecounter(IoIntfPtr fdc37m81xconfig, const char* name, void* a, void* b)
 {
    LZipIo* o = (LZipIo*)fdc37m81xconfig;
-   int handlersetup = o->orgPropertyFp(fdc37m81xconfig, gpio1config, a, b);
-   if(handlersetup < 0 && ! strcmp(gpio1config, "\143\154\157\163\145"))
+   int handlersetup = o->orgPropertyFp(fdc37m81xconfig, name, a, b);
+   if(handlersetup < 0 && ! strcmp(name, "\143\154\157\163\145"))
    {
       handlersetup=IoIntfZipReader_close(&o->reader);
    }
-   else if( ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
+   else if( ! strcmp(name, "\144\145\163\164\162\165\143\164\157\162") )
       IoIntfZipReader_destructor(&o->reader);
    return handlersetup;
 }
 
 
 static int
-featuressetup(LZipIo* o, IoIntfPtr largesegbits, const char* gpio1config)
+featuressetup(LZipIo* o, IoIntfPtr largesegbits, const char* name)
 {
    int sffsdrnandflash;
-   IoIntfZipReader_constructor(&o->reader, largesegbits, gpio1config);
+   IoIntfZipReader_constructor(&o->reader, largesegbits, name);
    if(CspReader_isValid(&o->reader))
    {
       ZipIo* fdc37m81xconfig = (ZipIo*)o;
@@ -111420,14 +113412,14 @@ mailboxaddress(CspReader* r,void* alloccontroller,U32 idmapstart,U32 icachealias
 
 
 static int
-namedentries(IoIntfPtr fdc37m81xconfig, const char* gpio1config, void* a, void* b)
+namedentries(IoIntfPtr fdc37m81xconfig, const char* name, void* a, void* b)
 {
    LZipIo2Stream* o = (LZipIo2Stream*)fdc37m81xconfig;
-   int handlersetup = o->orgPropertyFp(fdc37m81xconfig, gpio1config, a, b);
+   int handlersetup = o->orgPropertyFp(fdc37m81xconfig, name, a, b);
    if(o->lstream)
    {
-      if( (handlersetup < 0 && ! strcmp(gpio1config, "\143\154\157\163\145")) ||
-          ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
+      if( (handlersetup < 0 && ! strcmp(name, "\143\154\157\163\145")) ||
+          ! strcmp(name, "\144\145\163\164\162\165\143\164\157\162") )
       {
          luaL_unref(o->L, LUA_REGISTRYINDEX, o->fileRef);
          o->lstream=0;
@@ -111517,9 +113509,9 @@ static const luaL_Reg baiolib[] = {
 static int
 packetcount(lua_State *L)
 {
-   const char* gpio1config = luaL_optstring(L, 1, "\166\155");
+   const char* name = luaL_optstring(L, 1, "\166\155");
    lua_rawgeti(L,BA_ENV_IX,BA_IOINTFTAB);
-   lua_pushstring(L,gpio1config);
+   lua_pushstring(L,name);
    lua_rawget(L, -2);
    return 1;
 }
@@ -111553,7 +113545,7 @@ flushicache(lua_State *L)
    LZipIo* lzio;
    int sffsdrnandflash=-1;
    IoIntf* parentio=0;
-   const char* gpio1config=0;
+   const char* name=0;
    ZipReader* zr=0;
    BaLua_param* p = baluaENV_getparam(L);
    if(0 == lua_gettop(L))
@@ -111567,13 +113559,13 @@ flushicache(lua_State *L)
       sffsdrnandflash = 0;
       if(lua_isstring(L, 1))
       {
-         gpio1config = lua_tostring(L, 1);
+         name = lua_tostring(L, 1);
          sffsdrnandflash=IOINTF_NOTFOUND;
          balua_pushbatab(L);
          lua_rawgeti(L, -1, BA_IOINTFPTRTAB);
          if(LUA_TTABLE == lua_type(L,-1))
          {
-            lua_pushstring(L,gpio1config);
+            lua_pushstring(L,name);
             lua_rawget(L, -2);
             if(lua_islightuserdata(L,-1))
             {
@@ -111596,8 +113588,8 @@ flushicache(lua_State *L)
    else
    {
       parentio = baluaENV_checkIoIntf(L, 1);
-      gpio1config = luaL_checkstring(L, 2);
-      sffsdrnandflash = parentio->statFp(parentio, gpio1config, &st);
+      name = luaL_checkstring(L, 2);
+      sffsdrnandflash = parentio->statFp(parentio, name, &st);
    }
    if(!sffsdrnandflash)
    {
@@ -111618,7 +113610,7 @@ flushicache(lua_State *L)
                IoIntfPtr p = (IoIntfPtr)baLMalloc(L,icachealiases);
                if(p)
                {
-                  sffsdrnandflash = parentio->propertyFp(parentio,"\144\165\160",p,(char*)gpio1config);
+                  sffsdrnandflash = parentio->propertyFp(parentio,"\144\165\160",p,(char*)name);
                   if( ! sffsdrnandflash )
                      io->i = (IoIntf*)p;
                   else
@@ -111633,7 +113625,7 @@ flushicache(lua_State *L)
             lzio = baLMalloc(L,sizeof(LZipIo));
             if(lzio)
             {
-               if(0==(sffsdrnandflash=featuressetup(lzio, parentio, gpio1config)) &&
+               if(0==(sffsdrnandflash=featuressetup(lzio, parentio, name)) &&
                   0==(sffsdrnandflash=handlecorrupted((IoIntf*)lzio,p)) &&
                   (!p->zipPubKey || !(sffsdrnandflash=baCheckZipSignature(p->zipPubKey,
                      ((ZipReader*)&lzio->reader)->size,(CspReader*)&lzio->reader
@@ -111837,14 +113829,14 @@ balua_loadfile(lua_State *L,const char *domainactivate,IoIntf* io,int h8300nativ
 
 
 BA_API IoIntf*
-balua_iointf(lua_State* L, const char* gpio1config, struct IoIntf* doubledefault)
+balua_iointf(lua_State* L, const char* name, struct IoIntf* doubledefault)
 {
    int requestgpios;
    baio_t* baio;
    
    balua_pushbatab(L);
    requestgpios=lua_gettop(L);
-   if (!gpio1config | !*gpio1config) gpio1config = "\166\155";
+   if (!name | !*name) name = "\166\155";
    if (doubledefault)
    {
       baio = (baio_t*)lua_newuserdata(L, sizeof(baio_t));
@@ -111854,14 +113846,14 @@ balua_iointf(lua_State* L, const char* gpio1config, struct IoIntf* doubledefault
       lua_setmetatable(L, -2);
       
       lua_rawgeti(L,requestgpios,BA_IOINTFTAB);
-      lua_pushstring(L, gpio1config);
+      lua_pushstring(L, name);
       lua_pushvalue(L,-3); 
       lua_rawset(L,-3);
    }
    else
    { 
       lua_rawgeti(L,requestgpios,BA_IOINTFTAB);
-      lua_pushstring(L, gpio1config);
+      lua_pushstring(L, name);
       lua_rawget(L,-2);
       baio = (baio_t*)lua_touserdata(L,-1);
    }
@@ -111887,7 +113879,7 @@ balua_createiointf(lua_State* L)
 
 
 BA_API void
-balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
+balua_installZIO(lua_State* L, const char* name, ZipReader* guestconfigs)
 {
    balua_pushbatab(L);
    lua_rawgeti(L, -1, BA_IOINTFPTRTAB);
@@ -111898,7 +113890,7 @@ balua_installZIO(lua_State* L, const char* gpio1config, ZipReader* guestconfigs)
       lua_pushvalue(L,-1);
       lua_rawseti(L, -3, BA_IOINTFPTRTAB);
    }
-   lua_pushstring(L,gpio1config);
+   lua_pushstring(L,name);
    lua_pushlightuserdata(L,guestconfigs);
    lua_settable(L, -3);
    lua_pop(L,2);
@@ -115942,7 +117934,7 @@ stateperiodic(LMultipartUpload* o, int switcherthread, BaBool unregisternotifier
 
 static int
 alternativesmulti(MultipartUpload* fdc37m81xconfig,
-                          const char* gpio1config,
+                          const char* name,
                           const char* videoprobe)
 {
    LMultipartUpload* o = (LMultipartUpload*)fdc37m81xconfig;
@@ -115952,7 +117944,7 @@ alternativesmulti(MultipartUpload* fdc37m81xconfig,
    if (lua_isfunction(L,MPU_FORMDATA))
    {
       lua_pushvalue(L, MPU_FORMDATA);
-      lua_pushstring(L, gpio1config);
+      lua_pushstring(L, name);
       lua_pushstring(L, videoprobe);
       return stateperiodic(o,2,TRUE);
    }
@@ -115961,7 +117953,7 @@ alternativesmulti(MultipartUpload* fdc37m81xconfig,
 
 static int
 exceptiontable(MultipartUpload* fdc37m81xconfig,
-                           const char* gpio1config,
+                           const char* name,
                            const char* configflags,
                            const char* defaultattrs,
                            const char* rm200disable)
@@ -115972,7 +117964,7 @@ exceptiontable(MultipartUpload* fdc37m81xconfig,
    if (lua_isfunction(L,MPU_FILEBEGIN))
    {
       lua_pushvalue(L, MPU_FILEBEGIN);
-      lua_pushstring(L, gpio1config);
+      lua_pushstring(L, name);
       lua_pushstring(L, configflags);
       lua_pushstring(L, defaultattrs);
       lua_pushstring(L, rm200disable);
@@ -117272,8 +119264,8 @@ boardsetup(AuthorizerIntf* fdc37m81xconfig, AuthenticatedUser* buttonsbelkin,
                           HttpMethod averagevalue, const char* driverstate)
 {
    BaBool cachelsize=FALSE;
-   const char* gpio1config = AuthenticatedUser_getName(buttonsbelkin);
-   if(gpio1config)
+   const char* name = AuthenticatedUser_getName(buttonsbelkin);
+   if(name)
    {
       HttpSession* s;
       LSession* ls;
@@ -117284,7 +119276,7 @@ boardsetup(AuthorizerIntf* fdc37m81xconfig, AuthenticatedUser* buttonsbelkin,
       
       lua_pushcclosure(L,balua_errorhandler,0);
       lua_rawgeti(L, LUA_REGISTRYINDEX, o->funcRef);
-      lua_pushstring(L,gpio1config);
+      lua_pushstring(L,name);
       lua_pushstring(L,HttpRequest_getMethod2(averagevalue));
       lua_pushstring(L,driverstate);
 
@@ -118628,23 +120620,23 @@ faulterror(lua_State *L, int enableerror)
 {
    IoIntf* io;
    LHttpResRdr* dir;
-   const char* gpio1config=0;
+   const char* name=0;
    const char* doubleunpack=0;
    int reservevmcore=0;
    int hwmodclass=1;
    if(enableerror)
    {
-      gpio1config=luaL_checkstring(L,1);
+      name=luaL_checkstring(L,1);
       hwmodclass++;
    }
    else
    {
       if((lua_type(L,1) == LUA_TSTRING) || lua_isnil(L,1))
       {
-         gpio1config=lua_tostring(L,1);
+         name=lua_tostring(L,1);
          hwmodclass++;
       }
-      if(!gpio1config) gpio1config="";
+      if(!name) name="";
    }
    if(lua_isnumber(L, hwmodclass))
    {
@@ -118655,10 +120647,10 @@ faulterror(lua_State *L, int enableerror)
    if(enableerror)
       doubleunpack=luaL_optstring(L,hwmodclass+1,0);
    dir=(LHttpResRdr*)baluaENV_createDir(
-      L,BA_TDIR_RSRDR,sizeof(LHttpResRdr)+strlen(gpio1config)+1);
+      L,BA_TDIR_RSRDR,sizeof(LHttpResRdr)+strlen(name)+1);
    memset(dir,0,sizeof(LHttpResRdr));
-   strcpy((char*)(dir+1),gpio1config);
-   gpio1config=(char*)(dir+1);
+   strcpy((char*)(dir+1),name);
+   name=(char*)(dir+1);
    lua_pushvalue(L, hwmodclass); 
    dir->ioRef=eventmutex(LHttpDir_toBase(dir),L);
    if(doubleunpack)
@@ -118668,9 +120660,9 @@ faulterror(lua_State *L, int enableerror)
       eventmutex(LHttpDir_toBase(dir),L);
    }
    if(enableerror)
-      HttpResRdr_constructor2((HttpResRdr*)dir, io, gpio1config, doubleunpack,0, (S8)reservevmcore); 
+      HttpResRdr_constructor2((HttpResRdr*)dir, io, name, doubleunpack,0, (S8)reservevmcore); 
    else
-      HttpResRdr_constructor((HttpResRdr*)dir, io, gpio1config, 0, (S8)reservevmcore);
+      HttpResRdr_constructor((HttpResRdr*)dir, io, name, 0, (S8)reservevmcore);
    HttpRdFilter_constructor(&dir->filter,"\154\163\160",fixupdec21142); 
    return 1;
 }
@@ -118709,7 +120701,7 @@ returnretired(lua_State *L)
    LWebDAV* o;
    IoIntf* io;
    int sharedsecret;
-   const char* gpio1config=0;
+   const char* name=0;
    const char* icachedcache=0;
    int reservevmcore=0;
    int hwmodclass=1;
@@ -118717,10 +120709,10 @@ returnretired(lua_State *L)
    int buttonspdata=20;
    if(lua_isstring(L,1) || lua_isnil(L,1))
    {
-      gpio1config=lua_tostring(L,1);
+      name=lua_tostring(L,1);
       hwmodclass++;
    }
-   if(!gpio1config) gpio1config="";
+   if(!name) name="";
    if(lua_isnumber(L, hwmodclass))
    {
       reservevmcore=(int)luaL_checkinteger(L, hwmodclass);
@@ -118739,14 +120731,14 @@ returnretired(lua_State *L)
       buttonspdata=(int)luaL_checkinteger(L,hwmodclass+1);
    }
    o=(LWebDAV*)baluaENV_createDir(
-      L,BA_TDIR_DAV,sizeof(LWebDAV)+strlen(gpio1config)+1);
+      L,BA_TDIR_DAV,sizeof(LWebDAV)+strlen(name)+1);
    memset(o,0,sizeof(LWebDAV));
-   strcpy((char*)(o+1),gpio1config);
-   gpio1config=(char*)(o+1);
+   strcpy((char*)(o+1),name);
+   name=(char*)(o+1);
    lua_pushvalue(L, sharedsecret);
    o->ioRef=eventmutex(LHttpDir_toBase(o),L);
    WebDAV_constructor((WebDAV*)o,
-    io, isideindependent, gpio1config, icachedcache, buttonspdata, 0, (S8)reservevmcore);
+    io, isideindependent, name, icachedcache, buttonspdata, 0, (S8)reservevmcore);
    return 1;
 }
 
@@ -118873,19 +120865,19 @@ enetswdevice(lua_State *L)
 {
    HttpDir* dir;
    int reservevmcore;
-   const char* gpio1config=0;
+   const char* name=0;
    int hwmodclass=1;
    if((LUA_TSTRING == lua_type(L, 1)) || lua_isnil(L,1))
    {
-      gpio1config=lua_tostring(L,1);
+      name=lua_tostring(L,1);
       hwmodclass++;
    }
-   if(!gpio1config) gpio1config="";
+   if(!name) name="";
    reservevmcore=(int)luaL_optinteger(L, hwmodclass, 0);
-   dir=baluaENV_createDir(L, BA_TDIR, sizeof(HttpDir)+strlen(gpio1config)+1);
-   strcpy((char*)(dir+1),gpio1config);
-   gpio1config=(char*)(dir+1);
-   HttpDir_constructor(dir, gpio1config, (S8)reservevmcore);
+   dir=baluaENV_createDir(L, BA_TDIR, sizeof(HttpDir)+strlen(name)+1);
+   strcpy((char*)(dir+1),name);
+   name=(char*)(dir+1);
+   HttpDir_constructor(dir, name, (S8)reservevmcore);
    return 1;
 }
 
@@ -118987,18 +120979,18 @@ typedef struct
 
 
 static UserNode*
-UserNode_create(const char* gpio1config, HttpSockaddr* serialports, U32 enabletraps)
+UserNode_create(const char* name, HttpSockaddr* serialports, U32 enabletraps)
 {
    UserNode* n;
-   if(!gpio1config) gpio1config="\077";
-   n = (UserNode*)baMalloc(sizeof(UserNode)+strlen(gpio1config));
+   if(!name) name="\077";
+   n = (UserNode*)baMalloc(sizeof(UserNode)+strlen(name));
    if(n)
    {
       DoubleLink_constructor(n);
       n->addr = *serialports;
       n->time = baGetUnixTime();
       n->loginAttempts = enabletraps;
-      strcpy(n->name,gpio1config);
+      strcpy(n->name,name);
    }
    return n;
 }
@@ -119167,7 +121159,7 @@ LuaUserTracker_getTracker(lua_State* L)
 static int
 wm2200device(lua_State* L)
 {
-   const char* gpio1config;
+   const char* name;
    LoginTrackerNode* ltn;
    int uart2hwmod=0;
    LuaUserTracker* o = LuaUserTracker_getTracker(L);
@@ -119192,9 +121184,9 @@ wm2200device(lua_State* L)
        lua_settable(L, -3);
 
        lua_pushliteral(L, "\156\141\155\145");
-       gpio1config = (const char*)LoginTrackerNode_getUserData(ltn);
-       if(!gpio1config) gpio1config="\077";
-       lua_pushstring(L, gpio1config);
+       name = (const char*)LoginTrackerNode_getUserData(ltn);
+       if(!name) name="\077";
+       lua_pushstring(L, name);
        lua_settable(L, -3);
 
        lua_pushliteral(L, "\164\151\155\145");
@@ -119388,7 +121380,7 @@ static int build_attrs(lua_State *L,const char** attrs)
 
 static int build_params(lua_State *L,
                         xparser_event evt,
-                        const char* gpio1config,
+                        const char* name,
                         const char** attrs,
                         const char* alloccontroller)
 {
@@ -119419,7 +121411,7 @@ static int build_params(lua_State *L,
       default:  
          break;
    }
-   if (buttondevice) lua_pushstring(L,gpio1config);
+   if (buttondevice) lua_pushstring(L,name);
    if (unmaprelease) build_attrs(L,attrs);
    if (probebroadcom) lua_pushstring(L,alloccontroller);
    return buttondevice+unmaprelease+probebroadcom;
@@ -119429,7 +121421,7 @@ static int callback(
    xparser* p,
    void* fixupfinal,
    xparser_event evt,
-   const char* gpio1config,
+   const char* name,
    const char** attrs,
    const char* alloccontroller)
 {
@@ -119456,7 +121448,7 @@ static int callback(
    lua_remove(L,-2);     
    lua_rawgeti(L,env,2); 
 
-   i = build_params(L,evt,gpio1config,attrs,alloccontroller);
+   i = build_params(L,evt,name,attrs,alloccontroller);
    ud->incallback = 1;
    ret=lua_pcall (L, i+1, LUA_MULTRET, 0);
    ud->incallback = 0;
@@ -121395,7 +123387,7 @@ static int ebuscsetup(context* icacherange,xparser_callback fn)
 {
    sptrstack* cacheflush = &icacherange->param_stack;
    xparser_event evt = icacherange->event;
-   const char* gpio1config = "";
+   const char* name = "";
    const char** attrs = nullpair;
    const char* relocationaddress = "";
    int kexeccrash = 0;
@@ -121408,10 +123400,10 @@ static int ebuscsetup(context* icacherange,xparser_callback fn)
          kexeccrash = 1;
          
       case xparserEND_ELEMENT:
-         gpio1config = cstr_str(&icacherange->tagname);
+         name = cstr_str(&icacherange->tagname);
          break;
       case xparserPI:
-         gpio1config = cstr_str(&icacherange->tagname);
+         name = cstr_str(&icacherange->tagname);
          
       case xparserCOMMENT:
       case xparserCDATA:
@@ -121435,7 +123427,7 @@ static int ebuscsetup(context* icacherange,xparser_callback fn)
       attrs = (const char**)cacheflush->pData;
    }
 
-   ret = fn(icacherange,icacherange->userdata,evt,gpio1config,attrs,relocationaddress);
+   ret = fn(icacherange,icacherange->userdata,evt,name,attrs,relocationaddress);
    icacherange->event = xparserNOEVENT;
    fpregsoffset(&icacherange->data);
    swiotlbsetup(cacheflush);
@@ -122856,7 +124848,7 @@ HttpClient_readData(HttpClient* o, void* buf, int lsdc2format)
 
 
 const char*
-HttpClient_getHeaderValue(HttpClient* o, const char* gpio1config)
+HttpClient_getHeaderValue(HttpClient* o, const char* name)
 {
    int n;
    HttpClientHeader* h = HttpClient_getHeaders(o, &n);
@@ -122865,7 +124857,7 @@ HttpClient_getHeaderValue(HttpClient* o, const char* gpio1config)
       for( ; n > 0 ; h++,n--)
       {
          const char* k = HttpClientHeader_key(o,h);
-         if( ! baStrCaseCmp(gpio1config, k) )
+         if( ! baStrCaseCmp(name, k) )
             return HttpClientHeader_val(o,h);
       }
    }
@@ -123056,7 +125048,7 @@ static int
 slavechannels(NetIo* o,
                   HttpClient* con,
                   HttpMethod m,
-                  const char* gpio1config,
+                  const char* name,
                   int alignresource,
                   const HttpClientKeyVal* cacheflush,
                   const HttpClientKeyVal* platformioremap,
@@ -123096,9 +125088,9 @@ prepareoptimized(HttpClientKeyVal* cacheflush, const char* cmd, int systemregist
 }
 
 static BaBool
-timer7hwmod(const char* gpio1config)
+timer7hwmod(const char* name)
 {
-   const char* ptr = strrchr(gpio1config, '\057');
+   const char* ptr = strrchr(name, '\057');
    return ptr && ptr[1] == 0;
 }
 
@@ -123135,13 +125127,13 @@ NetIoDirIter_getName(DirIntfPtr fdc37m81xconfig)
 {
    JErr e;
    NetIoDirIter* o = (NetIoDirIter*)fdc37m81xconfig;
-   char* gpio1config=0;
+   char* name=0;
    JErr_constructor(&e);
    if(o->valIter)
    {
-      JVal_get(o->valIter, &e, "\173\163\175", "\156", &gpio1config);
+      JVal_get(o->valIter, &e, "\173\163\175", "\156", &name);
    }
-   return gpio1config;
+   return name;
 }
 
 static int
@@ -123490,17 +125482,17 @@ prefetchdisable(NetIo* o)
 
 
 static char*
-NetIo_mkURL(NetIo* o, const char* gpio1config, int alignresource, int* sffsdrnandflash)
+NetIo_mkURL(NetIo* o, const char* name, int alignresource, int* sffsdrnandflash)
 {
    int len;
    char* handlersetup;
    if(o->rootPath)
    {
       if(alignresource < 0)
-         alignresource=iStrlen(gpio1config);
-      if(*gpio1config == '\057' && alignresource)
+         alignresource=iStrlen(name);
+      if(*name == '\057' && alignresource)
       {
-         gpio1config++;
+         name++;
          alignresource--;
       }
       len = o->rootPathLen+alignresource+2;
@@ -123509,7 +125501,7 @@ NetIo_mkURL(NetIo* o, const char* gpio1config, int alignresource, int* sffsdrnan
       {
          char* ptr = handlersetup+o->rootPathLen;
          memcpy(handlersetup, o->rootPath, o->rootPathLen);
-         memcpy(ptr, gpio1config, alignresource);
+         memcpy(ptr, name, alignresource);
          ptr[alignresource]=0;
       }
       else
@@ -123525,7 +125517,7 @@ static int
 pxa270dm9000(NetIo* o,
                  HttpClient* con,
                  HttpMethod m,
-                 const char* gpio1config,
+                 const char* name,
                  int alignresource,
                  const HttpClientKeyVal* cacheflush,
                  const HttpClientKeyVal* platformioremap,
@@ -123538,14 +125530,14 @@ pxa270dm9000(NetIo* o,
    {   
       return E_MALLOC;
    }
-   if(alignresource < 0 && HttpClient_isURL(gpio1config) > 0)
+   if(alignresource < 0 && HttpClient_isURL(name) > 0)
    {
-      helperboard=gpio1config;
+      helperboard=name;
       url=0;
    }
    else
    {
-      if( ! (url = NetIo_mkURL(o, gpio1config, alignresource, &sffsdrnandflash)) )
+      if( ! (url = NetIo_mkURL(o, name, alignresource, &sffsdrnandflash)) )
          return sffsdrnandflash;
       if(displaydevice)
          strcat(url, "\057");
@@ -123562,7 +125554,7 @@ static int
 slavechannels(NetIo* o,
                   HttpClient* con,
                   HttpMethod m,
-                  const char* gpio1config,
+                  const char* name,
                   int alignresource,
                   const HttpClientKeyVal* cacheflush,
                   const HttpClientKeyVal* platformioremap,
@@ -123571,7 +125563,7 @@ slavechannels(NetIo* o,
    int sffsdrnandflash;
    if(!platformioremap)
       platformioremap=defHeader;
-   sffsdrnandflash = pxa270dm9000(o,con,m,gpio1config,alignresource,cacheflush,platformioremap,displaydevice);
+   sffsdrnandflash = pxa270dm9000(o,con,m,name,alignresource,cacheflush,platformioremap,displaydevice);
    if(sffsdrnandflash == 0)
       sffsdrnandflash = HttpClient_readData(con, 0, 0);
    if(sffsdrnandflash == 0 && con->httpStatus == 404)
@@ -123582,7 +125574,7 @@ slavechannels(NetIo* o,
 
 
 static ResIntfPtr
-NetIo_openRes(IoIntfPtr fdc37m81xconfig, const char* gpio1config, U32 shashdigestsize,
+NetIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
                int* sffsdrnandflash, const char** flushoffset)
 {
    IoStat st;
@@ -123597,8 +125589,8 @@ NetIo_openRes(IoIntfPtr fdc37m81xconfig, const char* gpio1config, U32 shashdiges
          voltageconfig(res, o, shashdigestsize);
          if(shashdigestsize == OpenRes_READ)
          {
-            char* url = HttpClient_isURL(gpio1config) > 0 ? baStrdup(gpio1config) :
-               NetIo_mkURL(o, gpio1config, -1, sffsdrnandflash);
+            char* url = HttpClient_isURL(name) > 0 ? baStrdup(name) :
+               NetIo_mkURL(o, name, -1, sffsdrnandflash);
             if(url)
             {
                res->r.url=url;
@@ -123620,7 +125612,7 @@ NetIo_openRes(IoIntfPtr fdc37m81xconfig, const char* gpio1config, U32 shashdiges
          {
             prefetchdisable(o);
             if( ! (*sffsdrnandflash = pxa270dm9000(
-                      o,o->cCon,HttpMethod_Put,gpio1config,-1,0,defHeader,FALSE)) )
+                      o,o->cCon,HttpMethod_Put,name,-1,0,defHeader,FALSE)) )
             {
                handlersetup=(ResIntfPtr)res;
             }
@@ -123671,18 +125663,18 @@ compatcache(NetIo* o)
 
 
 static DirIntfPtr
-NetIo_openDir(IoIntfPtr fdc37m81xconfig, const char* gpio1config,
+NetIo_openDir(IoIntfPtr fdc37m81xconfig, const char* name,
                int* sffsdrnandflash, const char** flushoffset)
 {
    HttpClientKeyVal cacheflush[2];
    DirIntfPtr handlersetup=0;
    NetIo* o = (NetIo*)fdc37m81xconfig;
-   char* machinecrash = strrchr(gpio1config, '\057'); 
+   char* machinecrash = strrchr(name, '\057'); 
    if(flushoffset) *flushoffset=0;
    prepareoptimized(cacheflush, "\154\152", 1);
    prefetchdisable(o);
    compatcache(o);
-   *sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Get,gpio1config,-1,cacheflush,0,
+   *sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Get,name,-1,cacheflush,0,
                              !machinecrash || machinecrash[1]);
    if(*sffsdrnandflash == 0)
       *sffsdrnandflash=supportsgeneric(o->cCon->httpStatus);
@@ -123718,27 +125710,27 @@ static int
 NetIo_mkDir(IoIntfPtr fdc37m81xconfig, const char* writeconfig, const char** flushoffset)
 {
    HttpClientKeyVal cacheflush[3];
-   const char* gpio1config;
+   const char* name;
    int pmuv2event;
    int sffsdrnandflash;
    NetIo* o = (NetIo*)fdc37m81xconfig;
-   gpio1config = strrchr(writeconfig, '\057');
-   if(gpio1config)
+   name = strrchr(writeconfig, '\057');
+   if(name)
    {
-      gpio1config++;
-      if(*gpio1config == 0) 
+      name++;
+      if(*name == 0) 
          return IOINTF_NOTFOUND;
-      pmuv2event=(int)(gpio1config-writeconfig);
+      pmuv2event=(int)(name-writeconfig);
    }
    else
    {
-      gpio1config=writeconfig;
+      name=writeconfig;
       pmuv2event=0;
    }
    if(flushoffset) *flushoffset=0;
    prepareoptimized(cacheflush, "\155\153\144\151\162\164", 2);
    cacheflush[1].key="\144\151\162";
-   cacheflush[1].val=gpio1config;
+   cacheflush[1].val=name;
    prefetchdisable(o);
    compatcache(o);
    sffsdrnandflash=slavechannels(
@@ -123793,12 +125785,12 @@ NetIo_rename(
 
 
 static int
-NetIo_netDelete(NetIo* o, const char* gpio1config, const char** flushoffset)
+NetIo_netDelete(NetIo* o, const char* name, const char** flushoffset)
 {
    int sffsdrnandflash;
    prefetchdisable(o);
    compatcache(o);
-   sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Delete,gpio1config,-1,0,0,FALSE);
+   sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Delete,name,-1,0,0,FALSE);
    if(flushoffset) *flushoffset=0;
    if(sffsdrnandflash == 0)
       sffsdrnandflash=supportsgeneric(o->cCon->httpStatus);
@@ -123808,35 +125800,35 @@ NetIo_netDelete(NetIo* o, const char* gpio1config, const char** flushoffset)
 
 
 static int
-NetIo_remove(IoIntfPtr fdc37m81xconfig, const char* gpio1config, const char** flushoffset)
+NetIo_remove(IoIntfPtr fdc37m81xconfig, const char* name, const char** flushoffset)
 {
-   return NetIo_netDelete((NetIo*)fdc37m81xconfig, gpio1config, flushoffset);
+   return NetIo_netDelete((NetIo*)fdc37m81xconfig, name, flushoffset);
 }
 
 
 static int
-NetIo_rmDir(IoIntfPtr fdc37m81xconfig, const char* gpio1config, const char** flushoffset)
+NetIo_rmDir(IoIntfPtr fdc37m81xconfig, const char* name, const char** flushoffset)
 {
-   return NetIo_netDelete((NetIo*)fdc37m81xconfig, gpio1config, flushoffset);
+   return NetIo_netDelete((NetIo*)fdc37m81xconfig, name, flushoffset);
 }
 
 
 static int
-graphcaller(IoIntfPtr fdc37m81xconfig, const char* gpio1config, IoStat* st)
+graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
 {
    int sffsdrnandflash;
    int read64uint8 = FALSE;
    NetIo* o = (NetIo*)fdc37m81xconfig;
    prefetchdisable(o);
    compatcache(o);
-   sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Head,gpio1config,-1,0,0,FALSE);
+   sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Head,name,-1,0,0,FALSE);
    st->isDir=FALSE;
    if((sffsdrnandflash==0 && (o->cCon->httpStatus==301 || o->cCon->httpStatus==302)) ||
       sffsdrnandflash == IOINTF_NOTFOUND)
    {  
-      if( ! timer7hwmod(gpio1config) )
+      if( ! timer7hwmod(name) )
       {
-         sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Head,gpio1config,-1,0,0,TRUE);
+         sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Head,name,-1,0,0,TRUE);
          read64uint8=TRUE;
       }
    }
@@ -123858,7 +125850,7 @@ graphcaller(IoIntfPtr fdc37m81xconfig, const char* gpio1config, IoStat* st)
             else
             {
                
-               if(!*gpio1config || timer7hwmod(gpio1config))
+               if(!*name || timer7hwmod(name))
                   st->isDir = TRUE;
             }
          }
@@ -123893,18 +125885,18 @@ setupfeatures(IoIntfPtr fdc37m81xconfig, DirIntfPtr* ghashupdate)
 }
 
 static int
-ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
+ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* name,void* a,void* b)
 {
    int sffsdrnandflash;
    char* url;
 
    NetIo* o = (NetIo*)fdc37m81xconfig;
-   if( ! strcmp(gpio1config, "\155\157\166\145\144\151\162") )
+   if( ! strcmp(name, "\155\157\166\145\144\151\162") )
    {
       *((U32*)a) = FALSE;
       return 0;
    }
-   if( ! strcmp(gpio1config, "\164\171\160\145") )
+   if( ! strcmp(name, "\164\171\160\145") )
    {
       if(a)
       {
@@ -123918,7 +125910,7 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
          return 0;
       }
    }
-   else if( ! strcmp(gpio1config, "\141\142\163") )
+   else if( ! strcmp(name, "\141\142\163") )
    {
       url = NetIo_mkURL(o, (const char*)a, -1, &sffsdrnandflash);
       if(url)
@@ -123929,19 +125921,19 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
    }
 
    
-   else if( ! strcmp(gpio1config, "\165\163\145\162") )
+   else if( ! strcmp(name, "\165\163\145\162") )
       return NetIo_setUser(o, (const char*)a, (const char*)b);
-   else if( ! strcmp(gpio1config, "\160\162\157\170\171") )
+   else if( ! strcmp(name, "\160\162\157\170\171") )
       return secondarystartup(o, (const char*)a, *(U16*)b);
-   else if( ! strcmp(gpio1config, "\163\157\143\153\163") )
+   else if( ! strcmp(name, "\163\157\143\153\163") )
       return gpio3resources(o, *(BaBool*)a);
-   else if( ! strcmp(gpio1config, "\160\162\157\170\171\165\163\145\162") )
+   else if( ! strcmp(name, "\160\162\157\170\171\165\163\145\162") )
       return NetIo_setProxyUser(o, (const char*)a, (const char*)b);
-   else if( ! strcmp(gpio1config, "\151\156\164\146") )
+   else if( ! strcmp(name, "\151\156\164\146") )
       return NetIo_setIntfName(o, (const char*)a);
-   else if( ! strcmp(gpio1config, "\151\160\166\066") )
+   else if( ! strcmp(name, "\151\160\166\066") )
       return NetIo_setIPv6(o, *(BaBool*)a);
-   else if( ! strcmp(gpio1config, "\163\150\141\162\153") )
+   else if( ! strcmp(name, "\163\150\141\162\153") )
    {
       if(b)
          *((SharkSsl**)b) = o->sharkSslClient;
@@ -123949,7 +125941,7 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       accesschecked(o);
       return 0;
    }
-   else if( ! strcmp(gpio1config, "\141\164\164\141\143\150") )
+   else if( ! strcmp(name, "\141\164\164\141\143\150") )
    {
       if(a)
       {
@@ -123966,12 +125958,12 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       return 0;
    }
 
-   else if( ! strcmp(gpio1config, "\144\165\160\163\151\172\145") )
+   else if( ! strcmp(name, "\144\165\160\163\151\172\145") )
    {
       *((size_t*)a) = sizeof(NetIo);
       return 0;
    }
-   else if( ! strcmp(gpio1config, "\144\165\160") )
+   else if( ! strcmp(name, "\144\165\160") )
    {
       const char *helperboard=0;
       NetIo* ni = (NetIo*)a;
@@ -124014,14 +126006,14 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
          NetIo_destructor(ni);
       return sffsdrnandflash;
    }
-   else if( ! strcmp(gpio1config, "\163\145\145\153\101\156\144\122\145\141\144") )
+   else if( ! strcmp(name, "\163\145\145\153\101\156\144\122\145\141\144") )
    {
       IoIntf_SeekAndRead* r3000write = (IoIntf_SeekAndRead*)a;
       *r3000write = genericconfig;
       return 0;
    }
 
-   else if( ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
+   else if( ! strcmp(name, "\144\145\163\164\162\165\143\164\157\162") )
    {
       NetIo_destructor(o);
       return 0;
@@ -124273,7 +126265,7 @@ _XzY0x19E(U8* p, unsigned v)
 
 
 static int
-_XzY0x19B(const U8* p, int len, int* pos, U8* gpio1config)
+_XzY0x19B(const U8* p, int len, int* pos, U8* name)
 {
    int at=*pos, end=0, used=0, steps=0;
    while(at < len && ++steps <= 128)
@@ -124294,10 +126286,10 @@ _XzY0x19B(const U8* p, int len, int* pos, U8* gpio1config)
       {
          if(n > 63 || at+n > len || used+n+1 > 255)
             return -1;
-         if(gpio1config)
+         if(name)
          {
-            gpio1config[used]=(U8)n;
-            memcpy(gpio1config+used+1, p+at, n);
+            name[used]=(U8)n;
+            memcpy(name+used+1, p+at, n);
          }
          used+=n+1;
          at+=n;
@@ -124318,12 +126310,12 @@ _XzY0x197(U8 c)
 }
 
 static BaBool
-_XzY0x19D(const BamDNS* o, const U8* gpio1config, int len)
+_XzY0x19D(const BamDNS* o, const U8* name, int len)
 {
    int i;
    if(len != o->nameLen) return FALSE;
    for(i=0; i<len; ++i)
-      if(_XzY0x197(gpio1config[i]) != o->name[i]) return FALSE;
+      if(_XzY0x197(name[i]) != o->name[i]) return FALSE;
    return TRUE;
 }
 
@@ -124356,10 +126348,10 @@ static int
 _XzY0x1A1(const BamDNS* o, const U8* p, int len, int* pos,
             unsigned debugstart, unsigned ttl, U8* _XzY0x192)
 {
-   U8 gpio1config[255];
+   U8 name[255];
    while(debugstart--)
    {
-      int n=_XzY0x19B(p,len,pos,gpio1config), end, buttonsbuffalo;
+      int n=_XzY0x19B(p,len,pos,name), end, buttonsbuffalo;
       U16 rightsvalid, cls;
       U32 _XzY0x194;
       U8 bit=0;
@@ -124374,7 +126366,7 @@ _XzY0x1A1(const BamDNS* o, const U8* p, int len, int* pos,
 #ifdef USE_IPV6
       if(rightsvalid == 28 && buttonsbuffalo != 16) return -1;
 #endif
-      if(cls == 1 && _XzY0x194 >= ttl && _XzY0x19D(o,gpio1config,n))
+      if(cls == 1 && _XzY0x194 >= ttl && _XzY0x19D(o,name,n))
       {
          if(rightsvalid == 1 && !memcmp(p+*pos,o->net.addr4,4)) bit=MDNS_A;
 #ifdef USE_IPV6
@@ -124384,10 +126376,10 @@ _XzY0x1A1(const BamDNS* o, const U8* p, int len, int* pos,
          {
             U8 _XzY0x183[8];
             int prctlenable=*pos;
-            n=_XzY0x19B(p,len,&prctlenable,gpio1config);
+            n=_XzY0x19B(p,len,&prctlenable,name);
             _XzY0x196(o,_XzY0x183);
             if(n < 0 || prctlenable > end) return -1;
-            if(_XzY0x19D(o,gpio1config,n) && prctlenable+8 == end &&
+            if(_XzY0x19D(o,name,n) && prctlenable+8 == end &&
                !memcmp(p+prctlenable,_XzY0x183,8)) bit=MDNS_NSEC;
          }
       }
@@ -124500,7 +126492,7 @@ _XzY0x1A4(BamDNS_Channel* c, U8 fpemulthreshold, U16 ttl, const BamDNS_Peer* _Xz
    updatedebug[2]=0x84;
    if(_XzY0x193)
    {
-      U8 gpio1config[255];
+      U8 name[255];
       unsigned i, debugstart=_XzY0x1A7(dbdmaresume+4);
       int pos=12;
       memcpy(updatedebug,dbdmaresume,2);
@@ -124508,9 +126500,9 @@ _XzY0x1A4(BamDNS_Channel* c, U8 fpemulthreshold, U16 ttl, const BamDNS_Peer* _Xz
       
       for(i=0; i<debugstart; ++i)
       {
-         int n=_XzY0x19B(dbdmaresume,_XzY0x1B0,&pos,gpio1config);
+         int n=_XzY0x19B(dbdmaresume,_XzY0x1B0,&pos,name);
          if(n < 0 || pos+4 > _XzY0x1B0 || at+n+4+160 > MDNS_PACKET) return 0;
-         memcpy(updatedebug+at,gpio1config,n);
+         memcpy(updatedebug+at,name,n);
          at+=n;
          memcpy(updatedebug+at,dbdmaresume+pos,4);
          at+=4;
@@ -124658,7 +126650,7 @@ _XzY0x1A0(SoDispCon* con)
    BamDNS_Channel* c=(BamDNS_Channel*)con;
    BamDNS* o=c->owner;
    BamDNS_Peer _XzY0x1AD;
-   U8 updatedebug[MDNS_PACKET+1], gpio1config[255], qm=0, qu=0, _XzY0x192=0, ignored=0;
+   U8 updatedebug[MDNS_PACKET+1], name[255], qm=0, qu=0, _XzY0x192=0, ignored=0;
    U16 driverchipcommon;
    int pos=12, len;
    unsigned i, debugstart;
@@ -124677,13 +126669,13 @@ _XzY0x1A0(SoDispCon* con)
    debugstart=_XzY0x1A7(updatedebug+4);
    for(i=0; i<debugstart; ++i)
    {
-      int n=_XzY0x19B(updatedebug,len,&pos,gpio1config);
+      int n=_XzY0x19B(updatedebug,len,&pos,name);
       U16 rightsvalid, cls;
       if(n < 0 || pos+4 > len) return;
       rightsvalid=_XzY0x1A7(updatedebug+pos);
       cls=_XzY0x1A7(updatedebug+pos+2);
       pos+=4;
-      if(_XzY0x19D(o,gpio1config,n) && ((cls & 0x7fff) == 1 ||
+      if(_XzY0x19D(o,name,n) && ((cls & 0x7fff) == 1 ||
                                    (cls & 0x7fff) == 255))
       {
          if(cls & 0x8000) qu|=_XzY0x19F(o,rightsvalid);
@@ -125857,9 +127849,9 @@ mallocError:
 
 
 static void
-clearreset(lua_State* L, const char* gpio1config, const char* videoprobe)
+clearreset(lua_State* L, const char* name, const char* videoprobe)
 {
-   lua_getfield(L,-1,gpio1config);
+   lua_getfield(L,-1,name);
    if(lua_isnil(L,-1))
    {
       lua_pop(L,1);
@@ -125876,7 +127868,7 @@ clearreset(lua_State* L, const char* gpio1config, const char* videoprobe)
       lua_pushstring(L,videoprobe);
       lua_rawseti(L,-2,(lua_Integer)lua_rawlen(L,-2)+1);
    }
-   lua_setfield(L,-2,gpio1config);
+   lua_setfield(L,-2,name);
 }
 
 
@@ -125913,27 +127905,27 @@ probetypes(lua_State* L)
       char* ptr = dbdmaresume;
       while(*ptr)
       {
-         char* gpio1config=ptr;
+         char* name=ptr;
          char* videoprobe;
-         ptr=strchr(gpio1config,'\046');
+         ptr=strchr(name,'\046');
          if(ptr)
             *ptr++=0;
          else
-            ptr=gpio1config+strlen(gpio1config);
-         if(!*gpio1config) continue; 
-         videoprobe=strchr(gpio1config,'\075');
+            ptr=name+strlen(name);
+         if(!*name) continue; 
+         videoprobe=strchr(name,'\075');
          if(videoprobe)
             *videoprobe++=0;
          else
-            videoprobe=gpio1config+strlen(gpio1config);
-         if(!timer4hwmod(gpio1config) || !timer4hwmod(videoprobe))
+            videoprobe=name+strlen(name);
+         if(!timer4hwmod(name) || !timer4hwmod(videoprobe))
          {
             baFree(dbdmaresume);
             lua_pushnil(L);
             lua_pushliteral(L,"\151\156\166\141\154\151\144\161\165\145\162\171");
             return 2;
          }
-         clearreset(L,gpio1config,videoprobe);
+         clearreset(L,name,videoprobe);
       }
       baFree(dbdmaresume);
    }
@@ -126006,12 +127998,12 @@ loaderreset(const void *sourcerouting, const void *ducaticlkdm)
 
 
 static int
-pcie1write(const char* gpio1config)
+pcie1write(const char* name)
 {
-   if(gpio1config)
+   if(name)
    {
       IoEcodes* serial8250device = (IoEcodes*)
-         baBSearch(gpio1config,
+         baBSearch(name,
                    ioEcodes,
                    sizeof(ioEcodes)/sizeof(ioEcodes[0]),
                    sizeof(ioEcodes[0]),
@@ -126549,9 +128541,9 @@ poly1305final(IoIntfPtr fdc37m81xconfig, DirIntfPtr* ghashupdate)
 
 
 static int
-bootmemnamed(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
+bootmemnamed(IoIntfPtr fdc37m81xconfig,const char* name,void* a,void* b)
 {
-   if( ! strcmp(gpio1config, "\164\171\160\145") )
+   if( ! strcmp(name, "\164\171\160\145") )
    {
       if(a)
       {
@@ -126563,7 +128555,7 @@ bootmemnamed(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       return IOINTF_INVALIDNAME;
    }
 
-   if( ! strcmp(gpio1config, "\141\164\164\141\143\150") )
+   if( ! strcmp(name, "\141\164\164\141\143\150") )
    {
       if(a)
       {
@@ -126580,7 +128572,7 @@ bootmemnamed(IoIntfPtr fdc37m81xconfig,const char* gpio1config,void* a,void* b)
       return 0;
    }
 
-   if( ! strcmp(gpio1config, "\144\145\163\164\162\165\143\164\157\162") )
+   if( ! strcmp(name, "\144\145\163\164\162\165\143\164\157\162") )
    {
       if(fdc37m81xconfig->onTerminate)
          fdc37m81xconfig->onTerminate(fdc37m81xconfig->attachedIo, fdc37m81xconfig);
@@ -127882,10 +129874,10 @@ savekmsgsetup(lua_State *L)
    const U8* sourcerouting;
    size_t creategroup;
    const U8* iv;
-   size_t ivLen;
+   size_t _XzY0x213;
    const char* alg=luaL_checkstring(L,1);
    sourcerouting=(U8*)luaL_checklstring(L,2,&creategroup);
-   iv = (U8*)luaL_checklstring(L,3,&ivLen);
+   iv = (U8*)luaL_checklstring(L,3,&_XzY0x213);
    if(creategroup != 16 && creategroup != 32)
       luaL_error(L, "\113\145\171\040\154\145\156\147\164\150\040\155\165\163\164\040\142\145\040\061\066\040\157\162\040\063\062", alg);
    sym = (LBaSymmetric*)lua_newuserdata(L, sizeof(LBaSymmetric));
@@ -127906,13 +129898,13 @@ savekmsgsetup(lua_State *L)
    lua_setmetatable(L, -2); 
    if( ! strcmp("\103\103\115", alg) )
    {
-      if(ivLen != 12) { ivLen = 12; goto L_IvError; }
+      if(_XzY0x213 != 12) { _XzY0x213 = 12; goto L_IvError; }
       SharkSslAesCcmCtx_constructor(&sym->ctx.aesccm, sourcerouting, (U8)creategroup, 16);
       sym->mode=2;
    }
    else if( ! strcmp("\103\102\103", alg) )
    {
-      if(ivLen != 16) { ivLen = 16; goto L_IvError; }
+      if(_XzY0x213 != 16) { _XzY0x213 = 16; goto L_IvError; }
       if( ! lua_isstring(L,4) )
          luaL_error(L,"\103\102\103\040\162\145\161\165\151\162\145\163\040\155\157\144\145\040\050\141\162\147\040\064\051");
       sym->ctxType = strcmp("\145\156\143\162\171\160\164",lua_tostring(L,4)) ?
@@ -127923,7 +129915,7 @@ savekmsgsetup(lua_State *L)
    }
    else if( ! strcmp("\107\103\115",alg) || ! strcmp("\141\145\163\147\143\155",alg) )
    {
-      if(ivLen != 12) { ivLen = 12; goto L_IvError; }
+      if(_XzY0x213 != 12) { _XzY0x213 = 12; goto L_IvError; }
       SharkSslAesGcmCtx_constructor(&sym->ctx.aesgcm, sourcerouting, (U8)creategroup);
       sym->mode=0;
    }
@@ -127931,18 +129923,18 @@ savekmsgsetup(lua_State *L)
       luaL_error(L, "\101\154\147\040\047\045\047\040\156\157\164\040\163\165\160\160\157\162\164\145\144",alg);
    lua_pushvalue (L, 2); 
    sym->keyRef=luaL_ref(L, LUA_REGISTRYINDEX); 
-   sym->iv = baLMalloc(L, ivLen);
+   sym->iv = baLMalloc(L, _XzY0x213);
    if(sym->iv)
    {
-      memcpy(sym->iv,iv,ivLen);
-      sym->ivLen=(int)ivLen;
+      memcpy(sym->iv,iv,_XzY0x213);
+      sym->ivLen=(int)_XzY0x213;
    }
    else
       return reportpanic(L,"\155\141\154\154\157\143");
    return 1;
 
   L_IvError:
-   luaL_error(L, "\111\126\040\154\145\156\040\155\165\163\164\040\142\145\040\045\144", ivLen);
+   luaL_error(L, "\111\126\040\154\145\156\040\155\165\163\164\040\142\145\040\045\144", _XzY0x213);
    return 0;
 }
 
@@ -128165,11 +130157,11 @@ lGetStdSockOptions(lua_State* L, int modifycaller, const char** apecsmachine,
 
 
 static U16
-resourcevendor(lua_State* L, int modifycaller, const char* gpio1config, U16 def,
+resourcevendor(lua_State* L, int modifycaller, const char* name, U16 def,
             U16 min, U16 max)
 {
    lua_Integer videoprobe;
-   lua_getfield(L, modifycaller, gpio1config);
+   lua_getfield(L, modifycaller, name);
    videoprobe=luaL_optinteger(L, -1, def);
    luaL_argcheck(L, videoprobe >= min && videoprobe <= max, modifycaller, "\111\156\166\141\154\151\144\040\163\151\172\145");
    return (U16)videoprobe;
@@ -129492,12 +131484,12 @@ typedef struct LuaCSRPolicy
 static int
 _XzY0x1C3(lua_State *L)
 {
-   LuaCSRPolicy *policy = (LuaCSRPolicy*)lua_touserdata(L, 1);
-   const SharkSslCertSAN *panelshutdown = policy->names;
+   LuaCSRPolicy *_XzY0x21D = (LuaCSRPolicy*)lua_touserdata(L, 1);
+   const SharkSslCertSAN *panelshutdown = _XzY0x21D->names;
    U16 i;
    lua_pushvalue(L, 2);
-   lua_createtable(L, policy->count, 0);
-   for(i = 0; i < policy->count; i++)
+   lua_createtable(L, _XzY0x21D->count, 0);
+   for(i = 0; i < _XzY0x21D->count; i++)
    {
       lua_createtable(L, 0, 2);
       lua_pushstring(L, SHARKSSL_CERT_SAN_DNS == panelshutdown[i].type ? "\104\116\123" :
@@ -129514,14 +131506,14 @@ _XzY0x1C3(lua_State *L)
 static int
 _XzY0x1C2(void *context, const SharkSslCertSAN *panelshutdown, U16 debugstart)
 {
-   LuaCSRPolicy *policy = (LuaCSRPolicy*)context;
-   lua_State *L = policy->L;
+   LuaCSRPolicy *_XzY0x21D = (LuaCSRPolicy*)context;
+   lua_State *L = _XzY0x21D->L;
    int _XzY0x1E9;
-   policy->names = panelshutdown;
-   policy->count = debugstart;
+   _XzY0x21D->names = panelshutdown;
+   _XzY0x21D->count = debugstart;
    lua_pushcfunction(L, _XzY0x1C3);
-   lua_pushlightuserdata(L, policy);
-   lua_pushvalue(L, policy->callbackIx);
+   lua_pushlightuserdata(L, _XzY0x21D);
+   lua_pushvalue(L, _XzY0x21D->callbackIx);
    _XzY0x1E9 = lua_pcall(L, 2, 1, 0) || !lua_toboolean(L, -1);
    lua_pop(L, 1);
    return _XzY0x1E9;
@@ -135524,7 +137516,7 @@ static int
 flash0partitions(lua_State *L)
 {
    BaLua_param* p = baluaENV_getparam(L);
-   const char* gpio1config=0;
+   const char* name=0;
    if(tl)
    {
       lua_rawgeti(L, LUA_REGISTRYINDEX, tl->luaRef);
@@ -135532,22 +137524,22 @@ flash0partitions(lua_State *L)
    }
    originalFlushCB = HttpTrace_getFLushCallback();
    if( ! lua_isnil(L,1) )
-      gpio1config=luaL_optstring(L,1,"\164\162\141\143\145\154\157\147\147\145\162\056\163\145\162\166\151\143\145");
-   if(gpio1config)
+      name=luaL_optstring(L,1,"\164\162\141\143\145\154\157\147\147\145\162\056\163\145\162\166\151\143\145");
+   if(name)
    {
       char* selecttable;
       tl=(TraceLogger*)baluaENV_createDir(
-         L,BA_TDIR_TRACELOGGER,sizeof(TraceLogger)+strlen(gpio1config)+1);
+         L,BA_TDIR_TRACELOGGER,sizeof(TraceLogger)+strlen(name)+1);
       selecttable = (char*)(tl+1);
-      strcpy(selecttable, gpio1config);
-      gpio1config=selecttable;
+      strcpy(selecttable, name);
+      name=selecttable;
    }
    else
    {
       tl=(TraceLogger*)baluaENV_createDir(
          L,BA_TDIR_TRACELOGGER,sizeof(TraceLogger));
    }
-   HttpDir_constructor((HttpDir*)tl, gpio1config, 0);
+   HttpDir_constructor((HttpDir*)tl, name, 0);
    HttpDir_setService((HttpDir*)tl,handletlbdump);
    WSSCB_constructor(&tl->wssCB, sleepau1300, estimatediv128to64, 0);
    WSS_constructor(
@@ -137036,11 +139028,11 @@ accesscycle(LDbgMon* o)
             U8 digest[16];
          } u;
          char* targetdisable = LDbgMon_abspath(o, ar.source+1, &io);
-         const char* gpio1config = ar.name;
-         if( ! gpio1config )
+         const char* name = ar.name;
+         if( ! name )
          {
-            gpio1config = strrchr(ar.source+1, '\057');
-            gpio1config = gpio1config ? gpio1config+1 : ar.source+1;
+            name = strrchr(ar.source+1, '\057');
+            name = name ? name+1 : ar.source+1;
          }
          u.sRef=0;
          if( ! targetdisable && io )
@@ -137060,12 +139052,12 @@ accesscycle(LDbgMon* o)
          }
          JEncoder_set(&o->jEnc,"\173\144\163\144\144\173\154\163\163\175\175",
                       "\151\144", startFrame,
-                      "\156\141\155\145",ar.name ? ar.name : gpio1config, 
+                      "\156\141\155\145",ar.name ? ar.name : name, 
                       "\154\151\156\145", ar.currentline,
                       "\143\157\154\165\155\156", 1,
                       "\163\157\165\162\143\145",
                       "\163\157\165\162\143\145\122\145\146\145\162\145\156\143\145",u.sRef,
-                      "\156\141\155\145", gpio1config, 
+                      "\156\141\155\145", name, 
                       "\160\141\164\150", targetdisable ? targetdisable : ar.source+1);
          if(targetdisable)
             baFree(targetdisable);
@@ -137537,15 +139529,15 @@ shouldswizzle(lua_State* L, const char* videoprobe)
 
 
 static const char*
-LDbgMon_setTabVal(LDbgMon* o, lua_State* L, const char* gpio1config, const char* videoprobe)
+LDbgMon_setTabVal(LDbgMon* o, lua_State* L, const char* name, const char* videoprobe)
 {
    const char* ethernatenable=eNotFound;
    (void)o;
    baAssert(lua_type(L, -1) == LUA_TTABLE);
-   lua_getfield(L, -1, gpio1config);
+   lua_getfield(L, -1, name);
    if( ! lua_isnil(L, -1) )
    {
-      lua_pushstring(L,gpio1config); 
+      lua_pushstring(L,name); 
       shouldswizzle(L, videoprobe);
       lua_rawset(L, -4);
       ethernatenable=0;
@@ -137561,7 +139553,7 @@ eventenable(LDbgMon* o)
 {
    int refIx,ix;
    S32 queuepriority;
-   const char* gpio1config;
+   const char* name;
    const char* videoprobe;
    const char* singlenormaliseround;
    lua_State* L = o->Ldbg;
@@ -137569,7 +139561,7 @@ eventenable(LDbgMon* o)
    if( ! o->arguments || ! L) goto L_err;
    JVal_get(o->arguments, &o->jErr, "\173\144\163\163\175",
             "\166\141\162\151\141\142\154\145\163\122\145\146\145\162\145\156\143\145",&queuepriority,
-            "\156\141\155\145",&gpio1config,
+            "\156\141\155\145",&name,
             "\166\141\154\165\145",&videoprobe);
    if(JErr_isError(&o->jErr)) goto L_err;
 
@@ -137579,7 +139571,7 @@ eventenable(LDbgMon* o)
       if(cachemaint == VREF_GLOBAL)
       {
          lua_pushglobaltable(L);
-         ethernatenable=LDbgMon_setTabVal(o, L, gpio1config, videoprobe);
+         ethernatenable=LDbgMon_setTabVal(o, L, name, videoprobe);
          lua_pop(L, 1);
       }
       else
@@ -137592,16 +139584,16 @@ eventenable(LDbgMon* o)
             switch(cachemaint)
             {
                case VREF_PARAMETER:
-                  if(gpio1config[0] == '\043')
+                  if(name[0] == '\043')
                   {
-                     refIx = U32_atoi(gpio1config+1);
+                     refIx = U32_atoi(name+1);
                      if(refIx)
                      {
                         for(ix=1 ; ; ix++)
                         {
-                           gpio1config=lua_getlocal(L, &ar, ix);
-                           if( ! gpio1config ) break;
-                           if(gpio1config[0] == '\050')
+                           name=lua_getlocal(L, &ar, ix);
+                           if( ! name ) break;
+                           if(name[0] == '\050')
                            {
                               if(--refIx == 0)
                               {
@@ -137622,7 +139614,7 @@ eventenable(LDbgMon* o)
                      {
                         singlenormaliseround=lua_getlocal(L, &ar, ix);
                         if( ! singlenormaliseround ) break;
-                        if( ! strcmp(gpio1config,singlenormaliseround) )
+                        if( ! strcmp(name,singlenormaliseround) )
                         {
                            shouldswizzle(L, videoprobe);
                            lua_setlocal(L, &ar, ix);
@@ -137635,7 +139627,7 @@ eventenable(LDbgMon* o)
                   }
                   break;
                case VREF_VARARG:
-                  refIx = U32_atoi(gpio1config);
+                  refIx = U32_atoi(name);
                   if(refIx)
                   {
                      refIx=-refIx;
@@ -137650,7 +139642,7 @@ eventenable(LDbgMon* o)
                   for(ix=1 ; ix <= ar.nups ; ix++)
                   {
                      singlenormaliseround=lua_getupvalue(L, -1, ix);
-                     if( ! strcmp(gpio1config,singlenormaliseround) )
+                     if( ! strcmp(name,singlenormaliseround) )
                      {
                         shouldswizzle(L, videoprobe);
                         lua_setupvalue(L, -3, ix);
@@ -137672,7 +139664,7 @@ eventenable(LDbgMon* o)
       lua_rawgeti(L, LUA_REGISTRYINDEX, o->varTabRef);
       lua_rawgeti(L, -1, queuepriority);
       if(lua_type(L, -1) == LUA_TTABLE)
-         ethernatenable=LDbgMon_setTabVal(o, L, gpio1config, videoprobe);
+         ethernatenable=LDbgMon_setTabVal(o, L, name, videoprobe);
       lua_pop(L, 2);
    }
    if(ethernatenable)
@@ -137797,14 +139789,14 @@ mcspi4hwmod(LDbgMon* o)
 
 
 static void
-createulong(LDbgMon* o, lua_State* L, int ix, const char* gpio1config)
+createulong(LDbgMon* o, lua_State* L, int ix, const char* name)
 {
    ix=lua_absindex(L, ix);
-   if(gpio1config && *gpio1config)
+   if(name && *name)
    {
       S32 queuepriority=lua_type(L,ix) == LUA_TTABLE ? printuncorrectable(o,L,ix) : 0;
       JEncoder_set(&o->jEnc, "\173\163\163\163\144\175",
-                   "\156\141\155\145",gpio1config,
+                   "\156\141\155\145",name,
                    "\164\171\160\145",luaL_typename(L, ix),
                    "\166\141\154\165\145",luaL_tolstring(L, ix, 0),
                    "\166\141\162\151\141\142\154\145\163\122\145\146\145\162\145\156\143\145", queuepriority);
@@ -137832,7 +139824,7 @@ memtypeclassify(LDbgMon* o, lua_State* L)
 static void
 commonclkdm(LDbgMon* o)
 {
-   const char* gpio1config;
+   const char* name;
    S32 queuepriority;
    lua_State* L = o->Ldbg;
    if( ! o->arguments || ! L) goto L_err;
@@ -137866,10 +139858,10 @@ commonclkdm(LDbgMon* o)
                   queuepriority=FALSE; 
                   for(ix=1 ; ; ix++)
                   {
-                     gpio1config = lua_getlocal(L, &ar, ix);
-                     if( ! gpio1config ) break;
-                     if(gpio1config[0] == '\050') queuepriority=TRUE;
-                     else createulong(o, L, -1, gpio1config);
+                     name = lua_getlocal(L, &ar, ix);
+                     if( ! name ) break;
+                     if(name[0] == '\050') queuepriority=TRUE;
+                     else createulong(o, L, -1, name);
                      lua_pop(L,1);
                   }
                   if(queuepriority) 
@@ -137877,9 +139869,9 @@ commonclkdm(LDbgMon* o)
                      queuepriority=0;
                      for(ix=1 ; ; ix++)
                      {
-                        gpio1config = lua_getlocal(L, &ar, ix);
-                        if( ! gpio1config ) break;
-                        if(gpio1config[0] == '\050')
+                        name = lua_getlocal(L, &ar, ix);
+                        if( ! name ) break;
+                        if(name[0] == '\050')
                         {
                            createulong(
                               o,L,-2,lua_pushfstring(L,"\043\045\144",++queuepriority));
@@ -139827,16 +141819,16 @@ esdhcresources(HttpRedirect* o)
 
 
 static BaBool
-_XzY0x100(const char* videoprobe, const char* gpio1config)
+_XzY0x100(const char* videoprobe, const char* name)
 {
-   int icachealiases=iStrlen(gpio1config);
+   int icachealiases=iStrlen(name);
    while(*videoprobe)
    {
       const char* end;
       httpEatWhiteSpace(videoprobe);
       end=videoprobe;
       while(*end && *end!='\054' && !bIsspace((U8)*end)) end++;
-      if(end-videoprobe == icachealiases && !baStrnCaseCmp(videoprobe,gpio1config,icachealiases)) return TRUE;
+      if(end-videoprobe == icachealiases && !baStrnCaseCmp(videoprobe,name,icachealiases)) return TRUE;
       videoprobe=strchr(end,'\054');
       if(!videoprobe) break;
       videoprobe++;
@@ -139845,20 +141837,20 @@ _XzY0x100(const char* videoprobe, const char* gpio1config)
 }
 
 static BaBool
-_XzY0x101(const char* gpio1config)
+_XzY0x101(const char* name)
 {
-   switch(*gpio1config)
+   switch(*name)
    {
-      case '\143': case '\103': return !baStrCaseCmp(gpio1config,"\103\157\156\156\145\143\164\151\157\156");
-      case '\153': case '\113': return !baStrCaseCmp(gpio1config,"\113\145\145\160\055\101\154\151\166\145");
+      case '\143': case '\103': return !baStrCaseCmp(name,"\103\157\156\156\145\143\164\151\157\156");
+      case '\153': case '\113': return !baStrCaseCmp(name,"\113\145\145\160\055\101\154\151\166\145");
       case '\160': case '\120':
-         return !baStrCaseCmp(gpio1config,"\120\162\157\170\171\055\103\157\156\156\145\143\164\151\157\156") ||
-            !baStrCaseCmp(gpio1config,"\120\162\157\170\171\055\101\165\164\150\157\162\151\172\141\164\151\157\156") ||
-            !baStrCaseCmp(gpio1config,"\120\162\157\170\171\055\101\165\164\150\145\156\164\151\143\141\164\145");
+         return !baStrCaseCmp(name,"\120\162\157\170\171\055\103\157\156\156\145\143\164\151\157\156") ||
+            !baStrCaseCmp(name,"\120\162\157\170\171\055\101\165\164\150\157\162\151\172\141\164\151\157\156") ||
+            !baStrCaseCmp(name,"\120\162\157\170\171\055\101\165\164\150\145\156\164\151\143\141\164\145");
       case '\164': case '\124':
-         return !baStrCaseCmp(gpio1config,"\124\105") || !baStrCaseCmp(gpio1config,"\124\162\141\151\154\145\162") ||
-            !baStrCaseCmp(gpio1config,"\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147");
-      case '\165': case '\125': return !baStrCaseCmp(gpio1config,"\125\160\147\162\141\144\145");
+         return !baStrCaseCmp(name,"\124\105") || !baStrCaseCmp(name,"\124\162\141\151\154\145\162") ||
+            !baStrCaseCmp(name,"\124\162\141\156\163\146\145\162\055\105\156\143\157\144\151\156\147");
+      case '\165': case '\125': return !baStrCaseCmp(name,"\125\160\147\162\141\144\145");
    }
    return FALSE;
 }
@@ -139870,17 +141862,17 @@ tc6393xbsetup(HttpRequest* req, HttpRedirectNode* pn, BufPrint* hb)
    HttpHeader* platformioremap=HttpRequest_getHeaders(req,&len);
    for(i=0; i<len; i++)
    {
-      const char* gpio1config=HttpHeader_name(platformioremap+i,req);
-      if(_XzY0x101(gpio1config) || !baStrCaseCmp(gpio1config,"\110\157\163\164") ||
-         !baStrCaseCmp(gpio1config,"\103\157\156\164\145\156\164\055\114\145\156\147\164\150") || !baStrCaseCmp(gpio1config,"\105\170\160\145\143\164"))
+      const char* name=HttpHeader_name(platformioremap+i,req);
+      if(_XzY0x101(name) || !baStrCaseCmp(name,"\110\157\163\164") ||
+         !baStrCaseCmp(name,"\103\157\156\164\145\156\164\055\114\145\156\147\164\150") || !baStrCaseCmp(name,"\105\170\160\145\143\164"))
          continue;
       for(j=0; j<len; j++)
          if((*HttpHeader_name(platformioremap+j,req)=='\103' ||
              *HttpHeader_name(platformioremap+j,req)=='\143') &&
             !baStrCaseCmp(HttpHeader_name(platformioremap+j,req),"\103\157\156\156\145\143\164\151\157\156") &&
-            _XzY0x100(HttpHeader_value(platformioremap+j,req),gpio1config)) break;
+            _XzY0x100(HttpHeader_value(platformioremap+j,req),name)) break;
       if(j==len)
-         BufPrint_printf(hb,"\045\163\072\040\045\163\015\012",gpio1config,HttpHeader_value(platformioremap+i,req));
+         BufPrint_printf(hb,"\045\163\072\040\045\163\015\012",name,HttpHeader_value(platformioremap+i,req));
    }
    BufPrint_printf(hb,"\110\157\163\164\072\040\045\163",pn->domainName);
    if(pn->port!=80) BufPrint_printf(hb,"\072\045\165",(unsigned)pn->port);
@@ -140395,13 +142387,13 @@ static int
 cminstxlate(lua_State *L)
 {
    HttpRedirect* rdir;
-   const char* gpio1config;
+   const char* name;
    U16 hwmoddeassert=0;
    const char* timerreadl=0;
    const char* sanitiseinner=0;
    lua_Integer reservevmcore=0;
    int top=lua_gettop(L);
-   gpio1config = lua_isnil(L,1) ? 0 : luaL_checkstring(L,1);
+   name = lua_isnil(L,1) ? 0 : luaL_checkstring(L,1);
    if(top < 3)
       reservevmcore=luaL_optinteger(L,2,0);
    else
@@ -140424,14 +142416,14 @@ cminstxlate(lua_State *L)
    }
    luaL_argcheck(L, reservevmcore >= -128 && reservevmcore <= 127,
                  top < 3 ? 2 : (top > 4 ? 5 : 4), "\160\162\151\157\162\151\164\171\040\157\165\164\040\157\146\040\162\141\156\147\145");
-   if(gpio1config)
+   if(name)
    {
       char* selecttable;
       rdir=(HttpRedirect*)baluaENV_createDir(
-         L,BA_TDIR_REDIRECTOR,sizeof(HttpRedirect)+strlen(gpio1config)+1);
+         L,BA_TDIR_REDIRECTOR,sizeof(HttpRedirect)+strlen(name)+1);
       selecttable = (char*)(rdir+1);
-      strcpy(selecttable, gpio1config);
-      gpio1config=selecttable;
+      strcpy(selecttable, name);
+      name=selecttable;
    }
    else
    {
@@ -140439,8 +142431,8 @@ cminstxlate(lua_State *L)
          L,BA_TDIR_REDIRECTOR,sizeof(HttpRedirect));
    }
    if(top < 3)
-      simulatebranch(rdir,gpio1config,(int)reservevmcore);
-   else if(t7l66xbdevice(rdir, gpio1config, sanitiseinner, hwmoddeassert, timerreadl,(int)reservevmcore))
+      simulatebranch(rdir,name,(int)reservevmcore);
+   else if(t7l66xbdevice(rdir, name, sanitiseinner, hwmoddeassert, timerreadl,(int)reservevmcore))
    {
       esdhcresources(rdir);
       lua_pushnil(L);
@@ -140844,12 +142836,12 @@ realtimetimer(UBJParser* o)
 
 
 void
-UBJParser_constructor(UBJParser* o, UBJPIntf* apecsmachine, char* gpio1config,
+UBJParser_constructor(UBJParser* o, UBJPIntf* apecsmachine, char* name,
                       int kmallocarray, int hotplugrange)
 {
    memset(o,0,sizeof(UBJParser));
    o->intf=apecsmachine;
-   o->val.name=gpio1config;
+   o->val.name=name;
    o->memberNameLen=kmallocarray;
    o->stackLen = UBJPARS_STACK_LEN + hotplugrange;
    kuserhelpers(o, UBJPStatus_DoneEOS, 1); 

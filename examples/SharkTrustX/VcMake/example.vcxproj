@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{EC95BD99-4A74-4B84-A135-69CCF18B72E3}</ProjectGuid>
+    <RootNamespace>SharkTrustX</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Label="UserMacros">
+    <!-- Set to 1 for SharkCA, then rebuild with your own portal's tokengen.c. -->
+    <SHARKTRUSTX_PRIVATE_CA Condition="'$(SHARKTRUSTX_PRIVATE_CA)'==''">0</SHARKTRUSTX_PRIVATE_CA>
+  </PropertyGroup>
+  <PropertyGroup>
+    <OutDir Condition="'$(Configuration)'=='Debug'">$(ProjectDir)..\obj\debug\</OutDir>
+    <OutDir Condition="'$(Configuration)'=='Release'">$(ProjectDir)..\obj\release\</OutDir>
+    <IntDir>$(OutDir)</IntDir>
+    <TargetName>SharkTrustX-staging</TargetName>
+    <LinkIncremental>false</LinkIncremental>
+    <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
+  <!-- The application is pure C; the VC++ project supplies the native toolchain. -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <CompileAs>CompileAsC</CompileAs>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>SHARKTRUSTX;BA_JSON=1;TOKENGEN_C_API;SHARKSSL_ENABLE_CERTINFO_PARSE_API=1;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(ProjectDir)..\..\..\inc;$(ProjectDir)..\..\..\inc\arch\Windows;$(ProjectDir)..\..\..\inc\arch\NET;$(ProjectDir)..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>ws2_32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(SHARKTRUSTX_PRIVATE_CA)'=='1'">
+    <ClCompile>
+      <PreprocessorDefinitions>SHARKTRUSTX_PRIVATE_CA;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\src\BWS.c" />
+    <ClCompile Include="..\..\..\src\arch\Windows\ThreadLib.c" />
+    <ClCompile Include="..\..\..\src\arch\NET\generic\SoDisp.c" />
+    <ClCompile Include="..\..\..\src\DiskIo\windows\BaFile.c" />
+    <ClCompile Include="..\src\tokengen.c" />
+    <ClCompile Include="..\..\HostInit\Main.c" />
+    <ClCompile Include="..\..\HostInit\HostInit.c" />
+    <ClCompile Include="..\src\start.c" />
+    <ClCompile Include="..\src\InstallVD.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\start.h" />
+    <ClInclude Include="..\src\CA_ISRG_Root_X1.h" />
+    <ClInclude Include="..\..\..\inc\SharkTrustX.h" />
+    <None Include="..\readme.html" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SHARKTRUSTX_PRIVATE_CA)'=='1'">
+    <ClCompile Include="..\..\..\src\BamDNS.c" />
+    <ClCompile Include="..\..\..\src\arch\NET\BamDNS-Sock.c" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

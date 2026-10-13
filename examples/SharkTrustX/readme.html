@@ -1,0 +1,311 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SharkTrustX Native C Example</title>
+<link href="https://realtimelogic.com/ba/doc/style.css" rel="stylesheet" type="text/css"/>
+<style type="text/css">
+.table-scroll { overflow-x: auto; margin-bottom: 1.15rem; }
+.table-scroll table { width: 100%; min-width: 40rem; max-width: none; margin-bottom: 0; }
+.table-scroll code { overflow-wrap: normal; }
+code { overflow-wrap: anywhere; }
+pre.code { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h1>SharkTrustX Native C Example</h1>
+
+<p>This example gives a C web server its own HTTPS certificate and renews it automatically. It uses the Barracuda Web Server (BWS), SharkSSL, and the <a target="_blank" href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> (default) or the <a target="_blank" href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal to obtain a test certificate from Let's Encrypt. A small web page shows whether the certificate is ready, when it expires, and when renewal is due. No Lua runtime is required.</p>
+
+<blockquote>
+<p><strong>Do not</strong> use this C module if you are using Lua. Instead, use the <a href="https://realtimelogic.com/ba/doc/en/lua/acme.html">Lua ACME plugin</a>.</p>
+</blockquote>
+
+
+<p>Use this guide to build and run the example on Windows or Linux, then use the same <code>void barracuda(void)</code> entry point with your target port, as in the other BAS examples. For certificate concepts and the C integration contract, read the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html">SharkTrustX C user manual</a>.</p>
+
+<blockquote>
+<p><strong>The default build uses staging certificates.</strong> It exercises real enrollment and certificate issuance, but its issued certificates are for testing and produce browser trust warnings. The device still validates the HTTPS services it connects to. See <a href="https://letsencrypt.org/docs/staging-environment/">Let's Encrypt's staging documentation</a>. After starting, browsing to the example, and accepting the warning, you may click the certificate and its chain in the browser, download the Let's Encrypt root CA staging certificate, and install it in your certificate store. The next time you start the browser, it will trust the connection.</p>
+</blockquote>
+
+<ul>
+<li><a href="#before">Before you build</a></li>
+<li><a href="#sharkca">Switch to SharkCA</a></li>
+<li><a href="#windows">Build and run on Windows</a></li>
+<li><a href="#linux">Build and run on Linux</a></li>
+<li><a href="#storage">Choose a private state directory</a></li>
+<li><a href="#observe">Check enrollment and HTTPS</a></li>
+<li><a href="#settings">Example settings</a></li>
+<li><a href="#source">How the example works</a></li>
+<li><a href="#make">Other makefile options</a></li>
+<li><a href="#rtos">Integrate with an RTOS</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+</ul>
+
+<h2 id="before">Before You Build</h2>
+
+<ol>
+<li><strong>Use the complete amalgamated BAS package.</strong> The example compiles <code>src/BWS.c</code>, which includes the SharkTrustX client and SharkSSL, with the public headers and target port sources. It does not need a prebuilt BAS library or a resource compiler.</li>
+<li><strong>Prepare portal credentials.</strong> The included <code>src/tokengen.c</code> supplies credentials for <a href="https://x.realtimelogic.com/">x.realtimelogic.com</a>. You can use these credentials to try the example. To use your own credentials, download <code>tokengen.c</code> from your <a href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> or <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal, replace the included file, and rebuild. For SharkCA, follow <a href="#sharkca">Switch to SharkCA</a>; replacing credentials alone does not select the private-CA protocol.</li>
+<li><strong>Set your contact and preferred name.</strong> In <code>src/start.h</code>, replace John Doe's placeholder email, <code>john.doe@example.com</code>, with your own contact email before building. SharkCA does not use a contact email. Set the preferred name to a label such as <code>controller-17</code>; the portal chooses the final full DNS name.</li>
+<li><strong>Check time, network, and ports.</strong> The host needs a correct UTC clock, DNS resolution, outbound HTTPS to the portal and CA, and unused local ports <code>8080</code> and <code>8443</code>. A certificate authority (CA) is the service that signs the certificate.</li>
+</ol>
+
+<p>When using your own portal credentials, keep <code>tokengen.c</code> and the resulting executable or firmware private. If you change credentials after running the example, use a separate <a href="#storage">state directory</a> for the new enrollment.</p>
+
+<h2 id="sharkca">Switch to SharkCA</h2>
+
+<p>This same example can use <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> to obtain private certificates for devices on your network. There is no permanent public SharkCA test portal. Set up your own portal, for example with Mako Server on your computer, using the SharkCA installation guide.</p>
+
+<ol>
+<li><strong>Configure your portal.</strong> Create the administrator account and enrollment zone. For a local installation, select local network grouping. Configure the zone's portal hostname and HTTPS certificate before downloading credentials. The hostname must resolve from the device, and the portal must serve HTTPS on port <code>443</code>. If the portal runs on another computer, <code>localhost</code> refers to the device itself.</li>
+<li><strong>Replace the credentials.</strong> Use your portal's <strong>Download C code</strong> page and save the generated file as this example's <code>src/tokengen.c</code>.</li>
+<li><strong>Configure outbound trust.</strong> <code>src/start.c</code> loads ISRG Root X1 into <code>clientSsl</code> with <code>SharkSsl_setCAListEx()</code>. If your portal's HTTPS certificate uses another issuer or a local CA, replace that list with a SharkSSL-format CA list containing the appropriate trusted CA. The portal certificate must cover its hostname. Keep certificate validation enabled.</li>
+<li><strong>Select the private profile.</strong> Set the build setting <code>SHARKTRUSTX_PRIVATE_CA</code> to <code>1</code> as described below, and rebuild. The supplied builds then define the C macro for the example and BWS and include the BAS C mDNS responder. Replacing credentials alone does not select the private protocol.</li>
+<li><strong>Choose a separate state directory.</strong> Set <code>EXAMPLE_STATE_DIR</code> to an existing, empty directory for the SharkCA enrollment. Keep your public-profile state separate and retain the new directory for restarts. Set <code>EXAMPLE_NAME</code> to a preferred label without <code>.local</code>; the portal assigns the final name.</li>
+<li><strong>Trust the device certificates.</strong> Import the zone's root CA certificate into the computers or browsers that will access the device. This is separate from the device's trust in the portal configured above.</li>
+</ol>
+
+<h3>Select the Build Profile</h3>
+
+<p>Both build paths default to <code>SHARKTRUSTX_PRIVATE_CA=0</code>, which leaves the C macro undefined and uses SharkTrustX with Let's Encrypt staging. For Visual Studio, change the value in the <code>UserMacros</code> section of <code>VcMake/example.vcxproj</code> from <code>0</code> to <code>1</code>, then select <strong>Rebuild</strong>. Alternatively, run this command from a Visual Studio developer command prompt at the BAS root:</p>
+
+<pre class="code">rem Use your SharkCA tokengen.c and a separate state directory before running.
+msbuild examples\SharkTrustX\VcMake\example.vcxproj /t:Rebuild ^
+  /p:Configuration=Debug /p:Platform=x64 ^
+  /p:SHARKTRUSTX_PRIVATE_CA=1</pre>
+
+<p>For GNU Make, set <code>SHARKTRUSTX_PRIVATE_CA=1</code> in <code>make/Makefile</code> or pass it with every build command. Clean with the old settings before changing profiles. From <code>examples/SharkTrustX/make</code> on Linux:</p>
+
+<pre class="code"># Remove public-profile objects, preserving saved state.
+make plat=posix build=debug clean
+# Build the private profile; src/tokengen.c must belong to your SharkCA portal.
+make plat=posix build=debug SHARKTRUSTX_PRIVATE_CA=1 exe</pre>
+
+<p>On Windows, use the same setting with <code>plat=win ARC=x64</code> from the compiler prompt described below. The executable retains the filename <code>SharkTrustX-staging</code>; its startup trace and status page identify the selected CA profile. To return to SharkTrustX, clean using the private build settings, restore the public portal credentials and state directory, set the build setting back to <code>0</code>, and rebuild. In a custom SDK project, define the C macro consistently for all sources when using SharkCA; leave it undefined for the public profile.</p>
+
+<p>The private profile derives its CA directory as <code>https://portal-domain/acme/directory</code>. It omits the public profile's contact email, Let's Encrypt staging directory, and terms setting. No changes to these assignments in <code>start.c</code> are needed when switching profiles.</p>
+
+<h3>Resolve the Assigned .local Name</h3>
+
+<p>After portal confirmation, the example advertises the assigned <code>.local</code> name through the BAS C mDNS responder. Multicast DNS (mDNS) lets computers on the same local network resolve the name without a DNS server. The browser computer must support mDNS, and the network/firewall must permit multicast traffic on UDP port <code>5353</code>. Use the HTTPS link on the status page after the certificate is ready.</p>
+
+<p>The responder selects the first usable active multicast LAN interface, publishes its IPv4 address and, when available with <code>USE_IPV6</code>, its IPv6 address, and follows address changes. On a computer with multiple adapters, the selected interface can be a virtual adapter. Look for <strong>mDNS advertising</strong> in the trace. If initial setup fails, correct the network/port problem and restart. mDNS normally stays on the local link; it does not provide name resolution across routers or make private certificates trusted. The example uses the portal-assigned name without local conflict detection or renaming.</p>
+
+<h2 id="windows">Build and Run on Windows</h2>
+
+<p>Open <code>VcMake/example.sln</code> using Visual Studio and build. The application is compiled as C.</p>
+
+<p>Alternatively, run the supplied wrapper from a standard CMD console at the BAS root:</p>
+
+<pre class="code">rem Build with assertions and start from the output directory.
+examples\SharkTrustX\VcMake\build.cmd Debug x64
+cd examples\SharkTrustX\obj\debug
+SharkTrustX-staging.exe</pre>
+
+<p>The wrapper discovers Visual Studio and invokes MSBuild. With no arguments it selects <code>Release x64</code>. Use <code>Release</code> for optimization or <code>Win32</code> for a 32-bit executable. Like the other examples, both the executable and intermediate files go in <code>obj/debug/</code> or <code>obj/release/</code>. Use Visual Studio's <strong>Rebuild</strong> command when switching between Win32 and x64.</p>
+
+<p>Keep the console open and continue with <a href="#observe">Check enrollment and HTTPS</a>. The console reports the private state path and any startup error.</p>
+
+<h2 id="linux">Build and Run on Linux</h2>
+
+<p>Install GCC and GNU Make. BWS includes zlib. Run from the BAS root:</p>
+
+<pre class="code"># Build and start from the output directory.
+cd examples/SharkTrustX/make
+make plat=posix build=debug exe
+cd ../obj/debug
+./SharkTrustX-staging</pre>
+
+<h2 id="storage">Choose a Private State Directory</h2>
+
+<p>The example saves its certificate, private keys, and portal enrollment through a <code>DiskIo</code> instance created in <code>barracuda()</code>. Its root is <code>EXAMPLE_STATE_DIR</code> in <code>src/start.h</code>. The default, <code>"."</code>, stores files directly in the working directory selected by the shared startup; the example does not create a state subdirectory.</p>
+
+<p>With the Debug run commands above, or when starting Debug from Visual Studio, the files are stored here. Replace <code>BAS</code> with your BAS installation directory:</p>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">System</th><th scope="col">State directory</th><th scope="col">Example state file</th></tr>
+<tr><td>Windows</td><td><code>BAS\examples\SharkTrustX\obj\debug</code></td><td><code>BAS\examples\SharkTrustX\obj\debug\sharktrustx.0</code></td></tr>
+<tr><td>Linux</td><td><code>BAS/examples/SharkTrustX/obj/debug</code></td><td><code>BAS/examples/SharkTrustX/obj/debug/sharktrustx.0</code></td></tr>
+</table>
+</div>
+
+<p>For a Release build, start from <code>obj/release</code> instead. Visual Studio sets the working directory to the selected output directory. If you start from another directory, the shared <code>Main.c</code> may change the working directory while locating the example's <code>obj</code> directory. The console reports that change and the configured state path. The shared trace handler also writes <code>HttpTrace.txt</code> in the working directory.</p>
+
+<p>The client writes the following files directly in that directory, without creating another subdirectory:</p>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Filename</th><th scope="col">Contents</th></tr>
+<tr><td><code>sharktrustx.0</code>, <code>sharktrustx.1</code></td><td>Alternating binary records containing the certificate, private keys, and enrollment data. You may see only one of these files after a successful update.</td></tr>
+<tr><td><code>sharktrustx.reset</code></td><td>A marker used to complete an interrupted cleanup. It is normally absent.</td></tr>
+</table>
+</div>
+
+<p>Keep this directory for normal restarts, and run only one instance of the example against it. <strong>The saved private keys and credentials are unencrypted.</strong> Keep the directory private and never serve it over HTTP.</p>
+
+<h3>Use a Different Directory</h3>
+
+<p>Set <code>EXAMPLE_STATE_DIR</code> to an existing, writable directory and rebuild. Use forward slashes in the C string, including on Windows. For example, set it to <code>"C:/Users/John/SharkTrustX-state"</code> on Windows, <code>"/home/john/sharktrustx-state"</code> on Linux, or the appropriate persistent-storage path for your device. The example has no command-line options.</p>
+
+<p>A new empty directory creates a separate portal enrollment. Reuse saved state with the same portal credentials, preferred name, and CA settings. To keep an enrollment from the previous example version, set this path to its existing state directory. The makefile's <code>clean</code> target preserves state files.</p>
+
+<h2 id="observe">Check Enrollment and HTTPS</h2>
+
+<ol>
+<li><p>Open <a href="http://localhost:8080/">http://localhost:8080/</a> on the machine running the example. From another computer, substitute the device's reachable IP address. This HTTP page works before a certificate exists and refreshes every ten seconds.</p></li>
+<li><p>Wait for portal enrollment. The page and console show the <strong>confirmed DNS name</strong>. Use that name, even if it differs from your preferred label. Confirmation means the portal has enrolled the device; certificate issuance may still be running.</p></li>
+<li><p>Look for <strong>Installed; HTTPS is ready</strong>, with expiry and renewal dates. The page then shows an <strong>Open this page over HTTPS</strong> link using the assigned name on port <code>8443</code>. No HTTPS listener is opened until a usable certificate is installed.</p></li>
+<li><p>Follow that link to inspect the HTTPS connection. In the default profile, a staging certificate causes a trust warning even with the correct name. With SharkCA, import your zone's root CA and use the assigned <code>.local</code> name from the same LAN. Typing <code>https://localhost:8443/</code> or a raw IP also uses a name that the public-profile certificate does not cover.</p></li>
+<li><p>Press <strong>Ctrl+C</strong> in the host console to exit. Restart with the same credentials, settings, and state directory. A saved usable certificate is restored, then enrollment and automatic renewal continue.</p></li>
+</ol>
+
+<p>A newly confirmed name is not a certificate-ready signal. After a restart, the saved certificate may be ready before the portal confirms the name again.</p>
+
+<h3>Read the Status Page</h3>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Field</th><th scope="col">What it tells you</th></tr>
+<tr><td>Certificate</td><td>Whether the managed HTTPS listener currently has an unexpired certificate. Initial enrollment can be active while this still says it is waiting.</td></tr>
+<tr><td>Confirmed DNS name</td><td>The portal-assigned name to use in the browser. It is reported independently of certificate readiness. In the SharkCA profile, confirmation starts mDNS for this name.</td></tr>
+<tr><td>Expires</td><td>The installed certificate's expiry date, in UTC (GMT).</td></tr>
+<tr><td>Renewal due</td><td>The midpoint of the installed certificate's validity period. This can be in the past while issuance or retries are running; it is not the next retry time.</td></tr>
+<tr><td>Last notification</td><td>The last certificate-ready or error notification. An error can coexist with a still-valid certificate. The accompanying retry event is logged to the console without hiding the error on the page.</td></tr>
+</table>
+</div>
+
+<p>The public profile proves control of the name using a temporary DNS TXT record managed by the portal. The CA reads DNS; it does not need to connect to the example's HTTP or HTTPS port. Your browser still needs to resolve the assigned name and reach the device. Certificate issuance does not set up router forwarding or a remote-access tunnel.</p>
+
+<p>With <code>USE_IPV6</code> enabled, both HTTP and HTTPS try IPv6 first, then IPv4 on their respective ports. Successful sockets are retained. Windows normally opens two sockets per service; Linux normally opens one dual-stack IPv6 socket per service that also accepts IPv4. Platform settings can change this. Both HTTPS listeners share one certificate and TLS context. Without <code>USE_IPV6</code>, only IPv4 is attempted.</p>
+
+<p>The console identifies the HTTP sockets that opened. <strong>HTTPS is ready</strong> means at least one HTTPS listener has an unexpired certificate.</p>
+
+<h2 id="settings">Example Settings</h2>
+
+<p>Edit <code>src/start.h</code> or supply compiler definitions before building. The example uses these settings:</p>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Setting</th><th scope="col">C type</th><th scope="col">Default</th><th scope="col">Meaning</th></tr>
+<tr><td><code>EXAMPLE_NAME</code></td><td>String literal</td><td><code>sharktrustx-c</code></td><td>Preferred label, 1 to 63 ASCII letters, digits, or hyphens; no leading/trailing hyphen or dot. Keep it stable when reusing state.</td></tr>
+<tr><td><code>EXAMPLE_EMAIL</code></td><td>String literal</td><td><code>john.doe@example.com</code></td><td>John Doe's placeholder for the public ACME account contact. Replace it before public-profile enrollment; unused with SharkCA.</td></tr>
+<tr><td><code>EXAMPLE_STATE_DIR</code></td><td>String literal</td><td><code>"."</code></td><td>Existing writable directory used as the private <code>DiskIo</code> root. Select persistent storage on a device.</td></tr>
+<tr><td><code>EXAMPLE_HTTP_PORT</code></td><td>Integer constant</td><td><code>8080</code></td><td>Unused port from 1 to 65535 for the status page.</td></tr>
+<tr><td><code>EXAMPLE_HTTPS_PORT</code></td><td>Integer constant</td><td><code>8443</code></td><td>A different unused port from 1 to 65535, managed by SharkTrustX.</td></tr>
+</table>
+</div>
+
+<p>By default, the configuration in <code>src/start.c</code> selects Let's Encrypt's staging service, accepts its terms, and loads the ISRG Root X1 certificate used to verify outbound HTTPS. Review the CA's terms before running the example. For the private-CA variant and its setup, see <a href="#sharkca">Switch to SharkCA</a>.</p>
+
+<h2 id="source">How the Example Works</h2>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">File</th><th scope="col">Role in the example</th></tr>
+<tr><td><code>examples/HostInit/Main.c</code></td><td>Shared entry point for systems using <code>main()</code>. Calls <code>hostInit()</code>, then <code>barracuda()</code>.</td></tr>
+<tr><td><code>examples/HostInit/HostInit.c</code></td><td>Shared host setup for networking, trace output, and fatal-error handling.</td></tr>
+<tr><td><code>src/start.h</code></td><td>Defines the contact email, preferred name, ports, and state directory. Includes the shared startup declarations.</td></tr>
+<tr><td><code>src/start.c</code></td><td>Implements <code>void barracuda(void)</code>: initializes randomness, persistent storage, and the server; opens HTTP; starts certificate management; and, with SharkCA, advertises the confirmed name through mDNS.</td></tr>
+<tr><td><code>src/InstallVD.c</code></td><td>Provides the status page and logs certificate events. It reads the current certificate state using <code>SharkTrustX_getStatus()</code>.</td></tr>
+<tr><td><code>src/tokengen.c</code></td><td>Supplies the portal address and authentication credentials used to enroll the device.</td></tr>
+<tr><td><code>src/BWS.c (SharkTrustX section)</code></td><td>Handles enrollment, certificate requests, storage, renewal, and the HTTPS listeners. BWS includes this library code.</td></tr>
+</table>
+</div>
+
+<p>Enrollment and renewal run on a timer worker while the server continues handling requests. With <code>SHARKTRUSTX_PRIVATE_CA</code>, mDNS has its own timer sharing the dispatcher mutex, so blocking certificate requests do not delay scheduled name replies. A changed name closes the old responder before advertising the new one; IP-only enrollment stops advertisement. Replacing a certificate closes existing HTTPS connections, so browsers reconnect. The HTTP status page remains available.</p>
+
+<p>The makefile compiles BWS with <code>SHARKTRUSTX</code> and <code>BA_JSON=1</code>, including SharkTrustX and its native HTTP client, timer, and certificate signing request support. It also sets <code>SHARKSSL_ENABLE_CERTINFO_PARSE_API=1</code> to enable SharkSSL's public certificate-info parser. Do not compile <code>SharkTrustX.c</code> separately. It does not compile Lua or <code>BAS.c</code>. In an existing application, use the same integration pattern without starting a second dispatcher or duplicating the BWS runtime.</p>
+
+<h2 id="make">Other Makefile Options</h2>
+
+<p><code>make/Makefile</code> builds the amalgamated library and selected port sources with GCC on Linux or MSVC on Windows. It does not require the full SDK's build system. Use <code>build=release</code> for optimization; release is the default. The targets are <code>exe</code> (default), <code>lib</code>, and <code>clean</code>. Cleaning with the same platform/build variables removes build outputs, preserving private state.</p>
+
+<p>On Windows, use a Visual Studio <strong>x64 Native Tools Command Prompt</strong> with GNU Make and the <code>sh</code>, <code>mkdir</code>, and <code>rm</code> utilities on <code>PATH</code>. GNU Make and the shell utilities can be installed with Cygwin. From the BAS root:</p>
+
+<pre class="code">rem Use a compiler prompt matching ARC; the makefile does not switch compilers.
+cd examples\SharkTrustX\make
+make plat=win ARC=x64 build=debug exe
+cd ..\obj\debug
+SharkTrustX-staging.exe</pre>
+
+<p>Makefile outputs use <code>obj/debug/</code> or <code>obj/release/</code>, matching the other examples and the Visual Studio project. <code>ARC</code> selects the Windows linker's target architecture; keep it consistent with the compiler tools prompt. Run <code>clean</code> with the current build settings before changing platform, compiler, architecture, or feature definitions. Use a clean rebuild when switching between the makefile and Visual Studio. You can override <code>ODIR</code> to keep builds for multiple targets.</p>
+
+<p>The Windows BWS port enables <code>USE_IPV6</code>. For Linux, enable it in every compilation unit with the makefile's <code>USE_IPV6=1</code> setting. Clean the previous build before changing this setting:</p>
+
+<pre class="code"># Run from examples/SharkTrustX/make; rebuild with IPv6 enabled.
+make plat=posix build=debug clean
+make plat=posix build=debug USE_IPV6=1 exe</pre>
+
+<p>An IPv6 build must use a BWS network port that implements IPv6. For example, the existing FreeRTOS/lwIP netconn port supports IPv4 only; <code>USE_IPV6</code> alone does not add IPv6 support to that port. An unsuccessful IPv6 attempt falls back to IPv4, following the same listener sequence.</p>
+
+<h2 id="rtos">Integrate with an RTOS</h2>
+
+<p>The server uses the standard <code>void barracuda(void)</code> entry point. It can use any BAS target port that supplies the required thread, network, clock, and persistent-storage services. FreeRTOS, Zephyr, INTEGRITY, and VxWorks below are examples of port selection, not a fixed list of supported operating systems.</p>
+
+<p>Call <code>barracuda()</code> once from the application's usual server task after initializing the scheduler, heap, console, networking/DNS, UTC clock, and persistent storage. As with the other BAS examples, it runs the dispatcher in that task. Use the shared <code>Main.c</code> and <code>HostInit.c</code> on systems with <code>main()</code>; an RTOS application supplies its normal board startup, trace callback, and fatal-error handler.</p>
+
+<h3>Select the Target Port</h3>
+
+<p>Compile <code>src/start.c</code>, <code>src/InstallVD.c</code>, <code>src/tokengen.c</code>, and <code>src/BWS.c</code> with the feature definitions described above. Use your target's existing BAS headers and thread, socket, and filesystem implementations. The amalgamated BWS does not include platform implementations. Compile the target's thread, socket dispatcher, and <code>DiskIo</code> sources separately, once each.</p>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Example target</th><th scope="col">Port setup in the target build</th></tr>
+<tr><td>FreeRTOS with lwIP</td><td>Compile the FreeRTOS <code>ThreadLib.c</code> and lwIP <code>SoDisp.c</code>. Define <code>BA_FREERTOS</code>. Select matching headers and define <code>BA_LWIP</code>, <code>USE_DLMALLOC</code>, and <code>NO_MALLINFO=1</code> consistently across the build. Compile <code>src/dlmalloc.c</code>, initialize the allocator, and add the filesystem port used by the board.</td></tr>
+<tr><td>Zephyr</td><td>Use <code>BA_ZEPHYR</code>, the Zephyr headers and <code>ThreadLib.c</code>, the generic BSD <code>SoDisp.c</code>, and a <code>DiskIo</code> implementation for the mounted filesystem.</td></tr>
+<tr><td>INTEGRITY</td><td>Define <code>BA_INTEGRITY</code> in the build and select the INTEGRITY and BSD socket headers. Compile the INTEGRITY thread and generic BSD dispatcher sources, plus the chosen filesystem port.</td></tr>
+<tr><td>VxWorks</td><td>Define <code>BA_VXWORKS</code> in the build and select the VxWorks headers. Compile the VxWorks thread and generic BSD dispatcher sources, plus the chosen filesystem port.</td></tr>
+</table>
+</div>
+
+<p>Use your SDK project, or supply a target file through the makefile's <code>tinc</code> setting for a GCC-compatible cross compiler. The example makefile's <code>lib</code> target omits shared host startup so your application can provide it. This command is a template; replace the target-file path with your compiler and SDK settings:</p>
+
+<pre class="code"># Build the server library for the application's normal startup.
+make plat=custom tinc=/path/to/Target.mk lib</pre>
+
+<p>The target file sets <code>CC</code>, <code>AR</code>, <code>CPPFLAGS</code> (BAS port definitions), <code>CFLAGS</code> (compiler and ABI flags), <code>PORTINC</code> (space-separated port include directories), and <code>PORTSRC</code> (space-separated thread, dispatcher, filesystem, and optional allocator C source paths).</p>
+
+<h3>Add mDNS for the Private Profile</h3>
+
+<p>For SharkCA, compile <code>src/BamDNS.c</code> and one mDNS socket/discovery port in addition to the sources above. The supplied Windows/Linux builds select <code>src/arch/NET/BamDNS-Sock.c</code> automatically with <code>SHARKTRUSTX_PRIVATE_CA=1</code>. Windows also links <code>iphlpapi.lib</code>. Keep <code>BAS_LOADED</code> undefined to exclude Lua bindings, and enable <code>USE_DGRAM</code> in the selected BAS socket port.</p>
+
+<p>The application uses the public <code>BamDNS</code> C APIs without OS-specific calls. The optional make variable <code>MDNSSRC</code> is a space-separated list of C source paths for a replacement socket/discovery implementation; it defaults to the supplied BSD port. Automatic interface selection uses <code>BamDNS_getNetInfo()</code>. See the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/BamDNSGuide.html">BamDNS integration guide</a> for its port contract.</p>
+
+<p>A BAS TCP port alone does not guarantee mDNS support. The target stack must supply multicast sockets, interface discovery, and packet metadata. For example, the FreeRTOS/lwIP netconn port cannot use the BSD adapter unchanged. Supply a matching adapter, or adapt the confirmed-name callback to the stack's existing mDNS responder. The public SharkTrustX build does not require mDNS.</p>
+
+<h3>Select Persistent Storage and Seed the Random Generator</h3>
+
+<p>Set <code>EXAMPLE_STATE_DIR</code> to an existing directory on the device's persistent filesystem. The example constructs a static <code>DiskIo</code> instance and passes it to SharkTrustX as an <code>IoIntf</code>. If your application uses another persistent <code>IoIntf</code> implementation, replace that storage setup and assign the instance to <code>config.io</code>; keep it alive for the lifetime of the server. The state files go directly in its root, which is never exposed over HTTP.</p>
+
+<blockquote>
+<p><strong>Supply real entropy before using TLS on a device.</strong> The platform section at the top of <code>start.c</code> seeds SharkSSL from the operating system on Windows and Linux. For other targets, <code>seedRandom()</code> contains a predictable function-address placeholder. Replace it with <code>sharkssl_entropy()</code> calls using the board's hardware random generator or another secure entropy source.</p>
+</blockquote>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Symptom</th><th scope="col">What to check</th></tr>
+<tr><td>Cannot open the status page</td><td>Read startup output. Check that the process is still running, port 8080 is free, and the browser can reach the machine. A remote browser also needs firewall access.</td></tr>
+<tr><td>Trust error <code>-6</code></td><td>Check the device's UTC clock, outbound CA anchors, and portal/service certificate. This error concerns the device's outbound HTTPS, independently of the browser's staging warning.</td></tr>
+<tr><td>Identity error <code>-2</code></td><td>Check whether the build changed tokengen source, preferred label, profile, or CA directory while retaining old state. Restore the original settings or use the documented cleanup lifecycle.</td></tr>
+<tr><td>Storage error <code>-3</code></td><td>Check <code>EXAMPLE_STATE_DIR</code>, permissions, capacity, and the selected filesystem port. The directory must already exist. Do not delete files merely to hide an error.</td></tr>
+<tr><td>Portal error <code>-4</code> or CA error <code>-5</code></td><td>Check DNS/outbound connectivity, portal credentials, and CA availability. The worker logs a retry notification and stays active.</td></tr>
+<tr><td>Key or listener error <code>-7</code></td><td>Check available memory, entropy initialization, required SharkSSL features, and whether another server owns port 8443.</td></tr>
+<tr><td>Name shown but no HTTPS link yet</td><td>Enrollment has confirmed the name; wait for certificate installation and inspect subsequent console events.</td></tr>
+<tr><td>SharkCA .local name does not resolve</td><td>Check the mDNS startup trace, selected LAN adapter, browser OS mDNS support, and multicast/firewall access to UDP 5353. Use the same local network.</td></tr>
+<tr><td>HTTPS ready but browser cannot connect</td><td>Check name resolution and the route/firewall to port 8443. Use the assigned name. Issuance does not create remote access.</td></tr>
+<tr><td>HTTPS connects but the browser warns</td><td>A staging trust warning is expected in the public profile. With SharkCA, install the zone's root CA in the browser and use the confirmed name. A URL using localhost or a raw IP adds a name mismatch. See the manual's public/private trust explanation before changing trust settings.</td></tr>
+<tr><td>Renewal due is in the past</td><td>It is the certificate lifetime midpoint, not a completion promise. Check current readiness, expiry, and the preceding error; retries may still be running.</td></tr>
+</table>
+</div>
+
+<p>For all callback values and recovery contracts, see the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-codes">manual's error reference</a>. Return to the <a href="https://realtimelogic.com/ba/examples/readme.html">BAS examples index</a> or <a href="https://realtimelogic.com/ba/examples/introduction.html">shared build introduction</a> for the surrounding example structure.</p>
+
+</body>
+</html>

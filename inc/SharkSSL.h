@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6326 2026-10-06 20:17:23Z wini $
+ *   $Id: SharkSSL.h 6407 2026-10-12 21:41:24Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -1144,6 +1144,17 @@ SHARKSSL_API SharkSslCon_RetVal SharkSslCon_close(SharkSslCon *o);
     requested update is already outstanding.
  */
 SHARKSSL_API U8 SharkSslCon_keyUpdate(SharkSslCon *o, U8 requestUpdate);
+#if SHARKSSL_ENABLE_AES_GCM
+/**
+ * Apply the automatic AES-GCM KeyUpdate policy while the output buffer is free.
+ * Call after the transport has consumed the complete application record and
+ * before placing new plaintext in the encryption buffer. Returns 1 when
+ * handshake output is generated, 0 when no update is generated, or -1 on error.
+ * Send generated output with SharkSslCon_getHandshakeData and acknowledge every
+ * send attempt with SharkSslCon_setHandshakeDataSent before reusing the buffer.
+ */
+SHARKSSL_API int SharkSslCon_proactiveKeyUpdate(SharkSslCon *o);
+#endif
 #endif
 
 
@@ -1454,6 +1465,21 @@ U8  SharkSslCon_certificateRequested(SharkSslCon *o);
     completed. The certificate is available at any time.
  */
 SHARKSSL_API SharkSslCertInfo  *SharkSslCon_getCertInfo(SharkSslCon *o);
+
+
+#if (SHARKSSL_ENABLE_CERTINFO_PARSE_API && (SHARKSSL_SSL_CLIENT_CODE || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_CSR_SIGNING || SHARKSSL_SSL_TOOLS_CODE))
+/**
+ * \ingroup SharkSslCertApi
+ * Parse a DER certificate and return its certificate information.
+ * der includes the ASN.1 sequence header; len is its actual byte length.
+ * Returns 0 on success, -1 on failure. On failure, o is unchanged.
+ * Returned pointers borrow storage from der, which must remain alive.
+ * Date and SAN fields have explicit lengths and are not NULL-terminated.
+ * Parsing does not verify the issuer's signature or establish chain trust.
+ */
+SHARKSSL_API int SharkSslCertInfo_parseCert(SharkSslCertInfo *o, const U8 *der, U32 len);
+#endif
+
 
 /** Add a certificate to the SharkSsl object. A SharkSsl object in
     [server mode](\ref #SharkSsl_Server) is required to have at least

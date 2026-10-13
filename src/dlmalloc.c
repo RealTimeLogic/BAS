@@ -19,7 +19,12 @@
 */
 
 
+/* The native BWS build can omit the Lua mallinfo bindings and headers. */
+#if !defined(NO_MALLINFO) || !NO_MALLINFO
 #include <balua.h>
+#else
+#include <SharkSSL.h> /* sharkssl_entropy used by init_dlmalloc */
+#endif
 #include <dlmalloc.h>
 
 #ifdef USE_DLMALLOC

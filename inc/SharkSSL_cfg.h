@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 6318 2026-10-05 22:07:01Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6407 2026-10-12 21:41:24Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -63,6 +63,31 @@
 #ifndef SHARKSSL_TLS_1_2
 #define SHARKSSL_TLS_1_2                                 1
 #endif
+
+/** \defgroup SharkSslCfgPsa PSA consumer
+\ingroup SharkSslCfg
+@{
+*/
+
+/**
+ * Select 1 to use an external PSA Crypto provider for TLS operations.
+ */
+#ifndef SHARKSSL_PSA_CONSUMER
+#define SHARKSSL_PSA_CONSUMER                            0
+#endif
+
+/**
+ * Select 1 to keep TLS 1.3 handshake and traffic secrets in PSA key handles.
+ * Requires SHARKSSL_PSA_CONSUMER=1, TLS 1.3, and a provider supporting HKDF
+ * derivation from key handles, including a key handle as the HKDF salt.
+ * TLS 1.2 uses PSA master and record key handles independently of this option.
+ * The default consumer path remains available for other PSA providers.
+ */
+#ifndef SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+#define SHARKSSL_PSA_CONSUMER_SECRET_HANDLES             0
+#endif
+
+/** @} */ /* end group SharkSslCfgPsa */
 
 /**
  * Select 1 to enforce the compile-time feature set required by the general
@@ -201,11 +226,7 @@
  * Select 1 to enable client authentication from server
  */
 #ifndef SHARKSSL_ENABLE_CLIENT_AUTH
-#if (defined(SHARKSSL_PSA_CONSUMER) && SHARKSSL_PSA_CONSUMER)
-#define SHARKSSL_ENABLE_CLIENT_AUTH                      0
-#else
 #define SHARKSSL_ENABLE_CLIENT_AUTH                      1
-#endif
 #endif
 
 /**
@@ -317,11 +338,7 @@
  * Select 1 to enable session caching
  */
 #ifndef SHARKSSL_ENABLE_SESSION_CACHE
-#if (defined(SHARKSSL_PSA_CONSUMER) && SHARKSSL_PSA_CONSUMER)
-#define SHARKSSL_ENABLE_SESSION_CACHE                    0
-#else
 #define SHARKSSL_ENABLE_SESSION_CACHE                    1
-#endif
 #endif
 
 /**
@@ -485,6 +502,14 @@
  */
 #ifndef SHARKSSL_ENABLE_CERTSTORE_API
 #define SHARKSSL_ENABLE_CERTSTORE_API                    1
+#endif
+
+/**
+ * Select 1 to enable #SharkSslCertInfo_parseCert for local DER certificates.
+ * Requires RSA or ECDSA and certificate parsing for TLS, CSR signing, or tools.
+ */
+#ifndef SHARKSSL_ENABLE_CERTINFO_PARSE_API
+#define SHARKSSL_ENABLE_CERTINFO_PARSE_API               0
 #endif
 
 /**
@@ -908,9 +933,14 @@
 #endif
 #endif  /* SHARKSSL_RFC_9846_CONFORMANCE_PROFILE */
 
-#if (defined(SHARKSSL_PSA_CONSUMER) && SHARKSSL_PSA_CONSUMER)
-#if ((!SHARKSSL_TLS_1_3) || SHARKSSL_TLS_1_2)
-#error SHARKSSL_PSA_CONSUMER requires TLS 1.3 without TLS 1.2
+/* Check the selected PSA consumer profile after all TLS options are resolved. */
+#if (SHARKSSL_PSA_CONSUMER_SECRET_HANDLES && ((!SHARKSSL_PSA_CONSUMER) || (!SHARKSSL_TLS_1_3)))
+#error SHARKSSL_PSA_CONSUMER_SECRET_HANDLES requires the TLS 1.3 PSA consumer
+#endif
+
+#if SHARKSSL_PSA_CONSUMER
+#if ((!SHARKSSL_TLS_1_2) && (!SHARKSSL_TLS_1_3))
+#error SHARKSSL_PSA_CONSUMER requires TLS 1.2 or TLS 1.3
 #endif
 #if ((!SHARKSSL_SSL_CLIENT_CODE) && (!SHARKSSL_SSL_SERVER_CODE))
 #error SHARKSSL_PSA_CONSUMER requires a TLS client or server role
@@ -932,8 +962,8 @@
      (!SHARKSSL_ENABLE_ECDSA) || (!SHARKSSL_ENABLE_ECDHE_ECDSA))
 #error SHARKSSL_PSA_CONSUMER requires ECDHE-ECDSA with P-256
 #endif
-#if ((!SHARKSSL_ECC_USE_CURVE25519) || (!SHARKSSL_ENABLE_HELLO_RETRY_REQUEST) || \
-     (!SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY))
+#if (SHARKSSL_TLS_1_3 && ((!SHARKSSL_ECC_USE_CURVE25519) || (!SHARKSSL_ENABLE_HELLO_RETRY_REQUEST) || \
+     (!SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY)))
 #error SHARKSSL_PSA_CONSUMER requires X25519 with an initial single key share and HelloRetryRequest
 #endif
 #if (SHARKSSL_ECC_USE_SECP521R1 || \

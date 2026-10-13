@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 6178 2026-09-26 20:17:17Z gianluca $
+ *   $Id: SharkSslCrypto.h 6370 2026-10-09 11:08:01Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -333,6 +333,9 @@ SHARKSSL_API int   sharkssl_sha256(const U8*, U32, U8*);
     \param ctx Uninitialized data of size sizeof(SharkSslSha384Ctx).
 */
 SHARKSSL_API void  SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *ctx);
+#endif
+
+#if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
 
 /** append
     \ingroup RayCryptoSHA384
@@ -343,6 +346,9 @@ SHARKSSL_API void  SharkSslSha384Ctx_append(SharkSslSha384Ctx*, const U8 *data, 
     \ingroup RayCryptoSHA384
 */
 SHARKSSL_API void  SharkSslSha384Ctx_finish(SharkSslSha384Ctx*, U8 digest[SHARKSSL_SHA384_HASH_LEN]);
+#endif
+
+#if SHARKSSL_USE_SHA_384
 
 /** sha384
     \ingroup RayCryptoSHA384
