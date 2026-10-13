@@ -13,13 +13,14 @@ The [BAS/BWS Agent Guide](AGENTS.md) routes humans and AI assistants to the incl
 
 ## Examples
 
-Choose the example that matches where you want to implement the application logic. The first three examples use native C or C++. Mako Server and Xedge provide native hosts for Lua and Lua Server Pages (LSP) applications.
+Choose the example that matches where you want to implement the application logic. The first four examples use native C or C++. Mako Server and Xedge provide native hosts for Lua and Lua Server Pages (LSP) applications.
 
 | Example | Start here when | Approach and requirements |
 | --- | --- | --- |
 | [C-RESTful-Service](examples/C-RESTful-Service/README.md) | You need a native REST service for a C-only target or want to minimize code and memory overhead. | Uses the BAS/BWS C APIs directly, with routing and error handling implemented by the application. It does not require `cpp/rest`. |
 | [Modern-Cpp-REST-Service](examples/Modern-Cpp-REST-Service/README.md) | You want concise route definitions, typed parameters, structured errors, streaming, reusable REST handling, or the included Svelte device UI. | Uses the same native BWS foundation as the C REST example. Requires C++11 or newer and the `cpp/rest` library. |
 | [C-WebSockets](examples/C-WebSockets/README.md) | You need a native C++ WebSocket service with text and binary frames, multiple clients, concurrent broadcasts, or embedded browser resources. | Uses the native BAS/BWS WebSocket API with disk-based or embedded web content. For WebSocket behavior implemented in Lua, use the Mako/Xedge Lua skill. |
+| [SharkTrustX](examples/SharkTrustX/readme.html) | You need automatic HTTPS certificate enrollment and renewal in a C application. | Uses BWS and the native SharkTrustX client without Lua. Includes a certificate status page and supports Let's Encrypt staging or your own SharkCA portal with multicast DNS (mDNS). |
 | [MakoServer](examples/MakoServer/) | You want to build or customize the standalone Mako executable, platform startup, native extensions, services, or resource packaging. | Provides the native host for high-level operating systems. For ordinary Lua/LSP applications, use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md). See [Mako Server compilation](doc/compiling.md#mako-server-hlos). |
 | [xedge](examples/xedge/) | You want to port or embed Xedge in firmware or an RTOS and integrate storage, hardware hooks, embedded resources, or native extensions. | Provides the native Xedge host for RTOS and firmware targets. Use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) for `.preload`, `.config`, `.xlua`, and LSP application development. See [Xedge compilation](doc/compiling.md#xedge-rtos). |
 
