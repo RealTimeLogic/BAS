@@ -123762,12 +123762,7 @@ const char* const clonewrapper[xparserLAST] = {"\116\117\116\105","\111\116\111\
 #define HttpClient_useSocksProxy(o) (((o)->mode & 1) ? TRUE : FALSE)
 #define HttpClient_useHttpsProxy(o) (((o)->mode & 1) ? FALSE : TRUE)
 #define HttpClient_proxyConnect(o)  (((o)->mode & 2) ? TRUE : FALSE)
-#ifdef __ZEPHYR__
-
-#define HttpClient_usePersistent(o) (FALSE)
-#else
 #define HttpClient_usePersistent(o) (((o)->mode & 4) ? TRUE : FALSE)
-#endif
 #define HttpClient_useIPv6(o)       (((o)->mode & 8) ? TRUE : FALSE)
 
 static void
@@ -124097,6 +124092,12 @@ powerdomain(HttpClient* o)
       o->chunkEncoding=FALSE;
    }
 
+   
+   if(SoDispCon_recEvActive((SoDispCon*)o))
+   {
+      SoDisp_deactivateRec(SoDispCon_getDispatcher((SoDispCon*)o),
+                          (SoDispCon*)o);
+   }
    if( !o->httpStatus )
    {
       do

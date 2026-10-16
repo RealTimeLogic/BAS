@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5748 2026-03-17 23:03:27Z wini $
+ *   $Id: HttpCfg.h 6435 2026-10-16 23:06:16Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
@@ -123,8 +123,20 @@ void HttpSockaddr_gethostbynameF(
 #include <NetConv.h>
 
 /* Include the default HttpSocket functions */
+#define HttpSocket_send HttpSocket_sendZephyr
 #include <gBsdDspO.h>
 #include <gBsdSock.h>
+
+struct ThreadMutex;
+#ifdef __cplusplus
+extern "C" {
+#endif
+void HttpSocket_sendZephyr(HttpSocket* o, struct ThreadMutex* m,
+                          BaBool* isTerminated, const void* data,
+                          int len, int* retLen);
+#ifdef __cplusplus
+}
+#endif
 
 #define BA_FD_SET ZSOCK_FD_SET
 #define BA_FD_ZERO ZSOCK_FD_ZERO

@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 6430 2026-10-16 17:33:59Z wini $
+ *   $Id: ThreadLib.c 6435 2026-10-16 23:06:16Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
@@ -48,6 +48,50 @@
 #include <BaErrorCodes.h>
 #include <HttpCfg.h>
 #include <sys/time.h>  /* For gettimeofday */
+
+/* Zephyr can accept only the available TCP send window even on a blocking
+   socket. BAS blocking writes require the whole buffer. Nonblocking writes
+   must retain their partial-progress / would-block contract. */
+void HttpSocket_sendZephyr(HttpSocket* o, ThreadMutex* m,
+                          BaBool* isTerminated, const void* data,
+                          int len, int* retLen)
+{
+   const U8* ptr = (const U8*)data;
+   int flags = zsock_fcntl(o->hndl, F_GETFL, 0);
+   int sent = 0;
+   BaBool unlock = m && ThreadMutex_isOwner(m);
+   if(flags < 0)
+   {
+      *retLen = -1;
+      return;
+   }
+   do
+   {
+      int status, error;
+      int sock = o->hndl;
+      if(unlock) ThreadMutex_release(m);
+      status = (int)zsock_send(sock, ptr, len-sent, 0);
+      error = status < 0 ? errno : 0;
+      if(unlock) ThreadMutex_set(m);
+      /* A callback may close or destroy the connection while send blocks.
+         Check its caller-owned termination flag before touching it again. */
+      if(*isTerminated)
+      {
+         *retLen = -1;
+         return;
+      }
+      if(status < 0)
+      {
+         if(error == EINTR) continue;
+         *retLen = (error == EAGAIN || error == EWOULDBLOCK) ? sent : -1;
+         return;
+      }
+      if(!status) break;
+      sent += status;
+      ptr += status;
+   } while(sent < len && !(flags & O_NONBLOCK));
+   *retLen = sent;
+}
 
 BaTime baGetUnixTime(void)
 {
