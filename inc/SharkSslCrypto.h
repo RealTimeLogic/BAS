@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 6370 2026-10-09 11:08:01Z gianluca $
+ *   $Id: SharkSslCrypto.h 6429 2026-10-15 05:29:31Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -89,15 +89,26 @@ typedef struct SharkSslSha1Ctx
 #endif
 
 
+/**
+ * Hash context methods return zero on success and -1 on error. In PSA
+ * consumer builds, contexts own provider operations. Do not copy an active
+ * consumer context with memcpy; use the corresponding clone function with an
+ * uninitialized target. Abort an unfinished consumer context before reuse.
+ */
 #if SHARKSSL_USE_SHA_256
 /** SHA256
     \ingroup RayCryptoSHA256
 */
 typedef struct SharkSslSha256Ctx
 {
+   #if SHARKSSL_PSA_CONSUMER
+   psa_hash_operation_t operation;
+   psa_status_t status;
+   #else
    U32 total[2];
    U32 state[8];
    U8  buffer[64];
+   #endif
 } SharkSslSha256Ctx;
 #endif
 
@@ -108,9 +119,14 @@ typedef struct SharkSslSha256Ctx
 */
 typedef struct SharkSslSha384Ctx
 {
+   #if SHARKSSL_PSA_CONSUMER
+   psa_hash_operation_t operation;
+   psa_status_t status;
+   #else
    U32 total[4];
    U64 state[8];
    U8  buffer[128];
+   #endif
 } SharkSslSha384Ctx;
 #endif
 
@@ -127,8 +143,19 @@ typedef struct SharkSslSha384Ctx SharkSslSha512Ctx;
 /** HMAC
     \ingroup RayCryptoHMAC
 */
+/**
+ * In PSA consumer builds, this context owns a volatile PSA key. Do not copy
+ * it. Finish and destructor release the key; call destructor if a message is
+ * abandoned. The methods return zero on success and -1 on error.
+ */
 typedef struct SharkSslHMACCtx
 {
+   #if SHARKSSL_PSA_CONSUMER
+   psa_mac_operation_t operation;
+   psa_key_id_t key;
+   psa_status_t status;
+   U8 hashID;
+   #else
    union 
    {
       #if SHARKSSL_USE_MD5
@@ -162,6 +189,7 @@ typedef struct SharkSslHMACCtx
    #endif
    
    U8 hashID;
+   #endif
 } SharkSslHMACCtx;
 #endif
 
@@ -308,17 +336,21 @@ SHARKSSL_API int   sharkssl_sha1(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha256Ctx).
 */
-SHARKSSL_API void  SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *ctx);
+SHARKSSL_API int SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *ctx);
 
 /** append
     \ingroup RayCryptoSHA256
 */
-SHARKSSL_API void  SharkSslSha256Ctx_append(SharkSslSha256Ctx*, const U8 *data, U32 len);
+SHARKSSL_API int SharkSslSha256Ctx_append(SharkSslSha256Ctx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoSHA256
 */
-SHARKSSL_API void  SharkSslSha256Ctx_finish(SharkSslSha256Ctx*, U8 digest[SHARKSSL_SHA256_HASH_LEN]);
+SHARKSSL_API int SharkSslSha256Ctx_finish(SharkSslSha256Ctx*, U8 digest[SHARKSSL_SHA256_HASH_LEN]);
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API int SharkSslSha256Ctx_clone(const SharkSslSha256Ctx *source, SharkSslSha256Ctx *target);
+SHARKSSL_API int SharkSslSha256Ctx_abort(SharkSslSha256Ctx *ctx);
+#endif
 
 /** sha256
     \ingroup RayCryptoSHA256
@@ -332,7 +364,7 @@ SHARKSSL_API int   sharkssl_sha256(const U8*, U32, U8*);
 
     \param ctx Uninitialized data of size sizeof(SharkSslSha384Ctx).
 */
-SHARKSSL_API void  SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *ctx);
+SHARKSSL_API int SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *ctx);
 #endif
 
 #if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
@@ -340,12 +372,16 @@ SHARKSSL_API void  SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *ctx);
 /** append
     \ingroup RayCryptoSHA384
 */
-SHARKSSL_API void  SharkSslSha384Ctx_append(SharkSslSha384Ctx*, const U8 *data, U32 len);
+SHARKSSL_API int SharkSslSha384Ctx_append(SharkSslSha384Ctx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoSHA384
 */
-SHARKSSL_API void  SharkSslSha384Ctx_finish(SharkSslSha384Ctx*, U8 digest[SHARKSSL_SHA384_HASH_LEN]);
+SHARKSSL_API int SharkSslSha384Ctx_finish(SharkSslSha384Ctx*, U8 digest[SHARKSSL_SHA384_HASH_LEN]);
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API int SharkSslSha384Ctx_clone(const SharkSslSha384Ctx *source, SharkSslSha384Ctx *target);
+SHARKSSL_API int SharkSslSha384Ctx_abort(SharkSslSha384Ctx *ctx);
+#endif
 #endif
 
 #if SHARKSSL_USE_SHA_384
@@ -391,19 +427,18 @@ SHARKSSL_API int   sharkssl_sha512(const U8*, U32, U8*);
     \param key pointer to the cryptographic key
     \param keyLen 'key' length
 */
-SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx *ctx, U8 hashID, const U8 *key, U16 keyLen);
+SHARKSSL_API int SharkSslHMACCtx_constructor(SharkSslHMACCtx *ctx, U8 hashID, const U8 *key, U16 keyLen);
 
 /** append
     \ingroup RayCryptoHMAC
 */
-SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx*, const U8 *data, U32 len);
+SHARKSSL_API int SharkSslHMACCtx_append(SharkSslHMACCtx*, const U8 *data, U32 len);
 
 /** finish
     \ingroup RayCryptoHMAC
 */
-SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx*, U8 *HMAC);
-
-#define SharkSslHMACCtx_destructor(o) sharkssl_clear(o, sizeof(SharkSslHMACCtx))
+SHARKSSL_API int SharkSslHMACCtx_finish(SharkSslHMACCtx*, U8 *HMAC);
+SHARKSSL_API int SharkSslHMACCtx_destructor(SharkSslHMACCtx *ctx);
 
 /** HMAC
     \ingroup RayCryptoHMAC

@@ -13460,6 +13460,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                i += (2 * SHARKSSL_RANDOM_LEN);
 
                alignmentldrhstrh->signParam.pCertKey = &(alignmentldrhstrh->certKey);  
+               #if SHARKSSL_PSA_CONSUMER
+               alignmentldrhstrh->signParam.psaSignKey = alignmentldrhstrh->certParsed->psaSignKey;
+               #endif
 
                
                #if SHARKSSL_ENABLE_RSA
@@ -42438,7 +42441,7 @@ static void alignmentfinish(SharkSslSha256Ctx *registermcasp, U32 countshift[16]
 }
 
 
-SHARKSSL_API void SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *registermcasp)
+SHARKSSL_API int SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *registermcasp)
 {
    baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
 
@@ -42453,10 +42456,11 @@ SHARKSSL_API void SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *registermcasp
    registermcasp->state[5] = 0x9B05688C;
    registermcasp->state[6] = 0x1F83D9AB;
    registermcasp->state[7] = 0x5BE0CD19;
+   return 0;
 }
 
 
-SHARKSSL_API void SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, const U8 *in, U32 len)
+SHARKSSL_API int SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, const U8 *in, U32 len)
 {
    unsigned int dm9000platdata, pxa300evalboard;
 
@@ -42498,10 +42502,11 @@ SHARKSSL_API void SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, con
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, len);
    }
+   return 0;
 }
 
 
-SHARKSSL_API void SharkSslSha256Ctx_finish(SharkSslSha256Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA256_HASH_LEN])
+SHARKSSL_API int SharkSslSha256Ctx_finish(SharkSslSha256Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA256_HASH_LEN])
 {
    U32 timerenable, dummywrites;
    U32 timer0start, checkcontext;
@@ -42527,6 +42532,7 @@ SHARKSSL_API void SharkSslSha256Ctx_finish(SharkSslSha256Ctx *registermcasp, U8 
    inputlevel(registermcasp->state[5], secondaryentry, 20);
    inputlevel(registermcasp->state[6], secondaryentry, 24);
    inputlevel(registermcasp->state[7], secondaryentry, 28);
+   return 0;
 }
 
 
@@ -42717,7 +42723,7 @@ static void pcimtresource(SharkSslSha384Ctx *registermcasp, U64 countshift[16])
 
 
 #if SHARKSSL_USE_SHA_384
-SHARKSSL_API void SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *registermcasp)
+SHARKSSL_API int SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *registermcasp)
 {
    baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
 
@@ -42734,6 +42740,7 @@ SHARKSSL_API void SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *registermcasp
    registermcasp->state[5] = 0x8EB44A8768581511ULL;
    registermcasp->state[6] = 0xDB0C2E0D64F98FA7ULL;
    registermcasp->state[7] = 0x47B5481DBEFA4FA4ULL;
+   return 0;
 }
 #endif
 
@@ -42761,7 +42768,7 @@ SHARKSSL_API void SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *registermcasp
 
 
 #if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
-SHARKSSL_API void SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, const U8 *in, U32 len)
+SHARKSSL_API int SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, const U8 *in, U32 len)
 {
    unsigned int dm9000platdata, pxa300evalboard;
 
@@ -42809,10 +42816,11 @@ SHARKSSL_API void SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, con
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, len);
    }
+   return 0;
 }
 
 
-SHARKSSL_API void SharkSslSha384Ctx_finish(SharkSslSha384Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA384_HASH_LEN])
+SHARKSSL_API int SharkSslSha384Ctx_finish(SharkSslSha384Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA384_HASH_LEN])
 {
    U32 timerenable, dummywrites;
    U32 enablekernel[4];
@@ -42840,6 +42848,7 @@ SHARKSSL_API void SharkSslSha384Ctx_finish(SharkSslSha384Ctx *registermcasp, U8 
    hwmoddisable(registermcasp->state[3], secondaryentry, 24);
    hwmoddisable(registermcasp->state[4], secondaryentry, 32);
    hwmoddisable(registermcasp->state[5], secondaryentry, 40);
+   return 0;
 }
 #endif
 
@@ -43057,7 +43066,7 @@ int sharkssl_hash(U8 *secondaryentry, U8 *alloccontroller, U32 len, U8 configwri
 
 
 #if (SHARKSSL_USE_SHA_512 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA1 || SHARKSSL_USE_MD5)
-SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx *registermcasp, U8 configwrite, const U8 *sourcerouting, U16 creategroup)
+SHARKSSL_API int SharkSslHMACCtx_constructor(SharkSslHMACCtx *registermcasp, U8 configwrite, const U8 *sourcerouting, U16 creategroup)
 {
    U16 usb11device = prminstglobal(configwrite);
    baAssert(0 == (usb11device & 0x03));
@@ -43076,7 +43085,10 @@ SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx *registermcasp, U
       else
       {
          
-         sharkssl_hash((U8*)&(registermcasp->key), (U8*)sourcerouting, creategroup, configwrite);
+         if (0 != sharkssl_hash((U8*)&(registermcasp->key), (U8*)sourcerouting, creategroup, configwrite))
+         {
+            return -1;
+         }
          creategroup = sharkssl_getHashLen(configwrite);
          baAssert(creategroup);
       }
@@ -43132,10 +43144,11 @@ SHARKSSL_API void  SharkSslHMACCtx_constructor(SharkSslHMACCtx *registermcasp, U
             break;
       }
    }
+   return usb11device ? 0 : -1;
 }
 
 
-SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx *registermcasp, const U8 *alloccontroller, U32 len)
+SHARKSSL_API int SharkSslHMACCtx_append(SharkSslHMACCtx *registermcasp, const U8 *alloccontroller, U32 len)
 {
    switch (registermcasp->hashID)
    {
@@ -43170,12 +43183,13 @@ SHARKSSL_API void  SharkSslHMACCtx_append(SharkSslHMACCtx *registermcasp, const 
       #endif
 
       default:
-         break;
+         return -1;
    }
+   return 0;
 }
 
 
-SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx *registermcasp, U8 *cfconresource)
+SHARKSSL_API int SharkSslHMACCtx_finish(SharkSslHMACCtx *registermcasp, U8 *cfconresource)
 {
    U16 usb11device = prminstglobal(registermcasp->hashID);
 
@@ -43250,7 +43264,20 @@ SHARKSSL_API void  SharkSslHMACCtx_finish(SharkSslHMACCtx *registermcasp, U8 *cf
          default:
             break;
       }
+      return 0;
    }
+   return -1;
+}
+
+
+SHARKSSL_API int SharkSslHMACCtx_destructor(SharkSslHMACCtx *registermcasp)
+{
+   if (!registermcasp)
+   {
+      return -1;
+   }
+   sharkssl_clear(registermcasp, sizeof(*registermcasp));
+   return 0;
 }
 
 
@@ -47122,9 +47149,14 @@ SharkSslCert removerecursive(SharkSslCertEnum *o)
                {
                   o->cert = NULL;
                }
+               else
                {
-                  o->cert += (U16)(chargeerror << 2);
-                  o->cert -= (U16)(chargeerror >> 1);
+                  o->cert += chargeerror;
+                  if (!coupledexynos(setpropinplace))
+                  {
+                     o->cert += (U16)(chargeerror << 1);
+                     o->cert += (U16)(chargeerror >> 1);
+                  }
                }
             }
             #if SHARKSSL_USE_ECC
@@ -57985,7 +58017,7 @@ typedef enum
    SHARKSSL_PSA_KEY_DERIVE_EXPAND,
    SHARKSSL_PSA_KEY_DERIVE_EXTRACT,
    SHARKSSL_PSA_KEY_RAW_EXTRACT,
-   SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT,
+   SHARKSSL_PSA_KEY_RAW_AGREEMENT_EXTRACT,
    SHARKSSL_PSA_KEY_HMAC_SIGN
 } SharkSslPsaLabelKeyPolicy;
 
@@ -58101,10 +58133,9 @@ static int _XzY0x229(psa_key_id_t spi4000check, const char *clkdmoperations,
             psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
-         case SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT:
+         case SHARKSSL_PSA_KEY_RAW_AGREEMENT_EXTRACT:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_RAW_DATA);
-            psa_set_key_algorithm(&attributes,
-               PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
+            psa_set_key_algorithm(&attributes, PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
          case SHARKSSL_PSA_KEY_HMAC_SIGN:
@@ -58362,7 +58393,7 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
    if (sharkssl_hash(_XzY0x210, _XzY0x257, 0, hs->cipherSuite->hashID) ||
        _XzY0x229(_XzY0x20F, "\144\145\162\151\166\145\144", _XzY0x210,
                                   (U8)ftraceupdate, hs->cipherSuite->hashID,
-                                  SHARKSSL_PSA_KEY_RAW_ECDH_EXTRACT, &derivedSaltKey))
+                                  SHARKSSL_PSA_KEY_RAW_AGREEMENT_EXTRACT, &derivedSaltKey))
    {
       goto iommucreate;
    }
@@ -58576,10 +58607,16 @@ iommucreate:
 int SharkSslCon_calcResumptionSecret(SharkSslCon *o, U8 *chargerplatform)
 {
    #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
-   return _XzY0x229(o->psaMasterSecret, "\162\145\163\040\155\141\163\164\145\162", chargerplatform,
-                                     (U8)sharkssl_getHashLen(o->rCipherSuite->hashID),
-                                     o->rCipherSuite->hashID, SHARKSSL_PSA_KEY_DERIVE_EXPAND,
-                                     &o->psaResumptionMasterSecret);
+   if (_XzY0x229(o->psaMasterSecret, "\162\145\163\040\155\141\163\164\145\162", chargerplatform,
+                                 (U8)sharkssl_getHashLen(o->rCipherSuite->hashID),
+                                 o->rCipherSuite->hashID, SHARKSSL_PSA_KEY_DERIVE_EXPAND,
+                                 &o->psaResumptionMasterSecret) ||
+       (psa_destroy_key(o->psaMasterSecret) != PSA_SUCCESS))
+   {
+      return -1;
+   }
+   o->psaMasterSecret = PSA_KEY_ID_NULL;
+   return 0;
    #else
    return bgezllabel(o->masterSecret, "\162\145\163\040\155\141\163\164\145\162", chargerplatform, o->resumptionMasterSecret, sharkssl_getHashLen(o->rCipherSuite->hashID), o->rCipherSuite->hashID);
    #endif
@@ -59274,6 +59311,12 @@ int SharkSslCon_calcHandshakeTrafficSecret(SharkSslCon *o)
    {
       goto _sharkssl_handshake_secret_cleanup;
    }
+   
+   if (psa_destroy_key(alignmentldrhstrh->prot.tls13.psaHSSecret) != PSA_SUCCESS)
+   {
+      goto _sharkssl_handshake_secret_cleanup;
+   }
+   alignmentldrhstrh->prot.tls13.psaHSSecret = PSA_KEY_ID_NULL;
    #else
    #if (!SHARKSSL_PSA_CONSUMER)
    #if SHARKSSL_ENABLE_SESSION_CACHE
@@ -60190,7 +60233,7 @@ int allocalloc(SharkSslCon *o, U8 *pciercxcfg448, U16 len,
 
 int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *chargerplatform)
 {
-   #if SHARKSSL_TLS_1_2
+   #if (SHARKSSL_TLS_1_2 && (!SHARKSSL_PSA_CONSUMER))
    int offsetarray = -1;
    #endif
    U16 ftraceupdate;
@@ -60207,14 +60250,17 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
       U8 buf[SHARKSSL_MAX_HASH_LEN];
       int sffsdrnandflash = -1;
       #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+      psa_key_id_t *trafficSlot;
       psa_key_id_t traffic, finishedKey = PSA_KEY_ID_NULL;
       psa_algorithm_t hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
 
-      traffic = (fixupcy82c693 == tvp5146routes) ? hsParam(o)->prot.tls13.psaCliHSTraffic : hsParam(o)->prot.tls13.psaSrvHSTraffic;
+      trafficSlot = (fixupcy82c693 == tvp5146routes) ? &hsParam(o)->prot.tls13.psaCliHSTraffic : &hsParam(o)->prot.tls13.psaSrvHSTraffic;
+      traffic = *trafficSlot;
       #if SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH
       if ((fixupcy82c693 == tvp5146routes) && (o->flags & SHARKSSL_FLAG_POST_HANDSHAKE_CERT_REQ))
       {
          traffic = o->psaRAppTrafficSecret;
+         trafficSlot = NULL;
       }
       #endif
       if (_XzY0x229(traffic, "\146\151\156\151\163\150\145\144", NULL, 0, configwrite, SHARKSSL_PSA_KEY_HMAC_SIGN, &finishedKey))
@@ -60257,6 +60303,18 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
          if (psa_destroy_key(finishedKey) != PSA_SUCCESS)
          {
             sffsdrnandflash = -1;
+         }
+      }
+      if ((sffsdrnandflash == 0) && trafficSlot && (*trafficSlot != PSA_KEY_ID_NULL))
+      {
+         
+         if (psa_destroy_key(*trafficSlot) != PSA_SUCCESS)
+         {
+            sffsdrnandflash = -1;
+         }
+         else
+         {
+            *trafficSlot = PSA_KEY_ID_NULL;
          }
       }
       #endif
@@ -60335,7 +60393,9 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
       }
       #endif
    }
+   #if !SHARKSSL_PSA_CONSUMER
    return offsetarray;
+   #endif
    #endif
 }
 
@@ -60505,7 +60565,9 @@ SHARKSSL_API U16 SharkSslCon_getDecData(SharkSslCon *o, U8 **ptregdefines)
    baAssert(!(o->flags & firstcomponent));
 
    *ptregdefines = o->inBuf.data;
+   #if (SHARKSSL_MAX_HANDSHAKE_LENGTH > SHARKSSL_MAX_DECRYPTED_REC_LEN)
    baAssert(o->inBuf.temp <= 0xFFFF);
+   #endif
    guestdebug = (U16)o->inBuf.temp;
    o->inBuf.data += guestdebug;
    o->inBuf.temp = 0;
@@ -60638,7 +60700,9 @@ U8 SharkSslCon_encryptMore(SharkSslCon *o)
 U16 SharkSslCon_getHandshakeDataLen(SharkSslCon *o)
 {
    baAssert(o);
+   #if (SHARKSSL_MAX_HANDSHAKE_LENGTH > SHARKSSL_MAX_DECRYPTED_REC_LEN)
    baAssert(o->inBuf.temp <= 0xFFFF);
+   #endif
    return ((U16)o->inBuf.temp);
 }
 
@@ -60647,7 +60711,9 @@ U16 SharkSslCon_setHandshakeDataSent(SharkSslCon *o, U16 traceleave)
 {
    U16 res;
    baAssert(o);
+   #if (SHARKSSL_MAX_HANDSHAKE_LENGTH > SHARKSSL_MAX_DECRYPTED_REC_LEN)
    baAssert(o->inBuf.temp <= 0xFFFF);
+   #endif
    res = (U16)o->inBuf.temp;
    if ((res > 0) && (traceleave <= res))
    {
@@ -60833,7 +60899,9 @@ SharkSslCon_RetVal SharkSslCon_encrypt(SharkSslCon *o, U8 *buf, U16 masterclock)
    oBuf = &o->outBuf;
    registerfixed(oBuf);  
 
+   #if (SHARKSSL_MAX_HANDSHAKE_LENGTH > SHARKSSL_MAX_DECRYPTED_REC_LEN)
    baAssert(oBuf->temp <= 0xFFFF);
+   #endif
    brightnesslimit = (U16)oBuf->temp;
    masterclock -= brightnesslimit;
    if ((!buf) && (brightnesslimit))
@@ -61082,7 +61150,9 @@ U8 *SharkSslCon_getEncData(SharkSslCon *o)
 U16 SharkSslCon_getEncDataLen(SharkSslCon *o)
 {
    baAssert(o);
+   #if (SHARKSSL_MAX_HANDSHAKE_LENGTH > SHARKSSL_MAX_DECRYPTED_REC_LEN)
    baAssert(o->outBuf.dataLen <= 0xFFFF);
+   #endif
    return ((U16)o->outBuf.dataLen);
 }
 

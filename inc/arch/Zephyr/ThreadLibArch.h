@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 5672 2025-10-17 00:14:58Z wini $
+ *   $Id: ThreadLibArch.h 6430 2026-10-16 17:33:59Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2022 - 2025
+ *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -90,6 +90,7 @@ typedef struct ThreadBase
    Thread_Run runnable;
    struct k_sem* startSem;
    k_thread_stack_t* stackStart;
+   void* stackAllocation; /* Original heap block for the aligned stack. */
    k_tid_t tid;
 } ThreadBase; 
 

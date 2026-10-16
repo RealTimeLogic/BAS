@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5971 2026-09-11 10:01:39Z wini $
+ *   $Id: ThreadLib.c 6430 2026-10-16 17:33:59Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
@@ -160,16 +160,20 @@ Thread_constructor(
          baAssert(0);
    }
    o->runnable=r;
-   stackSize+=sizeof(k_thread_stack_t);
-   o->stackStart = (k_thread_stack_t*)baMalloc(stackSize);
+   /* Kernel stacks include architecture padding and an MPU guard on ARM.
+      Keep the original allocation because the aligned address may differ. */
+   size_t stackBytes = K_KERNEL_STACK_LEN(stackSize);
+   o->stackAllocation = baMalloc(stackBytes + Z_KERNEL_STACK_OBJ_ALIGN - 1);
    o->startSem = (struct k_sem*)baMalloc(sizeof(struct k_sem));
-   if( ! o->stackStart || !  o->startSem )
+   if( ! o->stackAllocation || ! o->startSem )
    {
       baFatalE(FE_MALLOC, stackSize);
    }
+   o->stackStart = (k_thread_stack_t*)ROUND_UP(
+      (uintptr_t)o->stackAllocation, Z_KERNEL_STACK_OBJ_ALIGN);
    k_sem_init(o->startSem, 0, 1);
    o->tid=k_thread_create(&o->thread,
-                          o->stackStart, stackSize,
+                          o->stackStart, stackBytes - K_KERNEL_STACK_RESERVED,
                           Thread_threadEntry, o, NULL, NULL,
                           prio, 0, K_NO_WAIT);
 }
@@ -193,7 +197,8 @@ Thread_destructor(struct ThreadBase* o)
       }
       else
          k_sched_unlock();
-      k_msgq_put(&baCtrlThreadMsg, o->stackStart, K_FOREVER);
+      k_msgq_put(&baCtrlThreadMsg, &o->stackAllocation, K_FOREVER);
+      o->stackAllocation=0;
       o->stackStart=0;
    }
    else
@@ -202,7 +207,8 @@ Thread_destructor(struct ThreadBase* o)
          baFatalE(FE_THREAD_LIB,__LINE__);
       if(o->stackStart)
       {
-         baFree(o->stackStart);
+         baFree(o->stackAllocation);
+         o->stackAllocation=0;
          o->stackStart=0;
       }
    }
