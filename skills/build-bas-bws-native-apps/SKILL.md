@@ -33,6 +33,24 @@ Use these source priorities:
 
 Read [references/source-map.md](references/source-map.md) when locating APIs or examples, or when the full-source and public amalgamated trees differ.
 
+## Preserve BAS Source Formatting and Copyright
+
+- In new or modified C/C++ control-flow blocks, put opening and closing braces on their own lines and each statement on its own line, using the surrounding indentation (normally three spaces in BAS). Do not compress multi-statement blocks into one line. Small code means a small implementation and binary, not fewer source lines; preserve deliberate compact argument parsing and single-character switches.
+
+  ```c
+  if(status == 0)
+  {
+     /* Release resources owned by this operation. */
+     releaseResources(o);
+     return 0;
+  }
+  ```
+
+- Use POSIX LF (`\n`) line endings in BAS-owned source and header files, including when editing on Windows. Normalize CRLF or mixed endings in files changed for the task; do not sweep unrelated files.
+- Make scripted writes explicit about newlines, for example Python `open(path, "w", encoding="utf-8", newline="\n")`, or byte-preserving replacements. Default Windows text writes can introduce CRLF, displayed as `^M` in Emacs. Preserve the existing encoding and literal C escape sequences such as `"\r\n"`.
+- Update the existing Real Time Logic copyright end year in each modified source/header to the current year, unless the user specifies another year. Preserve the start year, owner, license text, third-party notices, and revision metadata such as `$Id`. Do not silently move an existing later end year backwards; clarify a conflicting requested year.
+- Before finishing, check the edited files as bytes for CRLF and stray carriage returns, and inspect the copyright lines. For line-ending/copyright-only changes, verify that no other content changed; a rebuild or runtime test is unnecessary.
+
 ## Select One Amalgamation
 
 | Need | Compile |
@@ -45,6 +63,36 @@ Never compile both. Do not compile separate component source already present in 
 Treat direct C services and optional Modern C++ convenience layers as complementary choices. Prefer direct C when the target is C-only or every byte of additional code and runtime support matters. Use a C++ layer when its routing, validation, and ownership helpers justify the compiler and footprint cost. Measure the actual linked image/map for the target instead of declaring either approach universally superior.
 
 Add the target's thread, socket-dispatcher, and optional filesystem porting sources. Read [references/build-porting.md](references/build-porting.md) before creating or changing a build, porting to another OS/RTOS, choosing compiler macros, or integrating generated web UI resources.
+
+## Keep the Implementation Small
+
+- Implement the smallest design that satisfies the requested behavior,
+  correctness, security, ownership, cleanup, and established compatibility
+  contracts.
+- Leave out optional features, speculative extension points, compatibility
+  aliases, configuration switches, fallbacks, dependencies, wrappers, and
+  abstraction layers unless the user or an existing contract requires them.
+- Prefer direct public BAS/BWS APIs and a narrow callback interface. Do not add
+  a framework, portability layer, or generalized mechanism for one known
+  target or call site.
+- Add a source file or module only when it creates a useful ownership,
+  portability, reuse, test, or security boundary. Keep closely related code
+  together when splitting it would add indirection without reducing risk.
+- After the required path works, remove unused branches, fields, functions,
+  includes, allocation paths, and duplicated validation introduced by the
+  change. Never remove required bounds checks, error handling, synchronization,
+  or destruction logic to reduce code size.
+- Preserve an established public or wire contract unless the user authorizes
+  its replacement. Compatibility code is not required for contracts outside
+  the requested scope.
+
+When the task includes documentation or a handover, give every public
+argument, variable, structure member, callback value, return value, and
+configuration field an explicit type. State optional status, defaults,
+accepted ranges, units, ownership, and lifetime where relevant. Every code
+or configuration example must include a useful comment explaining intent,
+prerequisites, ownership, or a non-obvious choice. Comments must not merely
+translate the code into prose.
 
 ## Use a Stable Application Shape
 
@@ -79,7 +127,7 @@ Set status and content type before writing. Do not retain `HttpCommand`, `HttpRe
 
 - REST, JSON, request bodies, response encoding, or WebSockets: read [references/http-json-websocket.md](references/http-json-websocket.md).
 - Authentication, authorization, TLS, uploads, asynchronous responses, WebDAV, custom `IoIntf`, outbound clients, or socket takeover: read [references/security-io-async.md](references/security-io-async.md).
-- Lua/C bindings: use `src/BAS.c`, then also read the dedicated Lua binding skill referenced by the active repository. Never call the Lua C API while the BAS dispatcher mutex is released.
+- Lua/C bindings: use `src/BAS.c`, then read [Lua binding guidance](../build-xedge-mako-lua-apps/references/upstream/Lua-Binding-Skill.md) and, for peripherals, [hardware binding guidance](../build-xedge-mako-lua-apps/references/hardware-bindings.md). Never call the Lua C API while the BAS dispatcher mutex is released.
 
 ## Enforce Ownership and Concurrency
 

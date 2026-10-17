@@ -51,7 +51,7 @@ The component list, source URLs, and refresh metadata live in [references/upstre
 | Public, administrative, upload, file, or device-control security | [OWASP-General-Security-Skill.md](references/upstream/OWASP-General-Security-Skill.md) and the authentication skill when identity is involved |
 | SMQ topics, presence, or device messaging | [SMQ-Skill.md](references/upstream/SMQ-Skill.md) |
 | SQLite schema or writes | [SQLite-Skill.md](references/upstream/SQLite-Skill.md) |
-| Lua/C/C++ bindings | [Lua-Binding-Skill.md](references/upstream/Lua-Binding-Skill.md), plus the repository's native BAS/BWS skill |
+| Lua/C/C++ bindings | [Lua-Binding-Skill.md](references/upstream/Lua-Binding-Skill.md), plus the repository's native BAS/BWS skill. For GPIO or peripheral bindings, also read [hardware-bindings.md](references/hardware-bindings.md). |
 | Installing or operating Mako Server | [Deploy-Mako-Server-Skill.md](references/upstream/Deploy-Mako-Server-Skill.md) |
 | LSP, htmx, fetch, WebSocket RPC, or SMQ browser UI | [Build-LSP-Web-Interfaces-Skill.md](references/upstream/Build-LSP-Web-Interfaces-Skill.md) |
 
@@ -129,6 +129,12 @@ Verify in proportion to the change:
 A successful file write, HTTP 200, or package load does not prove the intended Lua code executed. Inspect BAS/Mako/Xedge trace output after the relevant action.
 
 ## Refresh Upstream Components
+
+`Lua-Binding-Skill.md` contains maintained local refinements recorded in the
+manifest. Compare and merge a refreshed version before replacing it, preserve
+those refinements, and update its manifest hash/byte count. The updater itself
+does not merge edits; use `--component` for unrelated components until the
+binding changes have been reconciled.
 
 Vendored components make the skill usable offline. Do not silently refresh them during an unrelated application edit. Refresh when the user requests it, when maintaining this skill, or when a material source conflict suggests the snapshot is stale:
 

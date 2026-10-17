@@ -67,8 +67,9 @@
       "filename": "Lua-Binding-Skill.md",
       "url": "https://realtimelogic.com/downloads/ai-skills/Lua-Binding-Skill.md",
       "purpose": "BAS Lua and native C/C++ binding guidance",
-      "bytes": 51432,
-      "sha256": "61b512ab7f4793f5bc4a9d62655257349bb78a4ae00b316cb03771301ca7f56b"
+      "bytes": 54458,
+      "sha256": "52178a9aa239e14bec09bacb1280f46359d6000916b92ce1b5c0ac7dff5804d0",
+      "local_changes": "Maintained ownership, weak-reference, callback, helper-contract and recovery guidance; merge on upstream refresh."
     },
     {
       "filename": "Deploy-Mako-Server-Skill.md",

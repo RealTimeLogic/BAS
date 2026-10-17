@@ -11,6 +11,26 @@ If you are new to BAS: BAS is the C/C++ server engine behind Mako Server, Xedge,
 
 This skill is self-contained. It is written for an agent that may have access only to BAS header files, not to BAS implementation files or a local BAS checkout. When checking declarations, use the public/runtime headers available in the target source tree.
 
+This copy includes maintained binding fixes beyond the downloaded snapshot.
+Merge these refinements when refreshing it; do not replace them blindly.
+Source paths below refer to the target BAS tree. In an amalgamated package,
+search `src/BAS.c` for implementations whose separate source files are absent.
+For peripheral bindings, also read [hardware-bindings.md](../hardware-bindings.md).
+
+## Keep Changes Small and Explain Ownership
+
+Prefer existing BAS reference helpers and native ownership registries over
+another weak table, object list, or framework. Preserve deliberate compact
+argument parsing and single-character switches unless a demonstrated bug
+requires changing them. Small code means a small implementation and binary,
+not compressed formatting: put control-block braces on separate lines and
+one statement per line inside blocks.
+
+Document each nontrivial helper's purpose, inputs, return value or Lua stack
+effect, mutex requirements, and ownership changes. Explain uservalue slots,
+which references are weak or strong, and when they are released. Keep these
+comments beside the mechanism rather than repeating the code.
+
 ## First Principles
 
 BAS Lua bindings are not just generic Lua native modules using the Lua C API. A binding may run in one of three modes:
@@ -737,7 +757,17 @@ Required `LThreadMgr` pattern:
 
 Design rules:
 
-- Anchor the Lua callback for as long as native code can enqueue jobs that call it. Prefer storing it in the owning userdata's uservalue table and keeping a `balua_wkRef` integer in the native object for later recovery with `balua_wkPush`.
+- A callback in a userdata uservalue does not root the userdata. Prefer
+  `balua_wkRef` for owner lookup; after `balua_wkPush`, check for a missing
+  value and validate object identity and closed state before native access.
+  Keep the userdata on the Lua stack during callbacks that need its storage,
+  then recheck state: the callback may close it or start another operation.
+- Check the runtime's reference-reuse rules. A reference number is not a
+  permanent instance identity. If reuse can overlap old jobs, drain/cancel
+  them before reuse or validate an independent instance identity. Do not
+  add a second identity scheme solely for hypothetical counter wrap.
+  Reuse an existing native ownership registry for recovery where suitable;
+  do not dereference stale pointers while checking identity.
 - Store only plain C event data in the `ThreadJob` struct. Do not store Lua stack indexes, Lua object pointers that are not separately anchored, or pointers to temporary strings.
 - Copy string/binary payloads that must survive until the job runs, and free those copies in the job callback after `lua_pcall`.
 - Use `tj->Lt` as the Lua state in the job callback.
@@ -748,49 +778,60 @@ Design rules:
 - On `lua_pcall` error, stop or close the owning object if continuing would repeatedly enqueue failing callbacks.
 - Stop event production before destroying the owning userdata. Release `balua_wkRef` references with `balua_wkUnref` and clear uservalue-held callbacks during close/GC when appropriate.
 
-Minimal shape:
+Minimal callback-only shape: all event data is copied into the job; it never
+accesses owner storage. This example assumes `callbackRef` cannot be reassigned
+while jobs are outstanding; the caller must enforce that lifetime contract.
+A collected callback is simply skipped. Owner-dependent jobs additionally need
+the userdata/identity checks above. The manager frees each queued job.
 
 ```c
-typedef struct {
+typedef struct
+{
    ThreadJob super;
    int callbackRef;
    int value;
-   char* payload;
 } MyJob;
 
+/* Deliver a copied integer under the BAS mutex. A collected callback is
+   skipped. tj and its Lua state are borrowed; restore the incoming stack. */
 static void
 MyJob_run(ThreadJob* tj, int msgh, LThreadMgr* mgr)
 {
    MyJob* job = (MyJob*)tj;
    lua_State* L = tj->Lt;
+   int top = lua_gettop(L);
+   (void)mgr;
 
    balua_wkPush(L, job->callbackRef);
-   lua_pushinteger(L, job->value);
-   if(job->payload)
-      lua_pushstring(L, job->payload);
-   if(lua_pcall(L, job->payload ? 2 : 1, 0, msgh) != LUA_OK) {
-      /* Error handler at msgh owns reporting. Keep stack cleanup explicit. */
-      lua_settop(L, 0);
+   if(lua_isfunction(L, -1))
+   {
+      lua_pushinteger(L, job->value);
+      /* msgh reports callback errors; discard the result/error below. */
+      (void)lua_pcall(L, 1, 0, msgh);
    }
-   if(job->payload)
-      baFree(job->payload);
+   lua_settop(L, top);
+}
+
+/* Caller holds the BAS mutex and owns the callback-reference lifetime.
+   Queue a copied value; return TRUE if queued, FALSE on allocation failure.
+   Does not touch the Lua stack. Queueing transfers job ownership to mgr. */
+static BaBool
+MyJob_queue(LThreadMgr* mgr, int callbackRef, int value)
+{
+   MyJob* job = (MyJob*)ThreadJob_lcreate(sizeof(MyJob), MyJob_run);
+   if(!job)
+      return FALSE;
+   job->callbackRef = callbackRef;
+   job->value = value;
+   LThreadMgr_run(mgr, (ThreadJob*)job);
+   return TRUE;
 }
 ```
 
-Dispatch shape:
-
-```c
-MyJob* job = (MyJob*)ThreadJob_lcreate(sizeof(MyJob), MyJob_run);
-if(!job)
-   baFatalE(FE_MALLOC, 0);
-job->callbackRef = owner->callbackRef;
-job->value = value;
-job->payload = payloadCopy;
-
-ThreadMutex_set(dispatchMutex);
-LThreadMgr_run(threadMgr, (ThreadJob*)job);
-ThreadMutex_release(dispatchMutex);
-```
+Handle `FALSE` through the binding's operational-error or notification-recovery
+path. Do not leave a pending flag set after allocation/enqueue failure.
+`LThreadMgr_run` returning FALSE means the job was queued rather than handed
+to an idle worker; it is not an enqueue failure.
 
 Before using these skeletons, verify the exact `ThreadJob`, `ThreadJob_lcreate`, `LThreadMgr`, and `LThreadMgr_run` declarations in the target headers.
 
@@ -1006,6 +1047,12 @@ After implementation:
 - For blocking calls, verify concurrent HTTP requests still proceed.
 - For directory objects, verify insert, request service, child insert, unlink, GC after unlink, and duplicate insert rejection.
 - For callbacks, verify callback error reporting and cleanup after error.
+- Follow rejected arguments, callback failures, and partial construction with
+  a valid operation on the same resource. Confirm that no busy flag, reference,
+  or native allocation prevents recovery.
+- For configuration bindings, propagate write/commit errors to Lua before
+  rebooting or reporting success. Test save/load with distinct field values;
+  a successful save/reboot does not prove power-loss atomicity.
 - For request bindings, verify saved request objects fail cleanly after request completion.
 
 ## Common Pitfalls
