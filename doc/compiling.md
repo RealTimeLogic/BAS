@@ -287,6 +287,7 @@ The following example uses Linux to compile Xedge as a standalone application. F
 ```sh
 gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     -DLUA_USE_LINUX\
+    -DUSE_EMBEDDED_CACERT\
     src/BAS.c\
     examples/HostInit/Main.c examples/HostInit/HostInit.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
@@ -318,6 +319,7 @@ Feature selection is controlled by the build, the target's `TargConfig.h`, and m
 - `USE_DBGMON=1`: Include [Lua debugger support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
 - `USE_REVCON=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/).
 - `USE_OPCUA=1`: Enable OPC UA support when the build also includes the required OPC UA Lua resources and C module.
+- `USE_EMBEDDED_CACERT`: Recommended for devices running code and constant data directly from flash. Uses the compiled-in CA bundle without retaining a heap copy. 
 - `USE_FORKPTY=1`: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), available for Linux and QNX. This API is required for the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) and the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
 - `USE_REDIRECTOR=1`: Enable the [reverse proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy).
 - `USE_UBJSON=1`: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson).
@@ -386,7 +388,7 @@ The following example compiles Xedge for Green Hills INTEGRITY. You can also [do
 
 ```sh
 ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
-    -non_shared -DMAXTHREADS=3\
+    -non_shared -DMAXTHREADS=3 -DUSE_EMBEDDED_CACERT\
     -Iinc -Iinc/arch/INTEGRITY -Iinc/arch/NET/Posix\
     --diag_suppress=111,188,550,549,546,223\
     src/BAS.c\
