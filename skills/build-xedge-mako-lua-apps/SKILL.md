@@ -55,6 +55,8 @@ The component list, source URLs, and refresh metadata live in [references/upstre
 | Installing or operating Mako Server | [Deploy-Mako-Server-Skill.md](references/upstream/Deploy-Mako-Server-Skill.md) |
 | LSP, htmx, fetch, WebSocket RPC, or SMQ browser UI | [Build-LSP-Web-Interfaces-Skill.md](references/upstream/Build-LSP-Web-Interfaces-Skill.md) |
 
+The vendored upstream bundle is a dated snapshot. For this checkout's accepted configuration-macro migration, use the current `inc/BaConfig.h`, `inc/balua.h`, and host configuration headers. In older snippets, replace `GET_BAMUTEX;` with `BA_LUA_DECLARE_MUTEX(m, L);`, `USE_SYSLOG=1` with `BA_ENABLE_SYSLOG=1`, and defined `NO_ZLIB` with `BA_ENABLE_ZLIB=0`. The old `AUX_LUA_BINDINGS` / `myCustomBindings` pair is now the optional function-name setting `MAKO_OPEN_BINDINGS`; declare the selected function with C linkage where needed. Keep the vendored snapshot and its integrity manifest together.
+
 Official API references control names, signatures, and runtime behavior. If an example or skill conflicts with the applicable API source, report the conflict and follow the runtime-correct API.
 
 Paths such as `inc/balua.h` inside an upstream component are relative to the target BAS checkout, not `references/upstream/`. The consolidated API bundles may also retain relative links from their original generated HTML documentation; search the downloaded Markdown bundle for the referenced symbol or section when such a navigation link has no vendored target.

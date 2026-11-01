@@ -13,7 +13,7 @@
  *
  *   $Id: ThreadLib.c 171 2005-04-28 00:03:13Z  $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -140,7 +140,7 @@ Thread_constructor(
    if(o->stackStart)
    {
       TST_OK(tx_thread_create(&o->tid,
-                              "BTh",
+                              "BAS",
                               Thread_threadStart,
                               (ULONG)o,
                               o->stackStart,

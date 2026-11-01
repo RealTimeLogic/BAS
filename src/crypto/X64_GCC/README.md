@@ -46,17 +46,9 @@ support for XMM/YMM state. VAES additionally requires VAES and VPCLMULQDQ.
 The shared dispatcher checks the features before selecting accelerated paths
 and retains C fallback. CPU brand alone does not determine support.
 
-## Performance and benefit
+## Measure application performance
 
-This port adapts the optimized MSVC x64 cipher kernels to the System V AMD64
-calling convention. Similar assembly throughput on the same CPU is a reasonable
-expectation, with less CPU time needed for encryption and authentication.
-As a Windows reference, short ChaCha20 calls (16-511 bytes) were **1.3-1.5x
-faster** than C processing of the same message sizes on an Intel Core i7-1165G7
-with optimized MSVC 14.51 builds.
-
-That ratio is not a measured GCC speedup: GCC/Clang can produce a different
-C baseline, and calling-convention overhead can affect short operations.
-No numerical GCC speedup is specified here. The MSVC X25519 figures do not
-apply because this directory has no X25519 backend. These operation benchmarks
-do not measure server throughput.
+Measure the selected assembly and C paths with your target CPU, compiler,
+message sizes, and algorithm configuration. Operation throughput does not
+directly predict TLS or application throughput. Runtime dispatch retains
+the available fallback when the required processor features are absent.

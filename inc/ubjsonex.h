@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjsonex.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: ubjsonex.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2014
+ *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -114,10 +114,8 @@ typedef struct
       S16* int16;
       S32* int32;
       S64* int64;
-#ifndef NO_DOUBLE
       double* float64;
       float* float32;
-#endif
       char* string;
       struct /* For obj/array */
       {
@@ -146,7 +144,11 @@ typedef struct UBJDecoder
 #ifdef __cplusplus
 : public UBJPIntf
 {
-   /** See UBJDecoder::get for details */
+   /** See UBJDecoder::get for details
+    @param fmt Required format string using the flags described by get().
+    @param argList Required argument list containing the output pointers selected by fmt; it is consumed during setup.
+    @return 0 when the pointer tree is built, or -1 on a format, storage, or size error, as for get().
+ */
    int vget(const char* fmt, va_list* argList);
 
    /** Build a pointer value tree that is used by the integrated

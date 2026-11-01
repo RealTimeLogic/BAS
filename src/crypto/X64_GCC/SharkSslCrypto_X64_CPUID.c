@@ -1,5 +1,41 @@
-/* Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
- * Linux x86-64 CPU/OS probes. Same license as SharkSslCrypto.c.
+/**
+ *     ____             _________                __                _
+ *    / __ \___  ____ _/ /_  __(_)___ ___  ___  / /   ____  ____ _(_)____
+ *   / /_/ / _ \/ __ `/ / / / / / __ `__ \/ _ \/ /   / __ \/ __ `/ / ___/
+ *  / _, _/  __/ /_/ / / / / / / / / / / /  __/ /___/ /_/ / /_/ / / /__
+ * /_/ |_|\___/\__,_/_/ /_/ /_/_/ /_/ /_/\___/_____/\____/\__, /_/\___/
+ *                                                       /____/
+ *
+ *                 SharkSSL Embedded SSL/TLS Stack
+ ****************************************************************************
+ *   PROGRAM MODULE
+ *
+ *   $Id: SharkSslCrypto_X64_CPUID.c 6635 2026-10-26 20:00:02Z gianluca $
+ *
+ *   COPYRIGHT:  Real Time Logic LLC, 2026
+ *
+ *   This software is copyrighted by and is the sole property of Real
+ *   Time Logic LLC.  All rights, title, ownership, or other interests in
+ *   the software remain the property of Real Time Logic LLC.  This
+ *   software may only be used in accordance with the terms and
+ *   conditions stipulated in the corresponding license agreement under
+ *   which the software has been supplied.  Any unauthorized use,
+ *   duplication, transmission, distribution, or disclosure of this
+ *   software is expressly forbidden.
+ *
+ *   This Copyright notice may not be removed or modified without prior
+ *   written consent of Real Time Logic LLC.
+ *
+ *   Real Time Logic LLC. reserves the right to modify this software
+ *   without notice.
+ *
+ *               http://www.realtimelogic.com
+ *               http://www.sharkssl.com
+ ****************************************************************************
+ *
+ */
+
+/* Linux x86-64 CPU/OS probes.
  * Compile for the baseline ISA, without -march=native or -mavx2.
  */
 #include <cpuid.h>

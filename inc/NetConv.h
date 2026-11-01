@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: NetConv.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: NetConv.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -40,14 +40,14 @@
 #define _NetConv_h
 
 
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
 #define baHtonl(x) ((U32)((((U32)(x) & 0x000000ffU) << 24) | \
                          (((U32)(x) & 0x0000ff00U) <<  8) | \
                          (((U32)(x) & 0x00ff0000U) >>  8) | \
                          (((U32)(x) & 0xff000000U) >> 24)))
 #define baHtons(x) ((U16)((((U16)(x) & 0x00ff) << 8) | \
                          (((U16)(x) & 0xff00) >> 8)))
-#elif defined B_BIG_ENDIAN
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 #define baHtonl(x) x
 #define baHtons(x) x
 #else

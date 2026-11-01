@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5160 2022-05-19 18:02:52Z wini $
+ *   $Id: SoDisp.c 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -270,7 +270,7 @@ SoDisp_deactivateRec(SoDisp* o, SoDispCon* con)
 }
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 void
 SoDisp_activateSend(SoDisp* o, SoDispCon* con)
 {

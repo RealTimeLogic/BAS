@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpTrace.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpTrace.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2004-2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2004-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -47,10 +47,12 @@
 #undef printf
 #endif
 
-#ifndef NO_HTTP_TRACE
+#if BA_ENABLE_HTTP_TRACE
 #ifndef HTTP_TRACE
 #define HTTP_TRACE
 #endif
+#else
+#undef HTTP_TRACE
 #endif
 
 #define HttpTrace_doRequestMask          0x01
@@ -73,7 +75,7 @@ typedef void (*HttpTrace_Flush)(char* buf, int bufLen);
 /** Buffered diagnostic output and optional HTTP protocol tracing.
  * Install a flush callback at startup to enable output. If the library is
  * built without HTTP_TRACE, output functions have no effect. This header
- * enables HTTP_TRACE by default unless NO_HTTP_TRACE is defined.
+ * enables HTTP_TRACE by default; BA_ENABLE_HTTP_TRACE=0 selects the stubs.
  *
  * Priority zero is highest. A message is emitted when its priority is less
  * than or equal to the configured filter (initially 5). Optional HTTP trace
@@ -262,15 +264,25 @@ typedef struct HttpTrace
       */
       static void flush();
 
-      /** Returns true if request-line tracing is enabled. */
+      /** Returns true if request-line tracing is enabled.
+    @return True if request-line tracing is enabled.
+ */
       static bool isRequestSet();
-      /** Returns true if request-header tracing is enabled. */
+      /** Returns true if request-header tracing is enabled.
+    @return True if request-header tracing is enabled.
+ */
       static bool isRequestHeadersSet();
-      /** Returns true if response-header tracing is enabled. */
+      /** Returns true if response-header tracing is enabled.
+    @return True if response-header tracing is enabled.
+ */
       static bool isResponseHeadersSet();
-      /** Returns true if response-body tracing is enabled. */
+      /** Returns true if response-body tracing is enabled.
+    @return True if response-body tracing is enabled.
+ */
       static bool isResponseBodySet();
-      /** Returns true if HTTP/1.1 connection-state tracing is enabled. */
+      /** Returns true if HTTP/1.1 connection-state tracing is enabled.
+    @return True if HTTP/1.1 connection-state tracing is enabled.
+ */
       static bool isHttp11StateSet();
 
    private:

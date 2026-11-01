@@ -370,7 +370,7 @@ static HttpServer* createServer()
    configuration.setResponseData(1400);
 
    static HttpServer server(&dispatcher, &configuration);
-   static HttpCmdThreadPool pool(&server, ThreadPrioNormal, BA_STACKSZ);
+   static HttpCmdThreadPool pool(&server, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
    openHttpListener(&server, &dispatcher);
    return &server;
 }

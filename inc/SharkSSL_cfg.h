@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 6407 2026-10-12 21:41:24Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6706 2026-11-01 08:32:24Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -40,7 +40,12 @@
 #ifndef _SharkSsl_cfg_h
 #define _SharkSsl_cfg_h
 
+/* BAS/BWS supplies the byte order through BaConfigEndian.h. */
+#ifndef _BaConfigEndian_h
+#include "SharkSslConfigEndian.h"
+#else
 #include "SharkSSL_opts.h"
+#endif
 
 
 /** @addtogroup SharkSslCfg
@@ -64,6 +69,28 @@
 #define SHARKSSL_TLS_1_2                                 1
 #endif
 
+/**
+ * Number of volatile key slots in the SharkSSL PSA provider. In the default
+ * static mode, all slots reserve memory even when unused; in dynamic mode,
+ * this value limits the number of allocated slots. Twelve covers one TLS 1.3
+ * RSA/X25519 handshake with session caching and PSA secret handles, including
+ * a subsequent KeyUpdate. Increase it for concurrent handshakes or other
+ * keys kept alive by the application. This does not configure an external
+ * PSA provider used by SHARKSSL_PSA_CONSUMER.
+ */
+#ifndef SHARKSSL_PSA_KEY_SLOTS
+#define SHARKSSL_PSA_KEY_SLOTS                           12
+#endif
+
+/**
+ * Select 1 to allocate SharkSSL PSA provider key slots on demand. The
+ * static mode remains the default for deterministic embedded memory use.
+ */
+#ifndef SHARKSSL_PSA_DYNAMIC_KEY_SLOTS
+#define SHARKSSL_PSA_DYNAMIC_KEY_SLOTS                   0
+#endif
+
+
 /** \defgroup SharkSslCfgPsa PSA consumer
 \ingroup SharkSslCfg
 @{
@@ -77,6 +104,19 @@
 #endif
 
 /**
+ * Select 1 to enable standalone AES through the external PSA provider.
+ * Link SharkSslPSAConsumerAES.c when enabled.
+ */
+#ifndef SHARKSSL_PSA_CONSUMER_STANDALONE_AES
+#define SHARKSSL_PSA_CONSUMER_STANDALONE_AES             0
+#endif
+
+/** Enable standalone ChaCha20 through the external PSA provider. */
+#ifndef SHARKSSL_PSA_CONSUMER_STANDALONE_CHACHA20
+#define SHARKSSL_PSA_CONSUMER_STANDALONE_CHACHA20        0
+#endif
+
+/**
  * Select 1 to keep TLS 1.3 handshake and traffic secrets in PSA key handles.
  * Requires SHARKSSL_PSA_CONSUMER=1, TLS 1.3, and a provider supporting HKDF
  * derivation from key handles, including a key handle as the HKDF salt.
@@ -85,6 +125,15 @@
  */
 #ifndef SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
 #define SHARKSSL_PSA_CONSUMER_SECRET_HANDLES             0
+#endif
+
+/**
+ * Select 1 to require a PSA signing key for every local TLS identity.
+ * Certificate blobs must contain only the public key. The provider key's
+ * public half and signing policy are checked when adding the certificate.
+ */
+#ifndef SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY
+#define SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY            0
 #endif
 
 /** @} */ /* end group SharkSslCfgPsa */
@@ -129,6 +178,29 @@
 #endif
 
 /**
+ * Select fixed-access software AES encryption and GHASH for AES-GCM.
+ * The AES-GCM context layout and public API stay unchanged. Other AES modes
+ * retain their selected backend. Hardware or assembler GCM backends use
+ * their own security properties. The option is disabled by default because
+ * it uses more cycles and stack. SHARKSSL_AES_CIPHER_LOOP_UNROLL also
+ * selects the faster (1) or the smaller (0) code for this option.
+ */
+#ifndef SHARKSSL_AES_GCM_SOFTWARE_CT
+#define SHARKSSL_AES_GCM_SOFTWARE_CT                     0
+#endif
+
+/**
+ * Select the Cortex-M4/M7/M85 GHASH helper for software CT AES-GCM.
+ * Compile crypto/Cortex-M_GCC/SharkSslAesGcmCT_M4.S (GCC) or
+ * crypto/Cortex-M_IAR/SharkSslAesGcmCT_M4.s (IAR) with the same options.
+ * This uses fixed-latency UMULL on the supported little-endian cores.
+ * Cortex-M3 is not supported. The public AES-GCM context is unchanged.
+ */
+#ifndef SHARKSSL_AES_GCM_CT_M4_ASM
+#define SHARKSSL_AES_GCM_CT_M4_ASM                        0
+#endif
+
+/**
  * AES-CCM require AES:
  * only for crypto functions - CCM TLS ciphersuites removed
  */
@@ -168,6 +240,14 @@
  */
 #ifndef SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
+#endif
+
+/**
+ * Enable standalone SHA-224 through the PSA consumer. The native backend has
+ * no SHA-224 API, so this option is disabled by default.
+ */
+#ifndef SHARKSSL_USE_SHA_224
+#define SHARKSSL_USE_SHA_224                             0
 #endif
 
 /**
@@ -266,9 +346,19 @@
  * Select 1 to send only an X25519 key share in the initial TLS 1.3 ClientHello.
  * This setting is effective only when HelloRetryRequest and X25519 are enabled;
  * otherwise the client sends every available TLS 1.3 key share as before.
+ * The PSA consumer sends one P-256 share when X25519 is disabled.
  */
 #ifndef SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY
 #define SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY   0
+#endif
+
+/**
+ * Select one RFC 8734 Brainpool group as the initial TLS 1.3 key share
+ * Set to TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13, P384R1TLS13, or P512R1TLS13
+ * Zero retains the usual initial key shares
+ */
+#ifndef SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP
+#define SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP         0
 #endif
 
 /**
@@ -359,6 +449,19 @@
  */
 #ifndef SHARKSSL_ENABLE_DHE_RSA
 #define SHARKSSL_ENABLE_DHE_RSA                          0
+#endif
+
+/**
+ * Minimum size in bits of the DHE_RSA prime p sent by a server: the
+ * client aborts the handshake with an insufficient_security alert when
+ * p is shorter. 2048 follows NIST SP 800-131A; 1024 is the lowest value
+ * accepted, for legacy servers only (512- and 768-bit groups are broken).
+ */
+#ifndef SHARKSSL_DHE_MIN_PRIME_BITS
+#define SHARKSSL_DHE_MIN_PRIME_BITS                      2048
+#endif
+#if (SHARKSSL_DHE_MIN_PRIME_BITS < 1024)
+#error SHARKSSL_DHE_MIN_PRIME_BITS must be at least 1024
 #endif
 
 /**
@@ -592,13 +695,6 @@
 #endif
 
 /**
- * Select 8, 16 or 32 according to your architecture
- */
-#ifndef SHARKSSL_BIGINT_WORDSIZE
-#define SHARKSSL_BIGINT_WORDSIZE                         32
-#endif
-
-/**
  * Elliptic Curve Cryptography
  */
 #ifndef SHARKSSL_USE_ECC
@@ -624,28 +720,40 @@
 #endif
 
 /**
- * Reserved for future Edwards-curve digital signature support (RFC 8032).
- * EdDSA is not implemented.
+ * Enable Ed25519/Ed448 support (RFC 8032).
+ * Certificate parsing is available; signature verification currently
+ * requires the PSA consumer. Native verification and TLS signature
+ * scheme integration are not implemented.
  */
 #ifndef SHARKSSL_ENABLE_EDDSA
 #define SHARKSSL_ENABLE_EDDSA                            0
 #endif
 
 /**
- * Enable timing resistant ECC algorithms
- * DISABLE AT YOUR OWN RISK!
+ * Compute k*G, for G the base point of SECP256R1 and SECP384R1 (key
+ * generation, ECDSA signing), with a fixed-base comb and a table of 16
+ * precomputed points per curve in flash: about 1 KB for SECP256R1 and
+ * 1.5 KB for SECP384R1 with 32-bit words. ECDSA signing is 2.4 to 3.3
+ * times faster than with the generic multiplication, with the same
+ * timing resistance. Set it to 0 to save the tables and about 3 KB of
+ * code.
  */
-#ifndef SHARKSSL_ECC_TIMING_RESISTANT
-#define SHARKSSL_ECC_TIMING_RESISTANT                    1
+#ifndef SHARKSSL_ECC_FIXED_BASE_COMB
+#define SHARKSSL_ECC_FIXED_BASE_COMB                     1
 #endif
 
 /**
- * Enable timing resistant big integer functions
- * Enabled by default when the above is enabled
- * DISABLE AT YOUR OWN RISK!
+ * Compute k*Q for any other point Q of SECP256R1, SECP384R1 and
+ * SECP521R1 (ECDH shared secret) with a fixed window of this many bits
+ * and the same timing resistance: about 35% faster than the generic
+ * multiplication. The window holds 2^(bits - 1) precomputed points in
+ * RAM during the multiplication: with 4, 768 bytes for SECP256R1, 1152
+ * for SECP384R1 and 1632 for SECP521R1; 5 doubles them for 0 to 4% more
+ * speed. Set it to 0 to use the generic multiplication, which needs
+ * less RAM and about 2.5 KB less code.
  */
-#ifndef SHARKSSL_BIGINT_TIMING_RESISTANT
-#define SHARKSSL_BIGINT_TIMING_RESISTANT                 1
+#ifndef SHARKSSL_ECC_MULT_FIXED_WINDOW
+#define SHARKSSL_ECC_MULT_FIXED_WINDOW                   4
 #endif
 
 /**
@@ -706,9 +814,9 @@
 #endif
 
 /**
- * Select 1 (the default) to use dedicated Curve25519 field arithmetic
+ * Select 1 to use dedicated Curve25519 field arithmetic
  * (SharkSslBigInt.c) modulo p = 2^255 - 19, with a fixed inversion
- * chain. If #SHARKSSL_X25519_ASM is also enabled, the dedicated
+ * chain. If \ref SHARKSSL_X25519_ASM is also enabled, the dedicated
  * whole-ASM backend is used instead. Select 0 for the generic BigInt
  * ladder, which may use optional BigInt assembly kernels. This will
  * reduce code size in flash at the cost of slower X25519 operations.
@@ -752,6 +860,31 @@
 #endif
 
 /**
+ * Select 1 to use the assembly for the P-256 (secp256r1) field arithmetic:
+ * on Cortex-M4/M7 SharkSslP256_M4.S for GCC, SharkSslP256_M4.s for IAR
+ * and Keil; on RXv2/RXv3 SharkSslP256_RX.S for GCC, SharkSslP256_RX.s
+ * for IAR. Multiplication, addition and subtraction modulo the P-256
+ * prime then run in assembly and in constant time; the other curves are
+ * not affected. Independent of #SHARKSSL_OPTIMIZED_BIGINT_ASM.
+ */
+#ifndef SHARKSSL_ECC_P256_ASM
+#define SHARKSSL_ECC_P256_ASM                            0
+#endif
+
+/**
+ * Select 1 to use the assembly for the P-384 (secp384r1) field arithmetic:
+ * on Cortex-M4/M7 SharkSslP384_M4.S for GCC, SharkSslP384_M4.s for IAR
+ * and Keil; on RXv2/RXv3 SharkSslP384_RX.S for GCC, SharkSslP384_RX.s
+ * for IAR. Multiplication, addition and subtraction modulo the P-384
+ * prime then run in assembly and in constant time; the other curves are
+ * not affected. Independent of #SHARKSSL_ECC_P256_ASM and
+ * #SHARKSSL_OPTIMIZED_BIGINT_ASM.
+ */
+#ifndef SHARKSSL_ECC_P384_ASM
+#define SHARKSSL_ECC_P384_ASM                            0
+#endif
+
+/**
  * Enabling assembler optimized CHACHA requires SharkSslCrypto_XX.s
  */
 #ifndef SHARKSSL_OPTIMIZED_CHACHA_ASM
@@ -763,6 +896,21 @@
  */
 #ifndef SHARKSSL_OPTIMIZED_POLY1305_ASM
 #define SHARKSSL_OPTIMIZED_POLY1305_ASM                  0
+#endif
+
+/**
+ * Enabling assembler optimized SHA-256 requires SharkSslCrypto_XX.s
+ */
+#ifndef SHARKSSL_OPTIMIZED_SHA256_ASM
+#define SHARKSSL_OPTIMIZED_SHA256_ASM                    0
+#endif
+
+/**
+ * Enabling assembler optimized SHA-384 and SHA-512 requires
+ * SharkSslCrypto_XX.s
+ */
+#ifndef SHARKSSL_OPTIMIZED_SHA384_ASM
+#define SHARKSSL_OPTIMIZED_SHA384_ASM                    0
 #endif
 
 /**
@@ -858,13 +1006,25 @@
 #error SHARKSSL_MAX_HANDSHAKE_LENGTH must be in the range 1..0x00FFFFFF
 #endif
 
-#if SHARKSSL_ECC_TIMING_RESISTANT
-#undef  SHARKSSL_BIGINT_TIMING_RESISTANT
-#define SHARKSSL_BIGINT_TIMING_RESISTANT                 1
+/**
+ * The SHARKSSL_BIGINT_TIMING_RESISTANT option has been removed. Reject
+ * configurations that still select its former variable-time mode.
+ */
+#if (defined(SHARKSSL_BIGINT_TIMING_RESISTANT) && (!SHARKSSL_BIGINT_TIMING_RESISTANT))
+#error SHARKSSL_BIGINT_TIMING_RESISTANT=0 is no longer supported
 #endif
 
 /**
- * TLS 1.3 sanity #defines
+ * The SHARKSSL_ECC_TIMING_RESISTANT option has been removed: the ECC code
+ * is always timing resistant. Reject configurations that still select its
+ * former variable-time mode.
+ */
+#if (defined(SHARKSSL_ECC_TIMING_RESISTANT) && (!SHARKSSL_ECC_TIMING_RESISTANT))
+#error SHARKSSL_ECC_TIMING_RESISTANT=0 is no longer supported
+#endif
+
+/**
+ * TLS 1.3 sanity \#defines
  */
 #if SHARKSSL_ENABLE_KEY_UPDATE
 #if (!SHARKSSL_TLS_1_3)
@@ -934,8 +1094,46 @@
 #endif  /* SHARKSSL_RFC_9846_CONFORMANCE_PROFILE */
 
 /* Check the selected PSA consumer profile after all TLS options are resolved. */
+#if SHARKSSL_AES_GCM_CT_M4_ASM
+#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
+#error SHARKSSL_AES_GCM_CT_M4_ASM requires SHARKSSL_AES_GCM_SOFTWARE_CT
+#endif
+/**
+ * GCC 13 identifies M85 as ARMv8-M Mainline with the ARMv8.1-M BTI feature.
+ * IAR identifies M4/M7 as __ARM7EM__ and M85 as __ARM8EM_MAINLINE__ with BTI.
+ * This is an instruction-set check, not a requirement to enable BTI at run time.
+ */
+#if (defined(__ICCARM__) || defined(__IAR_SYSTEMS_ASM__))
+#if ((!defined(__ARM_PROFILE_M__)) || ((__CORE__ != __ARM7EM__) && ((__CORE__ != __ARM8EM_MAINLINE__) || (!defined(__ARM_FEATURE_BTI)))) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_M4_ASM requires little-endian Cortex-M4/M7/M85 and GCC Thumb or IAR
+#endif
+#elif (((!defined(__ARM_ARCH_7EM__)) && ((!defined(__ARM_ARCH_8M_MAIN__)) || (!defined(__ARM_FEATURE_BTI)))) || (!defined(__GNUC__)) || (!defined(__thumb__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_M4_ASM requires little-endian Cortex-M4/M7/M85 and GCC Thumb or IAR
+#endif
+#endif
+#if (SHARKSSL_AES_GCM_SOFTWARE_CT && (!SHARKSSL_ENABLE_AES_GCM))
+#error SHARKSSL_AES_GCM_SOFTWARE_CT requires AES-GCM
+#endif
+#if (SHARKSSL_AES_GCM_SOFTWARE_CT && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
+#error SHARKSSL_AES_GCM_SOFTWARE_CT requires the native AES context
+#endif
+#if (SHARKSSL_AES_GCM_SOFTWARE_CT && (SHARKSSL_OPTIMIZED_GHASH_ASM || SHARKSSL_OPTIMIZED_GCM_ASM || SHARKSSL_OPTIMIZED_GCM_VAES_ASM))
+#error SHARKSSL_AES_GCM_SOFTWARE_CT cannot be combined with GCM/GHASH assembler
+#endif
+#if (SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY && (!SHARKSSL_PSA_CONSUMER))
+#error SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY requires the PSA consumer
+#endif
 #if (SHARKSSL_PSA_CONSUMER_SECRET_HANDLES && ((!SHARKSSL_PSA_CONSUMER) || (!SHARKSSL_TLS_1_3)))
 #error SHARKSSL_PSA_CONSUMER_SECRET_HANDLES requires the TLS 1.3 PSA consumer
+#endif
+#if (SHARKSSL_PSA_CONSUMER_STANDALONE_AES && (!SHARKSSL_PSA_CONSUMER))
+#error SHARKSSL_PSA_CONSUMER_STANDALONE_AES requires the PSA consumer
+#endif
+#if (SHARKSSL_PSA_CONSUMER_STANDALONE_CHACHA20 && ((!SHARKSSL_PSA_CONSUMER) || (!SHARKSSL_USE_CHACHA20)))
+#error SHARKSSL_PSA_CONSUMER_STANDALONE_CHACHA20 requires the PSA consumer and ChaCha20
+#endif
+#if (SHARKSSL_USE_SHA_224 && (!SHARKSSL_PSA_CONSUMER))
+#error SHARKSSL_USE_SHA_224 requires the PSA consumer
 #endif
 
 #if SHARKSSL_PSA_CONSUMER
@@ -948,42 +1146,34 @@
 #if ((!SHARKSSL_USE_AES_128) || (!SHARKSSL_ENABLE_AES_GCM) || (!SHARKSSL_USE_SHA_256))
 #error SHARKSSL_PSA_CONSUMER requires AES-128-GCM and SHA-256
 #endif
-#if (SHARKSSL_USE_AES_192 || SHARKSSL_ENABLE_AES_CCM || \
-     SHARKSSL_ENABLE_AES_CBC || SHARKSSL_ENABLE_AES_CTR_MODE)
-#error SHARKSSL_PSA_CONSUMER supports only AES-GCM and ChaCha20-Poly1305 records
+#if ((!SHARKSSL_PSA_CONSUMER_STANDALONE_AES) && (SHARKSSL_USE_AES_192 || SHARKSSL_ENABLE_AES_CCM || SHARKSSL_ENABLE_AES_CBC || SHARKSSL_ENABLE_AES_CTR_MODE))
+#error SHARKSSL_PSA_CONSUMER standalone AES modes require SHARKSSL_PSA_CONSUMER_STANDALONE_AES
 #endif
 #if (SHARKSSL_USE_CHACHA20 != SHARKSSL_USE_POLY1305)
 #error SHARKSSL_PSA_CONSUMER requires ChaCha20 and Poly1305 together
 #endif
-#if (SHARKSSL_USE_SHA1 || SHARKSSL_USE_SHA_512 || SHARKSSL_USE_MD5)
-#error SHARKSSL_PSA_CONSUMER supports only SHA-256/384
+#if SHARKSSL_USE_MD5
+#error SHARKSSL_PSA_CONSUMER does not support MD5
 #endif
-#if ((!SHARKSSL_USE_ECC) || (!SHARKSSL_ECC_USE_SECP256R1) || \
-     (!SHARKSSL_ENABLE_ECDSA) || (!SHARKSSL_ENABLE_ECDHE_ECDSA))
+#if ((!SHARKSSL_USE_ECC) || (!SHARKSSL_ECC_USE_SECP256R1) || (!SHARKSSL_ENABLE_ECDSA) || (!SHARKSSL_ENABLE_ECDHE_ECDSA))
 #error SHARKSSL_PSA_CONSUMER requires ECDHE-ECDSA with P-256
 #endif
-#if (SHARKSSL_TLS_1_3 && ((!SHARKSSL_ECC_USE_CURVE25519) || (!SHARKSSL_ENABLE_HELLO_RETRY_REQUEST) || \
-     (!SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY)))
-#error SHARKSSL_PSA_CONSUMER requires X25519 with an initial single key share and HelloRetryRequest
+#if (SHARKSSL_TLS_1_3 && (!SHARKSSL_ENABLE_HELLO_RETRY_REQUEST))
+#error SHARKSSL_PSA_CONSUMER requires HelloRetryRequest
 #endif
-#if (SHARKSSL_ECC_USE_SECP521R1 || \
-     SHARKSSL_ECC_USE_CURVE448 || \
-     SHARKSSL_ECC_USE_BRAINPOOLP256R1 || SHARKSSL_ECC_USE_BRAINPOOLP384R1 || \
-     SHARKSSL_ECC_USE_BRAINPOOLP512R1)
-#error SHARKSSL_PSA_CONSUMER supports only P-256, P-384 and X25519
+#if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE25519 && (!SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY))
+#error SHARKSSL_PSA_CONSUMER requires a single initial X25519 key share when X25519 is enabled
 #endif
-#if (SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_RSA_OAEP || \
-     SHARKSSL_ENABLE_ECDHE_RSA || SHARKSSL_ENABLE_DHE_RSA)
-#error SHARKSSL_PSA_CONSUMER excludes RSA encryption and TLS 1.2 RSA suites
+#if (SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_RSA_OAEP || SHARKSSL_ENABLE_DHE_RSA)
+#error SHARKSSL_PSA_CONSUMER excludes RSA encryption and DHE_RSA
 #endif
 #if (SHARKSSL_ENABLE_RSA && ((!SHARKSSL_ENABLE_RSA_PKCS1) || (!SHARKSSL_ENABLE_RSASSA_PSS)))
 #error SHARKSSL_PSA_CONSUMER RSA requires PKCS1 certificate signatures and RSA-PSS
 #endif
-#if (SHARKSSL_ENABLE_PEM_API || SHARKSSL_ENABLE_ECDSA_API)
-#error SHARKSSL_PSA_CONSUMER excludes PEM and standalone ECDSA
+#if SHARKSSL_ENABLE_ECDSA_API
+#error SHARKSSL_PSA_CONSUMER excludes standalone ECDSA
 #endif
-#if (SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH && \
-     ((!SHARKSSL_ENABLE_CLIENT_AUTH) || (!SHARKSSL_SSL_SERVER_CODE)))
+#if (SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH && ((!SHARKSSL_ENABLE_CLIENT_AUTH) || (!SHARKSSL_SSL_SERVER_CODE)))
 #error SHARKSSL_PSA_CONSUMER post-handshake auth requires client auth and server code
 #endif
 #if (SHARKSSL_USE_RNG_TINYMT || SHARKSSL_USE_RNG_FORTUNA)

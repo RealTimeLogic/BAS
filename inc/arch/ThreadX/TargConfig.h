@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -39,6 +39,34 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DLMALLOC
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 #ifdef __cplusplus
 #include <string.h>
 #include <stdlib.h>
@@ -49,19 +77,17 @@
 /* Fetch endian from nx_port.h */
 #include <nx_port.h>
 #ifdef NX_LITTLE_ENDIAN
-  #ifdef B_BIG_ENDIAN
-    #error ENDIANESS MISMATCH!
-  #endif
-  #ifndef B_LITTLE_ENDIAN
-    #define B_LITTLE_ENDIAN
-  #endif
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
+#error BA_BYTE_ORDER disagrees with NetX
+#endif
 #else
-  #ifdef B_LITTLE_ENDIAN
-    #error ENDIANESS MISMATCH!
-  #endif
-  #ifndef B_BIG_ENDIAN
-    #define B_BIG_ENDIAN
-  #endif
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_BIG_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
+#error BA_BYTE_ORDER disagrees with NetX
+#endif
 #endif
 
 
@@ -87,10 +113,10 @@
 #ifdef BA_LEAK_CHECK
 #include <LeakDetect.h>
 #else
-#ifndef USE_DLMALLOC
-#define USE_DLMALLOC
-#endif
 #include <dlmalloc.h>
+#if BA_ALLOCATOR != BA_ALLOCATOR_DLMALLOC && (!defined(baMalloc) || !defined(baRealloc) || !defined(baFree))
+#error This port requires BA_ALLOCATOR_DLMALLOC or all three custom allocation hooks
+#endif
 #endif
 
 
@@ -163,7 +189,7 @@ U32 baMsTime2TxTicks(U32 msec);
 
 
 #include <BaErrorCodes.h>
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 #ifdef NDEBUG
 #define baAssert(exp)

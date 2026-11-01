@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5554 2024-08-21 07:06:58Z wini $
+ *   $Id: SoDisp.c 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2009 - 2024
+ *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -686,7 +686,7 @@ HttpSockaddr_gethostbyname(
          {
             if(ip6)
             {
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
                nxAddr.nxd_ip_address.v6[0]=baHtonl(nxAddr.nxd_ip_address.v6[0]);
                nxAddr.nxd_ip_address.v6[1]=baHtonl(nxAddr.nxd_ip_address.v6[1]);
                nxAddr.nxd_ip_address.v6[2]=baHtonl(nxAddr.nxd_ip_address.v6[2]);
@@ -697,7 +697,7 @@ HttpSockaddr_gethostbyname(
             }
             else
             {
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
                nxAddr.nxd_ip_address.v4=baHtonl(nxAddr.nxd_ip_address.v4);
 #endif
                memcpy(o->addr,&nxAddr.nxd_ip_address,4);
@@ -710,7 +710,7 @@ HttpSockaddr_gethostbyname(
          ULONG addr;
          if(!nx_dns_host_by_name_get(nxdns,(UCHAR*)host,&addr,4000))
          {
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
             addr=baHtonl(addr);
 #endif
             memcpy(o->addr,&addr,4);
@@ -981,7 +981,7 @@ SoDisp_deactivateRec(SoDisp* o, SoDispCon* con)
    TX_RESTORE;
 }
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 #error not implemented. No support for asynchronous response messages in NetX.
 void
 SoDisp_activateSend(SoDisp* o, SoDispCon* con)

@@ -1,6 +1,7 @@
 # Backend descriptions. Shared selection/recipes live in SharkSslAsm.mk.
 # Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
 # Each entry supplies DIR, DRIVER (cc or masm), ASM, C, DEFAULTS and AUTO.
+# Backends may also add common CFLAGS and source-specific SHA2 CFLAGS.
 # AUTO=0 keeps a detected backend opt-in until target runtime acceptance.
 SHARKSSL_BACKENDS ?= X64_MSVC X86_MSVC X64_GCC ARM64_GCC
 
@@ -41,10 +42,12 @@ SHARKSSL_X64_GCC_GCM_VAES_ASM := SharkSslCrypto_X64_VAES.S
 SHARKSSL_ARM64_GCC_DIR := ARM64_GCC
 SHARKSSL_ARM64_GCC_DRIVER := cc
 SHARKSSL_ARM64_GCC_ASFLAGS = -DSHARKSSL_GCM_M0=$(SHARKSSL_M0)
-SHARKSSL_ARM64_GCC_ASM := SharkSslCrypto_ARM64_Gcm.S SharkSslCrypto_ARM64_Ghash.S SharkSslCrypto_ARM64_ChaCha.S SharkSslCrypto_ARM64_Poly1305.S SharkSslX25519_ARM64.S
-SHARKSSL_ARM64_GCC_C := SharkSslCrypto_ARM64.c SharkSslX25519_ARM64_Adapter.c
-SHARKSSL_ARM64_GCC_DEFAULTS := CHACHA POLY1305 GCM GHASH X25519
+SHARKSSL_ARM64_GCC_ASM := SharkSslCrypto_ARM64_Gcm.S SharkSslCrypto_ARM64_Ghash.S SharkSslCrypto_ARM64_ChaCha.S SharkSslCrypto_ARM64_Poly1305.S
+SHARKSSL_ARM64_GCC_C := SharkSslCrypto_ARM64.c SharkSslCrypto_ARM64_Sha256.c
+SHARKSSL_ARM64_GCC_CFLAGS := -DSHARKSSL_ARM64_SHA256_INTRINSICS=1
+SHARKSSL_ARM64_GCC_SHA2_C := SharkSslCrypto_ARM64_Sha256.c
+# GCC 11 groups SHA intrinsics under +crypto; apply only to the SHA helper.
+SHARKSSL_ARM64_GCC_SHA2_CFLAGS := -march=armv8-a+crypto
+SHARKSSL_ARM64_GCC_DEFAULTS := CHACHA POLY1305 GCM GHASH
 SHARKSSL_ARM64_GCC_AUTO := 1
 SHARKSSL_ARM64_GCC_COMPILE_CHECK := 1
-# Reuse the platform-neutral hook rather than adding a CPU-specific C macro.
-SHARKSSL_OPTION_X25519 := SHARKSSL_X25519_ASM_HOOK

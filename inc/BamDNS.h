@@ -33,7 +33,7 @@ typedef struct
    U32 ifIndex4;
    U8 addr4[4];
    U8 prefix4;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    U32 ifIndex6;
    U8 addr6[16];
    U8 prefix6;
@@ -84,7 +84,7 @@ typedef struct BamDNS
 #endif
    /* Private implementation storage, public only to permit caller allocation. */
    BamDNS_Channel channel[
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       2
 #else
       1
@@ -142,7 +142,7 @@ BA_API void BamDNS_destructor(BamDNS* o);
  */
 BA_API int BamDNS_getNetInfo(BamDNS_NetInfo* net);
 
-#ifdef BAS_LOADED
+#if BA_ENABLE_MDNS_LUA
 struct lua_State;
 /** Install ba.createmdns in the existing ba table; no values left on stack.
  * Pass NULL for current discovery at construction and periodic refresh.

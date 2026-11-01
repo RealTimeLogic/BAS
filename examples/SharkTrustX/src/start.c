@@ -11,7 +11,12 @@
 #ifdef SHARKTRUSTX_PRIVATE_CA
 #include <BamDNS.h>
 #endif
-#include "CA_ISRG_Root_X1.h"
+#include "CA_ISRG_Root_X2.h"
+
+#if SHARKSSL_PSA_CONSUMER && PSA_TEST_SIMULATOR
+/* Reuse the Windows test provider and persistent encrypted storage setup. */
+extern int psaSimulatorInit(void);
+#endif
 
 /* Platform-specific entropy setup stays here. The server below uses BAS
  * APIs and the selected DiskIo filesystem port. Initialize networking/DNS,
@@ -127,7 +132,7 @@ void barracuda(void)
    static SoDisp dispatcher;
    static HttpServer server;
    static HttpServCon http;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    static HttpServCon http6;
 #endif
    static SharkSsl clientSsl;
@@ -139,6 +144,14 @@ void barracuda(void)
    int rc;
 
    HttpTrace_setPrio(5);
+#if SHARKSSL_PSA_CONSUMER && PSA_TEST_SIMULATOR
+   rc=psaSimulatorInit();
+   if(rc)
+   {
+      HttpTrace_printf(0,"PSA test simulator initialization failed (%d).\n",rc);
+      baFatalE(FE_USER_ERROR_1,rc);
+   }
+#endif
    DiskIo_constructor(&stateIo);
    rc = DiskIo_setRootDir(&stateIo, EXAMPLE_STATE_DIR);
    if(rc)
@@ -158,32 +171,32 @@ void barracuda(void)
    SoDisp_constructor(&dispatcher, &mutex);
    HttpServer_constructor(&server, &dispatcher, 0);
    SharkSsl_constructor(&clientSsl, SharkSsl_Client, 0, 4096, 4096);
-   if(!SharkSsl_setCAListEx(&clientSsl, sharkSSL_CA_ISRG_Root_X1,
-                          sizeof(sharkSSL_CA_ISRG_Root_X1)))
+   if(!SharkSsl_setCAListEx(&clientSsl, sharkSSL_CA_ISRG_Root_X2,
+                          sizeof(sharkSSL_CA_ISRG_Root_X2)))
    {
       HttpTrace_printf(0, "Cannot load the outbound HTTPS trust anchor.\n");
       baFatalE(FE_USER_ERROR_1, 0);
    }
    /* A dedicated worker handles enrollment and renewal using this mutex. */
-   BaTimer_constructor(&timer, &mutex, BA_STACKSZ, 10, ThreadPrioNormal, 0);
+   BaTimer_constructor(&timer, &mutex, BA_THREAD_STACK_SIZE, 10, ThreadPrioNormal, 0);
 #ifdef SHARKTRUSTX_PRIVATE_CA
    /* Enrollment can block its worker during HTTPS operations. Give mDNS its
     * own timer so announcements and delayed replies can still run. */
    local.dispatcher = &dispatcher;
-   BaTimer_constructor(&local.timer, &mutex, BA_STACKSZ, 10, ThreadPrioNormal, 0);
+   BaTimer_constructor(&local.timer, &mutex, BA_THREAD_STACK_SIZE, 10, ThreadPrioNormal, 0);
 #endif
    ThreadMutex_set(&mutex);
    installVirtualDir(&server);
    /* Follow Mako/Xedge: an IPv6 socket may also accept IPv4 connections.
     * Keep either or both successful listeners without changing port policy. */
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    HttpServCon_constructor(&http6, &server, &dispatcher, EXAMPLE_HTTP_PORT,
                            TRUE, 0, 0);
 #endif
    HttpServCon_constructor(&http, &server, &dispatcher, EXAMPLE_HTTP_PORT,
                            FALSE, 0, 0);
    if(!HttpServCon_isValid(&http)
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       && !HttpServCon_isValid(&http6)
 #endif
       )
@@ -192,7 +205,7 @@ void barracuda(void)
       ThreadMutex_release(&mutex);
       baFatalE(FE_USER_ERROR_1, 0);
    }
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(HttpServCon_isValid(&http6))
       HttpTrace_printf(0, "HTTP IPv6 socket listening on port %u.\n", EXAMPLE_HTTP_PORT);
 #endif

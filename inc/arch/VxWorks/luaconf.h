@@ -1,16 +1,15 @@
 
 #ifndef lconfig_h
 
-#define NO_LOG2
+#include <TargConfig.h>
+
 
 /*  Use the standard Lua I/O and loadfile. The C libraries required
  *  for this may be available in your VxWorks version.
  */
-/* #define BA_HAS_ANSI_IO */
+/* Set BA_HAVE_STDIO=1 in BaConfigOpts.h when the C runtime supports it. */
 
-#ifndef BA_HAS_ANSI_IO
-#define BA_MINIOSLIB
-#endif
+
 
 #define LUA_PATH_DEFAULT ""
 #define LUA_CPATH_DEFAULT ""

@@ -30,6 +30,8 @@
 #define BA_LIB 1
 #endif
 #include <BamDNS.h>
+
+#if BA_ENABLE_MDNS
 #include <string.h>
 #ifdef BA_WINDOWS
 #include <Ws2tcpip.h>
@@ -91,7 +93,7 @@ mdnsNetAddress(BamDNS_NetInfo* net, const struct sockaddr* sa,
       net->prefix4=prefix;
       memcpy(net->addr4,addr,4);
    }
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(sa->sa_family == AF_INET6 && prefix <= 128)
    {
       addr=(const U8*)&((const struct sockaddr_in6*)sa)->sin6_addr;
@@ -110,7 +112,7 @@ static BaBool
 mdnsHasNet(const BamDNS_NetInfo* net)
 {
    return net->ifIndex4
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       || net->ifIndex6
 #endif
       ? TRUE : FALSE;
@@ -146,7 +148,7 @@ mdnsGetNetInfo(BamDNS_NetInfo* net)
    request.hdr.nlmsg_flags=NLM_F_REQUEST|NLM_F_DUMP;
    request.hdr.nlmsg_seq=1;
    request.addr.ifa_family=
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       AF_UNSPEC;
 #else
       AF_INET;
@@ -178,7 +180,7 @@ mdnsGetNetInfo(BamDNS_NetInfo* net)
          {
             struct sockaddr sa;
             struct sockaddr_in v4;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
             struct sockaddr_in6 v6;
 #endif
          } local;
@@ -200,7 +202,7 @@ mdnsGetNetInfo(BamDNS_NetInfo* net)
          if(selected && selected!=(U32)a->ifa_index) continue;
          memset(&local,0,sizeof(local));
          if(a->ifa_family==AF_INET) size=4;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
          else if(a->ifa_family==AF_INET6)
          {
             if(a->ifa_flags & (IFA_F_TENTATIVE|IFA_F_DADFAILED|IFA_F_DEPRECATED))
@@ -226,7 +228,7 @@ mdnsGetNetInfo(BamDNS_NetInfo* net)
          if(!address || remaining) continue;
          local.sa.sa_family=a->ifa_family;
          if(size==4) memcpy(&local.v4.sin_addr,address,4);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
          else memcpy(&local.v6.sin6_addr,address,16);
 #endif
          mdnsNetAddress(net,&local.sa,a->ifa_index,a->ifa_prefixlen);
@@ -278,7 +280,7 @@ BamDNS_getNetInfo(BamDNS_NetInfo* net)
          list=(IP_ADAPTER_ADDRESSES*)baMalloc(size);
          if(!list) return E_MALLOC;
          result=GetAdaptersAddresses(
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
             AF_UNSPEC,
 #else
             AF_INET,
@@ -305,7 +307,7 @@ BamDNS_getNetInfo(BamDNS_NetInfo* net)
             if(!sa || u->DadState != IpDadStatePreferred ||
                !u->ValidLifetime || (u->Flags & IP_ADAPTER_ADDRESS_TRANSIENT))
                continue;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
             if(sa->sa_family==AF_INET6) index=a->Ipv6IfIndex;
 #endif
             mdnsNetAddress(net,sa,index,u->OnLinkPrefixLength);
@@ -335,7 +337,7 @@ BamDNS_getNetInfo(BamDNS_NetInfo* net)
          if(sa->sa_family==AF_INET)
             prefix=mdnsNetPrefix((const U8*)&
                ((struct sockaddr_in*)a->ifa_netmask)->sin_addr,4);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
          else if(sa->sa_family==AF_INET6)
          {
             /* Do not select an IPv6 address that the stack cannot yet bind
@@ -368,7 +370,7 @@ BamDNS_getNetInfo(BamDNS_NetInfo* net)
 }
 
 static const U8 mdnsGroup4[4]={224,0,0,251};
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 static const U8 mdnsGroup6[16]={255,2,0,0,0,0,0,0,0,0,0,0,0,0,0,251};
 #endif
 
@@ -401,7 +403,7 @@ BamDNS_socketSetup(BamDNS_Channel* c, const BamDNS_NetInfo* net)
 #if defined(__APPLE__) || defined(__QNXNTO__)
    if(mdnsOption(s,SOL_SOCKET,SO_REUSEPORT,&one,sizeof(one))) return -1;
 #endif
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(c->ipv6 && mdnsOption(s,IPPROTO_IPV6,IPV6_V6ONLY,&one,sizeof(one)))
       return -1;
 #endif
@@ -409,7 +411,7 @@ BamDNS_socketSetup(BamDNS_Channel* c, const BamDNS_NetInfo* net)
    any.isIp6=c->ipv6;
    HttpSocket_bind(s,&any,5353,&status);
    if(status) return E_BIND;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(c->ipv6)
    {
       struct ipv6_mreq m;
@@ -532,7 +534,7 @@ BamDNS_socketRecv(BamDNS_Channel* c, const BamDNS_NetInfo* net,
 #endif
    for(h=MDNS_FIRST(&msg); h; h=MDNS_NEXT(&msg,h))
    {
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       if(c->ipv6 && h->cmsg_level == IPPROTO_IPV6 &&
          h->cmsg_type == IPV6_PKTINFO &&
          h->cmsg_len >= MDNS_LEN(sizeof(struct in6_pktinfo)))
@@ -571,7 +573,7 @@ BamDNS_socketRecv(BamDNS_Channel* c, const BamDNS_NetInfo* net,
    }
    memset(peer,0,sizeof(*peer));
    peer->addr.isIp6=c->ipv6;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(c->ipv6)
    {
       struct sockaddr_in6* a=(struct sockaddr_in6*)&from;
@@ -607,7 +609,7 @@ BamDNS_socketSend(BamDNS_Channel* c, const BamDNS_NetInfo* net,
    union
    {
       struct sockaddr_in v4;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       struct sockaddr_in6 v6;
 #endif
    } dest;
@@ -630,7 +632,7 @@ BamDNS_socketSend(BamDNS_Channel* c, const BamDNS_NetInfo* net,
    memset(&msg,0,sizeof(msg));
    memset(&control,0,sizeof(control));
    h=(MDNS_CMSG*)control.bytes;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(c->ipv6)
    {
       struct in6_pktinfo info;
@@ -713,3 +715,5 @@ BamDNS_socketSend(BamDNS_Channel* c, const BamDNS_NetInfo* net,
    return len < 0 ? mdnsIoError(&c->con.httpSocket,FALSE) : len;
 #endif
 }
+
+#endif /* BA_ENABLE_MDNS */

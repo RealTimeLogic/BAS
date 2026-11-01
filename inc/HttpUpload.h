@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpUpload.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpUpload.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
@@ -48,7 +48,7 @@
 
 struct HttpConnection;
 
-/** @defgroup HttpUpload HttpUpload
+/** @defgroup HttpUpload HTTP uploads
     @ingroup HttpStack
 
     HttpUpload is a collection of classes that makes it easy to

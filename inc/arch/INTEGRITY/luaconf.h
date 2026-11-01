@@ -1,12 +1,11 @@
 
 #ifndef lconfig_h
 
+#include <TargConfig.h>
+
 /* Only a subset of the os lib is available for embedded systems */
-#ifdef USE_SYSTEM_POSIX
-#define BA_HAS_ANSI_IO
-#else
-#define BA_MINIOSLIB
-#endif
+/* For the POSIX runtime profile, set BA_HAVE_STDIO=1 and
+ * BA_LUA_OS_LIBRARY_MODE=BA_LUA_OS_LIBRARY_FULL in the target configuration. */
 
 #define LUA_PATH_DEFAULT ""
 #define LUA_CPATH_DEFAULT ""

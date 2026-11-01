@@ -49,13 +49,13 @@
     <TargetName>mako</TargetName>
     <LinkIncremental>false</LinkIncremental>
     <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
-    <MakoSqlDefine Condition="'$(UseSqlite)' == 'true'">USE_SQL=1</MakoSqlDefine>
-    <MakoSqlDefine Condition="'$(UseSqlite)' != 'true'">USE_SQL=0</MakoSqlDefine>
+    <MakoSqlDefine Condition="'$(UseSqlite)' == 'true'">MAKO_SQL_BACKEND=MAKO_SQL_SQLITE</MakoSqlDefine>
+    <MakoSqlDefine Condition="'$(UseSqlite)' != 'true'">MAKO_SQL_BACKEND=MAKO_SQL_NONE</MakoSqlDefine>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(BasRoot)inc;$(BasRoot)inc\arch\Windows;$(BasRoot)inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>BAS_LOADED;BA_FILESIZE64;USE_EMBEDDED_ZIP=0;B_LITTLE_ENDIAN;USE_DBGMON=1;MAKO;USE_LUAINTF=1;$(MakoSqlDefine);_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;WIN32;_CONSOLE;SHARKSSL_OPTIMIZED_BIGINT_ASM=0;SHARKSSL_OPTIMIZED_CHACHA_ASM=0;SHARKSSL_OPTIMIZED_POLY1305_ASM=0;SHARKSSL_OPTIMIZED_GHASH_ASM=0;SHARKSSL_OPTIMIZED_GCM_ASM=0;SHARKSSL_OPTIMIZED_GCM_VAES_ASM=0;SHARKSSL_X25519_ASM=0;SHARKSSL_X25519_ASM_HOOK=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BA_ENABLE_MDNS=1;BA_ENABLE_MDNS_LUA=1;BA_FILE_OFFSET_BITS=64;MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0;BA_BYTE_ORDER=BA_BYTE_ORDER_LITTLE_ENDIAN;BA_ENABLE_LUA_DEBUGGER=1;MAKO;MAKO_ENABLE_LUA_MODULE_INTERFACE=1;$(MakoSqlDefine);_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;WIN32;_CONSOLE;SHARKSSL_OPTIMIZED_BIGINT_ASM=0;SHARKSSL_OPTIMIZED_CHACHA_ASM=0;SHARKSSL_OPTIMIZED_POLY1305_ASM=0;SHARKSSL_OPTIMIZED_GHASH_ASM=0;SHARKSSL_OPTIMIZED_GCM_ASM=0;SHARKSSL_OPTIMIZED_GCM_VAES_ASM=0;SHARKSSL_X25519_ASM=0;SHARKSSL_X25519_ASM_HOOK=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

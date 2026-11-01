@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpClient.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: HttpClient.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2009-2026
  *
@@ -39,7 +39,7 @@
 #define __HttpClient_h
 
 #include <DynBuffer.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSslEx.h>
 #endif
 
@@ -425,7 +425,7 @@ void HttpClient_constructor(HttpClient* o, SoDisp* disp, U8 mode);
     @param o Required initialized client.
  */
 #define HttpClient_setReadTmo(o, timeout) (o)->readTmo=timeout
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 /** @copydoc HttpClient::getSharkSslCon
     @param o Required initialized client.
  */
@@ -494,7 +494,7 @@ int HttpClient_getStatus(HttpClient* o);
     @param o Required initialized client.
  */
 #define HttpClient_getSoDispCon(o) ((SoDispCon*)(o))
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 /** @copydoc HttpClient::trusted
     @param o Required initialized client.
  */

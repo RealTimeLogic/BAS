@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5146 2022-05-10 17:15:54Z wini $
+ *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2009 - 2016
+ *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -147,7 +147,7 @@ Thread_constructor(
    if(o->stackStart)
    {
       TST_OK(tx_thread_create(&o->tid,
-                              "BAT",
+                              "BAS",
                               Thread_threadStart,
                               (ULONG)o,
                               o->stackStart,

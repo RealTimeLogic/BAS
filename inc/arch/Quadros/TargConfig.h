@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
@@ -38,6 +38,39 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifdef __CODEWARRIOR__
+#ifndef BA_USE_C_RUNTIME_TIME
+#define BA_USE_C_RUNTIME_TIME 0
+#endif
+#endif
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 /***********************************************************************
  *  Misc settings
  ***********************************************************************/
@@ -59,7 +92,7 @@
 #endif
 
 #include <BaErrorCodes.h>
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 #ifdef NDEBUG
 #define baAssert(exp)
@@ -82,7 +115,7 @@
 /***********************************************************************
  *  Memory allocation
  ***********************************************************************/
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #else
 #define baMalloc(size) malloc(size)

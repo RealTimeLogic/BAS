@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5076 2022-02-10 16:59:48Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2020
+ *   COPYRIGHT:  Real Time Logic, 2020 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -55,8 +55,12 @@
 #include <NetConv.h>
 
 
-#define USE_ADDRINFO
-#define USE_DGRAM
+#ifndef BA_USE_GETADDRINFO
+#define BA_USE_GETADDRINFO 1
+#endif
+#ifndef BA_ENABLE_UDP
+#define BA_ENABLE_UDP 1
+#endif
 
 
 /***********************************************************************

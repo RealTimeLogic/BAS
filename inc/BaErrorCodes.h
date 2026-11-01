@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaErrorCodes.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: BaErrorCodes.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003-2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2003-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -69,7 +69,7 @@ typedef enum {
    FE_EXIT,
    FE_INCORRECT_USE,
    FE_TYPE_SIZE_ERROR, /**< One of U8 to U32 are of incorrect size */
-   FE_WRONG_ENDIAN, /**< Incorrect B_LITTLE_ENDIAN/B_BIG_ENDIAN macro */
+   FE_WRONG_ENDIAN, /**< Incorrect BA_BYTE_ORDER setting */
 
    FE_USER_ERROR_1 = HTTP_E_BASE+100,
    FE_USER_ERROR_2,

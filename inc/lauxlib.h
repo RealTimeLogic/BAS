@@ -99,7 +99,7 @@ LUALIB_API int (luaL_loadstring) (lua_State *L, const char *s);
 
 LUALIB_API lua_State *(luaL_newstate) (void);
 
-LUALIB_API unsigned luaL_makeseed (lua_State *L);
+LUALIB_API unsigned (luaL_makeseed) (lua_State *L);
 
 LUALIB_API lua_Integer (luaL_len) (lua_State *L, int idx);
 
@@ -233,7 +233,7 @@ LUALIB_API char *(luaL_buffinitsize) (lua_State *L, luaL_Buffer *B, size_t sz);
 
 
 typedef struct luaL_Stream {
-#ifndef LUA_NOIOLIB
+#if BA_ENABLE_LUA_STDIO
   FILE *f;  /* stream (NULL for incompletely created streams) */
 #endif
   lua_CFunction closef;  /* to close stream (NULL for closed streams) */

@@ -260,7 +260,7 @@ static HttpServer* createServer(void)
    HttpServerConfig_setRequest(&scfg,2*1024, 8*1024); // request buffer sizes
    HttpServerConfig_setResponseData(&scfg,8*1024);   // response buffer size
    HttpServer_constructor(&server, &dispatcher, &scfg);
-   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ); /* Ref t */
+   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_THREAD_STACK_SIZE); /* Ref t */
    openSocketCon(&server, &dispatcher); /* Initialize TCP listening */
    return &server;
 }

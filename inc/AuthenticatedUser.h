@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: AuthenticatedUser.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: AuthenticatedUser.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
@@ -126,7 +126,8 @@ typedef struct AuthorizerIntf
           \param method The HTTP method type: From HttpRequest::getMethodType
           \param path The relative path element of the URL requested
           by the user.
-      */
+    @return TRUE if user is authorized.
+ */
       bool authorize(struct AuthenticatedUser* user,
                      HttpMethod method,
                      const char* path);
@@ -631,11 +632,11 @@ should return true if the request is accepted and false if the request
 is denied. Attribute info.denied is set by the LoginTracker if this
 method returns false.
  
-    @param o Required callback interface.
-    @param info Required borrowed authentication input/output record.
-    @param node Required cached address node, borrowed for this call.
-    @return TRUE to permit the attempt, FALSE to deny it. This callback is called
-    only for an address already present in the cache.
+@param o Required callback interface.
+@param info Required borrowed authentication input/output record.
+@param node Required cached address node, borrowed for this call.
+@return TRUE to permit the attempt, FALSE to deny it. This callback is called
+only for an address already present in the cache.
 */
 typedef BaBool (*LoginTrackerIntf_Validate)(
    struct LoginTrackerIntf* o,
@@ -668,10 +669,10 @@ applications. The "login window" length is controlled in the
 LoginTrackerIntf_Validate callback method.
 
  
-    @param o Required callback interface.
-    @param info Required borrowed authentication record.
-    @param node Required cached node after its counter and time are updated.
-    The callback returns no value and does not own the node.
+@param o Required callback interface.
+@param info Required borrowed authentication record.
+@param node Required cached node after its counter and time are updated.
+The callback returns no value and does not own the node.
 */
 typedef void (*LoginTrackerIntf_LoginFailed)(
    struct LoginTrackerIntf* o,
@@ -684,10 +685,10 @@ in the internal node cache. The TerminateNode method can be used for
 clearing/releasing any data set with method
 LoginTrackerNode::setUserData.
  
-    @param o Required callback interface.
-    @param node Required node about to leave the cache or be reused. Release any
-    application-owned userData here, but do not free the tracker-owned node.
-    Also called by clearCache() and the tracker destructor.
+@param o Required callback interface.
+@param node Required node about to leave the cache or be reused. Release any
+application-owned userData here, but do not free the tracker-owned node.
+Also called by clearCache() and the tracker destructor.
 */
 typedef void (*LoginTrackerIntf_TerminateNode)(
    struct LoginTrackerIntf* o,

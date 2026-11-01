@@ -20,10 +20,7 @@ Ref: https://realtimelogic.com/products/barracuda-application-server/
 
 */
 
-/* Set USE_BA_LUA=0 if you do not want to use the embedded Lua version */
-#ifndef USE_BA_LUA
-#define USE_BA_LUA 1
-#endif
+/* BaConfig.h selects BA_ENABLE_EMBEDDED_LUA; set it to 0 to link Lua separately. */
 
 
 #ifdef _WIN32
@@ -65,7 +62,7 @@ void sendFatalError(const char* eMsg,
 	
 
  /******************************* BEGIN LUA ***********************************/
-#if USE_BA_LUA
+#if BA_ENABLE_EMBEDDED_LUA
 typedef struct CallInfo CallInfo;
 /*
 ** $Id: llimits.h $
@@ -303,12 +300,12 @@ typedef unsigned long l_uint32;
 
 /* floor division (defined as 'floor(a/b)') */
 #if !defined(luai_numidiv)
-#define luai_numidiv(L,a,b)     ((void)L, l_floor(luai_numdiv(L,a,b)))
+#define luai_numidiv(L,a,b)     l_floor(luai_numdiv(L,a,b))
 #endif
 
 /* float division */
 #if !defined(luai_numdiv)
-#define luai_numdiv(L,a,b)      ((a)/(b))
+#define luai_numdiv(L,a,b)      ((void)L, (a)/(b))
 #endif
 
 /*
@@ -336,10 +333,10 @@ typedef unsigned long l_uint32;
 
 /* the others are quite standard operations */
 #if !defined(luai_numadd)
-#define luai_numadd(L,a,b)      ((a)+(b))
-#define luai_numsub(L,a,b)      ((a)-(b))
-#define luai_nummul(L,a,b)      ((a)*(b))
-#define luai_numunm(L,a)        (-(a))
+#define luai_numadd(L,a,b)      ((void)L, (a)+(b))
+#define luai_numsub(L,a,b)      ((void)L, (a)-(b))
+#define luai_nummul(L,a,b)      ((void)L, (a)*(b))
+#define luai_numunm(L,a)        ((void)L, -(a))
 #define luai_numeq(a,b)         ((a)==(b))
 #define luai_numlt(a,b)         ((a)<(b))
 #define luai_numle(a,b)         ((a)<=(b))
@@ -634,7 +631,8 @@ typedef union {
 #define ttisstrictnil(o)	checktag((o), LUA_VNIL)
 
 
-#define setnilvalue(obj) settt_(obj, LUA_VNIL)
+#define setnilvalue(obj)	settt_(obj, LUA_VNIL)
+#define setnilvalue2s(stk)	setnilvalue(s2v(stk))
 
 
 #define isabstkey(v)		checktag((v), LUA_VABSTKEY)
@@ -1546,8 +1544,9 @@ typedef struct FuncState {
 LUAI_FUNC lu_byte luaY_nvarstack (FuncState *fs);
 LUAI_FUNC void luaY_checklimit (FuncState *fs, int v, int l,
                                 const char *what);
-LUAI_FUNC LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
-                                 Dyndata *dyd, const char *name, int firstchar);
+LUAI_FUNC LClosure *luaY_parser (lua_State *L, ZIO *z, Table *anchor,
+                                 Mbuffer *buff, Dyndata *dyd,
+                                 const char *name, int firstchar);
 
 
 #endif
@@ -1971,8 +1970,8 @@ OP_EXTRAARG/*	Ax	extra (larger) argument for previous opcode	*/
 ** bits 0-2: op mode
 ** bit 3: instruction set register A
 ** bit 4: operator is a test (next instruction must be a jump)
-** bit 5: instruction uses 'L->top' set by previous instruction (when B == 0)
-** bit 6: instruction sets 'L->top' for next instruction (when C == 0)
+** bit 5: used by 'luaP_isIT'
+** bit 6: used by 'luaP_isOT'
 ** bit 7: instruction is an MM instruction (call a metamethod)
 */
 
@@ -1981,12 +1980,17 @@ LUAI_DDEC(const lu_byte luaP_opmodes[NUM_OPCODES];)
 #define getOpMode(m)	(cast(enum OpMode, luaP_opmodes[m] & 7))
 #define testAMode(m)	(luaP_opmodes[m] & (1 << 3))
 #define testTMode(m)	(luaP_opmodes[m] & (1 << 4))
-#define testITMode(m)	(luaP_opmodes[m] & (1 << 5))
-#define testOTMode(m)	(luaP_opmodes[m] & (1 << 6))
 #define testMMMode(m)	(luaP_opmodes[m] & (1 << 7))
 
 
-LUAI_FUNC int luaP_isOT (Instruction i);
+/* Check whether instruction sets top for next instruction, that is,
+** it results in multiple values. Used only for tests.
+*/
+#define luaP_isOT(i)  \
+	(GET_OPCODE(i) == OP_TAILCALL || \
+	 ((luaP_opmodes[GET_OPCODE(i)] & (1 << 6)) && GETARG_C(i) == 0))
+
+
 LUAI_FUNC int luaP_isIT (Instruction i);
 
 
@@ -2135,7 +2139,7 @@ typedef enum {
 ** Mask with 1 in all fast-access methods. A 1 in any of these bits
 ** in the flag of a (meta)table means the metatable does not have the
 ** corresponding metamethod field. (Bit 6 of the flag indicates that
-** the table is using the dummy node; bit 7 is used for 'isrealasize'.)
+** the table is using the dummy node.)
 */
 #define maskflags	cast_byte(~(~0u << (TM_EQ + 1)))
 
@@ -2574,7 +2578,7 @@ typedef struct global_State {
 
 
 /*
-** Union of all collectable objects (only for conversions)
+** Union of all collectable objects
 ** ISO C99, 6.5.2.3 p.5:
 ** "if a union contains several structures that share a common initial
 ** sequence [...], and if the union object currently contains one
@@ -2594,32 +2598,32 @@ union GCUnion {
 };
 
 
-/*
-** ISO C99, 6.7.2.1 p.14:
-** "A pointer to a union object, suitably converted, points to each of
-** its members [...], and vice versa."
+/* macros to convert a GCObject into a specific value
+** ISO C99, 6.3.2.2 p.7:
+** "A pointer to an object or incomplete type may be converted to a
+** pointer to a different object or incomplete type. If the resulting
+** pointer is not correctly aligned for the pointed-to type, the
+** behavior is undefined. Otherwise, when converted back again, the
+** result shall compare equal to the original pointer."
 */
-#define cast_u(o)	cast(union GCUnion *, (o))
-
-/* macros to convert a GCObject into a specific value */
-#define gco2ts(o)  \
-	check_exp(novariant((o)->tt) == LUA_TSTRING, &((cast_u(o))->ts))
-#define gco2u(o)  check_exp((o)->tt == LUA_VUSERDATA, &((cast_u(o))->u))
-#define gco2lcl(o)  check_exp((o)->tt == LUA_VLCL, &((cast_u(o))->cl.l))
-#define gco2ccl(o)  check_exp((o)->tt == LUA_VCCL, &((cast_u(o))->cl.c))
-#define gco2cl(o)  \
-	check_exp(novariant((o)->tt) == LUA_TFUNCTION, &((cast_u(o))->cl))
-#define gco2t(o)  check_exp((o)->tt == LUA_VTABLE, &((cast_u(o))->h))
-#define gco2p(o)  check_exp((o)->tt == LUA_VPROTO, &((cast_u(o))->p))
-#define gco2th(o)  check_exp((o)->tt == LUA_VTHREAD, &((cast_u(o))->th))
-#define gco2upv(o)	check_exp((o)->tt == LUA_VUPVAL, &((cast_u(o))->upv))
+#define gco2(v,T,o)	check_exp((o)->tt == v, cast(T*, o))
+#define gco2nv(t,T,o)	check_exp(novariant((o)->tt) == t, cast(T*, o))
+#define gco2ts(o)	gco2nv(LUA_TSTRING, TString, o)
+#define gco2u(o)	gco2(LUA_VUSERDATA, Udata, o)
+#define gco2lcl(o)	(&gco2(LUA_VLCL, Closure, o)->l)
+#define gco2ccl(o)	(&gco2(LUA_VCCL, Closure, o)->c)
+#define gco2cl(o)	gco2nv(LUA_TFUNCTION, Closure, o)
+#define gco2t(o)	gco2(LUA_VTABLE, Table, o)
+#define gco2p(o)	gco2(LUA_VPROTO, Proto, o)
+#define gco2th(o)	gco2(LUA_VTHREAD, lua_State, o)
+#define gco2upv(o)	gco2(LUA_VUPVAL, UpVal, o)
 
 
 /*
 ** macro to convert a Lua object into a GCObject
 */
 #define obj2gco(v)  \
-	check_exp(novariant((v)->tt) >= LUA_TSTRING, &(cast_u(v)->gc))
+	check_exp(novariant((v)->tt) >= LUA_TSTRING, cast(GCObject*, v))
 
 
 /* actual number of total memory allocated */
@@ -2629,7 +2633,7 @@ union GCUnion {
 LUAI_FUNC void luaE_setdebt (global_State *g, l_mem debt);
 LUAI_FUNC void luaE_freethread (lua_State *L, lua_State *L1);
 LUAI_FUNC lu_mem luaE_threadsize (lua_State *L);
-LUAI_FUNC CallInfo *luaE_extendCI (lua_State *L);
+LUAI_FUNC CallInfo *luaE_extendCI (lua_State *L, int err);
 LUAI_FUNC void luaE_shrinkCI (lua_State *L);
 LUAI_FUNC void luaE_checkcstack (lua_State *L);
 LUAI_FUNC void luaE_incCstack (lua_State *L);
@@ -3066,8 +3070,8 @@ LUAI_FUNC void luaD_poscall (lua_State *L, CallInfo *ci, int nres);
 LUAI_FUNC int luaD_reallocstack (lua_State *L, int newsize, int raiseerror);
 LUAI_FUNC int luaD_growstack (lua_State *L, int n, int raiseerror);
 LUAI_FUNC void luaD_shrinkstack (lua_State *L);
-LUAI_FUNC void luaD_inctop (lua_State *L);
 LUAI_FUNC int luaD_checkminstack (lua_State *L);
+LUAI_FUNC void luaD_anchorobj (lua_State *L, Table *anchor, GCObject *obj);
 
 LUAI_FUNC l_noret luaD_throw (lua_State *L, TStatus errcode);
 LUAI_FUNC l_noret luaD_throwbaselevel (lua_State *L, TStatus errcode);
@@ -3838,8 +3842,8 @@ LUAI_FUNC Node *luaH_mainposition (const Table *t, const TValue *key);
 
 
 /* load one chunk; from lundump.c */
-LUAI_FUNC LClosure* luaU_undump (lua_State* L, ZIO* Z, const char* name,
-                                               int fixed);
+LUAI_FUNC LClosure* luaU_undump (lua_State* L, ZIO* Z, Table *anchor,
+                                 const char* name, int fixed);
 
 /* dump one chunk; from ldump.c */
 LUAI_FUNC int luaU_dump (lua_State* L, const Proto* f, lua_Writer w,
@@ -4635,10 +4639,9 @@ static void reinserthash (lua_State *L, Table *ot, Table *t) {
 
 
 /*
-** Exchange the hash part of 't1' and 't2'. (In 'flags', only the
-** dummy bit must be exchanged: The 'isrealasize' is not related
-** to the hash part, and the metamethod bits do not change during
-** a resize, so the "real" table can keep their values.)
+** Exchange the hash part of 't1' and 't2'. (In 'flags', only the dummy
+** bit must be exchanged:  The metamethod bits do not change during a
+** resize, so the "real" table can keep their values.)
 */
 static void exchangehashpart (Table *t1, Table *t2) {
   lu_byte lsizenode = t1->lsizenode;
@@ -5140,14 +5143,15 @@ void luaH_finishset (lua_State *L, Table *t, const TValue *key,
   lua_assert(hres != HOK);
   if (hres == HNOTFOUND) {
     TValue aux;
+    const TValue *actk = key;  /* actual key to insert */
     if (l_unlikely(ttisnil(key)))
       luaG_runerror(L, "table index is nil");
     else if (ttisfloat(key)) {
       lua_Number f = fltvalue(key);
       lua_Integer k;
-      if (luaV_flttointeger(f, &k, F2Ieq)) {
-        setivalue(&aux, k);  /* key is equal to an integer */
-        key = &aux;  /* insert it as an integer */
+      if (luaV_flttointeger(f, &k, F2Ieq)) {  /* is key equal to an integer? */
+        setivalue(&aux, k);
+        actk = &aux;  /* use the integer as the key */
       }
       else if (l_unlikely(luai_numisnan(f)))
         luaG_runerror(L, "table index is NaN");
@@ -5160,7 +5164,7 @@ void luaH_finishset (lua_State *L, Table *t, const TValue *key,
       L->top.p--;
       return;
     }
-    luaH_newkey(L, t, key, value);
+    luaH_newkey(L, t, actk, value);
   }
   else if (hres > 0) {  /* regular Node? */
     setobj2t(L, gval(gnode(t, hres - HFIRSTNODE)), value);
@@ -5526,7 +5530,7 @@ LUA_API void lua_settop (lua_State *L, int idx) {
     api_check(L, idx <= ci->top.p - (func + 1), "new top too large");
     diff = ((func + 1) + idx) - L->top.p;
     for (; diff > 0; diff--)
-      setnilvalue(s2v(L->top.p++));  /* clear new slots */
+      setnilvalue2s(L->top.p++);  /* clear new slots */
   }
   else {
     api_check(L, -(idx+1) <= (L->top.p - (func + 1)), "invalid new top");
@@ -5549,7 +5553,7 @@ LUA_API void lua_closeslot (lua_State *L, int idx) {
   api_check(L, (L->ci->callstatus & CIST_TBC) && (L->tbclist.p == level),
      "no variable to close at given level");
   level = luaF_close(L, level, CLOSEKTOP, 0);
-  setnilvalue(s2v(level));
+  setnilvalue2s(level);
   lua_unlock(L);
 }
 
@@ -5705,7 +5709,7 @@ LUA_API int lua_compare (lua_State *L, int index1, int index2, int op) {
 }
 
 
-LUA_API unsigned (lua_numbertocstring) (lua_State *L, int idx, char *buff) {
+LUA_API unsigned lua_numbertocstring (lua_State *L, int idx, char *buff) {
   const TValue *o = index2value(L, idx);
   if (ttisnumber(o)) {
     unsigned len = luaO_tostringbuff(o, buff);
@@ -5852,7 +5856,7 @@ LUA_API const void *lua_topointer (lua_State *L, int idx) {
 
 LUA_API void lua_pushnil (lua_State *L) {
   lua_lock(L);
-  setnilvalue(s2v(L->top.p));
+  setnilvalue2s(L->top.p);
   api_incr_top(L);
   lua_unlock(L);
 }
@@ -5909,7 +5913,7 @@ LUA_API const char *lua_pushexternalstring (lua_State *L,
 LUA_API const char *lua_pushstring (lua_State *L, const char *s) {
   lua_lock(L);
   if (s == NULL)
-    setnilvalue(s2v(L->top.p));
+    setnilvalue2s(L->top.p);
   else {
     TString *ts;
     ts = luaS_new(L, s);
@@ -6082,7 +6086,7 @@ LUA_API int lua_geti (lua_State *L, int idx, lua_Integer n) {
 
 static int finishrawget (lua_State *L, lu_byte tag) {
   if (tagisempty(tag))  /* avoid copying empty items to the stack */
-    setnilvalue(s2v(L->top.p));
+    setnilvalue2s(L->top.p);
   api_incr_top(L);
   lua_unlock(L);
   return novariant(tag);
@@ -6175,7 +6179,7 @@ LUA_API int lua_getiuservalue (lua_State *L, int idx, int n) {
   o = index2value(L, idx);
   api_check(L, ttisfulluserdata(o), "full userdata expected");
   if (n <= 0 || n > uvalue(o)->nuvalue) {
-    setnilvalue(s2v(L->top.p));
+    setnilvalue2s(L->top.p);
     t = LUA_TNONE;
   }
   else {
@@ -6461,6 +6465,7 @@ LUA_API int lua_load (lua_State *L, lua_Reader reader, void *data,
   ZIO z;
   TStatus status;
   lua_lock(L);
+  luaC_checkGC(L);
   if (!chunkname) chunkname = "?";
   luaZ_init(L, &z, reader, data);
   status = luaD_protectedparser(L, &z, chunkname, mode);
@@ -6538,11 +6543,16 @@ LUA_API int lua_vgc(lua_State *L, int what, va_list argp) {
     case LUA_GCSTEP: {
       lu_byte oldstp = g->gcstp;
       l_mem n = cast(l_mem, va_arg(argp, size_t));
+      l_mem newdebt;
       int work = 0;  /* true if GC did some work */
       g->gcstp = 0;  /* allow GC to run (other bits must be zero here) */
       if (n <= 0)
-        n = g->GCdebt;  /* force to run one basic step */
-      luaE_setdebt(g, g->GCdebt - n);
+        newdebt = 0;  /* force to run one basic step */
+      else if (g->GCdebt >= n - MAX_LMEM)  /* no overflow? */
+        newdebt = g->GCdebt - n;
+      else  /* overflow */
+        newdebt = -MAX_LMEM;  /* set debt to mininum value */
+      luaE_setdebt(g, newdebt);
       luaC_condGC(L, (void)0, work = 1);
       if (work && g->gcstate == GCSpause)  /* end of cycle? */
         res = 1;  /* signal it */
@@ -6637,8 +6647,8 @@ LUA_API void lua_toclose (lua_State *L, int idx) {
 
 LUA_API void lua_concat (lua_State *L, int n) {
   lua_lock(L);
-  api_checknelems(L, n);
   if (n > 0) {
+    api_checkpop(L, n);
     luaV_concat(L, n);
     luaC_checkGC(L);
   }
@@ -6756,7 +6766,7 @@ LUA_API const char *lua_setupvalue (lua_State *L, int funcindex, int n) {
   TValue *fi;
   lua_lock(L);
   fi = index2value(L, funcindex);
-  api_checknelems(L, 1);
+  api_checkpop(L, 1);
   name = aux_upvalue(fi, n, &val, &owner);
   if (name) {
     L->top.p--;
@@ -7063,7 +7073,7 @@ LUALIB_API int luaL_error (lua_State *L, const char *fmt, ...) {
 }
 
 
-#ifndef BA_MINIOSLIB
+/* Public result helper used by native modules even with the minimal OS lib. */
 LUALIB_API int luaL_fileresult (lua_State *L, int stat, const char *fname) {
   int en = errno;  /* calls to Lua API may change this value */
   if (stat) {
@@ -7082,7 +7092,6 @@ LUALIB_API int luaL_fileresult (lua_State *L, int stat, const char *fname) {
     return 3;
   }
 }
-#endif
 
 #if !defined(l_inspectstat)	/* { */
 
@@ -7106,7 +7115,7 @@ LUALIB_API int luaL_fileresult (lua_State *L, int stat, const char *fname) {
 #endif				/* } */
 
 
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
 LUALIB_API int luaL_execresult (lua_State *L, int stat) {
   if (stat != 0 && errno != 0)  /* error with an 'errno'? */
     return luaL_fileresult(L, 0, NULL);
@@ -7333,12 +7342,25 @@ static const luaL_Reg boxmt[] = {  /* box metamethods */
 };
 
 
+/*
+** Get/create metatable (MT) for boxes
+*/
+static void getBoxMT (lua_State *L) {
+  const char *BOXMT = "_UBOX*"; /* key for the metatable */
+  if (luaL_getmetatable(L, BOXMT) == LUA_TNIL) {  /* MT not created yet? */
+    luaL_newlibtable(L, boxmt);  /* create it */
+    luaL_setfuncs(L, boxmt, 0);  /* initialize it */
+    lua_copy(L, -1, -2);  /* change stack from nil,MT to MT,MT */
+    lua_setfield(L, LUA_REGISTRYINDEX, BOXMT);  /* store MT in the registry */
+  }
+}
+
+
 static void newbox (lua_State *L) {
   UBox *box = (UBox *)lua_newuserdatauv(L, sizeof(UBox), 0);
   box->box = NULL;
   box->bsize = 0;
-  if (luaL_newmetatable(L, "_UBOX*"))  /* creating metatable? */
-    luaL_setfuncs(L, boxmt, 0);  /* set its metamethods */
+  getBoxMT(L);
   lua_setmetatable(L, -2);
 }
 
@@ -7553,7 +7575,7 @@ LUALIB_API void luaL_unref (lua_State *L, int t, int ref) {
 ** =======================================================
 */
 
-#ifndef LUA_NOIOLIB
+#if BA_ENABLE_LUA_STDIO
 typedef struct LoadF {
   unsigned n;  /* number of pre-read characters */
   FILE *f;  /* file being read */
@@ -7704,7 +7726,7 @@ LUALIB_API int luaL_loadbufferx (lua_State *L, const char *buff, size_t size,
 
 
 LUALIB_API int luaL_loadstring (lua_State *L, const char *s) {
-  return luaL_loadbuffer(L, s, strlen(s), s);
+  return luaL_loadbufferx(L, s, strlen(s), s, "t");
 }
 
 /* }====================================================== */
@@ -8372,9 +8394,11 @@ static int load_aux (lua_State *L, int status, int envidx) {
 
 
 static const char *getMode (lua_State *L, int idx) {
-  const char *mode = luaL_optstring(L, idx, "bt");
-  if (strchr(mode, 'B') != NULL)  /* Lua code cannot use fixed buffers */
+  const char *mode = luaL_optstring(L, idx, NULL);
+  if (mode != NULL && strchr(mode, 'B') != NULL) {
+    /* Lua code cannot use fixed buffers */
     luaL_argerror(L, idx, "invalid mode");
+  }
   return mode;
 }
 
@@ -8396,33 +8420,24 @@ static int luaB_loadfile (lua_State *L) {
 
 
 /*
-** reserved slot, above all arguments, to hold a copy of the returned
-** string to avoid it being collected while parsed. 'load' has four
-** optional arguments (chunk, source name, mode, and environment).
-*/
-#define RESERVEDSLOT	5
-
-
-/*
-** Reader for generic 'load' function: 'lua_load' uses the
-** stack for internal stuff, so the reader cannot change the
-** stack top. Instead, it keeps its resulting string in a
-** reserved slot inside the stack.
+** Reader for generic 'load' function.
 */
 static const char *generic_reader (lua_State *L, void *ud, size_t *size) {
-  (void)(ud);  /* not used */
+  int *firstcall = cast(int *, ud);
   luaL_checkstack(L, 2, "too many nested functions");
+  if (*firstcall)
+    *firstcall = 0;
+  else
+    lua_pop(L, 1);  /* remove previous result */
   lua_pushvalue(L, 1);  /* get function */
   lua_call(L, 0, 1);  /* call it */
   if (lua_isnil(L, -1)) {
-    lua_pop(L, 1);  /* pop result */
     *size = 0;
     return NULL;
   }
   else if (l_unlikely(!lua_isstring(L, -1)))
     luaL_error(L, "reader function must return a string");
-  lua_replace(L, RESERVEDSLOT);  /* save string in reserved slot */
-  return lua_tolstring(L, RESERVEDSLOT, size);
+  return lua_tolstring(L, -1, size);
 }
 
 
@@ -8437,10 +8452,10 @@ static int luaB_load (lua_State *L) {
     status = luaL_loadbufferx(L, s, l, chunkname, mode);
   }
   else {  /* loading from a reader function */
+    int firstcall = 1;  /* userdata for generic_reader */
     const char *chunkname = luaL_optstring(L, 2, "=(load)");
     luaL_checktype(L, 1, LUA_TFUNCTION);
-    lua_settop(L, RESERVEDSLOT);  /* create reserved slot */
-    status = lua_load(L, generic_reader, NULL, chunkname, mode);
+    status = lua_load(L, generic_reader, &firstcall, chunkname, mode);
   }
   return load_aux(L, status, env);
 }
@@ -8457,7 +8472,7 @@ static int dofilecont (lua_State *L, int d1, lua_KContext d2) {
 static int luaB_dofile (lua_State *L) {
   const char *fname = luaL_optstring(L, 1, NULL);
   lua_settop(L, 1);
-  if (l_unlikely(luaL_loadfile(L, fname) != LUA_OK))
+  if (l_unlikely(luaL_loadfilex(L, fname, "bt") != LUA_OK))
     return lua_error(L);
   lua_callk(L, 0, LUA_MULTRET, 0, dofilecont);
   return dofilecont(L, 0, 0);
@@ -8647,6 +8662,8 @@ static const char *utf8_decode (const char *s, l_uint32 *val, int strict) {
   l_uint32 res = 0;  /* final result */
   if (c < 0x80)  /* ASCII? */
     res = c;
+  else if (c >= 0xfe)  /* c >= 1111 1110b ? */
+    return NULL;  /* would need six or more continuation bytes */
   else {
     int count = 0;  /* to count number of continuation bytes */
     for (; c & 0x40; c <<= 1) {  /* while it needs continuation bytes... */
@@ -8655,8 +8672,9 @@ static const char *utf8_decode (const char *s, l_uint32 *val, int strict) {
         return NULL;  /* invalid byte sequence */
       res = (res << 6) | (cc & 0x3F);  /* add lower 6 bits from cont. byte */
     }
+    lua_assert(count <= 5);
     res |= ((l_uint32)(c & 0x7F) << (count * 5));  /* add first byte */
-    if (count > 5 || res > MAXUTF || res < limits[count])
+    if (res > MAXUTF || res < limits[count])
       return NULL;  /* invalid byte sequence */
     s += count;  /* skip continuation bytes read */
   }
@@ -8737,7 +8755,7 @@ static int codepoint (lua_State *L) {
 static void pushutfchar (lua_State *L, int arg) {
   lua_Unsigned code = (lua_Unsigned)luaL_checkinteger(L, arg);
   luaL_argcheck(L, code <= MAXUTF, arg, "value out of range");
-  lua_pushfstring(L, "%U", (long)code);
+  lua_pushfstring(L, "%U", cast(unsigned long, code));
 }
 
 
@@ -9545,11 +9563,11 @@ static int boolT (FuncState *fs) {
 ** Add nil to list of constants and return its index.
 */
 static int nilK (FuncState *fs) {
-  TValue k, v;
-  setnilvalue(&v);
+  lua_State *L = fs->ls->L;
+  TValue k;
   /* cannot use nil as key; instead use table itself */
-  sethvalue(fs->ls->L, &k, fs->kcache);
-  return k2proto(fs, &k, &v);
+  sethvalue(L, &k, fs->kcache);
+  return k2proto(fs, &k, &G(L)->nilvalue);
 }
 
 
@@ -9709,7 +9727,7 @@ void luaK_dischargevars (FuncState *fs, expdesc *e) {
     }  /* FALLTHROUGH */
     case VLOCAL: {  /* already in a register */
       int temp = e->u.var.ridx;
-      e->u.info = temp;  /* (can't do a direct assignment; values overlap) */
+      e->u.info = temp;  /* (avoid a direct assignment; values overlap) */
       e->k = VNONRELOC;  /* becomes a non-relocatable value */
       break;
     }
@@ -10247,7 +10265,7 @@ void luaK_indexed (FuncState *fs, expdesc *t, expdesc *k) {
     luaK_exp2anyreg(fs, t);  /* put it in a register */
   if (t->k == VUPVAL) {
     lu_byte temp = cast_byte(t->u.info);  /* upvalue index */
-    t->u.ind.t = temp;  /* (can't do a direct assignment; values overlap) */
+    t->u.ind.t = temp;  /* (avoid a direct assignment; values overlap) */
     lua_assert(isKstr(fs, k));
     fillidxk(t, k->u.info, VINDEXUP);  /* literal short string */
   }
@@ -10255,12 +10273,13 @@ void luaK_indexed (FuncState *fs, expdesc *t, expdesc *k) {
     int kreg = luaK_exp2anyreg(fs, k);  /* put key in some register */
     lu_byte vreg = cast_byte(t->u.var.ridx);  /* register with vararg param. */
     lua_assert(vreg == fs->f->numparams);
-    t->u.ind.t = vreg;  /* (avoid a direct assignment; values may overlap) */
+    t->u.ind.t = vreg;  /* (avoid a direct assignment; values may overlap?) */
     fillidxk(t, kreg, VVARGIND);  /* 't' represents 'vararg[k]' */
   }
   else {
     /* register index of the table */
-    t->u.ind.t = cast_byte((t->k == VLOCAL) ? t->u.var.ridx: t->u.info);
+    lu_byte temp = cast_byte((t->k == VLOCAL) ? t->u.var.ridx: t->u.info);
+    t->u.ind.t = temp;  /* (avoid a direct assignment; values may overlap?) */
     if (isKstr(fs, k))
       fillidxk(t, k->u.info, VINDEXSTR);  /* literal short string */
     else if (isCint(k))  /* int. constant in proper range? */
@@ -10815,8 +10834,6 @@ void luaK_finish (FuncState *fs) {
     p->flag &= cast_byte(~PF_VAHID);  /* then it will not use hidden args. */
   for (i = 0; i < fs->pc; i++) {
     Instruction *pc = &p->code[i];
-    /* avoid "not used" warnings when assert is off (for 'onelua.c') */
-    (void)luaP_isOT; (void)luaP_isIT;
     lua_assert(i == 0 || luaP_isOT(*(pc - 1)) == luaP_isIT(*pc));
     switch (GET_OPCODE(*pc)) {
       case OP_RETURN0: case OP_RETURN1: {
@@ -11140,7 +11157,7 @@ LUAI_DDEF const lu_byte luai_ctype_[UCHAR_MAX + 2] = {
 };
 
 #endif			/* } */
-#ifndef NO_LDEBUG
+#if BA_ENABLE_LUA_DEBUG_LIBRARY
 /*
 ** $Id: ldblib.c $
 ** Interface from Lua to its debug API
@@ -11563,7 +11580,7 @@ static int db_gethook (lua_State *L) {
 }
 
 
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
 static int db_debug (lua_State *L) {
   for (;;) {
     char buffer[250];
@@ -11571,7 +11588,7 @@ static int db_debug (lua_State *L) {
     if (fgets(buffer, sizeof(buffer), stdin) == NULL ||
         strcmp(buffer, "cont\n") == 0)
       return 0;
-    if (luaL_loadbuffer(L, buffer, strlen(buffer), "=(debug command)") ||
+    if (luaL_loadbufferx(L, buffer, strlen(buffer), "=(debug command)", "t") ||
         lua_pcall(L, 0, 0, 0))
       lua_writestringerror("%s\n", luaL_tolstring(L, -1, NULL));
     lua_settop(L, 0);  /* remove eventual returns */
@@ -11594,7 +11611,7 @@ static int db_traceback (lua_State *L) {
 
 
 static const luaL_Reg dblib[] = {
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
   {"debug", db_debug},
 #endif
   {"getuservalue", db_getuservalue},
@@ -11915,7 +11932,7 @@ static int nextline (const Proto *p, int currentline, int pc) {
 
 static void collectvalidlines (lua_State *L, Closure *f) {
   if (!LuaClosure(f)) {
-    setnilvalue(s2v(L->top.p));
+    setnilvalue2s(L->top.p);
     api_incr_top(L);
   }
   else {
@@ -12204,7 +12221,7 @@ static const char *getobjname (const Proto *p, int lastpc, int reg,
         kname(p, k, name);
         return isEnv(p, lastpc, i, 1);
       }
-      case OP_GETTABLE: {
+      case OP_GETTABLE: case OP_GETVARG: {
         int k = GETARG_C(i);  /* key index */
         rname(p, lastpc, k, name);
         return isEnv(p, lastpc, i, 0);
@@ -12823,13 +12840,21 @@ l_noret luaD_errerr (lua_State *L) {
 
 
 /*
-** Check whether stack has enough space to run a simple function (such
-** as a finalizer): At least BASIC_STACK_SIZE in the Lua stack and
-** 2 slots in the C stack.
+** Check whether stacks have enough space to run a simple function (such
+** as a finalizer): At least BASIC_STACK_SIZE in the Lua stack, two
+** available CallInfos, and two "slots" in the C stack.
 */
 int luaD_checkminstack (lua_State *L) {
-  return ((stacksize(L) < MAXSTACK - BASIC_STACK_SIZE) &&
-          (getCcalls(L) < LUAI_MAXCCALLS - 2));
+  if (getCcalls(L) >= LUAI_MAXCCALLS - 2)
+    return 0;  /* not enough C-stack slots */
+  if (L->ci->next == NULL && luaE_extendCI(L, 0) == NULL)
+    return 0;  /* unable to allocate first ci */
+  if (L->ci->next->next == NULL && luaE_extendCI(L, 0) == NULL)
+    return 0;  /* unable to allocate second ci */
+  if (L->stack_last.p - L->top.p >= BASIC_STACK_SIZE)
+    return 1;  /* enough (BASIC_STACK_SIZE) free slots in the Lua stack */
+  else  /* try to grow stack to a size with enough free slots */
+    return luaD_growstack(L, BASIC_STACK_SIZE, 0);
 }
 
 
@@ -12943,7 +12968,7 @@ int luaD_reallocstack (lua_State *L, int newsize, int raiseerror) {
   correctstack(L, oldstack);  /* change offsets back to pointers */
   L->stack_last.p = L->stack.p + newsize;
   for (i = oldsize + EXTRA_STACK; i < newsize + EXTRA_STACK; i++)
-    setnilvalue(s2v(newstack + i)); /* erase new segment */
+    setnilvalue2s(newstack + i); /* erase new segment */
   return 1;
 }
 
@@ -13022,12 +13047,6 @@ void luaD_shrinkstack (lua_State *L) {
   else  /* don't change stack */
     condmovestack(L,(void)0,(void)0);  /* (change only for debugging) */
   luaE_shrinkCI(L);  /* shrink CI list */
-}
-
-
-void luaD_inctop (lua_State *L) {
-  L->top.p++;
-  luaD_checkstack(L, 1);
 }
 
 /* }================================================================== */
@@ -13148,7 +13167,7 @@ l_sinline void genmoveresults (lua_State *L, StkId res, int nres,
   for (i = 0; i < nres; i++)  /* move all results to correct place */
     setobjs2s(L, res + i, firstresult + i);
   for (; i < wanted; i++)  /* complete wanted number of results */
-    setnilvalue(s2v(res + i));
+    setnilvalue2s(res + i);
   L->top.p = res + wanted;  /* top points after the last result */
 }
 
@@ -13168,7 +13187,7 @@ l_sinline void moveresults (lua_State *L, StkId res, int nres,
       return;
     case 1 + 1:  /* one value needed */
       if (nres == 0)   /* no results? */
-        setnilvalue(s2v(res));  /* adjust with nil */
+        setnilvalue2s(res);  /* adjust with nil */
       else  /* at least one result */
         setobjs2s(L, res, L->top.p - nres);  /* move it to proper place */
       L->top.p = res + 1;
@@ -13218,7 +13237,7 @@ void luaD_poscall (lua_State *L, CallInfo *ci, int nres) {
 
 
 
-#define next_ci(L)  (L->ci->next ? L->ci->next : luaE_extendCI(L))
+#define next_ci(L)  (L->ci->next ? L->ci->next : luaE_extendCI(L, 1))
 
 
 /*
@@ -13288,7 +13307,7 @@ int luaD_pretailcall (lua_State *L, CallInfo *ci, StkId func,
         setobjs2s(L, ci->func.p + i, func + i);
       func = ci->func.p;  /* moved-down function */
       for (; narg1 <= nfixparams; narg1++)
-        setnilvalue(s2v(func + narg1));  /* complete missing arguments */
+        setnilvalue2s(func + narg1);  /* complete missing arguments */
       ci->top.p = func + 1 + fsize;  /* top for new function */
       lua_assert(ci->top.p <= L->stack_last.p);
       ci->u.l.savedpc = p->code;  /* starting point */
@@ -13335,7 +13354,7 @@ CallInfo *luaD_precall (lua_State *L, StkId func, int nresults) {
       L->ci = ci = prepCallInfo(L, func, status, func + 1 + fsize);
       ci->u.l.savedpc = p->code;  /* starting point */
       for (; narg < nfixparams; narg++)
-        setnilvalue(s2v(L->top.p++));  /* complete missing arguments */
+        setnilvalue2s(L->top.p++);  /* complete missing arguments */
       lua_assert(ci->top.p <= L->stack_last.p);
       return ci;
     }
@@ -13722,25 +13741,51 @@ static void checkmode (lua_State *L, const char *mode, const char *x) {
 }
 
 
+/*
+** Before the first call to the reader function, Lua reserves a slot
+** with a table for anchoring stuff.
+*/
 static void f_parser (lua_State *L, void *ud) {
   LClosure *cl;
   struct SParser *p = cast(struct SParser *, ud);
   const char *mode = p->mode ? p->mode : "bt";
-  int c = zgetc(p->z);  /* read first character */
+  int c;
+  Table *anchor;
+  ptrdiff_t otop = savestack(L, L->top.p);  /* original top */
+  luaD_checkstack(L, 2);
+  anchor = luaH_new(L);  /* create the anchor table */
+  sethvalue2s(L, L->top.p++, anchor);  /* anchor the anchor table */
+  c = zgetc(p->z);  /* read first character */
   if (c == LUA_SIGNATURE[0]) {
     int fixed = 0;
     if (strchr(mode, 'B') != NULL)
       fixed = 1;
     else
       checkmode(L, mode, "binary");
-    cl = luaU_undump(L, p->z, p->name, fixed);
+    cl = luaU_undump(L, p->z, anchor, p->name, fixed);
   }
   else {
     checkmode(L, mode, "text");
-    cl = luaY_parser(L, p->z, &p->buff, &p->dyd, p->name, c);
+    cl = luaY_parser(L, p->z, anchor, &p->buff, &p->dyd, p->name, c);
   }
+  L->top.p = restorestack(L, otop);  /* restore stack */
+  setclLvalue2s(L, L->top.p++, cl);  /* push closure */
   lua_assert(cl->nupvalues == cl->p->sizeupvalues);
   luaF_initupvals(L, cl);
+}
+
+
+/*
+** Anchor an object in a table in the stack.  First, anchor the object
+** temporarily in the stack, as luaH_set may call an emergency GC.
+** Then, add it in the table with itself as its key.
+*/
+void luaD_anchorobj (lua_State *L, Table *anchor, GCObject *obj) {
+  setgcovalue(L, s2v(L->top.p++), obj);  /* temporary anchor in the stack */
+  luaH_set(L, anchor, s2v(L->top.p - 1), s2v(L->top.p - 1));
+  /* Because this is a new key, luaH_set will call the GC barrier, so
+     we don't need to call the barrier again here */
+  L->top.p--;
 }
 
 
@@ -15096,7 +15141,7 @@ static l_mem traversethread (global_State *g, lua_State *th) {
     if (!g->gcemergency)
       luaD_shrinkstack(th); /* do not change stack in emergency cycle */
     for (o = th->top.p; o < th->stack_last.p + EXTRA_STACK; o++)
-      setnilvalue(s2v(o));  /* clear dead stack slice */
+      setnilvalue2s(o);  /* clear dead stack slice */
     /* 'remarkupvals' may have removed thread from 'twups' list */
     if (!isintwups(th) && th->openupval != NULL) {
       th->twups = g->twups;  /* link it back to the list */
@@ -15680,7 +15725,7 @@ static void finishgencycle (lua_State *L, global_State *g) {
   correctgraylists(g);
   checkSizes(L, g);
   g->gcstate = GCSpropagate;  /* skip restart */
-  if (!g->gcemergency && luaD_checkminstack(L))
+  if (g->tobefnz != NULL && !g->gcemergency && luaD_checkminstack(L))
     callallpendingfinalizers(L);
 }
 
@@ -16059,7 +16104,7 @@ static l_mem singlestep (lua_State *L, int fast) {
         GCTM(L);  /* call one finalizer */
         stepresult = CWUFIN;
       }
-      else {  /* no more finalizers or emergency mode or no enough stack
+      else {  /* no more finalizers or emergency mode or not enough stack
                  to run finalizers */
         g->gcstate = GCSpause;  /* finish collection */
         stepresult = step2pause;
@@ -16220,8 +16265,10 @@ static const luaL_Reg stdlibs[] = {
   {LUA_GNAME, luaopen_base},
   {LUA_LOADLIBNAME, luaopen_package},
   {LUA_COLIBNAME, luaopen_coroutine},
-#ifndef NO_LDEBUG
+#if BA_ENABLE_LUA_DEBUG_LIBRARY
   {LUA_DBLIBNAME, luaopen_debug},
+#else
+  {LUA_DBLIBNAME, NULL},  /* reserve the debug library mask */
 #endif
   {LUA_IOLIBNAME, luaopen_io},
   {LUA_MATHLIBNAME, luaopen_math},
@@ -16241,6 +16288,8 @@ LUALIB_API void luaL_openselectedlibs (lua_State *L, int load, int preload) {
   const luaL_Reg *lib;
   luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
   for (lib = stdlibs, mask = 1; lib->name != NULL; lib++, mask <<= 1) {
+    if (lib->func == NULL)  /* library disabled in this build? */
+      continue;
     if (load & mask) {  /* selected? */
       luaL_requiref(L, lib->name, lib->func, 1);  /* require library */
       lua_pop(L, 1);  /* remove result from the stack */
@@ -16444,7 +16493,7 @@ void luaX_setinput (lua_State *L, LexState *ls, ZIO *z, TString *source,
      so they cannot be collected */
   ls->envn = luaS_newliteral(L, LUA_ENV);  /* get env string */
   ls->brkn = luaS_newliteral(L, "break");  /* get "break" string */
-#if defined(LUA_COMPAT_GLOBAL)
+#if LUA_COMPAT_GLOBAL
   /* compatibility mode: "global" is not a reserved word */
   ls->glbn = luaS_newliteral(L, "global");  /* get "global" string */
   ls->glbn->extra = 0;  /* mark it as not reserved */
@@ -17099,7 +17148,7 @@ void *luaM_malloc_ (lua_State *L, size_t size, int tag) {
 #include "lualib.h"
 
 
-#ifdef USE_LUAINTF
+#if MAKO_ENABLE_LUA_MODULE_INTERFACE
 /* In $BAROOT/examples/MakoServer/MakoModuleExample/src/lua/internal
    Enable: http://makoserver.net/documentation/c-modules/
 */
@@ -17478,7 +17527,7 @@ static int lookforfunc (lua_State *L, const char *path, const char *sym) {
     if (f == NULL)
       return ERRFUNC;  /* unable to find function */
     /* Mod RTL */
-#ifdef USE_LUAINTF
+#if MAKO_ENABLE_LUA_MODULE_INTERFACE
     lua_pushlightuserdata(L,(void*)&luaFuncs);
     lua_pushcclosure(L, f, 1);  /* else create new function */
 #else
@@ -17512,7 +17561,7 @@ static int ll_loadlib (lua_State *L) {
 */
 
 
-#ifdef BA_HAS_ANSI_IO
+#if BA_HAVE_STDIO
 static int readable (const char *filename) {
   FILE *f = fopen(filename, "r");  /* try to open file */
   if (f == NULL) return 0;  /* open failed */
@@ -17635,7 +17684,7 @@ static int searcher_Lua (lua_State *L) {
   const char *name = luaL_checkstring(L, 1);
   filename = findfile(L, name, "path", LUA_LSUBSEP);
   if (filename == NULL) return 1;  /* module not found in this path */
-  return checkload(L, (luaL_loadfile(L, filename) == LUA_OK), filename);
+  return checkload(L, (luaL_loadfilex(L, filename, "bt") == LUA_OK), filename);
 }
 
 
@@ -18664,35 +18713,26 @@ LUAI_DDEF const lu_byte luaP_opmodes[NUM_OPCODES] = {
  ,opmode(0, 1, 0, 0, 1, iABC)		/* OP_VARARG */
  ,opmode(0, 0, 0, 0, 1, iABC)		/* OP_GETVARG */
  ,opmode(0, 0, 0, 0, 0, iABx)		/* OP_ERRNNIL */
- ,opmode(0, 0, 1, 0, 1, iABC)		/* OP_VARARGPREP */
+ ,opmode(0, 0, 0, 0, 0, iABC)		/* OP_VARARGPREP */
  ,opmode(0, 0, 0, 0, 0, iAx)		/* OP_EXTRAARG */
 };
 
 
-
-/*
-** Check whether instruction sets top for next instruction, that is,
-** it results in multiple values.
-*/
-int luaP_isOT (Instruction i) {
-  OpCode op = GET_OPCODE(i);
-  switch (op) {
-    case OP_TAILCALL: return 1;
-    default:
-      return testOTMode(op) && GETARG_C(i) == 0;
-  }
-}
+#define testITMode(m)	(luaP_opmodes[m] & (1 << 5))
 
 
 /*
-** Check whether instruction uses top from previous instruction, that is,
-** it accepts multiple results.
+** Check whether instruction uses top. That happens for OP_VARARGPREP
+** and for instructions that use multiple values set by the previous
+** instruction.
 */
 int luaP_isIT (Instruction i) {
   OpCode op = GET_OPCODE(i);
   switch (op) {
     case OP_SETLIST:
-      return testITMode(GET_OPCODE(i)) && GETARG_vB(i) == 0;
+      return GETARG_vB(i) == 0;
+    case OP_VARARGPREP:
+      return 1;
     default:
       return testITMode(GET_OPCODE(i)) && GETARG_B(i) == 0;
   }
@@ -19521,8 +19561,7 @@ static void open_func (LexState *ls, FuncState *fs, BlockCnt *bl) {
   luaC_objbarrier(L, f, f->source);
   f->maxstacksize = 2;  /* registers 0/1 are always valid */
   fs->kcache = luaH_new(L);  /* create table for function */
-  sethvalue2s(L, L->top.p, fs->kcache);  /* anchor it */
-  luaD_inctop(L);
+  luaD_anchorobj(L, ls->h, obj2gco(fs->kcache));  /* anchor it */
   enterblock(fs, bl, 0);
 }
 
@@ -19531,6 +19570,7 @@ static void close_func (LexState *ls) {
   lua_State *L = ls->L;
   FuncState *fs = ls->fs;
   Proto *f = fs->f;
+  TValue temp;
   luaK_ret(fs, luaY_nvarstack(fs), 0);  /* final return */
   leaveblock(fs);
   lua_assert(fs->bl == NULL);
@@ -19543,8 +19583,10 @@ static void close_func (LexState *ls) {
   luaM_shrinkvector(L, f->p, f->sizep, fs->np, Proto *);
   luaM_shrinkvector(L, f->locvars, f->sizelocvars, fs->ndebugvars, LocVar);
   luaM_shrinkvector(L, f->upvalues, f->sizeupvalues, fs->nups, Upvaldesc);
+  /* remove kcache table from scanner table ("weigh" its anchor) */
+  sethvalue(L, &temp, fs->kcache);  /* key to be set to nil */
+  luaH_set(L, ls->h, &temp, &G(L)->nilvalue);
   ls->fs = fs->prev;
-  L->top.p--;  /* pop kcache table */
   luaC_checkGC(L);
 }
 
@@ -19864,6 +19906,7 @@ static void funcargs (LexState *ls, expdesc *f) {
     }
     default: {
       luaX_syntaxerror(ls, "function arguments expected");
+      return;  /* to avoid warnings */
     }
   }
   lua_assert(f->k == VNONRELOC);
@@ -20311,7 +20354,6 @@ static void repeatstat (LexState *ls, int line) {
   statlist(ls);
   check_match(ls, TK_UNTIL, TK_REPEAT, line);
   condexit = cond(ls);  /* read condition (inside scope block) */
-  leaveblock(fs);  /* finish scope */
   if (bl2.upval) {  /* upvalues? */
     int exit = luaK_jump(fs);  /* normal exit must jump over fix */
     luaK_patchtohere(fs, condexit);  /* repetition must close upvalues */
@@ -20320,6 +20362,7 @@ static void repeatstat (LexState *ls, int line) {
     luaK_patchtohere(fs, exit);  /* normal exit comes to here */
   }
   luaK_patchlist(fs, condexit, repeat_init);  /* close the loop */
+  leaveblock(fs);  /* finish scope */
   leaveblock(fs);  /* finish loop */
 }
 
@@ -20811,7 +20854,7 @@ static void statement (LexState *ls) {
       gotostat(ls, line);
       break;
     }
-#if defined(LUA_COMPAT_GLOBAL)
+#if LUA_COMPAT_GLOBAL
     case TK_NAME: {
       /* compatibility code to parse global keyword when "global"
          is not reserved */
@@ -20865,16 +20908,14 @@ static void mainfunc (LexState *ls, FuncState *fs) {
 }
 
 
-LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
+LClosure *luaY_parser (lua_State *L, ZIO *z, Table *anchor, Mbuffer *buff,
                        Dyndata *dyd, const char *name, int firstchar) {
   LexState lexstate;
   FuncState funcstate;
-  LClosure *cl = luaF_newLclosure(L, 1);  /* create main closure */
-  setclLvalue2s(L, L->top.p, cl);  /* anchor it (to avoid being collected) */
-  luaD_inctop(L);
-  lexstate.h = luaH_new(L);  /* create table for scanner */
-  sethvalue2s(L, L->top.p, lexstate.h);  /* anchor it */
-  luaD_inctop(L);
+  LClosure *cl;
+  lexstate.h = anchor;  /* table for scanner */
+  cl = luaF_newLclosure(L, 1);  /* create main closure */
+  luaD_anchorobj(L, anchor, obj2gco(cl));  /* anchor it in scanner table */
   funcstate.f = cl->p = luaF_newproto(L);
   luaC_objbarrier(L, cl, cl->p);
   funcstate.f->source = luaS_new(L, name);  /* create and anchor TString */
@@ -20887,8 +20928,7 @@ LClosure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
   lua_assert(!funcstate.prev && funcstate.nups == 1 && !lexstate.fs);
   /* all scopes should be correctly finished */
   lua_assert(dyd->actvar.n == 0 && dyd->gt.n == 0 && dyd->label.n == 0);
-  L->top.p--;  /* remove scanner's table */
-  return cl;  /* closure is on the stack, too */
+  return cl;
 }
 
 /*
@@ -20961,14 +21001,19 @@ void luaE_setdebt (global_State *g, l_mem debt) {
 }
 
 
-CallInfo *luaE_extendCI (lua_State *L) {
+CallInfo *luaE_extendCI (lua_State *L, int err) {
   CallInfo *ci;
-  lua_assert(L->ci->next == NULL);
-  ci = luaM_new(L, CallInfo);
-  lua_assert(L->ci->next == NULL);
-  L->ci->next = ci;
+  ci = luaM_reallocvector(L, NULL, 0, 1, CallInfo);
+  if (l_unlikely(ci == NULL)) {  /* allocation failed? */
+    if (err)
+      luaM_error(L);  /* raise the error */
+    return NULL;  /* else only report it */
+  }
+  ci->next = L->ci->next;
   ci->previous = L->ci;
-  ci->next = NULL;
+  L->ci->next = ci;
+  if (ci->next)
+    ci->next->previous = ci;
   ci->u.l.trap = 0;
   L->nci++;
   return ci;
@@ -21039,7 +21084,7 @@ LUAI_FUNC void luaE_incCstack (lua_State *L) {
 static void resetCI (lua_State *L) {
   CallInfo *ci = L->ci = &L->base_ci;
   ci->func.p = L->stack.p;
-  setnilvalue(s2v(ci->func.p));  /* 'function' entry for basic 'ci' */
+  setnilvalue2s(ci->func.p);  /* 'function' entry for basic 'ci' */
   ci->top.p = ci->func.p + 1 + LUA_MINSTACK;  /* +1 for 'function' entry */
   ci->u.c.k = NULL;
   ci->callstatus = CIST_C;
@@ -21054,7 +21099,7 @@ static void stack_init (lua_State *L1, lua_State *L) {
   L1->stack.p = luaM_newvector(L, BASIC_STACK_SIZE + EXTRA_STACK, StackValue);
   L1->tbclist.p = L1->stack.p;
   for (i = 0; i < BASIC_STACK_SIZE + EXTRA_STACK; i++)
-    setnilvalue(s2v(L1->stack.p + i));  /* erase new stack */
+    setnilvalue2s(L1->stack.p + i);  /* erase new stack */
   L1->stack_last.p = L1->stack.p + BASIC_STACK_SIZE;
   /* initialize first ci */
   resetCI(L1);
@@ -21807,8 +21852,8 @@ static int str_rep (lua_State *L) {
   const char *s = luaL_checklstring(L, 1, &len);
   lua_Integer n = luaL_checkinteger(L, 2);
   const char *sep = luaL_optlstring(L, 3, "", &lsep);
-  if (n <= 0)
-    lua_pushliteral(L, "");
+  if (n <= 0 || (len | lsep) == 0)
+    lua_pushliteral(L, "");  /* no repetitions or both strings empty */
   else if (l_unlikely(len > MAX_SIZE - lsep ||
                cast_st2S(len + lsep) > cast_st2S(MAX_SIZE) / n))
     return luaL_error(L, "resulting string too large");
@@ -22423,19 +22468,25 @@ static int nospecials (const char *p, size_t l) {
 }
 
 
+/*
+** Prepare state for matches. These fields are not affected by each match.
+*/
 static void prepstate (MatchState *ms, lua_State *L,
                        const char *s, size_t ls, const char *p, size_t lp) {
   ms->L = L;
-  ms->matchdepth = MAXCCALLS;
   ms->src_init = s;
   ms->src_end = s + ls;
   ms->p_end = p + lp;
 }
 
 
+/*
+** (Re)prepare state for a match, setting fields that change during
+** each match.
+*/
 static void reprepstate (MatchState *ms) {
+  ms->matchdepth = MAXCCALLS;
   ms->level = 0;
-  lua_assert(ms->matchdepth == MAXCCALLS);
 }
 
 
@@ -22634,7 +22685,7 @@ static int str_gsub (lua_State *L) {
     reprepstate(&ms);  /* (re)prepare state for new match */
     if ((e = match(&ms, src, p)) != NULL && e != lastmatch) {  /* match? */
       n++;
-      changed = add_value(&ms, &b, src, e, tr) | changed;
+      changed = add_value(&ms, &b, src, e, tr) || changed;
       src = lastmatch = e;
     }
     else if (src < ms.src_end)  /* otherwise, skip one character */
@@ -23392,7 +23443,7 @@ static int str_packsize (lua_State *L) {
     luaL_argcheck(L, opt != Kstring && opt != Kzstr, 1,
                      "variable-length format");
     size += ntoalign;  /* total space used by option */
-    luaL_argcheck(L, totalsize <= LUA_MAXINTEGER - size,
+    luaL_argcheck(L, totalsize <= MAX_SIZE - size,
                      1, "format result too large");
     totalsize += size;
   }
@@ -23602,15 +23653,17 @@ static int checkfield (lua_State *L, const char *key, int n) {
 
 /*
 ** Check that 'arg' either is a table or can behave like one (that is,
-** has a metatable with the required metamethods)
+** has a metatable with the required metamethods).
 */
 static void checktab (lua_State *L, int arg, int what) {
-  if (lua_type(L, arg) != LUA_TTABLE) {  /* is it not a table? */
+  int tp = lua_type(L, arg);
+  if (tp != LUA_TTABLE) {  /* is it not a table? */
     int n = 1;  /* number of elements to pop */
     if (lua_getmetatable(L, arg) &&  /* must have metatable */
         (!(what & TAB_R) || checkfield(L, "__index", ++n)) &&
         (!(what & TAB_W) || checkfield(L, "__newindex", ++n)) &&
-        (!(what & TAB_L) || checkfield(L, "__len", ++n))) {
+        (!(what & TAB_L) ||  /* strings don't need '__len' to have a length */
+             tp == LUA_TSTRING || checkfield(L, "__len", ++n))) {
       lua_pop(L, n);  /* pop metatable and tested metamethods */
     }
     else
@@ -23764,8 +23817,9 @@ static int tpack (lua_State *L) {
 
 static int tunpack (lua_State *L) {
   lua_Unsigned n;
+  lua_Integer len = aux_getn(L, 1, TAB_R);
   lua_Integer i = luaL_optinteger(L, 2, 1);
-  lua_Integer e = luaL_opt(L, luaL_checkinteger, 3, luaL_len(L, 1));
+  lua_Integer e = luaL_opt(L, luaL_checkinteger, 3, len);
   if (i > e) return 0;  /* empty range */
   n = l_castS2U(e) - l_castS2U(i);  /* number of elements minus 1 */
   if (l_unlikely(n >= (unsigned int)INT_MAX  ||
@@ -24248,7 +24302,7 @@ static void buildhiddenargs (lua_State *L, CallInfo *ci, const Proto *p,
   /* move fixed parameters to after the copied function */
   for (i = 1; i <= nfixparams; i++) {
     setobjs2s(L, L->top.p++, ci->func.p + i);
-    setnilvalue(s2v(ci->func.p + i));  /* erase original parameter (for GC) */
+    setnilvalue2s(ci->func.p + i);  /* erase original parameter (for GC) */
   }
   ci->func.p += totalargs + 1;  /* 'func' now lives after hidden arguments */
   ci->top.p += totalargs + 1;
@@ -24269,7 +24323,7 @@ void luaT_adjustvarargs (lua_State *L, CallInfo *ci, const Proto *p) {
     lua_assert(p->flag & PF_VAHID);
     buildhiddenargs(L, ci, p, totalargs, nfixparams, nextra);
     /* set vararg parameter to nil */
-    setnilvalue(s2v(ci->func.p + nfixparams + 1));
+    setnilvalue2s(ci->func.p + nfixparams + 1);
     lua_assert(L->top.p <= ci->top.p && ci->top.p <= L->stack_last.p);
   }
 }
@@ -24293,7 +24347,7 @@ void luaT_getvararg (CallInfo *ci, StkId ra, TValue *rc) {
       return;
     }
   }
-  setnilvalue(s2v(ra));  /* else produce nil */
+  setnilvalue2s(ra);  /* else produce nil */
 }
 
 
@@ -24341,11 +24395,11 @@ void luaT_getvarargs (lua_State *L, CallInfo *ci, StkId where, int wanted,
     for (i = 0; i < touse; i++) {
       lu_byte tag = luaH_getint(h, i + 1, s2v(where + i));
       if (tagisempty(tag))
-       setnilvalue(s2v(where + i));
+       setnilvalue2s(where + i);
     }
   }
   for (; i < wanted; i++)   /* complete required results with nil */
-    setnilvalue(s2v(where + i));
+    setnilvalue2s(where + i);
 }
 
 /*
@@ -24742,7 +24796,8 @@ static void checkHeader (LoadState *S) {
 /*
 ** Load precompiled chunk.
 */
-LClosure *luaU_undump (lua_State *L, ZIO *Z, const char *name, int fixed) {
+LClosure *luaU_undump (lua_State *L, ZIO *Z, Table *anchor, const char *name,
+                       int fixed) {
   LoadState S;
   LClosure *cl;
   if (*name == '@' || *name == '=')
@@ -24755,20 +24810,16 @@ LClosure *luaU_undump (lua_State *L, ZIO *Z, const char *name, int fixed) {
   S.fixed = cast_byte(fixed);
   S.offset = 1;  /* fist byte was already read */
   checkHeader(&S);
-  cl = luaF_newLclosure(L, loadByte(&S));
-  setclLvalue2s(L, L->top.p, cl);
-  luaD_inctop(L);
-  S.h = luaH_new(L);  /* create list of saved strings */
+  S.h = anchor;
   S.nstr = 0;
-  sethvalue2s(L, L->top.p, S.h);  /* anchor it */
-  luaD_inctop(L);
+  cl = luaF_newLclosure(L, loadByte(&S));
+  luaD_anchorobj(L, anchor, obj2gco(cl));
   cl->p = luaF_newproto(L);
   luaC_objbarrier(L, cl, cl->p);
   loadFunction(&S, cl->p);
   if (cl->nupvalues != cl->p->sizeupvalues)
     error(&S, "corrupted chunk");
   luai_verifycode(L, cl->p);
-  L->top.p--;  /* pop table */
   return cl;
 }
 
@@ -25042,9 +25093,9 @@ static int forprep (lua_State *L, StkId ra) {
 /*
 ** Execute a step of a float numerical for loop, returning
 ** true iff the loop must continue. (The integer case is
-** written online with opcode OP_FORLOOP, for performance.)
+** written inline with opcode OP_FORLOOP, for performance.)
 */
-static int floatforloop (StkId ra) {
+static int floatforloop (lua_State *L, StkId ra) {
   lua_Number step = fltvalue(s2v(ra + 1));
   lua_Number limit = fltvalue(s2v(ra));
   lua_Number idx = fltvalue(s2v(ra + 2));  /* control variable */
@@ -25077,7 +25128,7 @@ lu_byte luaV_finishget (lua_State *L, const TValue *t, TValue *key,
     else {  /* 't' is a table */
       tm = fasttm(L, hvalue(t)->metatable, TM_INDEX);  /* table's metamethod */
       if (tm == NULL) {  /* no metamethod? */
-        setnilvalue(s2v(val));  /* result is nil */
+        setnilvalue2s(val);  /* result is nil */
         return LUA_VNIL;
       }
       /* else will try the metamethod */
@@ -25134,13 +25185,19 @@ void luaV_finishset (lua_State *L, const TValue *t, TValue *key,
       luaT_callTM(L, tm, t, key, val);
       return;
     }
-    t = tm;  /* else repeat assignment over 'tm' */
-    luaV_fastset(t, key, val, hres, luaH_pset);
-    if (hres == HOK) {
-      luaV_finishfastset(L, t, val);
-      return;  /* done */
+    t = tm;  /* else must repeat assignment over 'tm' */
+    /* do the equivalent to 'luaV_fastset', but saving 'h' */
+    if (!ttistable(t))
+      hres = HNOTATABLE;
+    else {
+      Table *h = hvalue(t);  /* next call can change the value at 't' */
+      hres = luaH_pset(h, key, val);
+      if (hres == HOK) {
+        luaC_barrierback(L, obj2gco(h), val);  /* luaV_finishfastset */
+        return;  /* done */
+      }
     }
-    /* else 'return luaV_finishset(L, t, key, val, slot)' (loop) */
+    /* else 'return luaV_finishset(L, t, key, val, hres)' (loop) */
   }
   luaG_runerror(L, "'__newindex' chain too long; possible loop");
 }
@@ -25693,7 +25750,7 @@ void luaV_finishOp (lua_State *L) {
 ** Macros for arithmetic/bitwise/comparison opcodes in 'luaV_execute'
 **
 ** All these macros are to be used exclusively inside the main
-** iterpreter loop (function luaV_execute) and may access directly
+** interpreter loop (function luaV_execute) and may access directly
 ** the local variables of that function (L, i, pc, ci, etc.).
 ** ===================================================================
 */
@@ -26729,7 +26786,7 @@ static const void *const disptab[NUM_OPCODES] = {
             pc -= GETARG_Bx(i);  /* jump back */
           }
         }
-        else if (floatforloop(ra))  /* float loop */
+        else if (floatforloop(L, ra))  /* float loop */
           pc -= GETARG_Bx(i);  /* jump back */
         updatetrap(ci);  /* allows a signal to break the loop */
         vmbreak;
@@ -26971,7 +27028,7 @@ const void *luaZ_getaddr (ZIO* z, size_t n) {
 #include "lualib.h"
 
 
-#ifdef NO_TIMEFUNCS
+#if !BA_USE_C_RUNTIME_TIME
 #include <BaServerLib.h>
 #endif
 
@@ -27003,7 +27060,7 @@ const void *luaZ_getaddr (ZIO* z, size_t n) {
 ** ===================================================================
 */
 
-#ifdef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_MINIMAL
 
 static int os_clock (lua_State *L) {
    lua_pushnumber(L, baGetMsClock()/1000);
@@ -27057,7 +27114,7 @@ static int os_clock (lua_State *L) {
 
 /* }================================================================== */
 
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
 
 /*
 ** {==================================================================
@@ -27157,9 +27214,9 @@ static int os_clock (lua_State *L) {
   return 1;
 }
 
-#endif /* BA_MINIOSLIB */
+#endif /* BA_LUA_OS_LIBRARY_MODE */
 
-#ifndef NO_TIMEFUNCS
+#if BA_USE_C_RUNTIME_TIME
 
 
 /*
@@ -27212,7 +27269,7 @@ static void setallfields (lua_State *L, struct tm *stm) {
   setboolfield(L, "isdst", stm->tm_isdst);
 }
 
-#endif /*  NO_TIMEFUNCS */
+#endif /*  BA_USE_C_RUNTIME_TIME */
 
 static int getboolfield (lua_State *L, const char *key) {
   int res;
@@ -27243,7 +27300,7 @@ static int getfield (lua_State *L, const char *key, int d, int delta) {
 }
 
 
-#ifndef NO_TIMEFUNCS
+#if BA_USE_C_RUNTIME_TIME
 static const char *checkoption (lua_State *L, const char *conv,
                                 size_t convlen, char *buff) {
   const char *option = LUA_STRFTIMEOPTIONS;
@@ -27342,14 +27399,14 @@ static int os_time (lua_State *L) {
   l_pushtime(L, t);
   return 1;
 }
-#else  /* NO_TIMEFUNCS */
+#else  /* BA_USE_C_RUNTIME_TIME */
 
 static int os_time (lua_State *L) {
   time_t t;
   if (lua_isnoneornil(L, 1))  /* called without args? */
      t = baGetUnixTime();  /* get current time */
   else {
-    struct BaTm ts;
+    struct BaTm ts = {0};
     luaL_checktype(L, 1, LUA_TTABLE);
     lua_settop(L, 1);  /* make sure table is at the top */
     ts.tm_sec = getfield(L, "sec", 0, 0);
@@ -27358,17 +27415,17 @@ static int os_time (lua_State *L) {
     ts.tm_mday = getfield(L, "day", -1, 0);
     ts.tm_mon = getfield(L, "month", -1, 1);
     ts.tm_year = getfield(L, "year", -1, 1900);
-    ts.tm_isdst = getboolfield(L, "isdst");
+    /* BAS calendar conversion uses UTC and does not apply daylight saving. */
     t = baTm2Time(&ts);
   }
   lua_pushnumber(L, (lua_Number)t);
   return 1;
 }
 
-#endif /* NO_TIMEFUNCS */
+#endif /* BA_USE_C_RUNTIME_TIME */
 
 
-#ifndef BA_MINIOSLIB
+#if BA_USE_C_RUNTIME_TIME && BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
 static int os_difftime (lua_State *L) {
   time_t t1 = l_checktime(L, 1);
   time_t t2 = l_checktime(L, 2);
@@ -27380,7 +27437,7 @@ static int os_difftime (lua_State *L) {
 /* }====================================================== */
 
 
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
 static int os_setlocale (lua_State *L) {
   static const int cat[] = {LC_ALL, LC_COLLATE, LC_CTYPE, LC_MONETARY,
                       LC_NUMERIC, LC_TIME};
@@ -27394,7 +27451,7 @@ static int os_setlocale (lua_State *L) {
 
 
 static int os_exit (lua_State *L) {
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
   int status;
   if (lua_isboolean(L, 1))
     status = (lua_toboolean(L, 1) ? EXIT_SUCCESS : EXIT_FAILURE);
@@ -27408,15 +27465,17 @@ static int os_exit (lua_State *L) {
 #endif
   return 0;
 }
-#endif /* BA_MINIOSLIB */
+#endif /* BA_LUA_OS_LIBRARY_MODE */
 
 static const luaL_Reg syslib[] = {
   {"clock",     os_clock},
-#ifndef NO_TIMEFUNCS
+#if BA_USE_C_RUNTIME_TIME
   {"date",      os_date},
 #endif
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
+#if BA_USE_C_RUNTIME_TIME
   {"difftime",  os_difftime},
+#endif
   {"execute",   os_execute},
   {"exit",      os_exit},
   {"getenv",    os_getenv},
@@ -27621,7 +27680,7 @@ static int math_log (lua_State *L) {
     res = l_mathop(log)(x);
   else {
     lua_Number base = luaL_checknumber(L, 2);
-#if !defined(LUA_USE_C89) && !defined(NO_LOG2)
+#if !defined(LUA_USE_C89) && (BA_HAVE_LOG2)
     if (base == l_mathop(2.0))
       res = l_mathop(log2)(x);
     else
@@ -28203,7 +28262,7 @@ LUAMOD_API int luaopen_math (lua_State *L) {
   return 1;
 }
 
-#if defined(LUA_NOIOLIB) || defined(BA_MINIOSLIB)
+#if (!BA_ENABLE_LUA_STDIO) || (BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_MINIMAL)
 #include <lua.h>
 
 LUAMOD_API int luaopen_io(lua_State *L)
@@ -28238,7 +28297,7 @@ LUAMOD_API int luaopen_io(lua_State *L)
 #include "lualib.h"
 
 
-#ifdef LUA_NOIOLIB
+#if !BA_ENABLE_LUA_STDIO
 #error This file should not be included in the build
 #endif
 
@@ -28498,7 +28557,7 @@ static int io_open (lua_State *L) {
 /*
 ** function to close 'popen' files
 */
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
 static int io_pclose (lua_State *L) {
   LStream *p = tolstream(L);
   errno = 0;
@@ -28980,7 +29039,7 @@ static const luaL_Reg iolib[] = {
   {"lines", io_lines},
   {"open", io_open},
   {"output", io_output},
-#ifndef BA_MINIOSLIB
+#if BA_LUA_OS_LIBRARY_MODE == BA_LUA_OS_LIBRARY_FULL
   {"popen", io_popen},
 #endif
   {"read", io_read},
@@ -29097,7 +29156,9 @@ LUAMOD_API int luaopen_io (lua_State *L) {
   (zlib format), rfc1951.txt (deflate format) and rfc1952.txt (gzip format).
 */
 
-#ifndef NO_ZLIB 
+#include <TargConfig.h>
+
+#if BA_ENABLE_ZLIB 
 #define BA_DEFLATE 1   /* compile deflate code */
 
 #define _Z_UTIL_H 
@@ -29159,12 +29220,8 @@ static U8 *zeroBaMalloc(int size)
 #  define DEF_WBITS MAX_WBITS
 #endif
 
-/* default memLevel */
-#if MAX_MEM_LEVEL >= 8
-#  define DEF_MEM_LEVEL 8
-#else
-#  define DEF_MEM_LEVEL  MAX_MEM_LEVEL
-#endif
+/* BAS-configured default memLevel. */
+#define DEF_MEM_LEVEL BA_DEFLATE_MEM_LEVEL
 
 /* The three kinds of block type */
 #define STORED_BLOCK 0
@@ -33279,9 +33336,9 @@ int inflate(z_streamp strm, int flush)
 
 #endif /* BA_DEFLATE */
 
-#endif /* NO_ZLIB */
+#endif /* BA_ENABLE_ZLIB */
 
-#if USE_OPCUA == 1
+#if BA_ENABLE_LUA_OPCUA == 1
 
 #ifndef OPCUA_PACKED_H
 #define OPCUA_PACKED_H
@@ -33312,7 +33369,7 @@ void luaopen_opcua_packed_static(lua_State* L);
 #endif
 
 
-#if USE_OPCUA == 1
+#if BA_ENABLE_LUA_OPCUA == 1
 
 #ifndef OPCUA_NS0_H
 #define OPCUA_NS0_H
@@ -33328,7 +33385,7 @@ extern const size_t opcua_ns0_blob_size;
 #endif
 
 
-#if USE_OPCUA == 1
+#if BA_ENABLE_LUA_OPCUA == 1
 
 #ifndef OPCUA_NS0_H
 #include "opcua_ns0.h"
@@ -39447,7 +39504,7 @@ const size_t opcua_ns0_blob_size = 97629;
 #endif
 
 
-#if USE_OPCUA == 1
+#if BA_ENABLE_LUA_OPCUA == 1
 
 #ifndef OPCUA_PACKED_H
 #include "opcua_packed.h"
@@ -41311,6 +41368,7 @@ void luaopen_opcua_packed_static(lua_State* L)
 #include <lualib.h>
 #include <HttpServer.h>
 #include <BufPrint.h>
+#include <AllocatorIntf.h>
 
 
 
@@ -41367,6 +41425,15 @@ int luaopen_xparser(lua_State *L);
 void luaopen_ba_datetime(lua_State *L);
 
 
+
+typedef struct
+{
+   AllocatorIntf super;
+   lua_State* L;
+} LJsonAllocator;
+
+void LJsonAllocator_constructor(LJsonAllocator* o, lua_State* L);
+
 int ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycaller);
 
 #define LUserIntf_check(L,ix) \
@@ -41381,6 +41448,7 @@ int ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifyc
 
 #ifndef __xparser_h
 #define __xparser_h
+#include <stddef.h>
 
 
 #ifndef XPARSER_ALLOC
@@ -41461,6 +41529,9 @@ extern "\103" {
    int xparser_parse(xparser* parser,const char* resourceaddress64, size_t globalgpios);
 
 
+   int xparser_finish(xparser* parser);
+
+
    const char* xparser_errormsg(xparser* parser);  
    unsigned int xparser_line(xparser* parser);     
    unsigned int xparser_col(xparser* parser);      
@@ -41489,6 +41560,9 @@ extern "\103" {
       size_t ahashsetkey); 
 
 
+   xparser* xparser_createalloc(xparser_alloc pa, void* ud);
+
+
    void xparser_setalloc(xparser_alloc pa,void* ud);
 
 #endif
@@ -41504,30 +41578,22 @@ extern "\103" {
 #ifndef allocationdirection
 #define allocationdirection
 
-#include "SharkSSL_cfg.h"
 #include "TargConfig.h"
+#include "SharkSSL_cfg.h"
 
 
-#if   (defined(B_LITTLE_ENDIAN))
-#if   (defined(B_BIG_ENDIAN))
-#error B_LITTLE_ENDIAN and B_BIG_ENDIAN cannot be both #defined at the same widgetactive
-#endif
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
 #define setupcmdline(w) (*(U8*)((U8*)(&(w)) + 3))
 #define exceptionupdates(w) (*(U8*)((U8*)(&(w)) + 2))
 #define iisv4resource(w) (*(U8*)((U8*)(&(w)) + 1))
 #define translationfault(w) (*(U8*)((U8*)(&(w)) + 0))
 
-#elif (defined(B_BIG_ENDIAN))
+#else
 #define setupcmdline(w) (*(U8*)((U8*)(&(w)) + 0))
 #define exceptionupdates(w) (*(U8*)((U8*)(&(w)) + 1))
 #define iisv4resource(w) (*(U8*)((U8*)(&(w)) + 2))
 #define translationfault(w) (*(U8*)((U8*)(&(w)) + 3))
 
-#else  
-#define setupcmdline(w) ((U8)((w) >> 24))
-#define exceptionupdates(w) ((U8)((w) >> 16))
-#define iisv4resource(w) ((U8)((w) >> 8))
-#define translationfault(w) ((U8)((w)))
 #endif
 
 
@@ -41567,6 +41633,13 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #define blockarray  (U32)__builtin_bswap32
 #endif
 #endif
+
+typedef U16 __attribute__((aligned(1), may_alias)) SharkSslUnalignedU16;
+typedef U32 __attribute__((aligned(1), may_alias)) SharkSslUnalignedU32;
+typedef U64 __attribute__((aligned(1), may_alias)) SharkSslUnalignedU64;
+#define SHARKSSL_UNALIGNED_U16 SharkSslUnalignedU16
+#define SHARKSSL_UNALIGNED_U32 SharkSslUnalignedU32
+#define SHARKSSL_UNALIGNED_U64 SharkSslUnalignedU64
 #endif
 
 
@@ -41575,12 +41648,24 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
+
+#ifndef SHARKSSL_UNALIGNED_U32
+typedef __sharkssl_packed U16 SharkSslUnalignedU16;
+typedef __sharkssl_packed U32 SharkSslUnalignedU32;
+typedef __sharkssl_packed U64 SharkSslUnalignedU64;
+#define SHARKSSL_UNALIGNED_U16 SharkSslUnalignedU16
+#define SHARKSSL_UNALIGNED_U32 SharkSslUnalignedU32
+#define SHARKSSL_UNALIGNED_U64 SharkSslUnalignedU64
+#endif
+
+
 #ifndef __sharkssl_noinline
 #if defined(_MSC_VER)
 #define __sharkssl_noinline __declspec(noinline)
 
 #elif defined(__ICCARM__) || defined(__ICCRX__)
-#define __sharkssl_noinline __noinline
+
+#define __sharkssl_noinline __attribute__((noinline))
 
 #elif defined(__GNUC__) || defined(__clang__) || defined(__CC_ARM)
 #define __sharkssl_noinline __attribute__((noinline))
@@ -41596,10 +41681,10 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if   (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define cleanupcount(w,a,i)  (w) = ((__sharkssl_packed U32*)(a))[(i) >> 2]
-#elif (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define cleanupcount(w,a,i)  (w) = blockarray(((__sharkssl_packed U32*)(a))[(i) >> 2])
+#if   ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define cleanupcount(w,a,i)  (w) = ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2]
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define cleanupcount(w,a,i)  (w) = blockarray(((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2])
 #else
 #define cleanupcount(w,a,i)                 \
 {                                         \
@@ -41611,10 +41696,10 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if   (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
-#elif (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
+#if   ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hsotgpdata(w,a,i)  ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2] = (w)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hsotgpdata(w,a,i)  ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2] = blockarray(w)
 #else
 #define hsotgpdata(w,a,i)                 \
 {                                         \
@@ -41626,10 +41711,10 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define read64uint32(w,a,i)  (w) = ((__sharkssl_packed U32*)(a))[(i) >> 2]
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define read64uint32(w,a,i)  (w) = blockarray(((__sharkssl_packed U32*)(a))[(i) >> 2])
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define read64uint32(w,a,i)  (w) = ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2]
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define read64uint32(w,a,i)  (w) = blockarray(((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2])
 #else
 #define read64uint32(w,a,i)                 \
 {                                         \
@@ -41641,10 +41726,10 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define inputlevel(w,a,i)  ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2] = (w)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define inputlevel(w,a,i)  ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2] = blockarray(w)
 #else
 #define inputlevel(w,a,i)                 \
 {                                         \
@@ -41656,11 +41741,11 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define detectboard(w,a,i)  (w) = ((__sharkssl_packed U64*)(a))[(i) >> 3]
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define detectboard(w,a,i)  (w) = ((U64)(blockarray(((__sharkssl_packed U32*)(a))[(i) >> 2])) << 32) + \
-                                 (blockarray(((__sharkssl_packed U32*)(a))[((i) >> 2) + 1]))
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define detectboard(w,a,i)  (w) = ((SHARKSSL_UNALIGNED_U64*)(a))[(i) >> 3]
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define detectboard(w,a,i)  (w) = ((U64)(blockarray(((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2])) << 32) + \
+                                 (blockarray(((SHARKSSL_UNALIGNED_U32*)(a))[((i) >> 2) + 1]))
 #else
 #define detectboard(w,a,i)                 \
 {                                         \
@@ -41676,11 +41761,11 @@ static volatile inline U32 blocktemplate(U32 videoprobe) { asm ("\122\105\126\11
 #endif
 
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define hwmoddisable(w,a,i)  ((__sharkssl_packed U64*)(a))[(i) >> 3] = (w)
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-#define hwmoddisable(w,a,i)  ((__sharkssl_packed U32*)(a))[((i) >> 2) + 1] = blockarray(*(__sharkssl_packed U32*)&(w));  \
-                           ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(*(__sharkssl_packed U32*)((__sharkssl_packed U32*)&(w) + 1))
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hwmoddisable(w,a,i)  ((SHARKSSL_UNALIGNED_U64*)(a))[(i) >> 3] = (w)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#define hwmoddisable(w,a,i)  ((SHARKSSL_UNALIGNED_U32*)(a))[((i) >> 2) + 1] = blockarray(*(SHARKSSL_UNALIGNED_U32*)&(w));  \
+                           ((SHARKSSL_UNALIGNED_U32*)(a))[(i) >> 2] = blockarray(*(SHARKSSL_UNALIGNED_U32*)((SHARKSSL_UNALIGNED_U32*)&(w) + 1))
 #else
 #define hwmoddisable(w,a,i)                 \
 {                                         \
@@ -41727,11 +41812,7 @@ typedef char sharkssl_uptr_must_hold_pointer[(sizeof(UPTR) >= sizeof(void*)) ? 1
 #define claimresource(s)                     (((s) + (SHARKSSL_ALIGNMENT - 1)) & ((U32)-SHARKSSL_ALIGNMENT))
 #define regulatorconsumer(p)                (U8*)(((UPTR)((UPTR)(p) + SHARKSSL_ALIGNMENT - 1)) & ((UPTR)-SHARKSSL_ALIGNMENT))
 #define pcmciaplatform(p)             (0 == ((unsigned int)(UPTR)(p) & (SHARKSSL_ALIGNMENT - 1)))
-#if   (SHARKSSL_BIGINT_WORDSIZE > 32)
-#error SHARKSSL_BIGINT_WORDSIZE must be 32, 16 or 8
-#else
-#define computereturn             ((U32)(SHARKSSL_BIGINT_WORDSIZE / 10))  
-#endif
+#define computereturn             ((U32)3)  
 
 
 #if SHARKSSL_UNALIGNED_MALLOC
@@ -41743,23 +41824,15 @@ typedef char sharkssl_uptr_must_hold_pointer[(sizeof(UPTR) >= sizeof(void*)) ? 1
 #endif
 
 
-#if   (SHARKSSL_BIGINT_WORDSIZE >= 32)
 #define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a##b##c##d
 #define HEX2_TO_WORDSIZE(a,b)     0x##a##b
-#elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-#define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a##b, 0x##c##d
-#define HEX2_TO_WORDSIZE(a,b)     0x##a##b
-#elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-#define HEX4_TO_WORDSIZE(a,b,c,d) 0x##a, 0x##b, 0x##c, 0x##d
-#define HEX2_TO_WORDSIZE(a,b)     0x##a, 0x##b
-#endif
 
-#if ((SHARKSSL_BIGINT_WORDSIZE == 8) || defined(B_BIG_ENDIAN))
-#define memmove_endianess memmove
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
+#define memmove_endianness memmove
 
 #else
 
-void memmove_endianess(U8 *d, const U8 *s, U16 len);
+void memmove_endianness(U8 *d, const U8 *s, U16 len);
 #endif
 
 #endif 
@@ -41811,6 +41884,7 @@ SharkSslCert removerecursive(SharkSslCertEnum *o);
 
 #define rewindsingle                0x0
 #define ts409partitions                 0x2
+#define SHARKSSL_EXPLEN_KEYTYPE_EDDSA              0x4
 #define mutantchannel               0x6
 #define cacherange                 0x8
 
@@ -41830,12 +41904,14 @@ SharkSslCert removerecursive(SharkSslCertEnum *o);
 #define allocatoralloc(e)             (mcbspregister(e) & mutantchannel)
 #define machinekexec(e)          (allocatoralloc(e) == rewindsingle)
 #define machinereboot(e)           (allocatoralloc(e) == ts409partitions)
+#define SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(e)        (allocatoralloc(e) == SHARKSSL_EXPLEN_KEYTYPE_EDDSA)
 
 
 #define specialmapping(e)  (e |= (U16)(rewindsingle + cacherange) << 8)
 #define cryptoresources(e) (e |= (U16)(rewindsingle) << 8)
 #define deltaticks(e)   (e |= (U16)(ts409partitions + cacherange) << 8)
 #define hsspidevice(e)  (e |= (U16)(ts409partitions) << 8)
+#define SHARKSSL_EXPLEN_SET_KEYTYPE_EDDSA_PUB(e)   (e |= (U16)(SHARKSSL_EXPLEN_KEYTYPE_EDDSA + cacherange) << 8)
 #define gpiolibbanka(e, l)           (e = (e & 0xFF00) | (l & 0xFF))
 
 
@@ -41888,6 +41964,9 @@ typedef struct SharkSslCSCert
 #define gpio1input            0x02
 #define accessactive          0x03
 #define SHARKSSL_SIGNATUREALGORITHM_RSA_PSS        0x08
+#define SHARKSSL_SIGNATUREALGORITHM_ED25519        0x09
+#define SHARKSSL_SIGNATUREALGORITHM_ED448          0x0A
+
 #define SHARKSSL_OID_EC_PUBLIC_KEY                 0x0C  
 
 
@@ -41928,6 +42007,10 @@ typedef struct SharkSslSignature
    U16 signLen;
    U8  signatureAlgo;
    U8  hashAlgo;
+   #if SHARKSSL_ENABLE_EDDSA
+   const U8 *message;
+   U32 messageLen;
+   #endif
 } SharkSslSignature;
 
 
@@ -42062,6 +42145,15 @@ U8   SharkSslCertDN_equal(const SharkSslCertDN*, const SharkSslCertDN*);
 U8   SharkSslCertInfo_matchesSNI(const SharkSslCertInfo*, const char*, U16);
 #endif
 SHARKSSL_API U16 interrupthandler(SharkSslCertKey*, SharkSslCert);
+#if (SHARKSSL_ENABLE_RSA && SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY)
+U8   SharkSslCertKey_validateRSACertPSA(const SharkSslCertKey*, SharkSslCert, psa_key_id_t);
+#endif
+#if (SHARKSSL_ENABLE_ECDSA && SHARKSSL_PSA_CONSUMER)
+U8   SharkSslCertKey_validateECDSACertPSA(const SharkSslCertKey*, SharkSslCert, psa_key_id_t);
+#endif
+#if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+U8   SharkSslCertKey_validateEdDSACertPSA(const SharkSslCertKey*, SharkSslCert, psa_key_id_t);
+#endif
 #if SHARKSSL_ENABLE_CLIENT_AUTH
 U8   domainassociate(SharkSslCert, U8*, U16);
 #endif
@@ -42088,10 +42180,6 @@ U8   controllerregister(U16 delayusecs, U8 _XzY0x203);
 #include "SharkSSL.h"
 
 
-#ifndef SHARKSSL_BIGINT_WORDSIZE
-#error UNDEFINED SHARKSSL_BIGINT_WORDSIZE 
-#endif
-
 #ifndef SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K
 #error UNDEFINED SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K
 #endif
@@ -42111,24 +42199,17 @@ U8   controllerregister(U16 delayusecs, U8 _XzY0x203);
 
 
 
-#if   (SHARKSSL_BIGINT_WORDSIZE == 8)
-typedef U8  shtype_tWord;
-typedef S8  shtype_tWordS;
-typedef U16 shtype_tDoubleWord;
-typedef S16 shtype_tDoubleWordS;
-#elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-typedef U16 shtype_tWord;
-typedef S16 shtype_tWordS;
-typedef U32 shtype_tDoubleWord;
-typedef S32 shtype_tDoubleWordS;
-#elif (SHARKSSL_BIGINT_WORDSIZE == 32)
+
+
+#ifndef SHARKSSL_BIGINT_WORDSIZE
+#define SHARKSSL_BIGINT_WORDSIZE                         32
+#elif (SHARKSSL_BIGINT_WORDSIZE != 32)
+#error SHARKSSL_BIGINT_WORDSIZE must be 32 (8- and 16-bit BigInt writepmresrn are no longer supported)
+#endif
 typedef U32 shtype_tWord;
 typedef S32 shtype_tWordS;
 typedef U64 shtype_tDoubleWord;
 typedef S64 shtype_tDoubleWordS;
-#else
-#error SHARKSSL_BIGINT_WORDSIZE should be 8, 16 or 32
-#endif
 
 
 
@@ -42216,14 +42297,38 @@ void    envdatamcheck(shtype_t *injectexception, const shtype_t *mod,
 
 int     suspendfinish(shtype_t *injectexception, const shtype_t *mod);
 
-#if (SHARKSSL_ENABLE_ECDSA && SHARKSSL_ECC_TIMING_RESISTANT && SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_ECDSA_ONLY_VERIFY))
-void    shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2);
-void    shtype_t_addmodP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1C0, const shtype_t *_XzY0x1E2);
+#if (SHARKSSL_ENABLE_ECDSA && (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1) && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+#if SHARKSSL_ECC_USE_SECP521R1
+#define SHARKSSL_ORDER_FIXED_WORDS ((521 + SHARKSSL_BIGINT_WORDSIZE - 1) / SHARKSSL_BIGINT_WORDSIZE)
+#elif SHARKSSL_ECC_USE_SECP384R1
+#define SHARKSSL_ORDER_FIXED_WORDS (384 / SHARKSSL_BIGINT_WORDSIZE)
+#else
+#define SHARKSSL_ORDER_FIXED_WORDS (256 / SHARKSSL_BIGINT_WORDSIZE)
+#endif
+void    shtype_t_moduloOrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2);
+void    shtype_t_addmodOrderFixed(shtype_t *o, const shtype_t *_XzY0x1C0, const shtype_t *_XzY0x1E2);
 #endif
 
 int     chunkmutex(const shtype_t *validconfig, shtype_t *exp,
                               const shtype_t *mod,  shtype_t *res,
                               U8 countersvalid);
+
+
+#define SHARKSSL_RSA_PRIVATE_CT (SHARKSSL_ENABLE_RSA &&                                       \
+        (SHARKSSL_ENABLE_DHE_RSA || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA_API ||    \
+         (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH)))
+
+#if SHARKSSL_RSA_PRIVATE_CT
+void    shtype_t_addmodCT(shtype_t *o1, const shtype_t *o2, const shtype_t *mod);
+
+void    shtype_t_submodCT(shtype_t *o1, const shtype_t *o2, const shtype_t *mod);
+
+int     shtype_t_montR2CT(const shtype_t *mod, shtype_t *r2);
+
+int     shtype_t_expmodCT(const shtype_t *validconfig, const shtype_t *exp,
+                                const shtype_t *mod,  const shtype_t *r2,
+                                shtype_t *res);
+#endif
 
 void    ioswabwdefault(shtype_t *u, const shtype_t *mod,
                                   shtype_tWord *afterhandler);
@@ -42267,6 +42372,26 @@ int     translateaddress(const shtype_t *o1, const shtype_t *o2,
 
 #include <SharkSslASN1.h>
 
+#define SHARKSSL_SECP256R1_POINTLEN           32
+#define SHARKSSL_SECP384R1_POINTLEN           48
+#define SHARKSSL_SECP521R1_POINTLEN           66
+#define SHARKSSL_BRAINPOOLP256R1_POINTLEN     32
+#define SHARKSSL_BRAINPOOLP384R1_POINTLEN     48
+#define SHARKSSL_BRAINPOOLP512R1_POINTLEN     64
+#define SHARKSSL_CURVE25519_POINTLEN          32
+#define SHARKSSL_CURVE448_POINTLEN            56
+
+
+#define SHARKSSL_ED25519_PUBLIC_KEY_LEN       32
+#define SHARKSSL_ED448_PUBLIC_KEY_LEN         57
+
+#define SHARKSSL_ED25519_SIGNATURE_LEN        64
+#define SHARKSSL_ED448_SIGNATURE_LEN          114
+
+#define SHARKSSL_ED25519_BITS                 255
+#define SHARKSSL_ED448_BITS                   448
+#define SHARKSSL_SECP521R1_BITS               521
+
 
 #if SHARKSSL_USE_ECC
 #define SHARKSSL_ECC_VERIFY_POINT_REQUIRED (SHARKSSL_ECC_VERIFY_POINT || SHARKSSL_TLS_1_3)
@@ -42297,15 +42422,6 @@ typedef struct SharkSslECCurve
 
 #define SharkSslECCurve_bits_Montgomery_flag  0x8000
 
-
-#define SHARKSSL_SECP256R1_POINTLEN           32
-#define SHARKSSL_SECP384R1_POINTLEN           48
-#define SHARKSSL_SECP521R1_POINTLEN           66
-#define SHARKSSL_BRAINPOOLP256R1_POINTLEN     32
-#define SHARKSSL_BRAINPOOLP384R1_POINTLEN     48
-#define SHARKSSL_BRAINPOOLP512R1_POINTLEN     64
-#define SHARKSSL_CURVE25519_POINTLEN          32
-#define SHARKSSL_CURVE448_POINTLEN            56
 
 #define SHARKSSL_EC_SETPOINT_ALLOCATION_ERROR 3
 
@@ -42393,100 +42509,121 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #error NEITHER SERVER NOR CLIENT CODE SELECTED
 #endif
 
-#define rangealigned   20
-#define firstentry                21
-#define controllegacy            22
-#define polledbutton     23
+#define rangealigned         20
+#define firstentry                      21
+#define controllegacy                  22
+#define polledbutton           23
 
-#define switchessetup        0
-#define pciercxcfg070         1
-#define trampolinehandler         2
-#define SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET   4
-#define SHARKSSL_HANDSHAKETYPE_ENCRYPTED_EXTENSIONS 8
-#define parsebootinfo          11
-#define startflags  12
-#define logicmembank  13
-#define configcwfon    14
-#define modifygraph   15
-#define subtableheaders  16
-#define switcherdevice             20
-#define SHARKSSL_HANDSHAKETYPE_KEY_UPDATE           24
-#define SHARKSSL_HANDSHAKETYPE_MESSAGE_HASH         0xFE
-#define loongson3notifier             0xFF
+#define switchessetup             0
+#define pciercxcfg070              1
+#define trampolinehandler              2
+#define SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET        4
+#define SHARKSSL_HANDSHAKETYPE_ENCRYPTED_EXTENSIONS      8
+#define parsebootinfo               11
+#define startflags       12
+#define logicmembank       13
+#define configcwfon         14
+#define modifygraph        15
+#define subtableheaders       16
+#define switcherdevice                  20
+#define SHARKSSL_HANDSHAKETYPE_KEY_UPDATE                24
+#define SHARKSSL_HANDSHAKETYPE_MESSAGE_HASH              0xFE
+#define loongson3notifier                  0xFF
 
-#define ahashchild                0x01
-#define systemtable                0x02
-#define compatrestart              0x40
+#define ahashchild                      0x01
+#define systemtable                      0x02
+#define compatrestart                    0x40
+#define SHARKSSL_CLIENTCERTTYPE_EDDSA                    0x80
 
-#define deviceunregister          0x00FF
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_SECP256R1_SHA256             0x0403
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_SECP384R1_SHA384             0x0503
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_SECP521R1_SHA512             0x0603
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256  0x081A
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384  0x081B
+#define SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512  0x081C
+#define SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA256                   0x0401
+#define SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA384                   0x0501
+#define SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA512                   0x0601
+#define SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA256                0x0804
+#define SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA384                0x0805
+#define SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA512                0x0806
+#define SHARKSSL_SIGNATURESCHEME_ED25519                            0x0807
+#define SHARKSSL_SIGNATURESCHEME_ED448                              0x0808
 
-#define cminstclear                0
+#define deviceunregister                0x00FF
 
-
-#define firstversion                  0
-#define protectionfault          1
-#define switchertrace       2
-#define pca953xpdata              3
-#define mailboxentries               4
-#define registerwatchdog               5
-#define deviceprobe                6
-#define recoverygpiod                 7
-#define bootloaderentry                 8
-#define callchainkernel                    9
-#define registerpwrdms              10
-#define pwrdmenable             10
-#define edma0resources             11
-#define logicpdtorpedo                          12
-#define entrypaddr          13
-#define restoremasks         13
-#define moduleflags                     14
-#define cpucfgsynthesize                    15
-#define clkdmclear  16
-#define queuelogical            17
-#define pciercxcfg075 18
-#define TLS_EXTENSION_PADDING                      21
-#define aa64isar1override               35
-#define allocconsistent               41
-#define TLS_EXTENSION_EARLY_DATA                   42
-#define doublefcvts           43
-#define TLS_EXTENSION_COOKIE                       44
-#define rm200hwint       45
-#define shutdownnonboot      47
-#define consumersupplies          49
-#define TLS_EXTENSION_SIGNATURE_ALGORITHMS_CERT    50
-#define reboothandler                    51
-#define featurespresent           0xFF01
+#define cminstclear                      0
 
 
-#define spannedpages                   23
-#define ucb1400pdata                   23
-#define restoretrace                   24
-#define pciercxcfg034                   24
-#define buildmemmap                   25
-#define audiopdata                   25
+#define firstversion                        0
+#define protectionfault                1
+#define switchertrace             2
+#define pca953xpdata                    3
+#define mailboxentries                     4
+#define registerwatchdog                     5
+#define deviceprobe                      6
+#define recoverygpiod                       7
+#define bootloaderentry                       8
+#define callchainkernel                          9
+#define registerpwrdms                    10
+#define pwrdmenable                   10
+#define edma0resources                   11
+#define logicpdtorpedo                                12
+#define entrypaddr                13
+#define restoremasks               13
+#define moduleflags                           14
+#define cpucfgsynthesize                          15
+#define clkdmclear        16
+#define queuelogical                  17
+#define pciercxcfg075       18
+#define TLS_EXTENSION_PADDING                            21
+#define aa64isar1override                     35
+#define allocconsistent                     41
+#define TLS_EXTENSION_EARLY_DATA                         42
+#define doublefcvts                 43
+#define TLS_EXTENSION_COOKIE                             44
+#define rm200hwint             45
+#define shutdownnonboot            47
+#define consumersupplies                49
+#define TLS_EXTENSION_SIGNATURE_ALGORITHMS_CERT          50
+#define reboothandler                          51
+#define featurespresent                 0xFF01
 
-#define samplingevent             26
-#define gpio3config             26
-#define entrytrampoline             27
-#define negativeoffset             27
-#define resumeprepare             28
-#define sa1111disable             28
 
-#define TLS_NAMEDCURVE_CURVE25519                  29
-#define TLS_NAMEDGROUP_CURVE25519                  29
-#define TLS_NAMEDCURVE_CURVE448                    30
-#define TLS_NAMEDGROUP_CURVE448                    30
+#define spannedpages                         23
+#define ucb1400pdata                         23
+#define restoretrace                         24
+#define pciercxcfg034                         24
+#define buildmemmap                         25
+#define audiopdata                         25
+
+#define samplingevent                   26
+#define gpio3config                   26
+#define entrytrampoline                   27
+#define negativeoffset                   27
+#define resumeprepare                   28
+#define sa1111disable                   28
+
+#define TLS_NAMEDCURVE_CURVE25519                        29
+#define TLS_NAMEDGROUP_CURVE25519                        29
+#define TLS_NAMEDCURVE_CURVE448                          30
+#define TLS_NAMEDGROUP_CURVE448                          30
 
 
-#define probesystem             0
-#define crashsetup      1
-#define checkheader      2
+#define TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13              31
+#define TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13              32
+#define TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13              33
+
+
+#define probesystem                   0
+#define crashsetup            1
+#define checkheader            2
 
 
 
-#define pchip1present             1
-#define targetmemory1             2
-#define mcbsp5hwmod                3
+#define pchip1present                   1
+#define targetmemory1                   2
+#define mcbsp5hwmod                      3
 
 
 
@@ -42501,7 +42638,8 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 
 
 #if SHARKSSL_USE_ECC
-#if ((!SHARKSSL_ECC_USE_SECP256R1) && (!SHARKSSL_ECC_USE_SECP384R1) && (!SHARKSSL_ECC_USE_SECP521R1))
+#if ((!SHARKSSL_ECC_USE_SECP256R1) && (!SHARKSSL_ECC_USE_SECP384R1) && (!SHARKSSL_ECC_USE_SECP521R1) && \
+     (!SHARKSSL_ECC_USE_BRAINPOOLP256R1) && (!SHARKSSL_ECC_USE_BRAINPOOLP384R1) && (!SHARKSSL_ECC_USE_BRAINPOOLP512R1))
 #error no elliptic nandflashpartition selected
 #endif
 #if (SHARKSSL_TLS_1_3 && (!SHARKSSL_ECC_USE_SECP256R1) && (!SHARKSSL_ECC_USE_SECP384R1) && (!SHARKSSL_ECC_USE_EDWARDS))
@@ -42606,6 +42744,7 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define SHARKSSL_MAX_SESSION_ID_LEN                32  
 #define SHARKSSL_MAX_SESSION_TICKET_LEN            512 
 #define SHARKSSL_TLS13_SERVER_TICKET_LEN           16  
+#define SHARKSSL_TLS12_SESSION_LIFETIME            21600UL  
 #define SHARKSSL_TLS13_TICKET_LIFETIME             21600UL  
 #define SHARKSSL_SEQ_NUM_LEN                       8    
 #define SHARKSSL_TLS_1_3_AES_GCM_RECORD_LIMIT      0x016A09E6UL  
@@ -42617,8 +42756,8 @@ int     directalloc(SharkSslECCurve *S, shtype_t *d,
 #define SHARKSSL_MASTER_SECRET_LEN                 48   
 #define SHARKSSL_CERT_LENGTH_LEN                   3   
 #define SHARKSSL_CERT_REQ_CONTEXT_LEN              16  
-#define SHARKSSL_MAX_SIGALG_EXT_SIZE               30  
-#define SHARKSSL_MAX_SIGALG_CERT_EXT_SIZE          24  
+#define SHARKSSL_MAX_SIGALG_EXT_SIZE               38  
+#define SHARKSSL_MAX_SIGALG_CERT_EXT_SIZE          34  
 
 #if (SHARKSSL_AES_GCM_EXPLICIT_IV_LEN != SHARKSSL_SEQ_NUM_LEN)
 #error SHARKSSL_AES_GCM_EXPLICIT_IV_LEN MUST BE = SHARKSSL_SEQ_NUM_LEN
@@ -42937,9 +43076,16 @@ typedef struct SharkSslHSParam
          #if SHARKSSL_ECC_USE_SECP256R1
          U8 privKeySECP256R1[SHARKSSL_SECP256R1_POINTLEN];
          #endif
+         #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+         U8 privKeyBRAINPOOL[SHARKSSL_BRAINPOOLP512R1_POINTLEN];
+         #elif SHARKSSL_ECC_USE_BRAINPOOLP384R1
+         U8 privKeyBRAINPOOL[SHARKSSL_BRAINPOOLP384R1_POINTLEN];
+         #elif SHARKSSL_ECC_USE_BRAINPOOLP256R1
+         U8 privKeyBRAINPOOL[SHARKSSL_BRAINPOOLP256R1_POINTLEN];
+         #endif
          #endif  /* !SHARKSSL_PSA_CONSUMER */
          #endif  /* SHARKSSL_USE_ECC */
-         #if SHARKSSL_ENABLE_CLIENT_AUTH
+         #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER))
          U16 signatureScheme;
          #endif
          #if SHARKSSL_SSL_SERVER_CODE
@@ -42967,11 +43113,7 @@ typedef struct SharkSslHSParam
    } prot;
    #if SHARKSSL_RANDOMIZE_EXTENSIONS
    #define SHARKSSL_MAX_EXTENSIONS 8  /* multiple of 4 to keep alignment */
-   #if (SHARKSSL_BIGINT_WORDSIZE < 32)
-   U16 extState;
-   #else
    U32 extState; 
-   #endif
    U8  extIndex[SHARKSSL_MAX_EXTENSIONS];
    #endif
    #if SHARKSSL_PSA_CONSUMER
@@ -43027,14 +43169,17 @@ int     SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam*);
 struct SharkSslSession
 {
    SharkSslCipherSuite *cipherSuite;
+   #if SHARKSSL_PSA_CONSUMER
+   SharkSslCertParsed *psaIdentityCert;
+   #endif
+   #if (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH))
+   SharkSslClonedCertInfo *clonedCertInfo;
+   #endif
    U32 firstAccess;
    U16 nUse;
    U8  flags;
    #if (SHARKSSL_TLS_1_2 && SHARKSSL_TLS_1_3)
    U8  major_minor;
-   #endif
-   #if (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH))
-   SharkSslClonedCertInfo *clonedCertInfo;
    #endif
    union
    {
@@ -43128,6 +43273,8 @@ void SharkSslSession_copyClonedCertInfo(SharkSslSession*, SharkSslCon*);
 
 
 #define ecoffaouthdr             0x80
+#define SHARKSSL_SESSION_FLAG_TLS12_READY            0x10
+#define SHARKSSL_SESSION_FLAG_STALE_CA               0x20
 #if SHARKSSL_TLS_1_3
 #if (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_SSL_SERVER_CODE)
 #define SHARKSSL_SESSION_FLAG_TLS13_SERVER           0x40
@@ -43142,6 +43289,9 @@ void SharkSslSession_copyClonedCertInfo(SharkSslSession*, SharkSslCon*);
 
 void    counter1clocksource(SharkSslSessionCache*, U16);
 void    defaultsdhci0(SharkSslSessionCache*);
+#if SHARKSSL_ENABLE_CA_LIST
+void    SharkSslSessionCache_invalidateCA(SharkSslSessionCache*);
+#endif
 #define filtermatch(o)   ThreadMutex_set(&((o)->cacheMutex))
 #define helperglobal(o) ThreadMutex_release(&((o)->cacheMutex))
 SharkSslSession *sa1111device(SharkSslSessionCache*, SharkSslCon*, U8*, U16);
@@ -43207,6 +43357,9 @@ struct SharkSslCon
    #endif
 
    SharkSsl *sharkSsl;
+   #if SHARKSSL_PSA_CONSUMER
+   SharkSslCertParsed *psaIdentityCert;
+   #endif
    SharkSslCipherSuite *rCipherSuite, *wCipherSuite;
    #if SHARKSSL_ENABLE_SESSION_CACHE
    #if SHARKSSL_TLS_1_3
@@ -43634,8 +43787,20 @@ static const SharkSslCipherSuite genericsuspend[] =
 #undef  _SHARKSSLCON_HS_C_
 
 #if SHARKSSL_PSA_CONSUMER
-#if SHARKSSL_ECC_USE_SECP384R1
+static U8 _XzY0x26(const SharkSslCon *o, const SharkSslCertParsed *kernelvaddr)
+{
+   return ((!o->psaIdentityCert) || (o->psaIdentityCert == kernelvaddr));
+}
+
+
+#if SHARKSSL_ECC_USE_SECP521R1
+#define SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN (1 + (2 * SHARKSSL_SECP521R1_POINTLEN))
+#elif SHARKSSL_ECC_USE_BRAINPOOLP512R1
+#define SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN (1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN))
+#elif SHARKSSL_ECC_USE_SECP384R1
 #define SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN (1 + (2 * SHARKSSL_SECP384R1_POINTLEN))
+#elif SHARKSSL_ECC_USE_BRAINPOOLP384R1
+#define SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN (1 + (2 * SHARKSSL_BRAINPOOLP384R1_POINTLEN))
 #else
 #define SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN (1 + (2 * SHARKSSL_SECP256R1_POINTLEN))
 #endif
@@ -43644,29 +43809,74 @@ static int _XzY0x1C(SharkSslCon *o, U8 *xy, U16 _XzY0x1D4)
 {
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
    U8 _XzY0x1E7[SHARKSSL_PSA_ECDH_PUBLIC_KEY_MAXLEN];
-   size_t publicLen = 0;
+   size_t _XzY0x2D9 = 0;
    psa_status_t sffsdrnandflash;
-   psa_ecc_family_t family;
-   size_t expectedLen;
+   psa_ecc_family_t _XzY0x2AC;
+   size_t _XzY0x26F;
 
-   if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   if (_XzY0x1D4 == ucb1400pdata)
    {
-      family = PSA_ECC_FAMILY_MONTGOMERY;
-      expectedLen = SHARKSSL_CURVE25519_POINTLEN;
-      psa_set_key_bits(&attributes, 255);
-   }
-   else if (_XzY0x1D4 == ucb1400pdata)
-   {
-      family = PSA_ECC_FAMILY_SECP_R1;
-      expectedLen = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
       psa_set_key_bits(&attributes, 256);
    }
+   #if SHARKSSL_ECC_USE_CURVE25519
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_MONTGOMERY;
+      _XzY0x26F = SHARKSSL_CURVE25519_POINTLEN;
+      psa_set_key_bits(&attributes, 255);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_CURVE448
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE448)
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_MONTGOMERY;
+      _XzY0x26F = SHARKSSL_CURVE448_POINTLEN;
+      psa_set_key_bits(&attributes, SHARKSSL_CURVE448_POINTLEN * 8u);
+   }
+   #endif
    #if SHARKSSL_ECC_USE_SECP384R1
    else if (_XzY0x1D4 == pciercxcfg034)
    {
-      family = PSA_ECC_FAMILY_SECP_R1;
-      expectedLen = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
       psa_set_key_bits(&attributes, 384);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP521R1
+   else if (_XzY0x1D4 == audiopdata)
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_SECP521R1_POINTLEN);
+      psa_set_key_bits(&attributes, SHARKSSL_SECP521R1_BITS);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+   else if (((SHARKSSL_TLS_1_2) && (samplingevent == _XzY0x1D4)) ||
+            ((SHARKSSL_TLS_1_3) && (TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13 == _XzY0x1D4)))
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_BRAINPOOLP256R1_POINTLEN);
+      psa_set_key_bits(&attributes, SHARKSSL_BRAINPOOLP256R1_POINTLEN * CHAR_BIT);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   else if (((SHARKSSL_TLS_1_2) && (entrytrampoline == _XzY0x1D4)) ||
+            ((SHARKSSL_TLS_1_3) && (TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13 == _XzY0x1D4)))
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_BRAINPOOLP384R1_POINTLEN);
+      psa_set_key_bits(&attributes, SHARKSSL_BRAINPOOLP384R1_POINTLEN * CHAR_BIT);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   else if (((SHARKSSL_TLS_1_2) && (resumeprepare == _XzY0x1D4)) ||
+            ((SHARKSSL_TLS_1_3) && (TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13 == _XzY0x1D4)))
+   {
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      _XzY0x26F = 1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN);
+      psa_set_key_bits(&attributes, SHARKSSL_BRAINPOOLP512R1_POINTLEN * CHAR_BIT);
    }
    #endif
    else
@@ -43683,7 +43893,7 @@ static int _XzY0x1C(SharkSslCon *o, U8 *xy, U16 _XzY0x1D4)
    {
       return 1;
    }
-   psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(family));
+   psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(_XzY0x2AC));
    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
    psa_set_key_algorithm(&attributes, PSA_ALG_ECDH);
    sffsdrnandflash = psa_generate_key(&attributes, &o->psaECDHKey);
@@ -43691,22 +43901,22 @@ static int _XzY0x1C(SharkSslCon *o, U8 *xy, U16 _XzY0x1D4)
    if (sffsdrnandflash == PSA_SUCCESS)
    {
       sffsdrnandflash = psa_export_public_key(o->psaECDHKey, _XzY0x1E7,
-                                     sizeof(_XzY0x1E7), &publicLen);
+                                     sizeof(_XzY0x1E7), &_XzY0x2D9);
    }
-   if ((sffsdrnandflash != PSA_SUCCESS) || (publicLen != expectedLen) ||
-       ((_XzY0x1D4 != TLS_NAMEDGROUP_CURVE25519) && (_XzY0x1E7[0] != SHARKSSL_EC_POINT_UNCOMPRESSED)))
+   if ((sffsdrnandflash != PSA_SUCCESS) || (_XzY0x2D9 != _XzY0x26F) ||
+       ((_XzY0x2AC != PSA_ECC_FAMILY_MONTGOMERY) && (_XzY0x1E7[0] != SHARKSSL_EC_POINT_UNCOMPRESSED)))
    {
       (void)SharkSslCon_destroyPSAECDHKey(o);
       memset(_XzY0x1E7, 0, sizeof(_XzY0x1E7));
       return 1;
    }
-   if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   if (_XzY0x2AC == PSA_ECC_FAMILY_MONTGOMERY)
    {
-      memcpy(xy, _XzY0x1E7, expectedLen);
+      memcpy(xy, _XzY0x1E7, _XzY0x26F);
    }
    else
    {
-      memcpy(xy, _XzY0x1E7 + 1, expectedLen - 1);
+      memcpy(xy, _XzY0x1E7 + 1, _XzY0x26F - 1);
    }
    memset(_XzY0x1E7, 0, sizeof(_XzY0x1E7));
    return 0;
@@ -43730,21 +43940,62 @@ static int _XzY0x205(SharkSslCon *o, const U8 *_XzY0x1E4, U16 _XzY0x1D4)
    {
       return 1;
    }
-   if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
-   {
-      peerLen = SHARKSSL_CURVE25519_POINTLEN;
-      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
-   }
-   else if (_XzY0x1D4 == ucb1400pdata)
+   if (_XzY0x1D4 == ucb1400pdata)
    {
       peerLen = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
       _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
       memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
+   #if SHARKSSL_ECC_USE_CURVE25519
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   {
+      peerLen = SHARKSSL_CURVE25519_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_CURVE448
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE448)
+   {
+      peerLen = SHARKSSL_CURVE448_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
+   }
+   #endif
    #if SHARKSSL_ECC_USE_SECP384R1
    else if (_XzY0x1D4 == pciercxcfg034)
    {
       peerLen = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP521R1
+   else if (_XzY0x1D4 == audiopdata)
+   {
+      peerLen = 1 + (2 * SHARKSSL_SECP521R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+   else if (samplingevent == _XzY0x1D4)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP256R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   else if (entrytrampoline == _XzY0x1D4)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   else if (resumeprepare == _XzY0x1D4)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN);
       _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
       memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
@@ -44092,7 +44343,7 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 )
 {
    #if SHARKSSL_ENABLE_CA_LIST
-   U32 uart2hwmod;
+   U32 uart2hwmod, caOffset;
    U8 *tp, name[SHARKSSL_CA_LIST_NAME_SIZE];
    #if SHARKSSL_ENABLE_CERTSTORE_API
    U8 *tb;
@@ -44227,18 +44478,18 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                else
                #endif
                {
-                  uart2hwmod  = (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 0] << 24;
-                  uart2hwmod += (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 1] << 16;
-                  uart2hwmod += (U16)tp[SHARKSSL_CA_LIST_NAME_SIZE + 2] << 8;
-                  uart2hwmod += tp[SHARKSSL_CA_LIST_NAME_SIZE + 3];
+                  caOffset  = (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 0] << 24;
+                  caOffset += (U32)tp[SHARKSSL_CA_LIST_NAME_SIZE + 1] << 16;
+                  caOffset += (U16)tp[SHARKSSL_CA_LIST_NAME_SIZE + 2] << 8;
+                  caOffset += tp[SHARKSSL_CA_LIST_NAME_SIZE + 3];
                   #if SHARKSSL_ENABLE_CERTSTORE_API
-                  tb = (U8*)&(displaysetup[uart2hwmod]);
+                  tb = (U8*)&(displaysetup[caOffset]);
                   #endif
                }
                #if SHARKSSL_ENABLE_CERTSTORE_API
                if (!(spromregister((SharkSslCertParam*)afterhandler, tb, (U32)-5, NULL) < 0))
                #else
-               if (!(spromregister((SharkSslCertParam*)afterhandler, (U8*)&(displaysetup[uart2hwmod]), (U32)-5, NULL) < 0))
+               if (!(spromregister((SharkSslCertParam*)afterhandler, (U8*)&(displaysetup[caOffset]), (U32)-5, NULL) < 0))
                #endif
                {
                   if ((((SharkSslCertParam*)afterhandler)->certInfo.version < 2) || (((SharkSslCertParam*)afterhandler)->certInfo.CAflag))
@@ -44258,6 +44509,11 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
                            #if SHARKSSL_ENABLE_ECDSA
                            || ((certParam->signature.signatureAlgo == accessactive) &&
                               machinereboot(((SharkSslCertParam*)afterhandler)->certKey.expLen))
+                           #endif
+                           #if SHARKSSL_ENABLE_EDDSA
+                           || (((certParam->signature.signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED25519) ||
+                                (certParam->signature.signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED448)) &&
+                               SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(((SharkSslCertParam*)afterhandler)->certKey.expLen))
                            #endif
                            ) &&
                            ((!SharkSslCertDN_equal(&(certParam->certInfo.issuer), &(certParam->certInfo.subject))) ||
@@ -44311,7 +44567,12 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
             }
          }
 
-         if ((disablenotrace) && (certParam->signature.hashAlgo <= presentpages))
+         if ((disablenotrace) && (certParam->signature.hashAlgo <= presentpages)
+             #if SHARKSSL_ENABLE_EDDSA
+             && (certParam->signature.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED25519)
+             && (certParam->signature.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED448)
+             #endif
+            )
          {
             #if SHARKSSL_ENABLE_CA_LIST
             if ((sha256export) || (!SharkSslCertDN_equal(&certParam->certInfo.issuer, &certParam->certInfo.subject)) ||
@@ -44355,6 +44616,9 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 #define lcd035q3dg01pdata                    0x10000000L
 #define clearevent             0x80000000L  
 #define coverstate         0x00080000L  
+#define SHARKSSL_CERT_SLOT_COUNT              4
+#define SHARKSSL_CERT_SLOT_EDDSA              3
+#define SHARKSSL_CLIENTCERT_WEIGHT_MASK       0x00FFFFFFL  
 
 #define SHARKSSL_MAX_IN_EXTENSIONS            256
 #define SHARKSSL_MAX_IN_SUPPORTED_GROUPS      256
@@ -44387,15 +44651,63 @@ int SharkSslCertParam_validateCertChain(SharkSslCertParam *certParam, SharkSslSi
 #define SHARKSSL_CH_NON_PSK_REQUIRED_MASK     (SHARKSSL_CH_SIGNATURE_ALGORITHMS_SEEN | SHARKSSL_CH_SUPPORTED_GROUPS_SEEN)
 
 
-#define SHARKSSL_TLS13_INITIAL_X25519_ONLY    (SHARKSSL_ENABLE_HELLO_RETRY_REQUEST && SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY && SHARKSSL_ECC_USE_CURVE25519)
+#define SHARKSSL_TLS13_INITIAL_BRAINPOOL      (SHARKSSL_TLS_1_3 && (SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP != 0))
+#define SHARKSSL_TLS13_INITIAL_X25519_ONLY    (SHARKSSL_ENABLE_HELLO_RETRY_REQUEST && SHARKSSL_TLS_1_3_INITIAL_KEY_SHARE_X25519_ONLY && SHARKSSL_ECC_USE_CURVE25519 && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
 
-#if ((SHARKSSL_SSL_SERVER_CODE || (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH && SHARKSSL_TLS_1_3)) && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+#define SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY   (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3 && (!SHARKSSL_ECC_USE_CURVE25519) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
+
+#if ((SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP != 0) && \
+     (((SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP == TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13) && (!SHARKSSL_ECC_USE_BRAINPOOLP256R1)) || \
+      ((SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP == TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13) && (!SHARKSSL_ECC_USE_BRAINPOOLP384R1)) || \
+      ((SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP == TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13) && (!SHARKSSL_ECC_USE_BRAINPOOLP512R1)) || \
+      ((SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP != TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13) && \
+       (SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP != TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13) && \
+       (SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP != TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13))))
+#error SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP requires an enabled RFC 8734 Brainpool _XzY0x1D4
+#endif
+
+#if ((SHARKSSL_SSL_SERVER_CODE || (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH && SHARKSSL_TLS_1_3)) && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA || (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)))
 static int dcdc4consumers(const U8 *dcdc2consumers, const SharkSslCertParsed *kernelvaddr, U8 disablenotrace)
 {
+   #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+   if (kernelvaddr->signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED25519)
+   {
+      return disablenotrace && (dcdc2consumers[0] == (U8)(SHARKSSL_SIGNATURESCHEME_ED25519 >> 8)) && (dcdc2consumers[1] == (U8)SHARKSSL_SIGNATURESCHEME_ED25519);
+   }
+   if (kernelvaddr->signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED448)
+   {
+      return disablenotrace && (dcdc2consumers[0] == (U8)(SHARKSSL_SIGNATURESCHEME_ED448 >> 8)) && (dcdc2consumers[1] == (U8)SHARKSSL_SIGNATURESCHEME_ED448);
+   }
+   #endif
    if ((kernelvaddr->hashAlgo == skciphercreate) || ((disablenotrace) && (kernelvaddr->hashAlgo <= presentpages)))
    {
       return 0;
    }
+   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_ECDSA && SHARKSSL_ECC_USE_BRAINPOOL)
+   if (disablenotrace && (kernelvaddr->signatureAlgo == accessactive))
+   {
+      switch (((U16)dcdc2consumers[0] << 8) | dcdc2consumers[1])
+      {
+         #if (SHARKSSL_ECC_USE_BRAINPOOLP256R1 && SHARKSSL_USE_SHA_256)
+         case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256:
+            return (kernelvaddr->hashAlgo == domainnumber);
+         #endif
+
+         #if (SHARKSSL_ECC_USE_BRAINPOOLP384R1 && SHARKSSL_USE_SHA_384)
+         case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384:
+            return (kernelvaddr->hashAlgo == probewrite);
+         #endif
+
+         #if (SHARKSSL_ECC_USE_BRAINPOOLP512R1 && SHARKSSL_USE_SHA_512)
+         case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512:
+            return (kernelvaddr->hashAlgo == batterythread);
+         #endif
+
+         default:
+            break;
+      }
+   }
+   #endif
    #if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS)
    if (dcdc2consumers[0] == SHARKSSL_SIGNATUREALGORITHM_RSA_PSS)
    {
@@ -45050,6 +45362,11 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
    baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1 == resumeprepare);
    baAssert(SHARKSSL_EC_CURVE_ID_CURVE25519 == TLS_NAMEDCURVE_CURVE25519);
    baAssert(SHARKSSL_EC_CURVE_ID_CURVE448 == TLS_NAMEDCURVE_CURVE448);
+   #if SHARKSSL_TLS_1_3
+   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1TLS13 == TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13);
+   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1TLS13 == TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13);
+   baAssert(SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1TLS13 == TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13);
+   #endif
    #endif
 
    while (len >= 2)
@@ -45436,6 +45753,18 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                   return SHARKSSL_PARSEEXT_ILLEGAL_PARAMETER;
                }
                #endif
+               #if SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY
+               if ((!alignmentldrhstrh->prot.tls13.hrrGroup) && (prminstwrite != ucb1400pdata))
+               {
+                  return SHARKSSL_PARSEEXT_ILLEGAL_PARAMETER;
+               }
+               #endif
+               #if SHARKSSL_TLS13_INITIAL_BRAINPOOL
+               if ((!alignmentldrhstrh->prot.tls13.hrrGroup) && (prminstwrite != SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP))
+               {
+                  return SHARKSSL_PARSEEXT_ILLEGAL_PARAMETER;
+               }
+               #endif
                if ((0 == paramnamed) || (paramnamed != (U16)(fixeddivisor - 4)))
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
@@ -45464,7 +45793,6 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
             else
             #endif
             {
-               #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
                if ((len < 1) || (len < paramnamed))  
                {
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
@@ -45482,10 +45810,6 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                   SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                   return -1;
                }
-               #else
-               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
-               return -1;
-               #endif
             }
             alignmentldrhstrh->ecdhParam.curveType = prminstwrite;  
             alignmentldrhstrh->ecdhParam.xLen = fixeddivisor;
@@ -45496,6 +45820,20 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                #if SHARKSSL_ECC_USE_SECP384R1
                case pciercxcfg034:
                   alignmentldrhstrh->ecdhParam.k = alignmentldrhstrh->prot.tls13.privKeySECP384R1;
+                  break;
+               #endif
+
+               #if SHARKSSL_ECC_USE_BRAINPOOL
+               #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+               case TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13:
+               #endif
+               #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+               case TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13:
+               #endif
+               #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+               case TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13:
+               #endif
+                  alignmentldrhstrh->ecdhParam.k = alignmentldrhstrh->prot.tls13.privKeyBRAINPOOL;
                   break;
                #endif
 
@@ -45625,7 +45963,11 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                     link;
                     link = SingleListEnumerator_nextElement(&e), p++)
                {
-                  if (*p)
+                  if ((*p)
+                      #if SHARKSSL_PSA_CONSUMER
+                      && _XzY0x26(o, &((SharkSslCertList*)link)->certP)
+                      #endif
+                     )
                   {
                      if (0 == sharkSubjectSubjectAltCmp((const char*)((SharkSslCertList*)link)->certP.commonName,
                                                         ((SharkSslCertList*)link)->certP.commonNameLen,
@@ -45937,7 +46279,11 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                paramnamed -= 2;
 
                
+               #if SHARKSSL_TLS_1_3
+               savedsigmask = (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3) == o->minor) ? controllerregister(prminstwrite, 1) : controllerregister(prminstwrite, 0);
+               #else
                savedsigmask = controllerregister(prminstwrite, 0);
+               #endif
                if (savedsigmask)
                {
 
@@ -46086,13 +46432,29 @@ static int writepmresr(SharkSslCon *o, U8 *registeredevent, U16 len)
                      #endif
                   }
                }
+               #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+               if ((prminstwrite == entrypaddr) &&
+                   (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) &&
+                   (!alignmentldrhstrh->prot.tls13.signatureScheme))
+               {
+                  U16 dcdc2consumers = (U16)(((U16)registeredevent[0] << 8) | registeredevent[1]);
+                  if ((dcdc2consumers == SHARKSSL_SIGNATURESCHEME_ED25519) || (dcdc2consumers == SHARKSSL_SIGNATURESCHEME_ED448))
+                  {
+                     alignmentldrhstrh->prot.tls13.signatureScheme = dcdc2consumers;
+                  }
+               }
+               #endif
                registeredevent += 2;
                paramnamed -= 2;
             }
             #if SHARKSSL_TLS_1_3
             if ((prminstwrite == entrypaddr) &&
                 (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) &&
-                (0 == (alignmentldrhstrh->signParam.signature.signatureAlgo + alignmentldrhstrh->signParam.signature.hashAlgo)))
+                (0 == (alignmentldrhstrh->signParam.signature.signatureAlgo + alignmentldrhstrh->signParam.signature.hashAlgo
+                       #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                       + alignmentldrhstrh->prot.tls13.signatureScheme
+                       #endif
+                      )))
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                return -1;
@@ -46149,6 +46511,9 @@ static int earlyalloc(SharkSslCon *o, U8 *registeredevent, U16 len)
 
    baAssert(o);
    baAssert(registeredevent);
+   #if (!SHARKSSL_SSL_SERVER_CODE)
+   (void)o;
+   #endif
 
    while (len >= 2)
    {
@@ -46366,27 +46731,62 @@ int SharkSslHSParam_setSignatureHashAlgoFromSignatureScheme(SharkSslHSParam *s, 
 {
    switch (ahashreqsize)  
    {
+      #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_ECDSA)
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP256R1 && SHARKSSL_USE_SHA_256)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256:
+         s->signParam.signature.hashAlgo = domainnumber;
+         s->signParam.signature.signatureAlgo = accessactive;
+         break;
+      #endif
+
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP384R1 && SHARKSSL_USE_SHA_384)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384:
+         s->signParam.signature.hashAlgo = probewrite;
+         s->signParam.signature.signatureAlgo = accessactive;
+         break;
+      #endif
+
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP512R1 && SHARKSSL_USE_SHA_512)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512:
+         s->signParam.signature.hashAlgo = batterythread;
+         s->signParam.signature.signatureAlgo = accessactive;
+         break;
+      #endif
+      #endif
+
+      #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+      case SHARKSSL_SIGNATURESCHEME_ED25519:
+         s->signParam.signature.hashAlgo = processsdccr;
+         s->signParam.signature.signatureAlgo = SHARKSSL_SIGNATUREALGORITHM_ED25519;
+         break;
+
+      case SHARKSSL_SIGNATURESCHEME_ED448:
+         s->signParam.signature.hashAlgo = processsdccr;
+         s->signParam.signature.signatureAlgo = SHARKSSL_SIGNATUREALGORITHM_ED448;
+         break;
+      #endif
+
       #if (SHARKSSL_ENABLE_ECDSA || (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSA_PKCS1)) && (SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
       #if SHARKSSL_ENABLE_ECDSA
       #if SHARKSSL_USE_SHA_256
-      case 0x0403:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP256R1_SHA256:
       #endif
       #if SHARKSSL_USE_SHA_384
-      case 0x0503:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP384R1_SHA384:
       #endif
       #if SHARKSSL_USE_SHA_512
-      case 0x0603:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP521R1_SHA512:
       #endif
       #endif
       #if SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSA_PKCS1
       #if SHARKSSL_USE_SHA_256
-      case 0x0401:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA256:
       #endif
       #if SHARKSSL_USE_SHA_384
-      case 0x0501:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA384:
       #endif
       #if SHARKSSL_USE_SHA_512
-      case 0x0601:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA512:
       #endif
       #endif
          s->signParam.signature.hashAlgo = (ahashreqsize >> 8);
@@ -46396,13 +46796,13 @@ int SharkSslHSParam_setSignatureHashAlgoFromSignatureScheme(SharkSslHSParam *s, 
 
       #if SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS && (SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
       #if SHARKSSL_USE_SHA_256
-      case 0x0804:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA256:
       #endif
       #if SHARKSSL_USE_SHA_384
-      case 0x0805:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA384:
       #endif
       #if SHARKSSL_USE_SHA_512
-      case 0x0806:
+      case SHARKSSL_SIGNATURESCHEME_RSA_PSS_RSAE_SHA512:
       #endif
          s->signParam.signature.hashAlgo = (ahashreqsize & 0xFF);
          s->signParam.signature.signatureAlgo = (ahashreqsize >> 8);
@@ -46420,23 +46820,62 @@ int SharkSslHSParam_setSignatureHashAlgoFromSignatureScheme(SharkSslHSParam *s, 
 
 #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_ECDSA && \
      (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && (SHARKSSL_ENABLE_ECDHE_ECDSA || SHARKSSL_ENABLE_CLIENT_AUTH))))
-static U8 _XzY0x1B7(U16 ahashreqsize)
+static U8 _XzY0x1B7(U16 ahashreqsize, U8 *contiguousearly)
 {
    switch (ahashreqsize)
    {
       #if (SHARKSSL_ECC_USE_SECP256R1 && SHARKSSL_USE_SHA_256)
-      case 0x0403:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP256R1_SHA256:
+         if (contiguousearly)
+         {
+            *contiguousearly = domainnumber;
+         }
          return SHARKSSL_EC_CURVE_ID_SECP256R1;
       #endif
 
       #if (SHARKSSL_ECC_USE_SECP384R1 && SHARKSSL_USE_SHA_384)
-      case 0x0503:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP384R1_SHA384:
+         if (contiguousearly)
+         {
+            *contiguousearly = probewrite;
+         }
          return SHARKSSL_EC_CURVE_ID_SECP384R1;
       #endif
 
       #if (SHARKSSL_ECC_USE_SECP521R1 && SHARKSSL_USE_SHA_512)
-      case 0x0603:
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_SECP521R1_SHA512:
+         if (contiguousearly)
+         {
+            *contiguousearly = batterythread;
+         }
          return SHARKSSL_EC_CURVE_ID_SECP521R1;
+      #endif
+
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP256R1 && SHARKSSL_USE_SHA_256)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256:
+         if (contiguousearly)
+         {
+            *contiguousearly = domainnumber;
+         }
+         return SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1;
+      #endif
+
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP384R1 && SHARKSSL_USE_SHA_384)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384:
+         if (contiguousearly)
+         {
+            *contiguousearly = probewrite;
+         }
+         return SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1;
+      #endif
+
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP512R1 && SHARKSSL_USE_SHA_512)
+      case SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512:
+         if (contiguousearly)
+         {
+            *contiguousearly = batterythread;
+         }
+         return SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1;
       #endif
 
       default:
@@ -46452,13 +46891,13 @@ static int emulaterd8rn16rm0(U16 ahashreqsize)
    switch (ahashreqsize)
    {
       #if SHARKSSL_USE_SHA_256
-      case 0x0401:  
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA256:
       #endif
       #if SHARKSSL_USE_SHA_384
-      case 0x0501:  
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA384:
       #endif
       #if SHARKSSL_USE_SHA_512
-      case 0x0601:  
+      case SHARKSSL_SIGNATURESCHEME_RSA_PKCS1_SHA512:
       #endif
          return 1;
 
@@ -46478,6 +46917,13 @@ static int SharkSslHSParam_setCert(SharkSslHSParam *s, SharkSslCertParsed **cert
    #if SHARKSSL_TLS_1_3
    if (cipherSuiteFlags & SHARKSSL_CS_TLS13)
    {
+      #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+      if (certPtr[SHARKSSL_CERT_SLOT_EDDSA])
+      {
+         s->certParsed = certPtr[SHARKSSL_CERT_SLOT_EDDSA];
+         return 0;
+      }
+      #endif
       #if SHARKSSL_ENABLE_ECDHE_ECDSA
       if (certPtr[2])  
       {
@@ -46679,7 +47125,7 @@ U8 *sharkssl_writeCertificateAuthoritiesExt(U8 *tp, SharkSslCAList displaysetup,
 #endif
 
 
-#if ((SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA) && \
+#if ((SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA || (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)) && \
      (SHARKSSL_SSL_CLIENT_CODE || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_CLIENT_AUTH)))
 
 #define SHARKSSL_SIGALG_HANDSHAKE  0  
@@ -46725,13 +47171,40 @@ static U8 *sharkssl_writeSignatureAlgoList(U8 *tp, U8 detecttininess)
    *tp++ = domainnumber;
    *tp++ = accessactive;
    #endif
+   #if SHARKSSL_TLS_1_3
+   if (SHARKSSL_TLS13_OFFERED)
+   {
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP512R1 && SHARKSSL_USE_SHA_512)
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512 >> 8);
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512 & 0xFF);
+      #endif
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP384R1 && SHARKSSL_USE_SHA_384)
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384 >> 8);
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384 & 0xFF);
+      #endif
+      #if (SHARKSSL_ECC_USE_BRAINPOOLP256R1 && SHARKSSL_USE_SHA_256)
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256 >> 8);
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256 & 0xFF);
+      #endif
+   }
+   #endif
    
    #endif  
 
+   #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+   if (SHARKSSL_TLS13_OFFERED)
+   {
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ED448 >> 8);
+      *tp++ = (U8)SHARKSSL_SIGNATURESCHEME_ED448;
+      *tp++ = (U8)(SHARKSSL_SIGNATURESCHEME_ED25519 >> 8);
+      *tp++ = (U8)SHARKSSL_SIGNATURESCHEME_ED25519;
+   }
+   #endif
+
    #if SHARKSSL_ENABLE_RSA
    
-   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_RSASSA_PSS)
-   if (SHARKSSL_TLS13_OFFERED)
+   #if SHARKSSL_ENABLE_RSASSA_PSS
+   if (SHARKSSL_TLS13_OFFERED || ((!detecttininess) && SHARKSSL_TLS12_OFFERED))
    {
       #if SHARKSSL_USE_SHA_512
       *tp++ = SHARKSSL_SIGNATUREALGORITHM_RSA_PSS; 
@@ -47047,6 +47520,20 @@ static SharkSslCon_RetVal _XzY0x17A(SharkSslCon *o)
             break;
          #endif
 
+         #if (SHARKSSL_ENABLE_ECDSA && SHARKSSL_ECC_USE_BRAINPOOL)
+         #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+         case TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13:
+         #endif
+         #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+         case TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13:
+         #endif
+         #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+         case TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13:
+         #endif
+            configvdcdc2.k = timercancel->prot.tls13.privKeyBRAINPOOL;
+            break;
+         #endif
+
          #if SHARKSSL_ECC_USE_SECP256R1
          case ucb1400pdata:
             configvdcdc2.k = timercancel->prot.tls13.privKeySECP256R1;
@@ -47267,16 +47754,19 @@ static U32 allocblock(SharkSslCon *o)
       #endif
       #if SHARKSSL_USE_ECC
       eventchannel += 6;  
-      #if (SHARKSSL_ECC_USE_CURVE448 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+      #if SHARKSSL_TLS13_INITIAL_BRAINPOOL
+      eventchannel += 5 + (2 * controllerregister(SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP, 1));
+      #endif
+      #if (SHARKSSL_ECC_USE_CURVE448 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
       eventchannel += 4 + SHARKSSL_CURVE448_POINTLEN;
       #endif
-      #if (SHARKSSL_ECC_USE_SECP384R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+      #if (SHARKSSL_ECC_USE_SECP384R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
       eventchannel += 5 + (2 * SHARKSSL_SECP384R1_POINTLEN);
       #endif
-      #if SHARKSSL_ECC_USE_CURVE25519
+      #if (SHARKSSL_ECC_USE_CURVE25519 && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
       eventchannel += 4 + SHARKSSL_CURVE25519_POINTLEN;
       #endif
-      #if (SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+      #if (SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
       eventchannel += 5 + (2 * SHARKSSL_SECP256R1_POINTLEN);
       #endif
       #endif
@@ -47285,13 +47775,16 @@ static U32 allocblock(SharkSslCon *o)
 
    eventchannel += SHARKSSL_MAX_SIGALG_EXT_SIZE;
 
-   #if (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_NIST || (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_EDWARDS)))
+   #if (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_NIST || SHARKSSL_ECC_USE_BRAINPOOL || (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_EDWARDS)))
    eventchannel += 6;
    #if SHARKSSL_ECC_USE_SECP521R1
    eventchannel += 2;
    #endif
    #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
    eventchannel += 2;
+   #if SHARKSSL_TLS_1_3
+   eventchannel += 2;
+   #endif
    #endif
    #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE448)
    eventchannel += 2;
@@ -47301,6 +47794,9 @@ static U32 allocblock(SharkSslCon *o)
    #endif
    #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
    eventchannel += 2;
+   #if SHARKSSL_TLS_1_3
+   eventchannel += 2;
+   #endif
    #endif
    #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE25519)
    eventchannel += 2;
@@ -47310,6 +47806,9 @@ static U32 allocblock(SharkSslCon *o)
    #endif
    #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
    eventchannel += 2;
+   #if SHARKSSL_TLS_1_3
+   eventchannel += 2;
+   #endif
    #endif
    #if SHARKSSL_TLS_1_2
    eventchannel += 6;  
@@ -47356,6 +47855,15 @@ static U32 ahashupdate(SharkSslCon *o, SharkSslHSParam *alignmentldrhstrh)
    eventchannel += 2;
    #endif
    #if SHARKSSL_ECC_USE_SECP521R1
+   eventchannel += 2;
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+   eventchannel += 2;
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   eventchannel += 2;
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
    eventchannel += 2;
    #endif
    #if SHARKSSL_ENABLE_SNI
@@ -47837,17 +48345,10 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             for (setupinterface = 0; setupinterface < 37; setupinterface++)
             {
                U8 t;
-               #if (SHARKSSL_BIGINT_WORDSIZE < 32)
-               
-               alignmentldrhstrh->extState ^= alignmentldrhstrh->extState << 7;
-               alignmentldrhstrh->extState ^= alignmentldrhstrh->extState >> 9;
-               alignmentldrhstrh->extState ^= alignmentldrhstrh->extState << 8;
-               #else
                
                alignmentldrhstrh->extState ^= alignmentldrhstrh->extState << 13;
                alignmentldrhstrh->extState ^= alignmentldrhstrh->extState >> 17;
                alignmentldrhstrh->extState ^= alignmentldrhstrh->extState << 5;
-               #endif
 
                t = (U8)alignmentldrhstrh->extState;
                if ((t < SHARKSSL_MAX_EXTENSIONS) && (t != ics))
@@ -48008,7 +48509,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                case 4:
                #endif
                   
-                  #if (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_NIST || (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_EDWARDS)))
+                  #if (SHARKSSL_USE_ECC && (SHARKSSL_ECC_USE_NIST || SHARKSSL_ECC_USE_BRAINPOOL || (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_EDWARDS)))
                   #if SHARKSSL_TLS_1_2
                   baAssert(pwrdmenable == registerpwrdms);
                   #endif
@@ -48018,8 +48519,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         #if SHARKSSL_ECC_USE_SECP521R1
                         0x00, buildmemmap,
                         #endif
-                        #if SHARKSSL_ECC_USE_BRAINPOOLP512R1  
+                        #if (SHARKSSL_TLS_1_2 && SHARKSSL_ECC_USE_BRAINPOOLP512R1)
                         0x00, resumeprepare,  
+                        #endif
+                        #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOLP512R1)
+                        0x00, TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13,
                         #endif
                         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE448)
                         0x00, TLS_NAMEDCURVE_CURVE448,
@@ -48027,8 +48531,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         #if SHARKSSL_ECC_USE_SECP384R1
                         0x00, restoretrace,
                         #endif
-                        #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+                        #if (SHARKSSL_TLS_1_2 && SHARKSSL_ECC_USE_BRAINPOOLP384R1)
                         0x00, entrytrampoline,  
+                        #endif
+                        #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOLP384R1)
+                        0x00, TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13,
                         #endif
                         #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_CURVE25519)
                         0x00, TLS_NAMEDCURVE_CURVE25519,
@@ -48036,8 +48543,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         #if SHARKSSL_ECC_USE_SECP256R1
                         0x00, spannedpages,
                         #endif
-                        #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+                        #if (SHARKSSL_TLS_1_2 && SHARKSSL_ECC_USE_BRAINPOOLP256R1)
                         0x00, samplingevent,  
+                        #endif
+                        #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOLP256R1)
+                        0x00, TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13,
                         #endif
                      };
 
@@ -48055,6 +48565,14 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         {
                            continue;
                         }
+                     }
+                     #endif
+                     #if (SHARKSSL_TLS_1_2 && SHARKSSL_TLS_1_3)
+                     if ((o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)) &&
+                         (tcpudpmagic[i + 1] >= TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13) &&
+                         (tcpudpmagic[i + 1] <= TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13))
+                     {
+                        continue;
                      }
                      #endif
                      *tp++ = tcpudpmagic[i];
@@ -48145,7 +48663,29 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      tp += 4;
                      configvdcdc2.XY = NULL;
                      
-                     #if (SHARKSSL_ECC_USE_CURVE448 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+                     #if SHARKSSL_TLS13_INITIAL_BRAINPOOL
+                     #if (!SHARKSSL_PSA_CONSUMER)
+                     configvdcdc2.k = hsParam(o)->prot.tls13.privKeyBRAINPOOL;
+                     #endif
+                     i = configvdcdc2.xLen = controllerregister(SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP, 1);
+                     configvdcdc2.curveType = SHARKSSL_TLS_1_3_INITIAL_BRAINPOOL_GROUP;
+                     *tp++ = (U8)(configvdcdc2.curveType >> 8);
+                     *tp++ = (U8)configvdcdc2.curveType;
+                     paramnamed = (U16)(1 + (i << 1));
+                     *tp++ = (U8)(paramnamed >> 8);
+                     *tp++ = (U8)paramnamed;
+                     *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
+                     #if SHARKSSL_PSA_CONSUMER
+                     if (_XzY0x1C(o, tp, configvdcdc2.curveType))
+                     #else
+                     if (SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, tp))
+                     #endif
+                     {
+                        return SharkSslCon_AllocationError;
+                     }
+                     tp += i << 1;
+                     #endif
+                     #if (SHARKSSL_ECC_USE_CURVE448 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE448;
                      i = configvdcdc2.xLen = SHARKSSL_CURVE448_POINTLEN;
                      configvdcdc2.curveType = TLS_NAMEDCURVE_CURVE448;
@@ -48160,7 +48700,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      }
                      tp += i;
                      #endif
-                     #if (SHARKSSL_ECC_USE_SECP384R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+                     #if (SHARKSSL_ECC_USE_SECP384R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_PSA_INITIAL_P256_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeySECP384R1;
                      i = configvdcdc2.xLen = SHARKSSL_SECP384R1_POINTLEN;
                      configvdcdc2.curveType = restoretrace;
@@ -48178,7 +48718,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      }
                      tp += i;
                      #endif
-                     #if SHARKSSL_ECC_USE_CURVE25519
+                     #if (SHARKSSL_ECC_USE_CURVE25519 && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
                      #if (!SHARKSSL_PSA_CONSUMER)
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeyCURVE25519;
                      #endif
@@ -48199,8 +48739,10 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      }
                      tp += i;
                      #endif
-                     #if (SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY))
+                     #if (SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_TLS13_INITIAL_X25519_ONLY) && (!SHARKSSL_TLS13_INITIAL_BRAINPOOL))
+                     #if (!SHARKSSL_PSA_CONSUMER)
                      configvdcdc2.k = hsParam(o)->prot.tls13.privKeySECP256R1;
+                     #endif
                      i = configvdcdc2.xLen = SHARKSSL_SECP256R1_POINTLEN;
                      configvdcdc2.curveType = spannedpages;
                      *tp++ = (U8)(configvdcdc2.curveType >> 8);
@@ -48398,7 +48940,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
       else
       #endif   
       #if SHARKSSL_SSL_SERVER_CODE
-      if ((o->state == loongson3notifier)
+      if (o->state == loongson3notifier
           #if SHARKSSL_SSL_CLIENT_CODE
           && (SharkSsl_isServer(o->sharkSsl))
           #endif
@@ -48527,7 +49069,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
       #if SHARKSSL_TLS_1_2
       (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) &&
       #endif
-      (o->state == SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET)
+      o->state == SHARKSSL_HANDSHAKETYPE_NEW_SESSION_TICKET
       )
    {
       alignmentldrhstrh = NULL;
@@ -48767,6 +49309,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                *(SHARKSSL_WEIGHT*)tp = compatrestart +
                                        (((SharkSslCertList*)link)->certP.keyOID) +
                                        (U16)(((SharkSslCertList*)link)->certP.signatureAlgo);
+            }
+            #endif
+            #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+            if (((SharkSslCertList*)link)->certP.keyType == SHARKSSL_CLIENTCERTTYPE_EDDSA)
+            {
+               *(SHARKSSL_WEIGHT*)tp = trainingneeded + SHARKSSL_CLIENTCERTTYPE_EDDSA + ((SharkSslCertList*)link)->certP.keyOID;
             }
             #endif
 
@@ -49051,7 +49599,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3) == o->minor)  
             {
                
-               if (0 == (alignmentldrhstrh->signParam.signature.signatureAlgo + alignmentldrhstrh->signParam.signature.hashAlgo))
+               if (0 == (alignmentldrhstrh->signParam.signature.signatureAlgo + alignmentldrhstrh->signParam.signature.hashAlgo
+                         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                         + alignmentldrhstrh->prot.tls13.signatureScheme
+                         #endif
+                        ))
                {
                   goto _sharkssl_hs_alert_missing_extension;
                }
@@ -49081,6 +49633,22 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             return savedconfig(o, SHARKSSL_ALERT_PROTOCOL_VERSION);
             #endif
          }
+
+         #if SHARKSSL_PSA_CONSUMER
+         if (o->psaIdentityCert)
+         {
+            SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+            for (tp = afterhandler, link = SingleListEnumerator_getElement(&e);
+                 link;
+                 link = SingleListEnumerator_nextElement(&e), tp += sizeof(SHARKSSL_WEIGHT))
+            {
+               if (!_XzY0x26(o, &((SharkSslCertList*)link)->certP))
+               {
+                  *(SHARKSSL_WEIGHT*)tp = 0;
+               }
+            }
+         }
+         #endif
 
          #if SHARKSSL_TLS_1_3
          
@@ -49116,9 +49684,18 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      (
                      (!(*(SHARKSSL_WEIGHT*)tp & trainingneeded))
                      || (!(*(SHARKSSL_WEIGHT*)tp & smbuswrite))
+                     #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2)
+                     || ((o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)) &&
+                         (((SharkSslCertList*)link)->certP.keyType == SHARKSSL_CLIENTCERTTYPE_EDDSA))
+                     #endif
                      #if SHARKSSL_TLS_1_3
                      || ((o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3)) &&
-                         (((SharkSslCertList*)link)->certP.hashAlgo <= presentpages))
+                         (((SharkSslCertList*)link)->certP.hashAlgo <= presentpages)
+                         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                         && (((SharkSslCertList*)link)->certP.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED25519)
+                         && (((SharkSslCertList*)link)->certP.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED448)
+                         #endif
+                        )
                      #endif
                      )
                   )
@@ -49133,12 +49710,68 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             }
          }
 
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+         #if SHARKSSL_TLS_1_2
+         if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3) == o->minor)
+         #endif
+         {
+            alignmentldrhstrh->prot.tls13.signatureScheme = 0;
+            sp = registeredevent;
+            now_ccLen = paramnamed;
+            while (now_ccLen >= (2 * sizeof(U16)))
+            {
+               i = (U16)(*sp++) << 8;
+               i += *sp++;
+               crLen = (U16)(*sp++) << 8;
+               crLen += *sp++;
+               now_ccLen -= (2 * sizeof(U16));
+               if (i == entrypaddr)
+               {
+                  crLen = (U16)(*sp++) << 8;
+                  crLen += *sp++;
+                  while (crLen >= 2)
+                  {
+                     i = (U16)sp[0] << 8;
+                     i += sp[1];
+                     if ((i == SHARKSSL_SIGNATURESCHEME_ED25519) || (i == SHARKSSL_SIGNATURESCHEME_ED448))
+                     {
+                        setupinterface = (i == SHARKSSL_SIGNATURESCHEME_ED25519) ? SHARKSSL_SIGNATUREALGORITHM_ED25519 : SHARKSSL_SIGNATUREALGORITHM_ED448;
+                        SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+                        for (tp = afterhandler, link = SingleListEnumerator_getElement(&e);
+                             link;
+                             link = SingleListEnumerator_nextElement(&e), tp += sizeof(SHARKSSL_WEIGHT))
+                        {
+                           if ((*(SHARKSSL_WEIGHT*)tp) &&
+                               (((SharkSslCertList*)link)->certP.keyType == SHARKSSL_CLIENTCERTTYPE_EDDSA) &&
+                               (((SharkSslCertList*)link)->certP.keyOID == setupinterface))
+                           {
+                              alignmentldrhstrh->prot.tls13.signatureScheme = i;
+                              break;
+                           }
+                        }
+                     }
+                     if (alignmentldrhstrh->prot.tls13.signatureScheme)
+                     {
+                        break;
+                     }
+                     sp += 2;
+                     crLen -= 2;
+                  }
+                  break;
+               }
+               sp += crLen;
+               now_ccLen -= crLen;
+            }
+         }
+         #endif
+
          
          #if (SHARKSSL_TLS_1_3 && SHARKSSL_ENABLE_ECDHE_ECDSA)
          #if SHARKSSL_TLS_1_2
          if (SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_3) == o->minor)
          #endif
          {
+            U8 _XzY0x2A2;
             alignmentldrhstrh->signParam.signature.hashAlgo = 0;
             setupinterface = 0;
             sp = registeredevent;
@@ -49156,7 +49789,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   crLen += *sp++;
                   while (crLen)
                   {
-                     ics = _XzY0x1B7(((U16)sp[0] << 8) + sp[1]);
+                     ics = _XzY0x1B7(((U16)sp[0] << 8) + sp[1], &_XzY0x2A2);
                      if (SHARKSSL_EC_CURVE_ID_UNKNOWN != ics)
                      {
                         SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
@@ -49168,7 +49801,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                                (((SharkSslCertList*)link)->certP.keyType == compatrestart) &&
                                (((SharkSslCertList*)link)->certP.keyOID == ics))
                            {
-                              alignmentldrhstrh->signParam.signature.hashAlgo = sp[0];
+                              alignmentldrhstrh->signParam.signature.hashAlgo = _XzY0x2A2;
                               setupinterface = ics;
                               break;
                            }
@@ -49257,6 +49890,20 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   }
                }
                #endif
+            }
+            #endif
+            #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+            if ((((SharkSslCertList*)link)->certP.keyType == SHARKSSL_CLIENTCERTTYPE_EDDSA) &&
+                ((alignmentldrhstrh->prot.tls13.signatureScheme == SHARKSSL_SIGNATURESCHEME_ED25519 &&
+                  ((SharkSslCertList*)link)->certP.keyOID == SHARKSSL_SIGNATUREALGORITHM_ED25519) ||
+                 (alignmentldrhstrh->prot.tls13.signatureScheme == SHARKSSL_SIGNATURESCHEME_ED448 &&
+                  ((SharkSslCertList*)link)->certP.keyOID == SHARKSSL_SIGNATUREALGORITHM_ED448)))
+            {
+               if ((*(SHARKSSL_WEIGHT*)tp) && (*(SHARKSSL_WEIGHT*)tp > *(SHARKSSL_WEIGHT*)(afterhandler + SHARKSSL_CERT_SLOT_COUNT * sizeof(SharkSslCertParsed**) + SHARKSSL_CERT_SLOT_EDDSA * sizeof(SHARKSSL_WEIGHT))))
+               {
+                  *(SHARKSSL_WEIGHT*)(afterhandler + SHARKSSL_CERT_SLOT_COUNT * sizeof(SharkSslCertParsed**) + SHARKSSL_CERT_SLOT_EDDSA * sizeof(SHARKSSL_WEIGHT)) = *(SHARKSSL_WEIGHT*)tp;
+                  *(SharkSslCertParsed**)(afterhandler + SHARKSSL_CERT_SLOT_EDDSA * sizeof(SharkSslCertParsed**)) = &(((SharkSslCertList*)link)->certP);
+               }
             }
             #endif
          }
@@ -49709,25 +50356,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          i = alignmentldrhstrh->ecdhParam.curveType;
          paramnamed = alignmentldrhstrh->ecdhParam.xLen;
          crLen = paramnamed;
-         #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-         if (
-            #if SHARKSSL_ECC_USE_SECP256R1
-            (i == ucb1400pdata)
-            #else
-            0
-            #endif
-            ||
-            #if SHARKSSL_ECC_USE_SECP384R1
-            (i == pciercxcfg034)
-            #else
-            0
-            #endif
-            )
+         if ((i != TLS_NAMEDGROUP_CURVE25519) && (i != TLS_NAMEDGROUP_CURVE448))
          {
             paramnamed = (U16)((paramnamed << 1) + 1);  
             crLen <<= 1;  
          }
-         #endif
 
          now_ccLen = 0;
          #if SHARKSSL_ENABLE_ALPN_EXTENSION
@@ -49801,27 +50434,13 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          #endif
          baAssert(tp < alignmentldrhstrh->ecdhParam.XY);  
 
-         #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-         if (
-            #if SHARKSSL_ECC_USE_SECP256R1
-            (i == ucb1400pdata) 
-            #else
-            0
-            #endif
-            || 
-            #if SHARKSSL_ECC_USE_SECP384R1
-            (i == pciercxcfg034)
-            #else
-            0
-            #endif
-            )
+         if ((i != TLS_NAMEDGROUP_CURVE25519) && (i != TLS_NAMEDGROUP_CURVE448))
          {
             paramnamed += 1 + alignmentldrhstrh->ecdhParam.xLen;
             
             memmove(afterhandler + now_ccLen, alignmentldrhstrh->ecdhParam.XY, alignmentldrhstrh->ecdhParam.xLen << 1);
          }
          else
-         #endif
          {
             
             memmove(afterhandler + now_ccLen, alignmentldrhstrh->ecdhParam.XY, alignmentldrhstrh->ecdhParam.xLen);
@@ -49859,13 +50478,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          *tp++ = (i & 0xFF);
          *tp++ = (paramnamed >> 8);
          *tp++ = (paramnamed & 0xFF);
-         #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
          if (paramnamed & 1)  
          {
             *tp++ = SHARKSSL_EC_POINT_UNCOMPRESSED;
             paramnamed--;
          }
-         #endif
          
          {
             int sffsdrnandflash;
@@ -49964,6 +50581,15 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                #endif
                #if SHARKSSL_ECC_USE_SECP521R1
                0x00, buildmemmap,
+               #endif
+               #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+               0x00, TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13,
+               #endif
+               #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+               0x00, TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13,
+               #endif
+               #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+               0x00, TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13,
                #endif
             };
 
@@ -50163,9 +50789,33 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             alignmentldrhstrh->signParam.signature.signatureAlgo = accessactive;
          }
          #endif
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->signParam.pCertKey->expLen))
+         {
+            alignmentldrhstrh->signParam.signature.hashAlgo = processsdccr;
+            alignmentldrhstrh->signParam.signature.signatureAlgo =
+               (alignmentldrhstrh->prot.tls13.signatureScheme == SHARKSSL_SIGNATURESCHEME_ED25519) ?
+               SHARKSSL_SIGNATUREALGORITHM_ED25519 : SHARKSSL_SIGNATUREALGORITHM_ED448;
+         }
+         #endif
 
          
          paramnamed = sharkssl_getHashLen(o->rCipherSuite->hashID);
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->signParam.pCertKey->expLen))
+         {
+            alignmentldrhstrh->signParam.signature.message = afterhandler;
+            alignmentldrhstrh->signParam.signature.messageLen = SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + paramnamed;
+            if (SharkSslBuf_available(&o->inBuf, tp) <
+                traceentry + sizeof(U16) + sizeof(U16) +
+                ((alignmentldrhstrh->prot.tls13.signatureScheme == SHARKSSL_SIGNATURESCHEME_ED25519) ?
+                 SHARKSSL_ED25519_SIGNATURE_LEN : SHARKSSL_ED448_SIGNATURE_LEN))
+            {
+               return SharkSslCon_AllocationError;
+            }
+         }
+         else
+         #endif
          if (sharkssl_hash(alignmentldrhstrh->signParam.signature.hash,
                            afterhandler,
                            SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + paramnamed,
@@ -50186,6 +50836,48 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          *tp++ = 0;
          *tp++ = (U8)(i >> 8);
          *tp++ = (U8)(i & 0xFF);
+         #if SHARKSSL_ECC_USE_BRAINPOOL
+         if ((accessactive == alignmentldrhstrh->signParam.signature.signatureAlgo) &&
+             (alignmentldrhstrh->certParsed->keyOID >= SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1) &&
+             (alignmentldrhstrh->certParsed->keyOID <= SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1))
+         {
+            U16 ahashreqsize;
+            switch (alignmentldrhstrh->certParsed->keyOID)
+            {
+               #if (SHARKSSL_ECC_USE_BRAINPOOLP256R1 && SHARKSSL_USE_SHA_256)
+               case SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1:
+                  ahashreqsize = SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP256R1TLS13_SHA256;
+                  break;
+               #endif
+
+               #if (SHARKSSL_ECC_USE_BRAINPOOLP384R1 && SHARKSSL_USE_SHA_384)
+               case SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1:
+                  ahashreqsize = SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP384R1TLS13_SHA384;
+                  break;
+               #endif
+
+               #if (SHARKSSL_ECC_USE_BRAINPOOLP512R1 && SHARKSSL_USE_SHA_512)
+               case SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1:
+                  ahashreqsize = SHARKSSL_SIGNATURESCHEME_ECDSA_BRAINPOOLP512R1TLS13_SHA512;
+                  break;
+               #endif
+
+               default:
+                  return savedconfig(o, SHARKSSL_ALERT_INTERNAL_ERROR);
+            }
+            *tp++ = (U8)(ahashreqsize >> 8);
+            *tp++ = (U8)ahashreqsize;
+         }
+         else
+         #endif
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->signParam.pCertKey->expLen))
+         {
+            *tp++ = (U8)(alignmentldrhstrh->prot.tls13.signatureScheme >> 8);
+            *tp++ = (U8)alignmentldrhstrh->prot.tls13.signatureScheme;
+         }
+         else
+         #endif
          #if SHARKSSL_ENABLE_RSASSA_PSS
          if (SHARKSSL_SIGNATUREALGORITHM_RSA_PSS == alignmentldrhstrh->signParam.signature.signatureAlgo)
          {  
@@ -50728,7 +51420,11 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                #endif
                if (!(alignmentldrhstrh->signParam.signature.hashAlgo))
                {
+                  #if SHARKSSL_USE_SHA1
                   alignmentldrhstrh->signParam.signature.hashAlgo = presentpages;
+                  #else
+                  return savedconfig(o, SHARKSSL_ALERT_HANDSHAKE_FAILURE);
+                  #endif
                }
 
                
@@ -51868,6 +52564,28 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                goto regionfixed;
             }
+            
+            {
+               U8 msb;
+
+               crLen = (U32)paramnamed * 8;
+               for (i = 0; (i < paramnamed) && (0 == registeredevent[i]); i++)
+               {
+                  crLen -= 8;
+               }
+               if (i < paramnamed)
+               {
+                  for (msb = registeredevent[i]; 0 == (msb & 0x80); msb <<= 1)
+                  {
+                     crLen--;
+                  }
+               }
+            }
+            if (crLen < SHARKSSL_DHE_MIN_PRIME_BITS)
+            {
+               SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               return savedconfig(o, SHARKSSL_ALERT_INSUFFICIENT_SECURITY);
+            }
             alignmentldrhstrh->prot.tls12.dhParam.pLen = paramnamed;
             
             baAssert(((unsigned int)(UPTR)afterhandler & (claimresource(sizeof(U32)) - 1)) == 0);
@@ -52404,6 +53122,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             }
 
             alignmentldrhstrh->signParam.pCertKey = &(alignmentldrhstrh->certKey);  
+            #if SHARKSSL_PSA_CONSUMER
+            alignmentldrhstrh->signParam.psaSignKey = alignmentldrhstrh->certParsed->psaSignKey;
+            #endif
             if (checkactions(&(alignmentldrhstrh->signParam)) < 0)
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
@@ -52694,6 +53415,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
               link;
               link = SingleListEnumerator_nextElement(&e), tb += sizeof(SHARKSSL_WEIGHT))
          {
+            #if SHARKSSL_PSA_CONSUMER
+            if (!_XzY0x26(o, &((SharkSslCertList*)link)->certP))
+            {
+               continue;
+            }
+            #endif
             if (*(SHARKSSL_WEIGHT*)tb > now_ccLen)
             {
                now_ccLen = (U32)(*(SHARKSSL_WEIGHT*)tb);
@@ -52954,7 +53681,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                               {
                                  if (((SharkSslCertList*)link)->certP.keyType == ahashchild)
                                  {
-                                    *(SHARKSSL_WEIGHT*)tb &= ~0xFFFFFF;
+                                    *(SHARKSSL_WEIGHT*)tb &= ~SHARKSSL_CLIENTCERT_WEIGHT_MASK;
                                     *(SHARKSSL_WEIGHT*)tb |= (SHARKSSL_WEIGHT)ahashchild << 16;
                                     *(SHARKSSL_WEIGHT*)tb |= crLen;
                                  }
@@ -52966,7 +53693,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         #endif
                         #endif
                         #if SHARKSSL_ENABLE_ECDSA
-                        setupinterface = _XzY0x1B7((U16)crLen);
+                        setupinterface = _XzY0x1B7((U16)crLen, NULL);
                         if (SHARKSSL_EC_CURVE_ID_UNKNOWN != setupinterface)
                         {
                            SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
@@ -52977,8 +53704,27 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                               if ((((SharkSslCertList*)link)->certP.keyType == compatrestart) &&
                                   (((SharkSslCertList*)link)->certP.keyOID == setupinterface))
                               {
-                                 *(SHARKSSL_WEIGHT*)tb &= ~0xFFFFFF;
+                                 *(SHARKSSL_WEIGHT*)tb &= ~SHARKSSL_CLIENTCERT_WEIGHT_MASK;
                                  *(SHARKSSL_WEIGHT*)tb |= (SHARKSSL_WEIGHT)compatrestart << 16;
+                                 *(SHARKSSL_WEIGHT*)tb |= crLen;
+                              }
+                           }
+                        }
+                        #endif
+                        #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                        if (((U16)crLen == SHARKSSL_SIGNATURESCHEME_ED25519) || ((U16)crLen == SHARKSSL_SIGNATURESCHEME_ED448))
+                        {
+                           setupinterface = ((U16)crLen == SHARKSSL_SIGNATURESCHEME_ED25519) ? SHARKSSL_SIGNATUREALGORITHM_ED25519 : SHARKSSL_SIGNATUREALGORITHM_ED448;
+                           SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+                           for (tb = afterhandler, link = SingleListEnumerator_getElement(&e);
+                                link;
+                                link = SingleListEnumerator_nextElement(&e), tb += sizeof(SHARKSSL_WEIGHT))
+                           {
+                              if ((((SharkSslCertList*)link)->certP.keyType == SHARKSSL_CLIENTCERTTYPE_EDDSA) &&
+                                  (((SharkSslCertList*)link)->certP.keyOID == setupinterface))
+                              {
+                                 *(SHARKSSL_WEIGHT*)tb &= ~SHARKSSL_CLIENTCERT_WEIGHT_MASK;
+                                 *(SHARKSSL_WEIGHT*)tb |= (SHARKSSL_WEIGHT)SHARKSSL_CLIENTCERTTYPE_EDDSA << 16;
                                  *(SHARKSSL_WEIGHT*)tb |= crLen;
                               }
                            }
@@ -53001,6 +53747,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                link;
                link = SingleListEnumerator_nextElement(&e), tb += sizeof(SHARKSSL_WEIGHT))
             {
+               #if SHARKSSL_PSA_CONSUMER
+               if (!_XzY0x26(o, &((SharkSslCertList*)link)->certP))
+               {
+                  continue;
+               }
+               #endif
                
                if (((U16)*(SHARKSSL_WEIGHT*)tb) &&
                    (*(SHARKSSL_WEIGHT*)tb & smbuswrite) &&
@@ -53252,6 +54004,9 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                #endif
                #endif
                #if SHARKSSL_ENABLE_RSA
+               #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+               if (machinekexec(certParam->certKey.expLen))
+               #endif
                {
                   baAssert(machinekexec(certParam->certKey.expLen));
                   memcpy(afterhandler, certParam->certKey.mod, supportedvector(certParam->certKey.modLen));
@@ -53260,6 +54015,16 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                   memcpy(afterhandler, certParam->certKey.exp, mousethresh(certParam->certKey.expLen));
                   certParam->certKey.exp = afterhandler;
                   afterhandler += claimresource(mousethresh(certParam->certKey.expLen));
+               }
+               #endif
+               #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+               if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(certParam->certKey.expLen))
+               {
+                  i = certParam->certKey.modLen;
+                  SHARKSSL_HS_SPACE(o, outBuf, afterhandler, claimresource(i));
+                  memcpy(afterhandler, certParam->certKey.mod, i);
+                  certParam->certKey.mod = afterhandler;
+                  afterhandler += claimresource(i);
                }
                #endif
             }
@@ -53703,6 +54468,14 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                         SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
                         goto _sharkssl_hs_alert_internal_error;
                      }
+                     #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                     if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->certKey.expLen))
+                     {
+                        alignmentldrhstrh->signParam.signature.message = afterhandler;
+                        alignmentldrhstrh->signParam.signature.messageLen = SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + i;
+                     }
+                     else
+                     #endif
                      if (sharkssl_hash(alignmentldrhstrh->signParam.signature.hash, afterhandler, SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + i, alignmentldrhstrh->signParam.signature.hashAlgo))
                      {
                         SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
@@ -53715,6 +54488,16 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
                      #endif
 
                      
+                     #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+                     if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->certKey.expLen) &&
+                         (SharkSslBuf_available(&o->inBuf, tp) <
+                          traceentry + sizeof(U16) + sizeof(U16) +
+                          ((alignmentldrhstrh->prot.tls13.signatureScheme == SHARKSSL_SIGNATURESCHEME_ED25519) ?
+                           SHARKSSL_ED25519_SIGNATURE_LEN : SHARKSSL_ED448_SIGNATURE_LEN)))
+                     {
+                        return SharkSslCon_AllocationError;
+                     }
+                     #endif
                      alignmentldrhstrh->signParam.signature.signature = tp + traceentry + 4;
                      if (checkactions(&(alignmentldrhstrh->signParam)) < 0)
                      {
@@ -53970,6 +54753,15 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          #if SHARKSSL_ENABLE_CA_LIST
          o->caListCertReq = (SharkSslCAList)0;
          #endif
+         #if (SHARKSSL_TLS_1_2 && SHARKSSL_ENABLE_SESSION_CACHE)
+         
+         if ((o->session) && (o->minor == SHARKSSL_PROTOCOL_MINOR(SHARKSSL_PROTOCOL_TLS_1_2)))
+         {
+            filtermatch(&o->sharkSsl->sessionCache);
+            o->session->flags |= SHARKSSL_SESSION_FLAG_TLS12_READY;
+            helperglobal(&o->sharkSsl->sessionCache);
+         }
+         #endif
          return SharkSslCon_Handshake;
 
       case modifygraph:
@@ -54006,12 +54798,25 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          #if SHARKSSL_ENABLE_ECDSA
          if (alignmentldrhstrh->signParam.signature.signatureAlgo == accessactive)
          {
-            ics = _XzY0x1B7(paramnamed);
+            ics = _XzY0x1B7(paramnamed, NULL);
             if ((SHARKSSL_EC_CURVE_ID_UNKNOWN == ics) ||
                 (!machinereboot(alignmentldrhstrh->certParam.certKey.expLen)) ||
                 (wakeupenable(alignmentldrhstrh->certParam.certKey.modLen) != ics))
             {
                SHARKDBG_PRINTF(("\045\163\072\040\045\144\012", __FILE__, __LINE__));
+               goto regionfixed;
+            }
+         }
+         #endif
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if ((alignmentldrhstrh->signParam.signature.signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED25519) ||
+             (alignmentldrhstrh->signParam.signature.signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED448))
+         {
+            U16 _XzY0x26E = (alignmentldrhstrh->signParam.signature.signatureAlgo == SHARKSSL_SIGNATUREALGORITHM_ED25519) ?
+                                 SHARKSSL_ED25519_PUBLIC_KEY_LEN : SHARKSSL_ED448_PUBLIC_KEY_LEN;
+            if ((!SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->certParam.certKey.expLen)) ||
+                (alignmentldrhstrh->certParam.certKey.modLen != _XzY0x26E))
+            {
                goto regionfixed;
             }
          }
@@ -54027,7 +54832,7 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
 
          
          #if SHARKSSL_ENABLE_RSA
-         #if (!SHARKSSL_ENABLE_ECDSA)
+         #if ((!SHARKSSL_ENABLE_ECDSA) && (!SHARKSSL_ENABLE_EDDSA))
          baAssert(machinekexec(alignmentldrhstrh->certParam.certKey.expLen));
          #else
          if (machinekexec(alignmentldrhstrh->certParam.certKey.expLen))
@@ -54046,6 +54851,12 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
             {
                afterhandler += (U16)(attachdevice(alignmentldrhstrh->certParam.certKey.modLen)) * 2;
             }
+         }
+         #endif
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->certParam.certKey.expLen))
+         {
+            afterhandler += claimresource(alignmentldrhstrh->certParam.certKey.modLen);
          }
          #endif
 
@@ -54069,6 +54880,14 @@ static SharkSslCon_RetVal _XzY0x17F(SharkSslCon *o,
          {
             memcpy(afterhandler + 64 + 9, "\143\154\151\145\156\164", 6);  
          }
+         #endif
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(alignmentldrhstrh->certParam.certKey.expLen))
+         {
+            alignmentldrhstrh->signParam.signature.message = afterhandler;
+            alignmentldrhstrh->signParam.signature.messageLen = SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + sharkssl_getHashLen(o->rCipherSuite->hashID);
+         }
+         else
          #endif
          if (sharkssl_hash(alignmentldrhstrh->signParam.signature.hash, afterhandler, SHARKSSL_DIM_ARR(cvServerCtxZero) + 64 + sharkssl_getHashLen(o->rCipherSuite->hashID), alignmentldrhstrh->signParam.signature.hashAlgo))
          {
@@ -54951,7 +55770,7 @@ baConvBin2Hex(void* writereg32, U8 devicehsmmc1)
 
 
 
-static int pc104maskack(int c)
+static int _XzY0x283(int c)
 {
    if (c >= '\060' && c <= '\071') return c - '\060';
    if (c >= '\141' && c <= '\146') return c - '\141' + 10;
@@ -54971,9 +55790,9 @@ httpUnescapeInternal(char* forcereload, BaBool parkingprotocol)
          int h1, h2;
          U8 c;
          
-         if( (h1 = pc104maskack(forcereload[1])) < 0)
+         if( (h1 = _XzY0x283(forcereload[1])) < 0)
             return 0;
-         if( (h2 = pc104maskack(forcereload[2])) < 0)
+         if( (h2 = _XzY0x283(forcereload[2])) < 0)
             return 0;
          c = (U8)((h1 << 4) | h2);
 
@@ -56030,7 +56849,7 @@ baStrdup2(struct AllocatorIntf* a, const char* str)
 #include <HttpServer.h>
 #include <IoIntf.h>
 #include <ZipFileIterator.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 #endif
 BA_API const char*
@@ -56069,7 +56888,7 @@ baErr2Str(int flushoffset)
       case E_SOCKET_READ_FAILED:    return "\163\157\143\153\145\164\162\145\141\144\146\141\151\154\145\144";
       case E_TIMEOUT:    return "\164\151\155\145\157\165\164";
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       case SHARKSSL_PEM_KEY_PARSE_ERROR:
          return "\160\145\155\137\153\145\171\137\160\141\162\163\145\137\145\162\162\157\162";
       case SHARKSSL_PEM_KEY_WRONG_IV:
@@ -56314,7 +57133,7 @@ shashfinal(BaTimer* o)
 
 
 
-#if BA_TIMER_EXT_TICK
+#if BA_TIMER_SOURCE == BA_TIMER_SOURCE_EXTERNAL
 static ThreadSemaphore BaTimer_triggerSem;
 static BaTimer* BaTimer_theOneAndOnly=0;
 static int BaTimer_waitingForTrigger=FALSE;
@@ -56344,7 +57163,7 @@ octeonconfig(Thread* fdc37m81xconfig)
       rdhwrnoopt+=o->ticklen;
 
       
-#if BA_TIMER_EXT_TICK
+#if BA_TIMER_SOURCE == BA_TIMER_SOURCE_EXTERNAL
       
       if( ! fdpicparams(flashdriver,rdhwrnoopt) )
       { 
@@ -56514,7 +57333,7 @@ BaTimer_constructor(BaTimer* o,
    int i;
 
 
-#if BA_TIMER_EXT_TICK
+#if BA_TIMER_SOURCE == BA_TIMER_SOURCE_EXTERNAL
    
    baAssert( ! BaTimer_theOneAndOnly );
    BaTimer_theOneAndOnly=o;
@@ -56549,7 +57368,7 @@ BaTimer_destructor(BaTimer* o)
    }
    if(standardresources) ThreadMutex_set(o->mutex);   
    Thread_destructor((Thread*)o);
-#if BA_TIMER_EXT_TICK
+#if BA_TIMER_SOURCE == BA_TIMER_SOURCE_EXTERNAL
    BaTimer_theOneAndOnly=0;
 #endif
 }
@@ -56559,6 +57378,10 @@ BaTimer_destructor(BaTimer* o)
 #endif
 
 #include <BufPrint.h>
+#ifdef _SharkSsl_TargConfig_h
+
+#include <SharkSSL_cfg.h>
+#endif
 
 #include <limits.h> /* SHRT_MAX */
 
@@ -56634,7 +57457,7 @@ basprintf(char* buf, const char* fmt, ...)
 
 
 
-#ifdef B_BIG_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN
 #define resultsuccess(puVal) \
 ( \
   sizeof((*puVal).dVal) == sizeof((*puVal).aul) \
@@ -56653,7 +57476,7 @@ basprintf(char* buf, const char* fmt, ...)
       : 0 \
   : 0 \
 )
-#elif defined(B_LITTLE_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
 #define resultsuccess(puVal) \
 ( \
   sizeof((*puVal).dVal) == sizeof((*puVal).aul) \
@@ -56673,18 +57496,16 @@ basprintf(char* buf, const char* fmt, ...)
   : 0 \
 )
 #else
-#error ENDIAN_NEEDED_Define_one_of_B_BIG_ENDIAN_or_B_LITTLE_ENDIAN
+#error Set BA_BYTE_ORDER to BA_BYTE_ORDER_LITTLE_ENDIAN or BA_BYTE_ORDER_BIG_ENDIAN
 #endif
 
 
 
-#ifndef NO_DOUBLE
 union UIEEE_754
 {
    unsigned int aul[2];
    double        dVal;
 };
-#endif
 
 BA_API int
 BufPrint_putc(BufPrint* o, int c)
@@ -57024,7 +57845,7 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
          const char *ptr;
          const char *cpuidleprobe = "";
          unsigned int driverchipcommon;
-         int width, precision, instructionemulation, _XzY0x1AE, noOfLeadingZeros;
+         int _XzY0x2F3, precision, instructionemulation, _XzY0x1AE, noOfLeadingZeros;
          int doublefnmul;
          char buf[50];
          instructionemulation = _XzY0x1AE = noOfLeadingZeros = 0;
@@ -57045,19 +57866,19 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
          if (*fmt == '\052')
          {
             ++fmt;
-            width = va_arg(breakpointthread, int);
-            if (width < 0)
+            _XzY0x2F3 = va_arg(breakpointthread, int);
+            if (_XzY0x2F3 < 0)
             {
-               width = -width;
+               _XzY0x2F3 = -_XzY0x2F3;
                driverchipcommon |= FLAG_LEFTADJUST;
             }
          }
          else
          {
-            for (width = 0 ; (*fmt >= '\060') && (*fmt <= '\071') ; fmt++)
+            for (_XzY0x2F3 = 0 ; (*fmt >= '\060') && (*fmt <= '\071') ; fmt++)
             {
-               if (width < MAXWIDTH)
-                  width = width * 10 + (*fmt - '\060');
+               if (_XzY0x2F3 < MAXWIDTH)
+                  _XzY0x2F3 = _XzY0x2F3 * 10 + (*fmt - '\060');
             }
          }
          if (*fmt == '\056')
@@ -57255,7 +58076,7 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
             if (precision < 0 &&
                 ((driverchipcommon & (FLAG_ZEROPAD | FLAG_LEFTADJUST)) == FLAG_ZEROPAD))
             {
-               doublefnmul = width - _XzY0x1AE - noOfLeadingZeros - instructionemulation;
+               doublefnmul = _XzY0x2F3 - _XzY0x1AE - noOfLeadingZeros - instructionemulation;
                if (doublefnmul > 0)
                   noOfLeadingZeros += doublefnmul;
             }
@@ -57264,10 +58085,6 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
             case '\146':
             case '\145': case '\105':
             case '\147': case '\107':
-#ifdef NO_DOUBLE
-               ptr = "\050\156\157\040\146\154\157\141\164\040\163\165\160\160\157\162\164\051";
-               goto L_s;
-#else
                {
                   double videoprobe = (driverchipcommon & FLAG_LONGDOUBLE)
                      ? (double)va_arg(breakpointthread, long double)
@@ -57513,7 +58330,7 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
                  SkipExp:
                   if ((driverchipcommon & FLAG_ZEROPAD) && !(driverchipcommon & FLAG_LEFTADJUST) )
                   {
-                     noOfLeadingZeros = width -
+                     noOfLeadingZeros = _XzY0x2F3 -
                         (_XzY0x1AE  + commonswizzle   + expZeros +
                          decPoint   + decZeros + fracDigs +
                          trailZeros + expLen);
@@ -57523,12 +58340,12 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
                   else
                      noOfLeadingZeros = 0;
 
-                  width -= _XzY0x1AE  + noOfLeadingZeros + commonswizzle   +
+                  _XzY0x2F3 -= _XzY0x1AE  + noOfLeadingZeros + commonswizzle   +
                      expZeros   + decPoint     + decZeros +
                      fracDigs   + trailZeros   + expLen;
 
                   if ( !(driverchipcommon & FLAG_LEFTADJUST))
-                     BufPrint_padChar(o, '\040', width);
+                     BufPrint_padChar(o, '\040', _XzY0x2F3);
                   BufPrint_write(o, cpuidleprobe, _XzY0x1AE);
                   BufPrint_padChar(o, '\060', noOfLeadingZeros);
                   BufPrint_write(o, ptr, commonswizzle);
@@ -57540,11 +58357,10 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
                   if( (handlersetup=BufPrint_write(o, expStr, expLen)) != 0)
                      return handlersetup;
                   if (driverchipcommon & FLAG_LEFTADJUST)
-                     BufPrint_padChar(o, '\040', width);
+                     BufPrint_padChar(o, '\040', _XzY0x2F3);
                   ++fmt;
                   continue;
                }
-#endif
             case '\143':
                buf[0] = (unsigned char)va_arg(breakpointthread, int);
                ptr = buf;
@@ -57579,9 +58395,9 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
                fmt++;
                continue;
          }
-         width -= _XzY0x1AE + noOfLeadingZeros + instructionemulation;
+         _XzY0x2F3 -= _XzY0x1AE + noOfLeadingZeros + instructionemulation;
          if( !(driverchipcommon & FLAG_LEFTADJUST))
-            BufPrint_padChar(o, '\040', width);
+            BufPrint_padChar(o, '\040', _XzY0x2F3);
          if( (handlersetup=BufPrint_write(o, cpuidleprobe, _XzY0x1AE)) !=0 )
             return handlersetup;
          BufPrint_padChar(o, '\060', noOfLeadingZeros);
@@ -57597,7 +58413,7 @@ BufPrint_vprintf(BufPrint* o, const char* fmt, va_list breakpointthread)
                return handlersetup;
          }
          if (driverchipcommon & FLAG_LEFTADJUST)
-            BufPrint_padChar(o, '\040', width);
+            BufPrint_padChar(o, '\040', _XzY0x2F3);
       }
    }
    return reassignvector;
@@ -57638,7 +58454,7 @@ BufPrint_flush(BufPrint* o)
 #include <BaServerLib.h>
 #include <ZipFileIterator.h>
 
-#ifdef NO_ZLIB
+#if !BA_ENABLE_ZLIB
 
 static const char noZipSupport[] = {
    "\074\150\061\076\074\141\040\150\162\145\146\075\042\150\164\164\160\072\057\057\167\167\167\056\162\145\141\154\164\151\155\145\154\157\147\151\143\056\143\157\155\057\116\157\132\151\160\056\150\164\155\154\042\076\116\157\040\132\111\120\074\057\141\076\074\057\150\061\076"
@@ -57692,7 +58508,7 @@ bootmemremove(CspReader* alloccontroller, HttpResponse* doublefsqrt, U32 idmapst
    {
       if(CspReader_read(alloccontroller, &removememory, idmapstart, sizeof(removememory), FALSE))
          return 0;
-#ifdef B_BIG_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN
       removememory =
          ((((removememory) << 8) & 0xff00) | (((removememory) >> 8) & 0x00ff));
 #endif
@@ -57884,7 +58700,7 @@ httpUnzipAndWrite(CspReader* alloccontroller,
 
    if(stage2adjust) 
    {
-#ifdef NO_ZLIB
+#if !BA_ENABLE_ZLIB
       HttpResponse_write(doublefsqrt, noZipSupport, -1, TRUE);
 #else
       if( !doublefsqrt->printAndWriteInitialized )
@@ -57945,7 +58761,7 @@ httpRawWrite(CspReader* alloccontroller,
          ae = HttpRequest_getHeaderValue(configuredevice, "\124\105");
       if(ae == 0 || (bStrstr(ae, "\147\172\151\160")==0 && bStrstr(ae, "\052")==0) )
       {  
-#ifdef NO_ZLIB
+#if !BA_ENABLE_ZLIB
          
          HttpResponse_sendError2(doublefsqrt, 406, noZipSupport);
          return;
@@ -57957,7 +58773,7 @@ httpRawWrite(CspReader* alloccontroller,
       }
 
       
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
       assertdevice = HttpRequest_getHeaderValue(configuredevice, "\125\163\145\162\055\101\147\145\156\164");
       if(assertdevice && strstr(assertdevice, "\107\145\143\153\157"))
       {
@@ -60160,7 +60976,7 @@ HttpRecData_read(HttpRecData* o, void* buf, S32 lsdc2format)
 #include <BaServerLib.h>
 #include <BaMimeTypes.h>
 
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
 #define XX_atoi U64_atoll
 #define XX_atoi2 U64_atoll2
 #else
@@ -60168,7 +60984,7 @@ HttpRecData_read(HttpRecData* o, void* buf, S32 lsdc2format)
 #define XX_atoi2 U32_atoi2
 #endif
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 static IoIntf_DeflateGzip IoIntf_deflateGzipFp;
 
 BA_API void set_deflategzip(IoIntf_DeflateGzip ptr)
@@ -60183,7 +60999,7 @@ BA_API IoIntf_DeflateGzip get_deflategzip(void)
 #endif
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 typedef struct
 {
       HttpConnection super; /* Inherits from HttpConnection */
@@ -60637,7 +61453,7 @@ HttpResRdr_sendFile(IoIntf* io,
 
    
    if(io->openResGzipFp
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
       || IoIntf_deflateGzipFp
 #endif
       )
@@ -60759,7 +61575,7 @@ HttpResRdr_sendFile(IoIntf* io,
                             "\057\045" BA_UFSF, forcereload,to-1,st->size);
                }
             }
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
             if( IoIntf_deflateGzipFp && domainxlate(&cmd->request) )
             {
                
@@ -60789,7 +61605,7 @@ HttpResRdr_sendFile(IoIntf* io,
       
       if(!HttpResponse_flush(&cmd->response))
       {
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
          size_t rs780ebegin;
          size_t notifierretry;
          rs780ebegin = HttpResponse_getBufSize(&cmd->response);
@@ -61182,7 +61998,7 @@ HttpResRdr_installFilter(HttpResRdr* o, HttpRdFilter* detectchange)
 #include <HttpServer.h>
 #include <BaServerLib.h>
 #include <HttpTrace.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 #endif
 
@@ -61363,7 +62179,7 @@ uart0writel(SoDispCon* con,
    return -1;
 }
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 static void
 stackcritical(SoDispCon* fdc37m81xconfig)
 {
@@ -61414,7 +62230,7 @@ offsetextended(SoDispCon* fdc37m81xconfig)
    SoDispCon* newConS = (SoDispCon*)&boardmanufacturer;
 
    int sffsdrnandflash;
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 L_tryAgain:
 #endif
    memset(&boardmanufacturer,0,sizeof(HttpConnection));
@@ -61435,13 +62251,13 @@ L_tryAgain:
    }
    else
    {
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
       HttpServer* uarchbuild = HttpConnection_getServer((HttpConnection*)fdc37m81xconfig);
 #endif
 #ifdef HTTP_TRACE
       SoDispCon_printSockErr(fdc37m81xconfig, "\101\143\143\145\160\164", &fdc37m81xconfig->httpSocket, sffsdrnandflash);
 #endif
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
       if(uarchbuild && ! HttpServer_termOldestIdleCon(uarchbuild) )
          goto L_tryAgain;
 #endif
@@ -61467,7 +62283,7 @@ HttpServCon_constructor(HttpServCon* o,
                         const void* sanitiseouter,
                         HttpServCon_AcceptNewCon emulateeffective)
 {
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    if(!emulateeffective) baFatalE(FE_INCORRECT_USE,0);
    HttpConnection_constructor(
       (HttpConnection*)o,uarchbuild,sha256start,offsetextended);
@@ -61585,6 +62401,7 @@ HttpServCon_destructor(HttpServCon* o)
       HttpConnection_destructor((HttpConnection*)o);
    }
 }
+#undef G
 
 
 #ifndef BA_LIB
@@ -61606,21 +62423,19 @@ HttpServCon_destructor(HttpServCon* o)
 #include <IoIntf.h>
 #include <CspRunTm.h>
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <DynBuffer.h>
 #include <SharkSSL.h>
 #endif
 
 #ifdef BA_DEMO_MODE
-#define NO_HTTP_SESSION
-#define NO_ZLIB
+#undef BA_ENABLE_ZLIB
+#define BA_ENABLE_ZLIB 0
 #endif
 
-#ifndef NO_HTTP_SESSION
 #include <AuthenticatedUser.h>
-#endif
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 #include <zlib.h>
 #endif
 
@@ -62317,10 +63132,8 @@ registerlookup(HttpInData* o, char* dbdmaresume)
                return -1;
             if(mappingerror(o->request, name, videoprobe))
                return -1;
-#ifndef NO_HTTP_SESSION
             if(*name == '\172' && ! strcmp(BA_COOKIE_ID, name))
                HttpRequest_session(o->request, videoprobe,strlen(videoprobe),TRUE);
-#endif
             videoprobe=0;
             name = dbdmaresume+1;
          }
@@ -62334,10 +63147,8 @@ registerlookup(HttpInData* o, char* dbdmaresume)
             return -1;
          if(mappingerror(o->request, name, videoprobe))
             return -1;
-#ifndef NO_HTTP_SESSION
          if(*name == '\172' && ! strcmp(BA_COOKIE_ID, name))
             HttpRequest_session(o->request, videoprobe,strlen(videoprobe),TRUE);
-#endif
       }
    }
    return 0;
@@ -64597,20 +65408,16 @@ HttpResponse_encodeRedirectURLWithParamOrSessionURL(HttpResponse* o,
    char* ptr;
    char* chargestart;
    char regionshift;
-#ifndef NO_HTTP_SESSION
    HttpSession* func2fixup=0;
-#endif
    int len = driverstate ? iStrlen(driverstate)+1 : 1;
    HttpRequest* configuredevice=HttpResponse_getRequest(o);
 
-#ifndef NO_HTTP_SESSION
    if(flashcommon)
    {
       func2fixup = HttpRequest_getSession(HttpResponse_getRequest(o), FALSE);
       if(func2fixup)
          len+=sizeof(BA_COOKIE_ID)+28;
    }
-#endif
 
    if(HttpRequest_getNoOfParameters(configuredevice))
    {
@@ -64655,7 +65462,6 @@ HttpResponse_encodeRedirectURLWithParamOrSessionURL(HttpResponse* o,
          }
          *ptr = 0;
       }
-#ifndef NO_HTTP_SESSION
       if(func2fixup)
       {
          if(regionshift)
@@ -64663,7 +65469,6 @@ HttpResponse_encodeRedirectURLWithParamOrSessionURL(HttpResponse* o,
          basnprintf(ptr, 10000, "\045\163\075",BA_COOKIE_ID);
          HttpSession_fmtSessionId(func2fixup, (U8*)(ptr+strlen(ptr)),25);
       }
-#endif
       if(driverstate)
       {
          url = HttpResponse_encodeRedirectURL(o, chargestart);
@@ -66030,14 +66835,6 @@ HttpDir_createOrGet(HttpDir* o, const char* timerregister)
 
 BA_API int
 HttpDir_authenticateAndAuthorize(HttpDir* o,HttpCommand* cmd,const char* driverstate)
-#ifdef NO_HTTP_SESSION
-{
-   (void)o;
-   (void)cmd;
-   (void)driverstate;
-   return TRUE;
-}
-#else
 {
    AuthenticatedUser* buttonsbelkin;
    if(!HttpResponse_initial(&cmd->response))
@@ -66083,7 +66880,6 @@ HttpDir_authenticateAndAuthorize(HttpDir* o,HttpCommand* cmd,const char* drivers
    }
    return TRUE; 
 }
-#endif
 
 
 
@@ -66644,18 +67440,18 @@ checkEndian(void)
 {
    U32 granuleshift;
    U8* ptr = (U8*)&granuleshift;
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    ptr[3]=0x12;
    ptr[2]=0x34;
    ptr[1]=0x56;
    ptr[0]=0x78;
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
    ptr[0]=0x12;
    ptr[1]=0x34;
    ptr[2]=0x56;
    ptr[3]=0x78;
 #else
-#error ENDIAN_NEEDED_Define_one_of_B_BIG_ENDIAN_or_B_LITTLE_ENDIAN
+#error Set BA_BYTE_ORDER to BA_BYTE_ORDER_LITTLE_ENDIAN or BA_BYTE_ORDER_BIG_ENDIAN
 #endif
    if(granuleshift != 0x12345678)
    {
@@ -66699,9 +67495,7 @@ HttpServer_constructor(HttpServer* o,
 
    SplayTree_constructor(&o->authUserTree, searchstruct);
    o->dispatcher = sha256start;
-#ifndef NO_HTTP_SESSION
    HttpSessionContainer_constructor(&o->sessionContainer, o, cfg->maxSessions);
-#endif
    o->userObj=0;
    SingleList_constructor(&o->waitForConClose);
    o->lspOnTerminateRequest=0;
@@ -66766,9 +67560,7 @@ HttpServer_destructor(HttpServer* o)
       HttpLinkCon_destructor(&o->connections[i]);
    baFree(o->connections);
    frequencytable(&o->rootDirContainer);
-#ifndef NO_HTTP_SESSION
    HttpSessionContainer_destructor(&o->sessionContainer);
-#endif
 }
 
 
@@ -66887,13 +67679,11 @@ trapsfpsimd32(
 {
    HttpInData* registeredevent=&cmd->request.inData;
 
-#ifndef NO_HTTP_SESSION
    if(cmd->request.session)
    {
       HttpSession_decrRefCntr(cmd->request.session);
       cmd->request.session=0;
    }
-#endif
 
    
    if(o->lspOnTerminateRequest && cmd->lcmd)
@@ -67282,9 +68072,7 @@ staticstruct(HttpLinkCon* pagesexact)
    baAssert(o->connections+i == pagesexact);
 #endif
 
-#ifndef NO_HTTP_SESSION
    HttpSessionContainer_sessionTimer(&o->sessionContainer);
-#endif
 
    if(con->state == HttpConnection_Connected)
    {
@@ -67403,7 +68191,8 @@ HttpServer_initStatic(void)
 
 
 
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL || SHARKSSL_PSA_CONSUMER
+#if !BA_ENABLE_SHARKSSL
 
 #define SHARKSSL_USE_MD5 1
 #define SHARKSSL_USE_SHA1 1
@@ -67421,9 +68210,9 @@ HttpServer_initStatic(void)
 #define UPTR                                       U32
 #endif
 
-#if   (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#if   ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
-#elif (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define hsotgpdata(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
 #else
 #define hsotgpdata(w,a,i)                 \
@@ -67435,9 +68224,9 @@ HttpServer_initStatic(void)
 }
 #endif
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define read64uint32(w,a,i)  (w) = ((__sharkssl_packed U32*)(a))[(i) >> 2]
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define read64uint32(w,a,i)  (w) = blockarray(((__sharkssl_packed U32*)(a))[(i) >> 2])
 #else
 #define read64uint32(w,a,i)                 \
@@ -67450,9 +68239,9 @@ HttpServer_initStatic(void)
 #endif
 
 
-#if (defined(B_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = (w)
-#elif (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+#elif ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
 #define inputlevel(w,a,i)  ((__sharkssl_packed U32*)(a))[(i) >> 2] = blockarray(w)
 #else
 #define inputlevel(w,a,i)                 \
@@ -67464,7 +68253,11 @@ HttpServer_initStatic(void)
 }
 #endif
 
-#if (SHARKSSL_USE_MD5 || SHARKSSL_USE_SHA1 || SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
+#else
+
+#endif
+
+#if (SHARKSSL_USE_MD5 || SHARKSSL_USE_SHA1 || SHARKSSL_USE_SHA_256 || SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512 || SHARKSSL_PSA_CONSUMER)
 #if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
 static const U8 prusspdata[128] =
 #else
@@ -67484,7 +68277,7 @@ static const U8 prusspdata[64] =
 };
 #endif
 
-#if SHARKSSL_USE_MD5
+#if SHARKSSL_USE_MD5 || SHARKSSL_PSA_CONSUMER
 
 #if SHARKSSL_MD5_SMALL_FOOTPRINT
 static const U32 unregisterclient[64] =
@@ -67525,7 +68318,7 @@ static const U8 writefeature[64] =
 #endif
 
 
-#ifndef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
 static void kexecalloc(SharkSslMd5Ctx *registermcasp, const U8 alloccontroller[64])
 #else
 static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
@@ -67537,7 +68330,7 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    unsigned int i;
    #endif
 
-   #ifndef B_LITTLE_ENDIAN
+   #if BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
    U32 countshift[16];
 
    #if SHARKSSL_MD5_SMALL_FOOTPRINT
@@ -67736,7 +68529,7 @@ SHARKSSL_API void SharkSslMd5Ctx_append(SharkSslMd5Ctx *registermcasp, const U8 
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_LITTLE_ENDIAN
+      #if BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
       kexecalloc(registermcasp, registermcasp->buffer);
       #else
       kexecalloc(registermcasp, (U32*)(registermcasp->buffer));
@@ -67748,7 +68541,7 @@ SHARKSSL_API void SharkSslMd5Ctx_append(SharkSslMd5Ctx *registermcasp, const U8 
 
    while (len >= 64)
    {
-      #ifndef B_LITTLE_ENDIAN
+      #if BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
       kexecalloc(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 64);
@@ -67821,9 +68614,9 @@ SHARKSSL_API int sharkssl_md5(const U8* alloccontroller, U16 len, U8 *secondarye
 #endif
 
 
-#if SHARKSSL_USE_SHA1
+#if !BA_ENABLE_SHARKSSL || SHARKSSL_PSA_CONSUMER
 
-#ifndef B_BIG_ENDIAN
+#if BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
 static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, const U8 alloccontroller[64])
 #else
 static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
@@ -67833,7 +68626,7 @@ static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
    #if SHARKSSL_SHA1_SMALL_FOOTPRINT
    unsigned int i;
    #endif
-   #ifndef B_BIG_ENDIAN
+   #if BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
    U32 countshift[16];
 
    #if SHARKSSL_SHA1_SMALL_FOOTPRINT
@@ -68061,7 +68854,7 @@ SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_BIG_ENDIAN
+      #if BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
       irqwakeintallow(registermcasp, registermcasp->buffer);
       #else
       irqwakeintallow(registermcasp, (U32*)(registermcasp->buffer));
@@ -68073,7 +68866,7 @@ SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U
 
    while (len >= 64)
    {
-      #ifndef B_BIG_ENDIAN
+      #if BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
       irqwakeintallow(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 64);
@@ -68115,10 +68908,20 @@ SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 seco
    inputlevel(registermcasp->state[4], secondaryentry, 16);
 }
 
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API int sharkssl_sha1(const U8* alloccontroller, U32 len, U8* secondaryentry)
+{
+   SharkSslSha1Ctx registermcasp;
+   SharkSslSha1Ctx_constructor(&registermcasp);
+   SharkSslSha1Ctx_append(&registermcasp, alloccontroller, len);
+   SharkSslSha1Ctx_finish(&registermcasp, secondaryentry);
+   return 0;
+}
+#endif
+
 #endif
 #endif
 
-#ifndef NO_HTTP_SESSION
 
 #ifndef BA_LIB
 #define BA_LIB 1
@@ -68129,7 +68932,7 @@ SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 seco
 #include <AuthenticatedUser.h>
 #include <HttpTrace.h>
 #include <stdlib.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 #endif
 
@@ -68251,7 +69054,7 @@ HttpSessionContainer_createSession(HttpSessionContainer* o,
 
       
       U32 id;
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
       U32 i=0;
       id = baGetMsClock() * 123456789; 
 #else
@@ -68260,7 +69063,7 @@ HttpSessionContainer_createSession(HttpSessionContainer* o,
 #endif
 	  while (id == 0 || HttpSessionContainer_getSession(o, id))
       { 
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
          id = (id+(++i))*2;
 #else
          sharkssl_rng((U8*)&id, sizeof(id));
@@ -68355,7 +69158,7 @@ loongsonfprev(HttpSession* o,
    o->creationTime = o->lastAccessedTime = baGetUnixTime();
    o->maxInactiveInterval = 20*60; 
 
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
       U32 i=0;
       o->sesrnd1 = baGetMsClock() * 494073958; 
       o->sesrnd2 = baGetMsClock() * 933739515; 
@@ -68694,7 +69497,6 @@ HttpServer_getSession(HttpServer* o, U32 id)
    return s;
 }
 
-#endif
 
 #ifndef BA_LIB
 #define BA_LIB 1
@@ -68723,7 +69525,7 @@ HttpSocket_create(HttpSocket* o,
    int sffsdrnandflash;
    if(restoreucontext)
    {
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
       HttpSocket_sockUdp(o, preparepoweroff, moduleready, &sffsdrnandflash);
 #else
       sffsdrnandflash = E_INVALID_SOCKET_CON;
@@ -68764,7 +69566,7 @@ HttpSocket_create(HttpSocket* o,
    return sffsdrnandflash; 
 }
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 #ifndef HttpSocket_setmembership
 BA_API int
 HttpSocket_setmembership(HttpSocket* o,
@@ -68778,7 +69580,7 @@ HttpSocket_setmembership(HttpSocket* o,
    HttpSockaddr_gethostbyname(&multiAddr, mcasp1resources, moduleready, &sffsdrnandflash);
    if( ! sffsdrnandflash )
    {
-#if defined(USE_IPV6) && !defined(NO_IPV6_MEMBERSHIP)
+#if BA_ENABLE_IPV6 && BA_HAVE_IPV6_MULTICAST_MEMBERSHIP
       if(moduleready)
       {
          struct ipv6_mreq mreq;
@@ -68820,7 +69622,7 @@ HttpSocket_setmembership(HttpSocket* o,
 #endif
 #endif
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 #ifndef BaAddrinfo_connect
 
 static int
@@ -68885,7 +69687,7 @@ regulatorpdata(U8* ptr, char* buf, int instructionemulation)
       < 0 ? -1 : 0;
 }
 
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 static int
 stepminshift(U8* ptr, char* buf, int instructionemulation)
 {
@@ -68985,7 +69787,7 @@ stepminshift(U8* ptr, char* buf, int instructionemulation)
 BA_API void
 HttpSockaddr_addr2String(HttpSockaddr* o, char* buf, int instructionemulation, int* sffsdrnandflash)
 {
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    *sffsdrnandflash = o->isIp6 ?
       stepminshift((U8*)o->addr, buf, instructionemulation) :
       regulatorpdata((U8*)o->addr, buf, instructionemulation);
@@ -69014,7 +69816,7 @@ defaultsdhci2(const char* src, void* pciercxcfg448)
       uda134xplatform += U32_atoi(buf);
       if(i == 3)
       {
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
          uda134xplatform=baHtonl(uda134xplatform);
 #endif
          memcpy(pciercxcfg448, &uda134xplatform, INADDRSZ);
@@ -69042,7 +69844,7 @@ BA_API void HttpSockaddr_inetAddr(
          return;
       }
    }
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    {
       static const char gpio2config[] = "\060\061\062\063\064\065\066\067\070\071\141\142\143\144\145\146";
       static const char prepareelf64[] = "\060\061\062\063\064\065\066\067\070\071\101\102\103\104\105\106";
@@ -69577,7 +70379,7 @@ HttpTrace_close(void)
 #include <HttpTrace.h>
 #include <stddef.h> /* Using offsetof */
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 static IoIntf_InflateGzip IoIntf_inflateGzipFp;
 
 BA_API void set_inflategzip(IoIntf_InflateGzip ptr)
@@ -69605,7 +70407,7 @@ openFile(IoIntf* io, const char* name, BaBool openAsGzip,
 {
 
    return
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
       openAsGzip && IoIntf_inflateGzipFp ?
       IoIntf_inflateGzipFp(io, name, sffsdrnandflash, ethernatenable) :
 #endif
@@ -71342,7 +72144,7 @@ MultipartUpload_destructor(MultipartUpload* o)
 #include <HttpTrace.h>
 #include <string.h>
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <HttpSharkSslServCon.h>
 #endif
 
@@ -71733,7 +72535,7 @@ BA_API int
 SoDispCon_upgrade(
    SoDispCon* o, struct SharkSsl* ssl, const char* disableswapping, const char* writereg16, int hwmoddeassert)
 {
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    return HttpSharkSslServCon_bindExec(o, ssl, disableswapping, writereg16, hwmoddeassert);
 #else
    return E_INCORRECT_USE;
@@ -71744,7 +72546,7 @@ SoDispCon_upgrade(
 
 
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 
 
 static int hwmodcommon(SoDispCon* o, const char* writereg16,
@@ -71977,7 +72779,7 @@ SoDispCon_connect(SoDispCon* o,
 }
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 
 BA_API int
 SoDispCon_asyncConnect(SoDispCon* o,
@@ -72537,7 +73339,7 @@ VirDirNode_free(VirDirNode* o,AllocatorIntf* unmapaliases,VirFileNode_Free local
 
 
 
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
 static U16
 audioresume(U8* in)
 {
@@ -72558,7 +73360,7 @@ clearflush(U8* in)
    o[3] = in[3];
    return out;
 }
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 static U16
 audioresume(U8* in)
 {
@@ -72580,13 +73382,13 @@ clearflush(U8* in)
    return out;
 }
 #else
-#error ENDIAN_NEEDED_Define_one_of_B_BIG_ENDIAN_or_B_LITTLE_ENDIAN
+#error BA_BYTE_ORDER must select LITTLE_ENDIAN or BIG_ENDIAN
 #endif
 
 static void
 dc21285disable(U8* out, U8* in)
 {
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    memcpy(out,in, 4);
 #else
    out[0] = in[3];
@@ -73093,7 +73895,7 @@ ZipContainer_constructor(ZipContainer* o, ZipReader* guestconfigs,
 #include "ZipIo.h"
 
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include "SharkSslCrypto.h"
 #endif
 
@@ -73430,7 +74232,7 @@ dispchwmod(ZipResUnzip* o, ZipFileInfo* zfi,
 
 
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 
 struct ZipAESExtra
 {
@@ -73460,7 +74262,7 @@ typedef struct ZipAESExtra ZipAESExtra;
 #error Z_DECBUF_SIZE_must_be_a_multiple_of_16
 #endif
 
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
 static U16
 cpldsresources(U8* in)
 {
@@ -73470,7 +74272,7 @@ cpldsresources(U8* in)
    o[1] = in[1];
    return out;
 }
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 static U16
 cpldsresources(U8* in)
 {
@@ -73481,7 +74283,7 @@ cpldsresources(U8* in)
    return out;
 }
 #else
-#error ENDIAN_NEEDED_Define_one_of_B_BIG_ENDIAN_or_B_LITTLE_ENDIAN
+#error Set BA_BYTE_ORDER to BA_BYTE_ORDER_LITTLE_ENDIAN or BA_BYTE_ORDER_BIG_ENDIAN
 #endif
 
 typedef struct
@@ -73502,7 +74304,7 @@ typedef struct
       U8  AESKeyLen;              /* key length in bytes */
       U8  saltSize;               /* salt value length in bytes */
       U8 gzipPos;                /* 0..18 framing progress; 255 for ordinary reads. */
-#ifndef NO_ZLIB   
+#if BA_ENABLE_ZLIB   
       BaBool inflate;             /* inflate flag */
       z_stream z;
 #endif
@@ -73588,12 +74390,12 @@ ZipResDecrypt_keyCalc(ZipResDecrypt* o, char *pwd, U16 pwdLen,
   _next_key_loop:
    memcpy(&h1[16], o->inBuf, o->saltSize);
    h1[16 + (o->saltSize >> 2)] =
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
       ((U32)k << 24); 
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
    k;
 #else
-#error Must define one of B_BIG_ENDIAN or B_LITTLE_ENDIAN
+#error Set BA_BYTE_ORDER to BA_BYTE_ORDER_LITTLE_ENDIAN or BA_BYTE_ORDER_BIG_ENDIAN
 #endif
    sharkssl_sha1((U8*)h1, 64 + o->saltSize + 4, ph2);
    sharkssl_sha1((U8*)h2, 84, (U8*)hu);
@@ -73677,7 +74479,7 @@ ZipResDecrypt_authCheck(ZipResDecrypt* o, int* sffsdrnandflash, const char** flu
 }
 
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 static int
 runtimeresume(ResIntfPtr,void*,size_t,size_t*);
 #endif
@@ -73733,7 +74535,7 @@ ZipResDecrypt_start(ZipResDecrypt* o, BaBool gzip, char* pwd,
    
    if(!gzip && disableparity==ZipComprMethod_Deflated)
    {
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
       if(inflateInit2(&o->z,-MAX_WBITS)!=Z_OK)
       {
          setError(IOINTF_MEM,0,sffsdrnandflash,flushoffset);
@@ -73798,7 +74600,7 @@ ethernatdisable(ResIntfPtr fdc37m81xconfig, void* buf, size_t timerhandler, size
 }
 
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 static int
 runtimeresume(ResIntfPtr fdc37m81xconfig,void* buf,size_t timerhandler,size_t* icachealiases)
 {
@@ -73864,7 +74666,7 @@ memblockremove(ResIntfPtr fdc37m81xconfig)
 {
    ZipResDecrypt* o=(ZipResDecrypt*)fdc37m81xconfig;
    int sffsdrnandflash=0;
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
    if(o->inflate && inflateEnd(&o->z)!=Z_OK) sffsdrnandflash=IOINTF_IOERROR;
 #endif
    memset(o->AESKey,0,sizeof(o->AESKey));
@@ -73893,12 +74695,12 @@ setupmenet(ZipResDecrypt* o,ZipFileInfo* zfi,
    o->inBufOffs=o->inBufLen=0;
    o->left=o->crc=0;
    o->status=0;
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
    o->inflate=FALSE;
 #endif   
    
    memset(o->ctr, 0, 16);
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
    
    memset(&o->z, 0, sizeof(z_stream));
 #endif
@@ -74090,7 +74892,7 @@ ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
       {
          if(zfn->zfi.comprMethod == ZipComprMethod_AES)
          {
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
             size_t icachealiases;
             ZipResDecrypt *zrd;
             if( ! o->password )
@@ -74121,7 +74923,7 @@ ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
             setError(IOINTF_NOAESLIB, 0, sffsdrnandflash, flushoffset);
 #endif               
          }
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
          else if(o->passwordRequired)
          {
             setError(IOINTF_AES_COMPROMISED, 0, sffsdrnandflash, flushoffset);
@@ -74130,7 +74932,7 @@ ZipIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
 #endif
          else if(zfn->zfi.comprMethod == ZipComprMethod_Deflated)
          {
-#ifdef NO_ZLIB
+#if !BA_ENABLE_ZLIB
             setError(IOINTF_NOZIPLIB, 0, sffsdrnandflash, flushoffset);
 #else
             size_t icachealiases = sizeof(ZipResUnzip);
@@ -74181,7 +74983,7 @@ ZipIo_openResGzip(IoIntfPtr fdc37m81xconfig, const char* name, ThreadMutex* m,
    {
       if(zfn->zfi.comprMethod == ZipComprMethod_AES)
       {
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
          ZipResDecrypt *zrd;
          size_t s;
          if( ! o->password )
@@ -74218,7 +75020,7 @@ ZipIo_openResGzip(IoIntfPtr fdc37m81xconfig, const char* name, ThreadMutex* m,
          setError(IOINTF_NOAESLIB, 0, sffsdrnandflash, flushoffset);
 #endif
       }
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       else if(o->passwordRequired)
       {
          setError(IOINTF_AES_COMPROMISED, 0, sffsdrnandflash, flushoffset);
@@ -74863,7 +75665,15 @@ LoginTracker_constructor(LoginTracker* o,
    DoubleList_constructor(&o->dFreeList);
    o->loginTrackerIntf=apecsmachine;
    o->cursor=0;
-   icachealiases = sizeof(LoginTrackerNode)*(notifyacked-1);
+   o->nodes=0;
+   o->noOfLoginTrackerNodes=0;
+   if(!notifyacked ||
+      sizeof(LoginTrackerNode) > (size_t)-1 / notifyacked)
+   {
+      baFatalE(FE_MALLOC, 0);
+      return;
+   }
+   icachealiases = sizeof(LoginTrackerNode)*notifyacked;
    o->nodes = (LoginTrackerNode*)AllocatorIntf_malloc(consoleiobase,&icachealiases);
    if(!o->nodes)
       baFatalE(FE_MALLOC, 0);
@@ -75429,8 +76239,19 @@ BasicAuthenticator_setAutHeader(const char* mappingprotection, HttpResponse* r30
 
 #include <SharkSslASN1.h>
 #include <SharkSslCSR.h>
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_CSR_CREATION && SHARKSSL_ENABLE_RSA)
+#include <psa-consumer/SharkSslPSAConsumerRSA.h>
+#endif
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_CSR_CREATION && SHARKSSL_ENABLE_ECDSA)
+#include <psa-consumer/SharkSslPSAConsumerECDSA.h>
+#endif
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_CSR_CREATION && SHARKSSL_ENABLE_EDDSA)
+#include <psa-consumer/SharkSslPSAConsumerEdDSA.h>
+#endif
 
 
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 
 
@@ -75556,16 +76377,40 @@ static int pandoralegacy(SharkSslASN1Create *o, SharkSslCertKey *disableclock, i
       }
    }
    #endif
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   #if (SHARKSSL_USE_ECC || SHARKSSL_ENABLE_RSA)
+   else
+   #endif
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(disableclock->expLen))
+   {
+      if (sha256export || (!disableclock->mod) || (!coupledexynos(disableclock->expLen)) ||
+          (mousethresh(disableclock->expLen) != 0) ||
+          ((disableclock->modLen != SHARKSSL_ED25519_PUBLIC_KEY_LEN) &&
+           (disableclock->modLen != SHARKSSL_ED448_PUBLIC_KEY_LEN)) ||
+          SharkSslASN1Create_raw(o, disableclock->mod, disableclock->modLen) ||
+          ((o->ptr - o->start) < 1))
+      {
+         return -1;
+      }
+      *--o->ptr = 0;
+      if (SharkSslASN1Create_length(o, disableclock->modLen + 1) || SharkSslASN1Create_bitString(o))
+      {
+         return -1;
+      }
+      timerdying = o->ptr;
+      sffsdrnandflash = (disableclock->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN) ? SharkSslASN1Create_oid(o, sharkssl_oid_ex(ed25519)) : SharkSslASN1Create_oid(o, sharkssl_oid_ex(ed448));
+   }
+   #endif
    else
    {
      return -1;
    }
 
-   return sffsdrnandflash ||
-      SharkSslASN1Create_length(o, (int)(timerdying - o->ptr)) ||
-      SharkSslASN1Create_sequence(o) ||
-      SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-      SharkSslASN1Create_sequence(o);
+   return (sffsdrnandflash ||
+           SharkSslASN1Create_length(o, (int)(timerdying - o->ptr)) ||
+           SharkSslASN1Create_sequence(o) ||
+           SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+           SharkSslASN1Create_sequence(o));
 }
 #endif
 
@@ -75604,9 +76449,9 @@ static int gpiokeysdevice(SharkSslASN1Create *o, SharkSslCertDN *panelshutdown)
    {
       sffsdrnandflash = SharkSslASN1Create_name(o, sharkssl_oid_ex(CN), panelshutdown->commonName, panelshutdown->commonNameLen);
    }
-   return sffsdrnandflash ||
-      SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-      SharkSslASN1Create_sequence(o);
+   return (sffsdrnandflash ||
+           SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+           SharkSslASN1Create_sequence(o));
 }
 
 
@@ -75640,19 +76485,19 @@ static int removedomain(SharkSslASN1Create *o, const char *verbosemcheck)
       rightsvalid = SHARKSSL_ASN1_GENERALIZED_TIME;
    }
 
-   return
-      SharkSslASN1Create_raw(o, verbosemcheck, len) ||
-      SharkSslASN1Create_length(o, len + 1) ||
-      SharkSslASN1Create_tag(o, rightsvalid);
+   return (SharkSslASN1Create_raw(o, verbosemcheck, len) || SharkSslASN1Create_length(o, len + 1) || SharkSslASN1Create_tag(o, rightsvalid));
 }
 
 
 static int stage2idmap(SharkSslASN1Create *o,
                                       SharkSslCertKey *configcheck,
-                                      U8 configwrite)
+                                      U8 configwrite, int _XzY0x293)
 {
    int sffsdrnandflash = 0;
    U8 *ref = o->ptr;
+   #if (!SHARKSSL_ENABLE_RSA)
+   (void)_XzY0x293;
+   #endif
 
    #if SHARKSSL_USE_ECC
    if (machinereboot(configcheck->expLen))
@@ -75683,6 +76528,14 @@ static int stage2idmap(SharkSslASN1Create *o,
    #if SHARKSSL_ENABLE_RSA
    if (machinekexec(configcheck->expLen))
    {
+      if (_XzY0x293)
+      {
+         sffsdrnandflash = SharkSslASN1Create_length(o, 0) || SharkSslASN1Create_tag(o, SHARKSSL_ASN1_NULL);
+         if (sffsdrnandflash)
+         {
+            return -1;
+         }
+      }
       switch (configwrite)
       {
          #if SHARKSSL_USE_SHA_512
@@ -75703,10 +76556,22 @@ static int stage2idmap(SharkSslASN1Create *o,
       }
    }
    #endif
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   #if (SHARKSSL_USE_ECC || SHARKSSL_ENABLE_RSA)
+   else
+   #endif
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(configcheck->expLen))
+   {
+      if ((configwrite != processsdccr) ||
+          ((configcheck->modLen != SHARKSSL_ED25519_PUBLIC_KEY_LEN) && (configcheck->modLen != SHARKSSL_ED448_PUBLIC_KEY_LEN)))
+      {
+         return -1;
+      }
+      sffsdrnandflash = (configcheck->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN) ? SharkSslASN1Create_oid(o, sharkssl_oid_ex(ed25519)) : SharkSslASN1Create_oid(o, sharkssl_oid_ex(ed448));
+   }
+   #endif
 
-   return sffsdrnandflash ||
-      SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-      SharkSslASN1Create_sequence(o);
+   return (sffsdrnandflash || SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o));
 }
 
 
@@ -75715,16 +76580,66 @@ static int devicewm8750(SharkSslASN1Create *o,
                                   SharkSslCertKey *configcheck,
                                   U8 *cachesysfs,
                                   U8 *end,
+                                  #if SHARKSSL_PSA_CONSUMER
+                                  psa_key_id_t _XzY0x20,
+                                  #endif
                                   U8 configwrite)
 {
    SharkSslSignParam signParam;
    U16 probealchemy;
    
    baAssert(end >= cachesysfs);
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(configcheck->expLen))
+   {
+      size_t _XzY0x299;
+      if ((!_XzY0x20) || (configwrite != processsdccr))
+      {
+         return -1;
+      }
+      if (configcheck->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN)
+      {
+         probealchemy = SHARKSSL_ED25519_SIGNATURE_LEN;
+      }
+      else if (configcheck->modLen == SHARKSSL_ED448_PUBLIC_KEY_LEN)
+      {
+         probealchemy = SHARKSSL_ED448_SIGNATURE_LEN;
+      }
+      else
+      {
+         return -1;
+      }
+      if ((o->ptr - o->start) < (probealchemy + 1))
+      {
+         return -1;
+      }
+      o->ptr -= probealchemy;
+      if (cachesysfs)
+      {
+         if ((!end) || (end < cachesysfs) ||
+             (PSA_SUCCESS != psa_sign_message(_XzY0x20, PSA_ALG_PURE_EDDSA, cachesysfs, (size_t)(end - cachesysfs), o->ptr, probealchemy, &_XzY0x299)) ||
+             (_XzY0x299 != probealchemy))
+         {
+            return -1;
+         }
+         return 0;
+      }
+      *--o->ptr = 0;
+      return (SharkSslASN1Create_length(o, probealchemy + 1) || SharkSslASN1Create_bitString(o) || stage2idmap(o, configcheck, configwrite, 0));
+   }
+   #endif
    #if SHARKSSL_USE_ECC
    if (machinereboot(configcheck->expLen))
    {
       probealchemy = relocationchain(configcheck);
+      #if SHARKSSL_PSA_CONSUMER
+      if (_XzY0x20 && !probealchemy)
+      {
+         SharkSslCertKey keyInfo = *configcheck;
+         gpiolibbanka(keyInfo.expLen, attachdevice(keyInfo.modLen));
+         probealchemy = relocationchain(&keyInfo);
+      }
+      #endif
       signParam.signature.signatureAlgo = accessactive;
    }
    #if SHARKSSL_ENABLE_RSA
@@ -75752,10 +76667,13 @@ static int devicewm8750(SharkSslASN1Create *o,
    
    if (cachesysfs)
    {
-      sharkssl_hash(signParam.signature.hash, cachesysfs, (U16)(end - cachesysfs), configwrite);
+      if (sharkssl_hash(signParam.signature.hash, cachesysfs, (U16)(end - cachesysfs), configwrite))
+      {
+         return -1;
+      }
       signParam.pCertKey = configcheck;
       #if SHARKSSL_PSA_CONSUMER
-      signParam.psaSignKey = 0;
+      signParam.psaSignKey = _XzY0x20;
       #endif
       signParam.signature.hashAlgo = configwrite;
       signParam.signature.signature = o->ptr;
@@ -75780,14 +76698,239 @@ static int devicewm8750(SharkSslASN1Create *o,
    *--o->ptr = 0;  
    probealchemy++;
 
-   return SharkSslASN1Create_length(o, probealchemy) ||
-          SharkSslASN1Create_bitString(o) ||
-          stage2idmap(o, configcheck, configwrite);
+   return (SharkSslASN1Create_length(o, probealchemy) || SharkSslASN1Create_bitString(o) || stage2idmap(o, configcheck, configwrite, 0));
 }
 #endif
 
 
 #if SHARKSSL_ENABLE_CSR_CREATION 
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_RSA)
+static int _XzY0x297(psa_algorithm_t _XzY0x261, U8 *configwrite)
+{
+   psa_algorithm_t chargerplatform = PSA_ALG_GET_HASH(_XzY0x261);
+   if ((_XzY0x261 != PSA_ALG_RSA_PKCS1V15_SIGN(chargerplatform)) &&
+       (_XzY0x261 != PSA_ALG_RSA_PSS(chargerplatform)))
+   {
+      return -1;
+   }
+   #if SHARKSSL_USE_SHA_256
+   if (PSA_ALG_SHA_256 == chargerplatform)
+   {
+      *configwrite = SHARKSSL_HASHID_SHA256;
+      return 0;
+   }
+   #endif
+   #if SHARKSSL_USE_SHA_384
+   if (PSA_ALG_SHA_384 == chargerplatform)
+   {
+      *configwrite = SHARKSSL_HASHID_SHA384;
+      return 0;
+   }
+   #endif
+   #if SHARKSSL_USE_SHA_512
+   if (PSA_ALG_SHA_512 == chargerplatform)
+   {
+      *configwrite = SHARKSSL_HASHID_SHA512;
+      return 0;
+   }
+   #endif
+   return -1;
+}
+
+
+static int _XzY0x27D(SharkSslASN1Create *o, U8 configwrite)
+{
+   const U8 *oid;
+   U8 *ref = o->ptr;
+   int fieldvalue;
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256:
+         oid = sharkssl_oid_sha256;
+         fieldvalue = sizeof(sharkssl_oid_sha256);
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384:
+         oid = sharkssl_oid_sha384;
+         fieldvalue = sizeof(sharkssl_oid_sha384);
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512:
+         oid = sharkssl_oid_sha512;
+         fieldvalue = sizeof(sharkssl_oid_sha512);
+         break;
+      #endif
+      default:
+         return -1;
+   }
+   return (SharkSslASN1Create_length(o, 0) ||
+           SharkSslASN1Create_tag(o, SHARKSSL_ASN1_NULL) ||
+           SharkSslASN1Create_oid(o, oid, fieldvalue) ||
+           SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+           SharkSslASN1Create_sequence(o));
+}
+
+
+static int _XzY0x27E(SharkSslASN1Create *o, U8 configwrite, U8 singleftoui)
+{
+   U8 *_XzY0x281 = o->ptr;
+   U8 *_XzY0x287 = o->ptr;
+   U8 *_XzY0x29 = o->ptr;
+   if (SharkSslASN1Create_int(o, &singleftoui, sizeof(singleftoui)) ||
+       SharkSslASN1Create_length(o, (int)(_XzY0x287 - o->ptr)) ||
+       SharkSslASN1Create_tag(o, SHARKSSL_ASN1_CONTEXT_SPECIFIC | SHARKSSL_ASN1_CONSTRUCTED |
+                                SHARKSSL_ASN1_PSS_TAG_SALT_LENGTH))
+   {
+      return -1;
+   }
+   _XzY0x287 = o->ptr;
+   if (_XzY0x27D(o, configwrite) ||
+       SharkSslASN1Create_oid(o, sharkssl_oid_ex(mgf1)) ||
+       SharkSslASN1Create_length(o, (int)(_XzY0x287 - o->ptr)) ||
+       SharkSslASN1Create_sequence(o) ||
+       SharkSslASN1Create_length(o, (int)(_XzY0x287 - o->ptr)) ||
+       SharkSslASN1Create_tag(o, SHARKSSL_ASN1_CONTEXT_SPECIFIC | SHARKSSL_ASN1_CONSTRUCTED |
+                                SHARKSSL_ASN1_PSS_TAG_MASK_GEN_ALGORITHM))
+   {
+      return -1;
+   }
+   _XzY0x287 = o->ptr;
+   if (_XzY0x27D(o, configwrite) ||
+       SharkSslASN1Create_length(o, (int)(_XzY0x287 - o->ptr)) ||
+       SharkSslASN1Create_tag(o, SHARKSSL_ASN1_CONTEXT_SPECIFIC | SHARKSSL_ASN1_CONSTRUCTED |
+                                SHARKSSL_ASN1_PSS_TAG_HASH_ALGORITHM))
+   {
+      return -1;
+   }
+   return (SharkSslASN1Create_length(o, (int)(_XzY0x29 - o->ptr)) ||
+           SharkSslASN1Create_sequence(o) ||
+           SharkSslASN1Create_oid(o, sharkssl_oid_ex(rsassaPss)) ||
+           SharkSslASN1Create_length(o, (int)(_XzY0x281 - o->ptr)) ||
+           SharkSslASN1Create_sequence(o));
+}
+
+
+static int _XzY0x27F(SharkSslASN1Create *o, const SharkSslPSARSAKey *sourcerouting,
+                                         SharkSslCertKey *disableclock, U8 *cachesysfs, U8 *end, U8 configwrite)
+{
+   U8 chargerplatform[SHARKSSL_MAX_HASH_LEN];
+   size_t written = 0;
+   U16 _XzY0x299 = 0;
+   U16 _XzY0x28F = sourcerouting->bits / CHAR_BIT;
+   psa_algorithm_t hashAlgorithm = PSA_ALG_GET_HASH(sourcerouting->alg);
+   int sffsdrnandflash;
+
+   if ((o->ptr - o->start) < (_XzY0x28F + 1))
+   {
+      return -1;
+   }
+   o->ptr -= _XzY0x28F;
+   if (cachesysfs)
+   {
+      if ((!end) || (end < cachesysfs) ||
+          (PSA_SUCCESS != psa_hash_compute(hashAlgorithm, cachesysfs, (size_t)(end - cachesysfs),
+                                           chargerplatform, sizeof(chargerplatform), &written)) ||
+          (written != PSA_HASH_LENGTH(hashAlgorithm)))
+      {
+         return -1;
+      }
+      sffsdrnandflash = SharkSslPSARSAKey_signHash(sourcerouting, chargerplatform, o->ptr, &_XzY0x299,
+                                          (U16)written, _XzY0x28F);
+      sharkssl_clear(chargerplatform, sizeof(chargerplatform));
+      return ((0 == sffsdrnandflash) && (_XzY0x299 == _XzY0x28F)) ? 0 : -1;
+   }
+   *--o->ptr = 0;
+   if (SharkSslASN1Create_length(o, _XzY0x28F + 1) ||
+       SharkSslASN1Create_bitString(o))
+   {
+      return -1;
+   }
+   if (sourcerouting->alg == PSA_ALG_RSA_PSS(hashAlgorithm))
+   {
+      return _XzY0x27E(o, configwrite, (U8)PSA_HASH_LENGTH(hashAlgorithm));
+   }
+   return stage2idmap(o, disableclock, configwrite, 1);
+}
+#endif
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_RSA && (SHARKSSL_ENABLE_CSR_CREATION || SHARKSSL_ENABLE_CSR_SIGNING))
+static int _XzY0x28(SharkSslCertKey *disableclock, U8 *der, U16 _XzY0x269, U16 enablekernel)
+{
+   SharkSslParseASN1 parse;
+   int _XzY0x295;
+   memset(&parse, 0, sizeof(parse));
+   parse.ptr = der;
+   parse.len = _XzY0x269;
+   _XzY0x295 = SharkSslParseASN1_getSequence(&parse);
+   if ((_XzY0x295 < 0) || ((U32)_XzY0x295 != parse.len) ||
+       (parse.len < SHARKSSL_ASN1_MIN_INTEGER_TLV_LEN) ||
+       (SharkSslParseASN1_getInt(&parse) < 0) ||
+       (parse.datalen != (U32)(enablekernel / CHAR_BIT)))
+   {
+      return -1;
+   }
+   disableclock->mod = parse.dataptr;
+   disableclock->modLen = (U16)parse.datalen;
+   if ((parse.len < SHARKSSL_ASN1_MIN_INTEGER_TLV_LEN) ||
+       (SharkSslParseASN1_getInt(&parse) < 0) ||
+       (!parse.datalen) || (parse.datalen > UINT8_MAX) || parse.len)
+   {
+      return -1;
+   }
+   disableclock->exp = parse.dataptr;
+   disableclock->expLen = (U16)parse.datalen;
+   specialmapping(disableclock->expLen);
+   return 0;
+}
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_ECDSA && (SHARKSSL_ENABLE_CSR_CREATION || SHARKSSL_ENABLE_CSR_SIGNING))
+#if SHARKSSL_ECC_USE_SECP521R1
+#define SHARKSSL_CSR_PSA_ECDSA_MAX_POINTLEN   SHARKSSL_SECP521R1_POINTLEN
+#elif SHARKSSL_ECC_USE_SECP384R1
+#define SHARKSSL_CSR_PSA_ECDSA_MAX_POINTLEN   SHARKSSL_SECP384R1_POINTLEN
+#else
+#define SHARKSSL_CSR_PSA_ECDSA_MAX_POINTLEN   SHARKSSL_SECP256R1_POINTLEN
+#endif
+
+static int _XzY0x296(U16 defaultsdhci1, U16 *savedsigmask, size_t *_XzY0x28C)
+{
+   #if SHARKSSL_ECC_USE_SECP256R1
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP256R1)
+   {
+      *savedsigmask = SHARKSSL_SECP256R1_POINTLEN;
+      *_XzY0x28C = (size_t)*savedsigmask * CHAR_BIT;
+      return 0;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP384R1
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP384R1)
+   {
+      *savedsigmask = SHARKSSL_SECP384R1_POINTLEN;
+      *_XzY0x28C = (size_t)*savedsigmask * CHAR_BIT;
+      return 0;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP521R1
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP521R1)
+   {
+      *savedsigmask = SHARKSSL_SECP521R1_POINTLEN;
+      *_XzY0x28C = SHARKSSL_SECP521R1_BITS;
+      return 0;
+   }
+   #endif
+   return -1;
+}
+#endif
+
+
+#if SHARKSSL_ENABLE_CSR_CREATION
 static int subpacketannotation(SharkSslASN1Create *o,
                                     const char *SAN,
                                     int alignstack,
@@ -75801,7 +76944,7 @@ static int subpacketannotation(SharkSslASN1Create *o,
       U8 *ref = o->ptr;
       char *probecache;
       
-	   if(((o->ptr - o->start) < alignstack) || (alignstack > 0xFF))
+      if(((o->ptr - o->start) < alignstack) || (alignstack > 0xFF))
       {
          return -1;
       }
@@ -75873,7 +77016,7 @@ static int subpacketannotation(SharkSslASN1Create *o,
                   allockuser -= 4;
                }
                o->ptr -= allockuser;
-	            memcpy(o->ptr, SAN, allockuser);
+               memcpy(o->ptr, SAN, allockuser);
                SAN += allockuser;  
             }
 
@@ -75897,11 +77040,11 @@ static int subpacketannotation(SharkSslASN1Create *o,
          sffsdrnandflash = SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || 
             SharkSslASN1Create_octetString(o);
       }
-	  
-      return sffsdrnandflash ||
-         SharkSslASN1Create_oid(o, oid, fieldvalue) ||
-         SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-         SharkSslASN1Create_sequence(o);
+
+      return (sffsdrnandflash ||
+              SharkSslASN1Create_oid(o, oid, fieldvalue) ||
+              SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+              SharkSslASN1Create_sequence(o));
    }
 
    return -1;
@@ -75927,42 +77070,26 @@ static int eventinterruptible(SharkSslASN1Create *o,
       SharkSslASN1Create_bitString(o);
       *--o->ptr = 4; 
       SharkSslASN1Create_octetString(o);
-      return SharkSslASN1Create_oid(o, oid, fieldvalue) ||
-         SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-         SharkSslASN1Create_sequence(o);
+      return (SharkSslASN1Create_oid(o, oid, fieldvalue) ||
+              SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+              SharkSslASN1Create_sequence(o));
    }
    return 0;
 }
 
 
-SHARKSSL_API int
-SharkSslASN1Create_CSR(SharkSslASN1Create *o,
-                       SharkSslKey mcbspplatform,
-                       U8 configwrite,
-                       SharkSslCertDN *devicetable,
-                       const char *SAN,
-                       SharkSslBitExtReq *latchcontrol,
-                       SharkSslBitExtReq *setupcalled)
+static int _XzY0x27C(SharkSslASN1Create *o, SharkSslCertKey *disableclock,
+                                        SharkSslCertDN *devicetable, const char *SAN,
+                                        SharkSslBitExtReq *latchcontrol, SharkSslBitExtReq *setupcalled)
 {
-   SharkSslCertKey disableclock;
-   U8 *ref, *end;
+   U8 *ref;
    int sffsdrnandflash;
-
-   if (!interrupthandler(&disableclock, mcbspplatform))
-   {
-      return -1;
-   }
-
-   
-   devicewm8750(o, &disableclock, 0, 0, configwrite);
-   end = o->ptr;  
 
    
    ref = o->ptr;
-   sffsdrnandflash =
-      eventinterruptible(o, setupcalled, 8, sharkssl_oid_ex(ns_cert_type)) ||
-      eventinterruptible(o, latchcontrol, 7, sharkssl_oid_ex(key_usage)) ||
-	   (SAN ? subpacketannotation(o, SAN, (int)strlen(SAN), sharkssl_oid_ex(san)) : 0);
+   sffsdrnandflash = eventinterruptible(o, setupcalled, 8, sharkssl_oid_ex(ns_cert_type)) ||
+            eventinterruptible(o, latchcontrol, 7, sharkssl_oid_ex(key_usage)) ||
+            (SAN ? subpacketannotation(o, SAN, (int)strlen(SAN), sharkssl_oid_ex(san)) : 0);
    if( (latchcontrol || setupcalled || SAN) && !sffsdrnandflash )
    {
       sffsdrnandflash = 
@@ -75981,26 +77108,345 @@ SharkSslASN1Create_CSR(SharkSslASN1Create *o,
    if( !sffsdrnandflash )
    {
       static const U8 ts409button[1] = {0};
-      sffsdrnandflash =
-         pandoralegacy(o, &disableclock, 0) ||
-         gpiokeysdevice(o, devicetable) ||
-         SharkSslASN1Create_int(o, (U8*)ts409button, 1) || 
-         SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
-         SharkSslASN1Create_sequence(o);
+      sffsdrnandflash = (pandoralegacy(o, disableclock, 0) ||
+                gpiokeysdevice(o, devicetable) ||
+                SharkSslASN1Create_int(o, (U8*)ts409button, 1) || 
+                SharkSslASN1Create_length(o, (int)(ref - o->ptr)) ||
+                SharkSslASN1Create_sequence(o));
    }
 
-   if( !sffsdrnandflash )
+   return sffsdrnandflash;
+}
+
+
+SHARKSSL_API int
+SharkSslASN1Create_CSR(SharkSslASN1Create *o,
+                       SharkSslKey mcbspplatform,
+                       U8 configwrite,
+                       SharkSslCertDN *devicetable,
+                       const char *SAN,
+                       SharkSslBitExtReq *latchcontrol,
+                       SharkSslBitExtReq *setupcalled)
+{
+   SharkSslCertKey disableclock;
+   U8 *ref, *end;
+   int sffsdrnandflash;
+
+   if ((!o) || (!devicetable) || (!interrupthandler(&disableclock, mcbspplatform)))
    {
-      ref = o->ptr;  
+      return -1;
+   }
+
+   
+   if (devicewm8750(o, &disableclock, NULL, NULL,
+                               #if SHARKSSL_PSA_CONSUMER
+                               PSA_KEY_ID_NULL,
+                               #endif
+                               configwrite))
+   {
+      return -1;
+   }
+   end = o->ptr;
+   sffsdrnandflash = _XzY0x27C(o, &disableclock, devicetable, SAN, latchcontrol, setupcalled);
+   if (!sffsdrnandflash)
+   {
+      ref = o->ptr;
       o->ptr = o->end;
-      devicewm8750(o, &disableclock, ref, end, configwrite);
+      sffsdrnandflash = devicewm8750(o, &disableclock, ref, end,
+                                       #if SHARKSSL_PSA_CONSUMER
+                                       PSA_KEY_ID_NULL,
+                                       #endif
+                                       configwrite);
       o->ptr = ref;
-      return 
-         SharkSslASN1Create_length(o, (int)(o->end - o->ptr)) ||
-         SharkSslASN1Create_sequence(o);
+      if (!sffsdrnandflash)
+      {
+         sffsdrnandflash = (SharkSslASN1Create_length(o, (int)(o->end - o->ptr)) || SharkSslASN1Create_sequence(o));
+      }
    }
    return sffsdrnandflash;
 }
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_RSA)
+SHARKSSL_API int
+SharkSslASN1Create_CSRWithPSARSAKey(SharkSslASN1Create *o, const SharkSslPSARSAKey *sourcerouting,
+                                    SharkSslCertDN *devicetable, const char *SAN,
+                                    SharkSslBitExtReq *latchcontrol, SharkSslBitExtReq *setupcalled)
+{
+   SharkSslCertKey disableclock;
+   U8 *_XzY0x291, *ref, *end;
+   size_t _XzY0x2D7;
+   int sffsdrnandflash;
+   U16 _XzY0x292 = 0;
+   U8 configwrite;
+
+   if ((!o) || (!o->start) || (!o->end) || (o->ptr != o->end) || (!sourcerouting) ||
+       (PSA_KEY_ID_NULL == sourcerouting->handle) || sourcerouting->publicOnly || (!sourcerouting->bits) ||
+       (sourcerouting->bits % CHAR_BIT) || (!devicetable) || _XzY0x297(sourcerouting->alg, &configwrite))
+   {
+      return -1;
+   }
+   _XzY0x2D7 = PSA_EXPORT_PUBLIC_KEY_OUTPUT_SIZE(PSA_KEY_TYPE_RSA_KEY_PAIR, sourcerouting->bits);
+   if ((!_XzY0x2D7) || (_XzY0x2D7 > UINT16_MAX))
+   {
+      return -1;
+   }
+   _XzY0x291 = (U8*)baMalloc(_XzY0x2D7);
+   if (!_XzY0x291)
+   {
+      return -1;
+   }
+   memset(&disableclock, 0, sizeof(disableclock));
+   sffsdrnandflash = SharkSslPSARSAKey_exportPublic(sourcerouting, _XzY0x291, (U16)_XzY0x2D7, &_XzY0x292);
+   if (!sffsdrnandflash)
+   {
+      sffsdrnandflash = _XzY0x28(&disableclock, _XzY0x291, _XzY0x292, sourcerouting->bits);
+   }
+   if (!sffsdrnandflash)
+   {
+      sffsdrnandflash = _XzY0x27F(o, sourcerouting, &disableclock, NULL, NULL, configwrite);
+   }
+   if (!sffsdrnandflash)
+   {
+      end = o->ptr;
+      sffsdrnandflash = _XzY0x27C(o, &disableclock, devicetable, SAN, latchcontrol, setupcalled);
+   }
+   if (!sffsdrnandflash)
+   {
+      ref = o->ptr;
+      o->ptr = o->end;
+      sffsdrnandflash = _XzY0x27F(o, sourcerouting, &disableclock, ref, end, configwrite);
+      o->ptr = ref;
+      if (!sffsdrnandflash)
+      {
+         sffsdrnandflash = (SharkSslASN1Create_length(o, (int)(o->end - o->ptr)) || SharkSslASN1Create_sequence(o));
+      }
+   }
+   baFree(_XzY0x291);
+   if (sffsdrnandflash)
+   {
+      o->ptr = o->end;
+   }
+   return sffsdrnandflash;
+}
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_ECDSA)
+SHARKSSL_API int
+SharkSslASN1Create_CSRWithPSAECDSAKeyHash(SharkSslASN1Create *o, const SharkSslPSAEcdsaKey *sourcerouting,
+                                          SharkSslCertDN *devicetable, const char *SAN,
+                                          SharkSslBitExtReq *latchcontrol, SharkSslBitExtReq *setupcalled, U8 configwrite)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_CSR_PSA_ECDSA_MAX_POINTLEN)];
+   SharkSslCertKey disableclock;
+   psa_algorithm_t hashAlgorithm;
+   size_t _XzY0x2D8, _XzY0x28C;
+   U8 *ref, *end, *originalEnd;
+   U16 savedsigmask;
+   int sffsdrnandflash = -1;
+
+   if ((!o) || (!o->start) || (!o->end) || (o->ptr != o->end) || (!sourcerouting) ||
+       (!devicetable) || (!sourcerouting->handle) || sourcerouting->publicOnly ||
+       (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   if (_XzY0x296(sourcerouting->curveID, &savedsigmask, &_XzY0x28C))
+   {
+      return -1;
+   }
+   originalEnd = o->end;
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256:
+         hashAlgorithm = PSA_ALG_SHA_256;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384:
+         hashAlgorithm = PSA_ALG_SHA_384;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512:
+         hashAlgorithm = PSA_ALG_SHA_512;
+         break;
+      #endif
+
+      default:
+         return -1;
+   }
+   if ((sourcerouting->algorithm != PSA_ALG_ECDSA(hashAlgorithm)) && (sourcerouting->algorithm != PSA_ALG_ECDSA(PSA_ALG_ANY_HASH)))
+   {
+      return -1;
+   }
+   if ((PSA_SUCCESS != psa_get_key_attributes(sourcerouting->handle, &attributes)) ||
+       (psa_get_key_type(&attributes) != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1)) ||
+       (psa_get_key_bits(&attributes) != _XzY0x28C) ||
+       (!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_HASH)) ||
+       (psa_get_key_algorithm(&attributes) != sourcerouting->algorithm))
+   {
+      goto _sharkssl_CSR_psaECDSA_cleanup;
+   }
+   if ((PSA_SUCCESS != psa_export_public_key(sourcerouting->handle, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8)) ||
+       (_XzY0x2D8 != (size_t)(1 + (2 * savedsigmask))) ||
+       (_XzY0x1E7[0] != SHARKSSL_EC_POINT_UNCOMPRESSED))
+   {
+      goto _sharkssl_CSR_psaECDSA_cleanup;
+   }
+   memset(&disableclock, 0, sizeof(disableclock));
+   disableclock.mod = _XzY0x1E7 + 1;
+   nomsrnoirq(disableclock.modLen, sourcerouting->curveID);
+   dcdc1consumers(disableclock.modLen, savedsigmask);
+   deltaticks(disableclock.expLen);
+   sffsdrnandflash = devicewm8750(o, &disableclock, NULL, NULL, sourcerouting->handle, configwrite);
+   if (!sffsdrnandflash)
+   {
+      end = o->ptr;
+      sffsdrnandflash = _XzY0x27C(o, &disableclock, devicetable, SAN, latchcontrol, setupcalled);
+   }
+   if (!sffsdrnandflash)
+   {
+      ref = o->ptr;
+      o->ptr = o->end;
+      sffsdrnandflash = devicewm8750(o, &disableclock, ref, end, sourcerouting->handle, configwrite);
+      o->ptr = ref;
+      if (!sffsdrnandflash)
+      {
+         sffsdrnandflash = SharkSslASN1Create_length(o, (int)(o->end - o->ptr)) || SharkSslASN1Create_sequence(o);
+      }
+   }
+   if (sffsdrnandflash)
+   {
+      o->end = originalEnd;
+      o->ptr = o->end;
+   }
+   _sharkssl_CSR_psaECDSA_cleanup:
+   psa_reset_key_attributes(&attributes);
+   return sffsdrnandflash;
+}
+
+
+SHARKSSL_API int
+SharkSslASN1Create_CSRWithPSAECDSAKey(SharkSslASN1Create *o, const SharkSslPSAEcdsaKey *sourcerouting,
+                                      SharkSslCertDN *devicetable, const char *SAN,
+                                      SharkSslBitExtReq *latchcontrol, SharkSslBitExtReq *setupcalled)
+{
+   psa_algorithm_t hashAlgorithm;
+   U8 configwrite;
+   if (!sourcerouting)
+   {
+      return -1;
+   }
+   hashAlgorithm = PSA_ALG_GET_HASH(sourcerouting->algorithm);
+   switch (hashAlgorithm)
+   {
+      #if SHARKSSL_USE_SHA_256
+      case PSA_ALG_SHA_256:
+         configwrite = SHARKSSL_HASHID_SHA256;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_384
+      case PSA_ALG_SHA_384:
+         configwrite = SHARKSSL_HASHID_SHA384;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_512
+      case PSA_ALG_SHA_512:
+         configwrite = SHARKSSL_HASHID_SHA512;
+         break;
+      #endif
+
+      default:
+         return -1;
+   }
+   return SharkSslASN1Create_CSRWithPSAECDSAKeyHash(o, sourcerouting, devicetable, SAN, latchcontrol, setupcalled, configwrite);
+}
+#endif
+
+
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+SHARKSSL_API int
+SharkSslASN1Create_CSRWithPSAEdDSAKey(SharkSslASN1Create *o, const SharkSslPSAEdDSAKey *sourcerouting,
+                                      SharkSslCertDN *devicetable, const char *SAN,
+                                      SharkSslBitExtReq *latchcontrol, SharkSslBitExtReq *setupcalled)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   U8 _XzY0x1E7[SHARKSSL_ED448_PUBLIC_KEY_LEN];
+   SharkSslCertKey disableclock;
+   U8 *ref, *end;
+   U16 _XzY0x2D8 = 0;
+   U16 _XzY0x26E;
+   int sffsdrnandflash = -1;
+
+   if ((!o) || (!o->start) || (!o->end) || (o->ptr != o->end) ||
+       (!sourcerouting) || (!sourcerouting->handle) || sourcerouting->publicOnly || sourcerouting->prehash || (!devicetable) ||
+       (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   if (sourcerouting->bits == SHARKSSL_ED25519_BITS)
+   {
+      _XzY0x26E = SHARKSSL_ED25519_PUBLIC_KEY_LEN;
+   }
+   else if (sourcerouting->bits == SHARKSSL_ED448_BITS)
+   {
+      _XzY0x26E = SHARKSSL_ED448_PUBLIC_KEY_LEN;
+   }
+   else
+   {
+      return -1;
+   }
+   if ((PSA_SUCCESS != psa_get_key_attributes(sourcerouting->handle, &attributes)) ||
+       (psa_get_key_type(&attributes) != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS)) ||
+       (psa_get_key_bits(&attributes) != sourcerouting->bits) ||
+       (!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_MESSAGE)) ||
+       (psa_get_key_algorithm(&attributes) != PSA_ALG_PURE_EDDSA))
+   {
+      goto _sharkssl_CSR_psaEdDSA_cleanup;
+   }
+   if (SharkSslPSAEdDSAKey_exportPublic(sourcerouting, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8) ||
+       (_XzY0x2D8 != _XzY0x26E))
+   {
+      goto _sharkssl_CSR_psaEdDSA_cleanup;
+   }
+   memset(&disableclock, 0, sizeof(disableclock));
+   disableclock.mod = _XzY0x1E7;
+   disableclock.modLen = _XzY0x2D8;
+   SHARKSSL_EXPLEN_SET_KEYTYPE_EDDSA_PUB(disableclock.expLen);
+   sffsdrnandflash = devicewm8750(o, &disableclock, NULL, NULL, sourcerouting->handle, processsdccr);
+   if (!sffsdrnandflash)
+   {
+      end = o->ptr;
+      sffsdrnandflash = _XzY0x27C(o, &disableclock, devicetable, SAN, latchcontrol, setupcalled);
+   }
+   if (!sffsdrnandflash)
+   {
+      ref = o->ptr;
+      o->ptr = o->end;
+      sffsdrnandflash = devicewm8750(o, &disableclock, ref, end, sourcerouting->handle, processsdccr);
+      o->ptr = ref;
+      if (!sffsdrnandflash)
+      {
+         sffsdrnandflash = SharkSslASN1Create_length(o, (int)(o->end - o->ptr)) || SharkSslASN1Create_sequence(o);
+      }
+   }
+   if (sffsdrnandflash)
+   {
+      o->ptr = o->end;
+   }
+   _sharkssl_CSR_psaEdDSA_cleanup:
+   psa_reset_key_attributes(&attributes);
+   return sffsdrnandflash;
+}
+#endif
 #endif
 
 
@@ -76114,8 +77560,174 @@ static int _XzY0x1F1(const SharkSslCertKey *contextoffset, const SharkSslCertKey
                                              supportedvector(ahashdigest->modLen)))) ? 0 : -1;
    }
    #endif
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(contextoffset->expLen))
+   {
+      return ((SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(ahashdigest->expLen)) &&
+              (contextoffset->modLen == ahashdigest->modLen) &&
+              ((contextoffset->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN) || (contextoffset->modLen == SHARKSSL_ED448_PUBLIC_KEY_LEN)) &&
+              (contextoffset->mod) && (ahashdigest->mod) &&
+              (0 == sharkssl_kmemcmp(contextoffset->mod, ahashdigest->mod, contextoffset->modLen))) ? 0 : -1;
+   }
+   #endif
    return -1;
 }
+
+
+#if SHARKSSL_PSA_CONSUMER
+static int _XzY0x298(const SharkSslCertKey *_XzY0x28A, psa_key_id_t _XzY0x20, U8 configwrite)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_algorithm_t hashAlgorithm, signAlgorithm;
+   psa_key_type_t earlyconsole;
+   size_t _XzY0x28C;
+   int match = -1;
+
+   if ((!_XzY0x28A) || (!_XzY0x20) || (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   #if SHARKSSL_ENABLE_EDDSA
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(_XzY0x28A->expLen))
+   {
+      U8 _XzY0x1E7[SHARKSSL_ED448_PUBLIC_KEY_LEN];
+      size_t _XzY0x2D8;
+      U16 _XzY0x26D;
+
+      if (_XzY0x28A->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN)
+      {
+         _XzY0x26D = SHARKSSL_ED25519_BITS;
+      }
+      else if (_XzY0x28A->modLen == SHARKSSL_ED448_PUBLIC_KEY_LEN)
+      {
+         _XzY0x26D = SHARKSSL_ED448_BITS;
+      }
+      else
+      {
+         return -1;
+      }
+      if ((!_XzY0x28A->mod) || (configwrite != processsdccr) ||
+          (PSA_SUCCESS != psa_get_key_attributes(_XzY0x20, &attributes)) ||
+          (psa_get_key_type(&attributes) != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS)) ||
+          (psa_get_key_bits(&attributes) != _XzY0x26D) ||
+          (!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_MESSAGE)) ||
+          (psa_get_key_algorithm(&attributes) != PSA_ALG_PURE_EDDSA))
+      {
+         goto _sharkssl_CSR_psaKey_cleanup;
+      }
+      if ((PSA_SUCCESS == psa_export_public_key(_XzY0x20, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8)) &&
+          (_XzY0x2D8 == _XzY0x28A->modLen) &&
+          (0 == sharkssl_kmemcmp(_XzY0x1E7, _XzY0x28A->mod, _XzY0x28A->modLen)))
+      {
+         match = 0;
+      }
+      goto _sharkssl_CSR_psaKey_cleanup;
+   }
+   #endif
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256:
+         hashAlgorithm = PSA_ALG_SHA_256;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384:
+         hashAlgorithm = PSA_ALG_SHA_384;
+         break;
+      #endif
+
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512:
+         hashAlgorithm = PSA_ALG_SHA_512;
+         break;
+      #endif
+
+      default:
+         return -1;
+   }
+   if (PSA_SUCCESS != psa_get_key_attributes(_XzY0x20, &attributes))
+   {
+      return -1;
+   }
+   earlyconsole = psa_get_key_type(&attributes);
+   _XzY0x28C = psa_get_key_bits(&attributes);
+   signAlgorithm = psa_get_key_algorithm(&attributes);
+   if (!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_HASH))
+   {
+      goto _sharkssl_CSR_psaKey_cleanup;
+   }
+   #if SHARKSSL_ENABLE_RSA
+   if (machinekexec(_XzY0x28A->expLen))
+   {
+      U8 *_XzY0x291;
+      SharkSslCertKey exportedKey;
+      size_t _XzY0x2D7, _XzY0x292;
+      U16 _XzY0x28F = supportedvector(_XzY0x28A->modLen);
+
+      if ((earlyconsole != PSA_KEY_TYPE_RSA_KEY_PAIR) ||
+          (_XzY0x28C != (size_t)_XzY0x28F * CHAR_BIT) ||
+          (signAlgorithm != PSA_ALG_RSA_PKCS1V15_SIGN(hashAlgorithm)))
+      {
+         goto _sharkssl_CSR_psaKey_cleanup;
+      }
+      _XzY0x2D7 = PSA_EXPORT_PUBLIC_KEY_OUTPUT_SIZE(PSA_KEY_TYPE_RSA_KEY_PAIR, _XzY0x28C);
+      if ((!_XzY0x2D7) || (_XzY0x2D7 > UINT16_MAX))
+      {
+         goto _sharkssl_CSR_psaKey_cleanup;
+      }
+      _XzY0x291 = (U8*)baMalloc(_XzY0x2D7);
+      if (!_XzY0x291)
+      {
+         goto _sharkssl_CSR_psaKey_cleanup;
+      }
+      if ((PSA_SUCCESS == psa_export_public_key(_XzY0x20, _XzY0x291, _XzY0x2D7, &_XzY0x292)) &&
+          (_XzY0x292 <= UINT16_MAX) &&
+          (!_XzY0x28(&exportedKey, _XzY0x291, (U16)_XzY0x292, (U16)_XzY0x28C)))
+      {
+         match = _XzY0x1F1(&exportedKey, _XzY0x28A);
+      }
+      baFree(_XzY0x291);
+   }
+   else
+   #endif
+   #if SHARKSSL_ENABLE_ECDSA
+   if (machinereboot(_XzY0x28A->expLen))
+   {
+      U8 _XzY0x1E7[1 + (2 * SHARKSSL_CSR_PSA_ECDSA_MAX_POINTLEN)];
+      size_t _XzY0x2D8;
+      U16 savedsigmask = attachdevice(_XzY0x28A->modLen);
+      U16 defaultsdhci1 = wakeupenable(_XzY0x28A->modLen);
+      U16 _XzY0x286;
+      size_t _XzY0x26D;
+
+      if (_XzY0x296(defaultsdhci1, &_XzY0x286, &_XzY0x26D) ||
+          (savedsigmask != _XzY0x286) ||
+          (earlyconsole != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1)) ||
+          (_XzY0x28C != _XzY0x26D) ||
+          ((signAlgorithm != PSA_ALG_ECDSA(hashAlgorithm)) && (signAlgorithm != PSA_ALG_ECDSA(PSA_ALG_ANY_HASH))))
+      {
+         goto _sharkssl_CSR_psaKey_cleanup;
+      }
+      if ((PSA_SUCCESS == psa_export_public_key(_XzY0x20, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8)) &&
+          (_XzY0x2D8 == (size_t)(1 + (2 * savedsigmask))) &&
+          (_XzY0x1E7[0] == SHARKSSL_EC_POINT_UNCOMPRESSED) &&
+          (0 == sharkssl_kmemcmp(_XzY0x1E7 + 1, _XzY0x28A->mod, 2 * savedsigmask)))
+      {
+         match = 0;
+      }
+   }
+   else
+   #endif
+   {
+      match = -1;
+   }
+   _sharkssl_CSR_psaKey_cleanup:
+   psa_reset_key_attributes(&attributes);
+   return match;
+}
+#endif
 
 
 static int sharkssl_CSR_validDate(const U8 date[14])
@@ -76592,7 +78204,7 @@ static int _XzY0x1EF(const U8 *alloccontroller, U16 rebootnotifier, SharkSslCert
 
 
 static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert userspacememory,
-                                    const SharkSslKey mcbspplatform, const SharkSslCertSAN *panelshutdown, U16 _XzY0x1E)
+                                     U8 _XzY0x289, const SharkSslCertSAN *panelshutdown, U16 _XzY0x1E)
 {
    const SharkSslCertSAN *san;
    U16 i, j, uriCount = 0, hostCount = 0;
@@ -76608,15 +78220,17 @@ static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert use
    {
       if ((0 != _XzY0x1E) || (0xFFFF == _XzY0x1E5->pathLenConstraint) ||
           ((SHARKSSL_CERT_PROFILE_ROOT_CA == _XzY0x1E5->type) != (NULL == userspacememory)) ||
-          ((SHARKSSL_CERT_PROFILE_ROOT_CA == _XzY0x1E5->type) && (NULL == mcbspplatform)))
+          ((SHARKSSL_CERT_PROFILE_ROOT_CA == _XzY0x1E5->type) && (!_XzY0x289)))
       {
          return -1;
       }
    }
    else if ((SHARKSSL_CERT_PROFILE_TLS_SERVER == _XzY0x1E5->type) ||
+            (SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED == _XzY0x1E5->type) ||
             (SHARKSSL_CERT_PROFILE_TLS_CLIENT == _XzY0x1E5->type) || _XzY0x1FF)
    {
-      if (((NULL == userspacememory) && (!_XzY0x1FF || (NULL == mcbspplatform))) ||
+      if (((SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED == _XzY0x1E5->type) && ((NULL != userspacememory) || (!_XzY0x289))) ||
+          ((NULL == userspacememory) && (SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED != _XzY0x1E5->type) && (!_XzY0x1FF || (!_XzY0x289))) ||
           (0xFFFF != _XzY0x1E5->pathLenConstraint) ||
           (0 == _XzY0x1E) || (NULL == _XzY0x1E5->approveSANs))
       {
@@ -76694,6 +78308,10 @@ static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert use
          }
       }
    }
+   if ((SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED == _XzY0x1E5->type) && !hostCount)
+   {
+      return -1;
+   }
    return (_XzY0x1FF && ((uriCount != 1) ||
            ((SHARKSSL_CERT_PROFILE_OPCUA_SERVER == _XzY0x1E5->type) && !hostCount))) ? -1 : 0;
 }
@@ -76701,9 +78319,9 @@ static int _XzY0x1F(const SharkSslCertProfile *_XzY0x1E5, const SharkSslCert use
 
 static int _XzY0x1ED(SharkSslASN1Create *o, U8 *ref, const U8 *oid, int fieldvalue, U8 _XzY0x1CB)
 {
-   return SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_octetString(o) ||
-      (_XzY0x1CB ? SharkSslASN1Create_boolean(o, 1) : 0) || SharkSslASN1Create_oid(o, oid, fieldvalue) ||
-      SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o);
+   return (SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_octetString(o) ||
+           (_XzY0x1CB ? SharkSslASN1Create_boolean(o, 1) : 0) || SharkSslASN1Create_oid(o, oid, fieldvalue) ||
+           SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o));
 }
 
 
@@ -76945,6 +78563,7 @@ static int sharkssl_CSR_addProfileExtensions(SharkSslASN1Create *o, const SharkS
          if (SharkSslASN1Create_oid(o, enetswregister, sizeof(enetswregister))) return -1;
       }
       enetswregister[7] = ((SHARKSSL_CERT_PROFILE_TLS_SERVER == _XzY0x1E5->type) ||
+                     (SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED == _XzY0x1E5->type) ||
                      (SHARKSSL_CERT_PROFILE_OPCUA_SERVER == _XzY0x1E5->type)) ? 1 : 2;
       sffsdrnandflash = SharkSslASN1Create_oid(o, enetswregister, sizeof(enetswregister)) ||
          SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o) ||
@@ -76968,6 +78587,11 @@ static int sharkssl_CSR_addProfileExtensions(SharkSslASN1Create *o, const SharkS
       ku[0] = 2;
       ku[1] |= SHARKSSL_X509_KU_KEY_CERT_SIGN;
    }
+   if ((SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED == _XzY0x1E5->type) && isRSA)
+   {
+      ku[0] = 5;
+      ku[1] |= SHARKSSL_X509_KU_KEY_ENCIPHERMENT;
+   }
    sffsdrnandflash = SharkSslASN1Create_raw(o, &ku[1], 1) || SharkSslASN1Create_raw(o, &ku[0], 1) ||
       SharkSslASN1Create_length(o, 2) || SharkSslASN1Create_bitString(o) ||
       _XzY0x1ED(o, ref, sharkssl_oid_ex(key_usage), 1);
@@ -76986,24 +78610,28 @@ static int sharkssl_CSR_addProfileExtensions(SharkSslASN1Create *o, const SharkS
    {
       sffsdrnandflash = 0;
    }
-   return sffsdrnandflash || SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o) ||
-      _XzY0x1ED(o, ref, sharkssl_oid_ex(basic_constraints), _XzY0x1D5) ||
-      SharkSslASN1Create_length(o, (int)(cachesysfs - o->ptr)) || SharkSslASN1Create_sequence(o) ||
-      SharkSslASN1Create_length(o, (int)(cachesysfs - o->ptr)) || SharkSslASN1Create_extensions(o);
+   return (sffsdrnandflash || SharkSslASN1Create_length(o, (int)(ref - o->ptr)) || SharkSslASN1Create_sequence(o) ||
+           _XzY0x1ED(o, ref, sharkssl_oid_ex(basic_constraints), _XzY0x1D5) ||
+           SharkSslASN1Create_length(o, (int)(cachesysfs - o->ptr)) || SharkSslASN1Create_sequence(o) ||
+           SharkSslASN1Create_length(o, (int)(cachesysfs - o->ptr)) || SharkSslASN1Create_extensions(o));
 }
 
 
-SHARKSSL_API int
-SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
-                    const SharkSslCertProfile *_XzY0x1E5,
-                    const U8 *asyncexport,
-                    const SharkSslCert userspacememory,
-                    const SharkSslKey mcbspplatform,
-                    const char *searchbitmap,
-                    const char *setupmodel,
-                    int preservecurrent,
-                    SharkCertSerialNumber flushwalker,
-                    U8 configwrite)
+static int
+sharkssl_CSR_sign(SharkSslCert *unlockirqrestore,
+                 const SharkSslCertProfile *_XzY0x1E5,
+                 const U8 *asyncexport,
+                 const SharkSslCert userspacememory,
+                 const SharkSslKey mcbspplatform,
+                 const char *searchbitmap,
+                 const char *setupmodel,
+                 int preservecurrent,
+                 SharkCertSerialNumber flushwalker,
+                 U8 configwrite
+                 #if SHARKSSL_PSA_CONSUMER
+                 , psa_key_id_t _XzY0x20
+                 #endif
+                 )
 {
    U8 *ref, *end;
    U8 *extPtr, *issuerPtr;
@@ -77027,12 +78655,24 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
       return -1;
    }
    *unlockirqrestore = NULL;
-   if ((NULL == _XzY0x1E5) || (NULL == searchbitmap) || (NULL == setupmodel))
+   if ((NULL == _XzY0x1E5) || (NULL == searchbitmap) || (NULL == setupmodel)
+       #if SHARKSSL_PSA_CONSUMER
+       || ((NULL != mcbspplatform) && (PSA_KEY_ID_NULL != _XzY0x20))
+       #endif
+       )
    {
       return -1;
    }
    switch (configwrite)
    {
+      #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+      case processsdccr:
+         if (PSA_KEY_ID_NULL == _XzY0x20)
+         {
+            return -1;
+         }
+         break;
+      #endif
       #if SHARKSSL_USE_SHA_256
       case SHARKSSL_HASHID_SHA256:
       #endif
@@ -77051,14 +78691,20 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
       return -1;
    }
    cachelmiss = (U16)preservecurrent;
-   if (((sffsdrnandflash = spromregister(&certParam, asyncexport, (U32)-4, (U8*)&cachelmiss)) < 0) ||
+   sffsdrnandflash = spromregister(&certParam, asyncexport, (U32)-4, (U8*)&cachelmiss);
+   if ((sffsdrnandflash < 0) ||
        (sffsdrnandflash > preservecurrent) || ((cachelmiss & 0xFFFF) > (U32)(preservecurrent - sffsdrnandflash)))
    {
       return -1;
    }
    extPtr = (U8*)asyncexport + sffsdrnandflash;
    if (_XzY0x1EF(extPtr, (U16)(cachelmiss & 0xFFFF), panelshutdown, &_XzY0x1E) ||
-       _XzY0x1F(_XzY0x1E5, userspacememory, mcbspplatform, panelshutdown, _XzY0x1E))
+       _XzY0x1F(_XzY0x1E5, userspacememory,
+                                 (U8)((NULL != mcbspplatform)
+                                 #if SHARKSSL_PSA_CONSUMER
+                                 || (PSA_KEY_ID_NULL != _XzY0x20)
+                                 #endif
+                                 ), panelshutdown, _XzY0x1E))
    {
       return -1;
    }
@@ -77072,6 +78718,15 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
 
    switch (certParam.signature.hashAlgo)
    {
+      #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+      case processsdccr:
+         if ((certParam.signature.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED25519) &&
+             (certParam.signature.signatureAlgo != SHARKSSL_SIGNATUREALGORITHM_ED448))
+         {
+            return -1;
+         }
+         break;
+      #endif
       #if SHARKSSL_USE_SHA_256
       case SHARKSSL_HASHID_SHA256:
       #endif
@@ -77132,12 +78787,25 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
 
    if (NULL == userspacememory)  
    {
-      if (NULL == mcbspplatform)
+      if ((NULL == mcbspplatform)
+          #if SHARKSSL_PSA_CONSUMER
+          && (PSA_KEY_ID_NULL == _XzY0x20)
+          #endif
+          )
       {
-         return -1;  
+         return -1;
       }
       
-      memcpy(&caKeyInfo, &privKeyInfo, sizeof caKeyInfo);
+      if (NULL != mcbspplatform)
+      {
+         memcpy(&caKeyInfo, &privKeyInfo, sizeof caKeyInfo);
+      }
+      #if SHARKSSL_PSA_CONSUMER
+      else
+      {
+         memcpy(&caKeyInfo, &certParam.certKey, sizeof caKeyInfo);
+      }
+      #endif
    }
    else  
    {
@@ -77170,11 +78838,22 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
       }
       issuerPtr = (U8*)subject;
       
+      #if SHARKSSL_PSA_CONSUMER
+      if (_XzY0x20)
+      {
+         memcpy(&caKeyInfo, &issuerParam.certKey, sizeof caKeyInfo);
+      }
+      else
+      #endif
       if (!interrupthandler(&caKeyInfo, userspacememory))
       {
          return -1;
       }
+      #if SHARKSSL_PSA_CONSUMER
+      if ((!_XzY0x20) && _XzY0x1F1(&caKeyInfo, &issuerParam.certKey))
+      #else
       if (_XzY0x1F1(&caKeyInfo, &issuerParam.certKey))
+      #endif
       {
          return -1;
       }
@@ -77192,6 +78871,12 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
          _XzY0x1D8 = 20;
       }
    }
+   #if SHARKSSL_PSA_CONSUMER
+   if (_XzY0x20 && _XzY0x298(&caKeyInfo, _XzY0x20, configwrite))
+   {
+      return -3;
+   }
+   #endif
    if (sharkssl_CSR_keyID(&certParam.certKey, _XzY0x1F6))
    {
       return -1;
@@ -77263,6 +78948,18 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    }
    else
    #endif
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(certParam.certKey.expLen))
+   {
+      if ((certParam.certKey.modLen != SHARKSSL_ED25519_PUBLIC_KEY_LEN) &&
+          (certParam.certKey.modLen != SHARKSSL_ED448_PUBLIC_KEY_LEN))
+      {
+         return -1;
+      }
+      sffsdrnandflash += certParam.certKey.modLen;
+   }
+   else
+   #endif
    {
       return -1;
    }
@@ -77278,7 +78975,34 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    #if SHARKSSL_USE_ECC
    if (machinereboot(caKeyInfo.expLen))
    {
-      sffsdrnandflash += relocationchain(&caKeyInfo);
+      U16 _XzY0x299 = relocationchain(&caKeyInfo);
+      #if SHARKSSL_PSA_CONSUMER
+      if (_XzY0x20 && !_XzY0x299)
+      {
+         SharkSslCertKey keyInfo = caKeyInfo;
+         gpiolibbanka(keyInfo.expLen, attachdevice(keyInfo.modLen));
+         _XzY0x299 = relocationchain(&keyInfo);
+      }
+      #endif
+      sffsdrnandflash += _XzY0x299;
+   }
+   else
+   #endif
+   #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_EDDSA)
+   if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(caKeyInfo.expLen))
+   {
+      if (caKeyInfo.modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN)
+      {
+         sffsdrnandflash += SHARKSSL_ED25519_SIGNATURE_LEN;
+      }
+      else if (caKeyInfo.modLen == SHARKSSL_ED448_PUBLIC_KEY_LEN)
+      {
+         sffsdrnandflash += SHARKSSL_ED448_SIGNATURE_LEN;
+      }
+      else
+      {
+         return -1;
+      }
    }
    else
    #endif
@@ -77298,7 +79022,15 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    SharkSslASN1Create_constructor(&fixupconfig, (U8*)*unlockirqrestore, l);
 
    
-   devicewm8750(&fixupconfig, &caKeyInfo, 0, 0, configwrite);
+   sffsdrnandflash = devicewm8750(&fixupconfig, &caKeyInfo, 0, 0,
+                                    #if SHARKSSL_PSA_CONSUMER
+                                    _XzY0x20,
+                                    #endif
+                                    configwrite);
+   if (sffsdrnandflash)
+   {
+      goto _sharkssl_signCSR_err;
+   }
    end = fixupconfig.ptr;  
 
    
@@ -77338,7 +79070,7 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
          SharkSslASN1Create_length(&fixupconfig, (int)(extPtr - fixupconfig.ptr)) ||
          SharkSslASN1Create_sequence(&fixupconfig) ||
          SharkSslASN1Create_raw(&fixupconfig, issuerPtr, inputdevice) ||
-         stage2idmap(&fixupconfig, &caKeyInfo, configwrite) ||
+         stage2idmap(&fixupconfig, &caKeyInfo, configwrite, 0) ||
          SharkSslASN1Create_int(&fixupconfig, (U8*)&flushwalker, sizeof(flushwalker));
    } 
 
@@ -77356,11 +79088,16 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
    {
       ref = fixupconfig.ptr;  
       fixupconfig.ptr = fixupconfig.end;
-      devicewm8750(&fixupconfig, &caKeyInfo, ref, end, configwrite);
+      sffsdrnandflash = devicewm8750(&fixupconfig, &caKeyInfo, ref, end,
+                                       #if SHARKSSL_PSA_CONSUMER
+                                       _XzY0x20,
+                                       #endif
+                                       configwrite);
       fixupconfig.ptr = ref;
-      sffsdrnandflash = 
-         SharkSslASN1Create_length(&fixupconfig, (int)(fixupconfig.end - fixupconfig.ptr)) ||
-         SharkSslASN1Create_sequence(&fixupconfig);
+      if (!sffsdrnandflash)
+      {
+         sffsdrnandflash = SharkSslASN1Create_length(&fixupconfig, (int)(fixupconfig.end - fixupconfig.ptr)) || SharkSslASN1Create_sequence(&fixupconfig);
+      }
    }
    
 
@@ -77412,6 +79149,63 @@ SharkSslCert_signCSR(SharkSslCert *unlockirqrestore,
 
    return sffsdrnandflash;
 }
+
+
+SHARKSSL_API int
+SharkSslCert_signCSR(SharkSslCert *unlockirqrestore, const SharkSslCertProfile *_XzY0x1E5,
+                     const U8 *asyncexport, const SharkSslCert userspacememory, const SharkSslKey mcbspplatform,
+                     const char *searchbitmap, const char *setupmodel, int preservecurrent,
+                     SharkCertSerialNumber flushwalker, U8 configwrite)
+{
+   return sharkssl_CSR_sign(unlockirqrestore, _XzY0x1E5, asyncexport, userspacememory, mcbspplatform, searchbitmap, setupmodel,
+                            preservecurrent, flushwalker, configwrite
+                            #if SHARKSSL_PSA_CONSUMER
+                            , PSA_KEY_ID_NULL
+                            #endif
+                            );
+}
+
+
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API int
+SharkSslCert_signCSRWithPSAKey(SharkSslCert *unlockirqrestore, const SharkSslCertProfile *_XzY0x1E5,
+                               const U8 *asyncexport, const SharkSslCert userspacememory,
+                               const char *searchbitmap, const char *setupmodel, int preservecurrent,
+                               SharkCertSerialNumber flushwalker, psa_key_id_t _XzY0x20, U8 configwrite)
+{
+   if (unlockirqrestore)
+   {
+      *unlockirqrestore = NULL;
+   }
+   if (PSA_KEY_ID_NULL == _XzY0x20)
+   {
+      return -1;
+   }
+   return sharkssl_CSR_sign(unlockirqrestore, _XzY0x1E5, asyncexport, userspacememory, NULL, searchbitmap, setupmodel,
+                            preservecurrent, flushwalker, configwrite, _XzY0x20);
+}
+
+
+#if SHARKSSL_ENABLE_EDDSA
+SHARKSSL_API int
+SharkSslCert_signCSRWithPSAEdDSAKey(SharkSslCert *unlockirqrestore, const SharkSslCertProfile *_XzY0x1E5,
+                                    const U8 *asyncexport, const SharkSslCert userspacememory,
+                                    const char *searchbitmap, const char *setupmodel, int preservecurrent,
+                                    SharkCertSerialNumber flushwalker, psa_key_id_t _XzY0x20)
+{
+   if (unlockirqrestore)
+   {
+      *unlockirqrestore = NULL;
+   }
+   if (PSA_KEY_ID_NULL == _XzY0x20)
+   {
+      return -1;
+   }
+   return sharkssl_CSR_sign(unlockirqrestore, _XzY0x1E5, asyncexport, userspacememory, NULL, searchbitmap, setupmodel,
+                            preservecurrent, flushwalker, processsdccr, _XzY0x20);
+}
+#endif
+#endif
 
 
 #endif
@@ -77475,8 +79269,8 @@ SharkSslASN1Create_key(SharkSslASN1Create *o, const SharkSslKey sourcerouting)
       }
       brightnesslimit = (U8*)selectaudio(tempMem);
       
-      memmove_endianess(brightnesslimit, keyInfo.exp, le);  
-      memmove_endianess(brightnesslimit + le + le + li, keyInfo.mod, li + li);  
+      memmove_endianness(brightnesslimit, keyInfo.exp, le);  
+      memmove_endianness(brightnesslimit + le + le + li, keyInfo.mod, li + li);  
       onenandpartitions(&e, (le * 8), brightnesslimit);
       onenandpartitions(&d, ((li + le) * 8), (brightnesslimit + le));
       onenandpartitions(&m, (li * 8), (brightnesslimit + le + le + li));
@@ -77486,7 +79280,7 @@ SharkSslASN1Create_key(SharkSslASN1Create *o, const SharkSslKey sourcerouting)
       onenandpartitions(&pq, (lih * 8), (brightnesslimit + le + le + li + li));  
       updatepmull(&m, &pq);  
       resolverelocs(&m, &oi); 
-      memmove_endianess(brightnesslimit + le + le + li + li, keyInfo.mod + li + li, li);  
+      memmove_endianness(brightnesslimit + le + le + li + li, keyInfo.mod + li + li, li);  
       onenandpartitions(&oi, (li * 8), (brightnesslimit + le + le + li + li + li)); 
       hotplugpgtable(&e, &pq, &oi);
       onenandpartitions(&pq, (lih * 8), (brightnesslimit + le + le + li + li + lih));  
@@ -77507,7 +79301,7 @@ SharkSslASN1Create_key(SharkSslASN1Create *o, const SharkSslKey sourcerouting)
       }
       if ( !sffsdrnandflash )
       {
-         memmove_endianess(brightnesslimit, (U8*)consoledevice(&oi), li);
+         memmove_endianness(brightnesslimit, (U8*)consoledevice(&oi), li);
          sffsdrnandflash = SharkSslASN1Create_int(o, brightnesslimit, li);  
       }
       if ( !sffsdrnandflash )
@@ -78609,7 +80403,7 @@ SharkSslSCMgr_constructor(SharkSslSCMgr* o, SharkSsl* ssl, U32 coherencytable)
 
 static const char FormLoginName[] = {"\137\172\106\114"};
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 
 static U32
@@ -78686,7 +80480,7 @@ probesandcraft(
          break;
 
       case AuthInfoCT_HA1:
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       {
          U8 mcspi2hwmod[33];
          calculateHA1Hex(o->realm,memblocksteal->username,perfmonevent,mcspi2hwmod);
@@ -78732,7 +80526,7 @@ FormAuthenticator_authenticate(
    FormAuthUser* formUser = 0;
    HttpCookie* formLogin;
    const char* perfmonevent;
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    const char* defaultpriority=0;
    U32 suspendblock=0;
    U32 resetstatus=0;
@@ -78774,12 +80568,12 @@ FormAuthenticator_authenticate(
    }
 
    AuthInfo_constructor(&memblocksteal, o->tracker, cmd, AuthenticatedUserType_Form);
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    isramplatdata(o, &memblocksteal);
 #endif
    memblocksteal.username = HttpRequest_getParameter(&cmd->request, "\142\141\137\165\163\145\162\156\141\155\145");
    perfmonevent = HttpRequest_getParameter(&cmd->request, "\142\141\137\160\141\163\163\167\157\162\144");
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    if( (defaultpriority = HttpRequest_getParameter(&cmd->request, "\142\141\137\163\145\145\144")) !=0 )
    {
       suspendblock=U32_atoi(defaultpriority);
@@ -78803,7 +80597,7 @@ FormAuthenticator_authenticate(
    {
       HttpServer* uarchbuild = HttpCommand_getServer(cmd);
       memblocksteal.authUserList=HttpServer_getAuthUserList(uarchbuild, memblocksteal.username);
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       if( ! defaultpriority )
 #endif
          memblocksteal.upwd = perfmonevent;
@@ -78812,7 +80606,7 @@ FormAuthenticator_authenticate(
       {
          return 0;
       }
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       if(defaultpriority ?
          affinitycollection(o,&memblocksteal,perfmonevent,suspendblock,resetstatus) :
          probesandcraft(o,&memblocksteal,perfmonevent))
@@ -78921,7 +80715,7 @@ FormAuthenticator_constructor(
    o->realm = baStrdup(mappingprotection ? mappingprotection : "");
    o->sendLogin = touchscreenpdata;
    o->secure=FALSE;
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    {
 #ifndef BA_DEBUG
       
@@ -79660,7 +81454,7 @@ int SharkSslParseASN1_getContextSpecific(SharkSslParseASN1 *o, U8 *tag)
 
 static int checkconsole(SharkSslParseASN1 *o)
 {
-   SharkSslParseASN1 cacheflush, field, algorithm;
+   SharkSslParseASN1 cacheflush, field, _XzY0x261;
    U16 singleftoui = 20;  
    U8 contiguousearly = 0, mgfHash = 0, trailer = 1, tag, prevTag = 0x1F;
    int len;
@@ -79705,13 +81499,13 @@ static int checkconsole(SharkSslParseASN1 *o)
             {
                return -1;
             }
-            algorithm = field;
-            len = SharkSslParseASN1_getSequence(&algorithm);
-            if ((len < 0) || ((U32)len != algorithm.len) || (SharkSslParseASN1_getOID(&algorithm) < 0) || algorithm.len)
+            _XzY0x261 = field;
+            len = SharkSslParseASN1_getSequence(&_XzY0x261);
+            if ((len < 0) || ((U32)len != _XzY0x261.len) || (SharkSslParseASN1_getOID(&_XzY0x261) < 0) || _XzY0x261.len)
             {
                return -1;
             }
-            mgfHash = SharkSslParseASN1_getAlgoID(&algorithm);
+            mgfHash = SharkSslParseASN1_getAlgoID(&_XzY0x261);
             break;
 
          case 2:  
@@ -79760,7 +81554,7 @@ static int checkconsole(SharkSslParseASN1 *o)
 
 int SharkSslParseASN1_parseCertSignatureAlgorithm(SharkSslParseASN1 *o)
 {
-   SharkSslParseASN1 algorithm;
+   SharkSslParseASN1 _XzY0x261;
    int len, id;
 
    len = SharkSslParseASN1_getSequence(o);
@@ -79768,20 +81562,26 @@ int SharkSslParseASN1_parseCertSignatureAlgorithm(SharkSslParseASN1 *o)
    {
       return -1;
    }
-   algorithm = *o;
-   algorithm.len = (U32)len;
+   _XzY0x261 = *o;
+   _XzY0x261.len = (U32)len;
    o->ptr += len;
    o->len -= (U32)len;
-   if (SharkSslParseASN1_getOID(&algorithm) < 0)
+   if (SharkSslParseASN1_getOID(&_XzY0x261) < 0)
    {
       return -1;
    }
-   id = SharkSslParseASN1_getAlgoID(&algorithm);
-   #if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS)
-   if ((algorithm.datalen == sizeof(sharkssl_oid_rsassaPss)) &&
-       (!sharkssl_kmemcmp(algorithm.dataptr, sharkssl_oid_rsassaPss, sizeof(sharkssl_oid_rsassaPss))))
+   id = SharkSslParseASN1_getAlgoID(&_XzY0x261);
+   #if SHARKSSL_ENABLE_EDDSA
+   if (((SHARKSSL_ASN1_ALGO_ID_ED25519 == id) || (SHARKSSL_ASN1_ALGO_ID_ED448 == id)) && (_XzY0x261.ptr != _XzY0x261.dataptr + _XzY0x261.datalen))
    {
-      len = checkconsole(&algorithm);
+      return -1;
+   }
+   #endif
+   #if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS)
+   if ((_XzY0x261.datalen == sizeof(sharkssl_oid_rsassaPss)) &&
+       (!sharkssl_kmemcmp(_XzY0x261.dataptr, sharkssl_oid_rsassaPss, sizeof(sharkssl_oid_rsassaPss))))
+   {
+      len = checkconsole(&_XzY0x261);
       if (len < 0)
       {
          return -1;
@@ -79789,7 +81589,7 @@ int SharkSslParseASN1_parseCertSignatureAlgorithm(SharkSslParseASN1 *o)
       id |= len;
    }
    #endif
-   return algorithm.len ? -1 : id;
+   return _XzY0x261.len ? -1 : id;
 }
 
 
@@ -79811,6 +81611,11 @@ const U8 sharkssl_oid_ns_cert_type[9]            = {0x60, 0x86, 0x48, 0x01, 0x86
 const U8 sharkssl_oid_key_usage[3]               = {SHARKSSL_OID_JIIT_DS, SHARKSSL_OID_JIIT_DS_CERTEXT, SHARKSSL_OID_JIIT_DS_CERTEXT_KEYUSAGE};
 const U8 sharkssl_oid_san[3]                     = {SHARKSSL_OID_JIIT_DS, SHARKSSL_OID_JIIT_DS_CERTEXT, SHARKSSL_OID_JIIT_DS_CERTEXT_SUBJALTNAMES};
 const U8 sharkssl_oid_basic_constraints[3]       = {SHARKSSL_OID_JIIT_DS, SHARKSSL_OID_JIIT_DS_CERTEXT, SHARKSSL_OID_JIIT_DS_CERTEXT_BASICCONSTRAINTS};
+
+#if SHARKSSL_ENABLE_EDDSA
+const U8 sharkssl_oid_ed25519[3]                 = {0x2B, 0x65, 0x70};
+const U8 sharkssl_oid_ed448[3]                   = {0x2B, 0x65, 0x71};
+#endif
 
 #if SHARKSSL_ENABLE_RSA
 const U8 sharkssl_oid_rsaEncryption[9]           = {0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01};
@@ -80411,15 +82216,15 @@ DeadProp_destructor(DeadProp* o)
       AllocatorIntf_free(o->alloc, o->nprops);
 }
 
+#if SHARKSSL_PSA_CONSUMER == 0
+
+
 
 #ifndef BA_LIB
 #define BA_LIB
 #endif
 
 
-#if SHARKSSL_PSA_CONSUMER
-#include <psa/crypto.h>
-#endif
 
 
 #if SHARKSSL_USE_ECC
@@ -80431,7 +82236,7 @@ DeadProp_destructor(DeadProp* o)
 
 #if SHARKSSL_ECC_USE_EDWARDS
 
-static void swap_endianess(U8 *d, U16 len)
+static void _XzY0x30C(U8 *d, U16 len)
 {
    U8 *p = d + len;
    baAssert(0 == (len & 1));
@@ -80446,16 +82251,10 @@ static void swap_endianess(U8 *d, U16 len)
 #endif
 
 
-#if ((SHARKSSL_BIGINT_WORDSIZE != 8) && (!defined(B_BIG_ENDIAN)))
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
 
-void memmove_endianess(U8 *d, const U8 *s, U16 len)
+void memmove_endianness(U8 *d, const U8 *s, U16 len)
 {
-   #ifndef B_LITTLE_ENDIAN
-   static const U16 devicebluetooth = 0xFF00;
-
-   if (0 == (*(U8*)&devicebluetooth))  
-   {
-   #endif
       baAssert(0 == (len & (U16)computereturn));
       len /= (SHARKSSL_BIGINT_WORDSIZE / 8);
 
@@ -80463,16 +82262,15 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len)
       if (0 == ((unsigned int)(UPTR)d & computereturn)) 
       #endif
       {
-         __sharkssl_packed shtype_tWord *da = (shtype_tWord*)d;
+         SHARKSSL_UNALIGNED_U32 *da = (SHARKSSL_UNALIGNED_U32*)d;
 
-         #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
          #if ((!defined(SHARKSSL_UNALIGNED_ACCESS)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
          if (0 == ((unsigned int)(UPTR)s & computereturn)) 
          #endif
          {
             while (len--)
             {
-               *da++ = (shtype_tWord)blockarray(*(__sharkssl_packed shtype_tWord*)s);
+               *da++ = (shtype_tWord)blockarray(*(const SHARKSSL_UNALIGNED_U32*)s);
                s += 4;
             }
          }
@@ -80488,20 +82286,12 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len)
             }
          }
          #endif
-         #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-         while (len--)
-         {
-            *da++ = (shtype_tWord)((((shtype_tWord)(s[0])) << 8) + s[1]);
-            s += 2;
-         }
-         #endif
       }
       #if ((!defined(SHARKSSL_UNALIGNED_ACCESS)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
       else  
       {
          while (len--)
          {
-            #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
             U8 b[4];
             b[0] = s[0];
             b[1] = s[1];
@@ -80513,36 +82303,219 @@ void memmove_endianess(U8 *d, const U8 *s, U16 len)
             *d++ = b[1];
             *d++ = b[0];
             s += 4;
-            #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-            U8 b[2];
-            b[0] = s[0];
-            b[1] = s[1];
-
-            *d++ = b[1];
-            *d++ = b[0];
-            s += 2;
-            #endif
          }
       }
       #endif
-   #ifndef B_LITTLE_ENDIAN
+}
+#endif 
+
+
+#if SHARKSSL_RSA_PRIVATE_CT
+
+static void _XzY0x2F9(shtype_t *pciercxcfg448, const shtype_t *o)
+{
+   pciercxcfg448->beg = pciercxcfg448->mem;
+   deviceparse(pciercxcfg448);
+   baAssert(o->len <= pciercxcfg448->len);
+   memcpy(&pciercxcfg448->beg[pciercxcfg448->len - o->len], o->beg, o->len * SHARKSSL__M);
+}
+
+
+
+static int _XzY0x2FA(const SharkSslCertKey *ck, U8 *stackchecker)
+{
+   shtype_t N, p, q, dp, dq, qinv, c, rb, tb, r2n, m, x, y, z;
+   shtype_t m1, m2, r2p, r2q, *pa, *pb, *pt;
+   shtype_tWord *afterhandler, *pw, mu, nz;
+   U32 icachealiases;
+   U16 len, writepmresrn, half, w2, e_len, i;
+   int ret = 0;
+   U8 bitmask, afterreset;
+
+   len   = supportedvector(ck->modLen);
+   e_len = mousethresh(ck->expLen);
+   writepmresrn = (U16)(len / SHARKSSL__M);
+   half  = (U16)(writepmresrn >> 1);
+   if ((coupledexynos(ck->expLen)) || (0 == half) || (len != (U16)(half * 2 * SHARKSSL__M)))
+   {
+      return (int)SharkSslCon_Error;
+   }
+   w2 = (U16)((2 * writepmresrn) + 1);
+
+   
+   icachealiases  = ((U32)writepmresrn * 6) + 1 + ((U32)half * 5) + ((U32)w2 * 3) + ((U32)half * 4);
+   icachealiases  = pcmciapdata(icachealiases * SHARKSSL__M);
+   afterhandler = (shtype_tWord*)baMalloc(icachealiases);
+   if (afterhandler == NULL)
+   {
+      return (int)SharkSslCon_AllocationError;
+   }
+   pw = (shtype_tWord*)selectaudio(afterhandler);
+   traceaddress(&N, writepmresrn, pw);
+   memmove_endianness((U8*)pw, ck->mod, len);
+   pw += writepmresrn;
+   traceaddress(&c, writepmresrn, pw);
+   memmove_endianness((U8*)pw, stackchecker, len);
+   pw += writepmresrn;
+   traceaddress(&rb, writepmresrn, pw);
+   pw += writepmresrn + 1;
+   traceaddress(&tb, writepmresrn, pw);
+   pw += writepmresrn;
+   traceaddress(&r2n, writepmresrn, pw);
+   pw += writepmresrn;
+   traceaddress(&m, writepmresrn, pw);
+   pw += writepmresrn;
+   
+   memmove_endianness((U8*)pw, ck->mod + len, (U16)(half * 5 * SHARKSSL__M));
+   traceaddress(&p, half, pw);
+   pw += half;
+   traceaddress(&q, half, pw);
+   pw += half;
+   traceaddress(&dp, half, pw);
+   pw += half;
+   traceaddress(&dq, half, pw);
+   pw += half;
+   traceaddress(&qinv, half, pw);
+   pw += half;
+   traceaddress(&x, w2, pw);
+   pw += w2;
+   traceaddress(&y, w2, pw);
+   pw += w2;
+   traceaddress(&z, w2, pw);
+   pw += w2;
+   traceaddress(&m1, half, pw);
+   pw += half;
+   traceaddress(&m2, half, pw);
+   pw += half;
+   traceaddress(&r2p, half, pw);
+   pw += half;
+   traceaddress(&r2q, half, pw);
+
+   if (e_len)  
+   {
+      mu = remapcfgspace(&N);
+      
+      deviceparse(&x);
+      x.beg[0] = 1;
+      if (suspendfinish(&x, &N))
+      {
+         ret = (int)SharkSslCon_AllocationError;
+         goto RSA_cleanup;
+      }
+      _XzY0x2F9(&r2n, &x);
+
+      if ((sharkssl_rng((U8*)rb.beg, len) < 0) || (sharkssl_rng((U8*)tb.beg, len) < 0))
+      {
+         ret = (int)SharkSslCon_Error;
+         goto RSA_cleanup;
+      }
+      nz = 0;
+      for (i = 0; i < writepmresrn; i++)
+      {
+         nz |= rb.beg[i];
+      }
+      if (0 == nz)
+      {
+         ret = (int)SharkSslCon_Error;
+         goto RSA_cleanup;
+      }
+
+      
+      writebytes(&rb, &r2n, &x, &N, mu);
+      memcpy(m.beg, x.beg, writepmresrn * SHARKSSL__M);
+      pa = &x;
+      pb = &y;
+      afterreset = 0;
+      for (i = 0; i < e_len; i++)
+      {
+         for (bitmask = 0x80; bitmask; bitmask >>= 1)
+         {
+            if (afterreset)
+            {
+               writebytes(pa, pa, pb, &N, mu);
+               pt = pa; pa = pb; pb = pt;
+               if (ck->exp[i] & bitmask)
+               {
+                  writebytes(pa, &m, pb, &N, mu);
+                  pt = pa; pa = pb; pb = pt;
+               }
+            }
+            else if (ck->exp[i] & bitmask)
+            {
+               afterreset = 1;
+            }
+         }
+      }
+      if (!afterreset)
+      {
+         ret = (int)SharkSslCon_Error;
+         goto RSA_cleanup;
+      }
+      
+      writebytes(pa, &c, pb, &N, mu);
+      memcpy(c.beg, pb->beg, writepmresrn * SHARKSSL__M);
+
+      
+      writebytes(&m, &tb, &x, &N, mu);
+      memcpy(rb.beg, x.beg, writepmresrn * SHARKSSL__M);
+      if (iommumapping(&rb, &N))
+      {
+         ret = (int)SharkSslCon_AllocationError;
+         goto RSA_cleanup;
+      }
+      _XzY0x2F9(&m, &rb);
+      writebytes(&m, &r2n, &x, &N, mu);
+      memcpy(m.beg, x.beg, writepmresrn * SHARKSSL__M);
+      writebytes(&m, &tb, &x, &N, mu);
+      memcpy(m.beg, x.beg, writepmresrn * SHARKSSL__M);
+      writebytes(&m, &r2n, &x, &N, mu);
+      memcpy(tb.beg, x.beg, writepmresrn * SHARKSSL__M);
+   }
+
+   
+   if ((shtype_t_montR2CT(&p, &r2p)) || (shtype_t_montR2CT(&q, &r2q)) ||
+       (shtype_t_expmodCT(&c, &dp, &p, &r2p, &m1)) ||
+       (shtype_t_expmodCT(&c, &dq, &q, &r2q, &m2)))
+   {
+      ret = (int)SharkSslCon_AllocationError;
+      goto RSA_cleanup;
+   }
+
+   
+   mu = remapcfgspace(&p);
+   writebytes(&qinv, &m1, &x, &p, mu);
+   writebytes(&qinv, &m2, &y, &p, mu);
+   shtype_t_submodCT(&x, &y, &p);
+   writebytes(&x, &r2p, &z, &p, mu);
+
+   
+   hotplugpgtable(&q, &z, &m);
+   resolverelocs(&m, &m2);
+
+   if (e_len)  
+   {
+      mu = remapcfgspace(&N);
+      writebytes(&tb, &m, &x, &N, mu);
+      memmove_endianness(stackchecker, (U8*)x.beg, len);
    }
    else
    {
-      memmove(d, s, len);
+      memmove_endianness(stackchecker, (U8*)m.beg, len);
    }
-   #endif
+
+RSA_cleanup:
+   sharkssl_clear(afterhandler, icachealiases);
+   baFree(afterhandler);
+   return ret;
 }
-#endif 
+#endif  
 
 
 #if SHARKSSL_ENABLE_RSA
 int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
 {
    U16 p_len, e_len, icachealiases;
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    U16 prctlreset;
-   #endif
    U8 *afterhandler, *temporaryentry, *ckexp, *ckmod;
    shtype_t in, mod, exp, u;
 
@@ -80555,9 +82528,7 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
 
    p_len = supportedvector(ck->modLen);
    e_len = mousethresh(ck->expLen);
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    prctlreset = claimresource(e_len);
-   #endif
    ckmod = ck->mod;
    ckexp = ck->exp;
 
@@ -80571,12 +82542,10 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
    {
       
       icachealiases   = p_len;
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       icachealiases  += p_len;     
       icachealiases  += prctlreset;     
-      #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+      #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
       icachealiases  += p_len;
-      #endif
       #endif
       afterhandler = (U8*)baMalloc(pcmciapdata(icachealiases));
       if (afterhandler == NULL)
@@ -80584,24 +82553,20 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
          return (int)SharkSslCon_AllocationError;
       }
       temporaryentry = (U8*)selectaudio(afterhandler);
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess(temporaryentry, stackchecker, p_len);
+      memmove_endianness(temporaryentry, stackchecker, p_len);
       onenandpartitions(&in, (p_len * 8), temporaryentry);
       temporaryentry += p_len;
       prctlreset -= e_len;
       memset(temporaryentry, 0, prctlreset);
       memcpy(temporaryentry + prctlreset, ckexp, e_len);
       e_len += prctlreset;
-      memmove_endianess(temporaryentry, temporaryentry, e_len);
+      memmove_endianness(temporaryentry, temporaryentry, e_len);
       ckexp = temporaryentry;
       temporaryentry += e_len;
-      #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
-      memmove_endianess(temporaryentry, ckmod, p_len);
+      #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+      memmove_endianness(temporaryentry, ckmod, p_len);
       ckmod = temporaryentry;
       temporaryentry += p_len;
-      #endif
-      #else
-      onenandpartitions(&in, (p_len * 8), stackchecker);
       #endif
       onenandpartitions(&exp, (e_len * 8), ckexp);
       onenandpartitions(&mod, (p_len * 8), ckmod);
@@ -80613,13 +82578,18 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
       }
       icachealiases = (U16)pulsewidth(&u);
       memset(stackchecker, 0, (U16)(p_len - icachealiases));
-      memmove_endianess(stackchecker + (p_len - icachealiases), (U8*)consoledevice(&u), icachealiases);
+      memmove_endianness(stackchecker + (p_len - icachealiases), (U8*)consoledevice(&u), icachealiases);
       baFree(afterhandler);
    }
 
    #if (SHARKSSL_ENABLE_DHE_RSA || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA_API || \
         (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CLIENT_AUTH))
    else  
+   #if SHARKSSL_RSA_PRIVATE_CT
+   {
+      return _XzY0x2FA(ck, stackchecker);
+   }
+   #else
    {
       
       int ret = 0;
@@ -80637,13 +82607,11 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
       p_len >>= 1;
       icachealiases   = redistregion;
       icachealiases  += (icachealiases * 2); 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       icachealiases  += redistregion;     
       icachealiases  += prctlreset;      
-      #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+      #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
       icachealiases  += p_len;
       icachealiases  += (p_len * 4);
-      #endif
       #endif
       if (e_len)
       {
@@ -80656,8 +82624,7 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
          return (int)SharkSslCon_AllocationError;
       }
       temporaryentry = (U8*)selectaudio(afterhandler);
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess(temporaryentry, stackchecker, redistregion);
+      memmove_endianness(temporaryentry, stackchecker, redistregion);
       onenandpartitions(&in, redistregion * 8, temporaryentry);
       temporaryentry += redistregion;
       if (ckexp == NULL)
@@ -80671,17 +82638,14 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
          memset(temporaryentry, 0, prctlreset);
          memcpy(temporaryentry + prctlreset, ckexp, e_len);
          e_len += prctlreset;
-         memmove_endianess(temporaryentry, temporaryentry, e_len);
+         memmove_endianness(temporaryentry, temporaryentry, e_len);
          ckexp = temporaryentry;
          temporaryentry += e_len;
       }
-      #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
-      memmove_endianess(temporaryentry, ckmod, (U16)(2 * redistregion + p_len));
+      #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+      memmove_endianness(temporaryentry, ckmod, (U16)(2 * redistregion + p_len));
       ckmod = temporaryentry;
       temporaryentry += 2 * redistregion + p_len;
-      #endif
-      #else
-      onenandpartitions(&in, redistregion * 8, stackchecker);
       #endif
       onenandpartitions(&m1, redistregion * 8, temporaryentry);
       temporaryentry += redistregion;
@@ -80693,7 +82657,7 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
       {
          temporaryentry += redistregion;
          
-         memmove_endianess((U8*)consoledevice(&m1), ck->mod, redistregion);
+         memmove_endianness((U8*)consoledevice(&m1), ck->mod, redistregion);
          
          if (sharkssl_rng(temporaryentry, redistregion) < 0)
          {
@@ -80757,18 +82721,16 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
       }
       hotplugpgtable(&h, &q, &in);
       resolverelocs(&in, &m2);
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       if (!e_len)
       {
-         memmove_endianess(stackchecker, (U8*)consoledevice(&in), redistregion);
+         memmove_endianness(stackchecker, (U8*)consoledevice(&in), redistregion);
       }
-      #endif
 
       if (e_len)
       {
          
          onenandpartitions(&m1, redistregion * 8, consoledevice(&m1));
-         memmove_endianess((U8*)consoledevice(&m1), ck->mod, redistregion);
+         memmove_endianness((U8*)consoledevice(&m1), ck->mod, redistregion);
          
          if (iommumapping(&r, &m1) != 0)
          {
@@ -80784,10 +82746,7 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
             ret = (int)SharkSslCon_AllocationError;
             goto RSA_cleanup;
          }
-         #if (SHARKSSL_BIGINT_WORDSIZE == 8)
-         baAssert(pulsewidth(&u) == redistregion);
-         #endif
-         memmove_endianess(stackchecker, (U8*)consoledevice(&u), redistregion);
+         memmove_endianness(stackchecker, (U8*)consoledevice(&u), redistregion);
       }
 
 RSA_cleanup:
@@ -80799,6 +82758,7 @@ RSA_cleanup:
          return ret;
       }
    }
+   #endif  
    #endif
 
    return 0;
@@ -80807,13 +82767,12 @@ RSA_cleanup:
 
 
 #if SHARKSSL_ENABLE_DHE_RSA
+
 int SharkSslDHParam_DH(const SharkSslDHParam *dh, U8 op, U8 *out)
 {
-   shtype_t validconfig, mod, exp, res;
+   shtype_t validconfig, mod, exp, res, r2;
    U8 *tmpMem, *afterhandler, *dhexp, *dhmod;
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    U8 *temporaryentry;
-   #endif
    U32 dm9k1resource, icachealiases;
    int sffsdrnandflash;
    U16 p_len, g_len, p_words, g_words;
@@ -80831,7 +82790,8 @@ int SharkSslDHParam_DH(const SharkSslDHParam *dh, U8 op, U8 *out)
    dhmod = dh->p;
    dhexp = dh->r;
 
-   if ((!out) || (!dhmod) || (!dhexp) || (p_len == 0) || (p_len % SHARKSSL__M) ||
+   
+   if ((!out) || (!dhmod) || (!dhexp) || (p_len == 0) || (p_len % SHARKSSL__M) || (0 == (dhmod[p_len - 1] & 1)) ||
        ((op & cpucfgexits) && ((!dh->g) || (g_len == 0) || (g_len > p_len) || (g_len % SHARKSSL__M))) ||
        ((op & switcheractive) && (!dh->Y)))
    {
@@ -80846,11 +82806,10 @@ int SharkSslDHParam_DH(const SharkSslDHParam *dh, U8 op, U8 *out)
 
    
    icachealiases   = (U32)p_len;  
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-   icachealiases  += (U32)p_len;
-   #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+   icachealiases  += (U32)p_len;  
+   icachealiases  += (U32)p_len;  
+   #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
    icachealiases  += ((U32)p_len * 2);
-   #endif
    #endif
    dm9k1resource = pcmciapdata(icachealiases);
    if ((U32)(size_t)dm9k1resource != dm9k1resource)
@@ -80875,53 +82834,49 @@ int SharkSslDHParam_DH(const SharkSslDHParam *dh, U8 op, U8 *out)
       }
    }
 
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    temporaryentry = afterhandler + p_len;
-   #if (!(defined(B_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
-   memmove_endianess(temporaryentry, dhexp, p_len);
+   #if (!((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)) || (!(SHARKSSL_UNALIGNED_ACCESS)))
+   memmove_endianness(temporaryentry, dhexp, p_len);
    dhexp = temporaryentry;
    temporaryentry += p_len;
-   memmove_endianess(temporaryentry, dhmod, p_len);
+   memmove_endianness(temporaryentry, dhmod, p_len);
    dhmod = temporaryentry;
    temporaryentry += p_len;
-   #endif
    #endif
 
    traceaddress(&exp, p_words, dhexp);
    traceaddress(&mod, p_words, dhmod);
    traceaddress(&res, p_words, afterhandler);
+   traceaddress(&r2, p_words, temporaryentry);
+   temporaryentry += p_len;
+   if (shtype_t_montR2CT(&mod, &r2))
+   {
+      goto _sharkssl_dh_cleanup;
+   }
 
    if (op & cpucfgexits)
    {
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess(temporaryentry, dh->g, g_len);
+      memmove_endianness(temporaryentry, dh->g, g_len);
       traceaddress(&validconfig, g_words, temporaryentry);
-      #else
-      traceaddress(&validconfig, g_words, dh->g);
-      #endif
-      if (chunkmutex(&validconfig, &exp, &mod, &res, 0))
+      if (shtype_t_expmodCT(&validconfig, &exp, &mod, &r2, &res))
       {
          goto _sharkssl_dh_cleanup;
       }
       
-      memmove_endianess(out, (U8*)consoledevice(&res), p_len);
+      memmove_endianness(out, (U8*)consoledevice(&res), p_len);
       out += p_len;  
    }
 
    if (op & switcheractive)
    {
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess(temporaryentry, dh->Y, p_len);
+      memmove_endianness(temporaryentry, dh->Y, p_len);
       traceaddress(&validconfig, p_words, temporaryentry);
-      #else
-      traceaddress(&validconfig, p_words, dh->Y);
-      #endif
-      if (chunkmutex(&validconfig, &exp, &mod, &res, 0))
+      if (shtype_t_expmodCT(&validconfig, &exp, &mod, &r2, &res))
       {
          goto _sharkssl_dh_cleanup;
       }
       
-      memmove_endianess(out, (U8*)consoledevice(&res), p_len);
+      memmove_endianness(out, (U8*)consoledevice(&res), p_len);
    }
 
    sffsdrnandflash = 0;
@@ -80997,9 +82952,43 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    int decodeparity;
    int sffsdrnandflash = (int)SharkSslCon_AllocationError;
    U16 x_len, x_lenr, x_lenk, icachealiases;
+   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOL)
+   SharkSslECDHParam namedGroupParam;
+   U16 defaultsdhci1;
+   #endif
 
    baAssert(configvdcdc2);
    baAssert(op & (signalpreserve | switcheractive));
+
+   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOL)
+   defaultsdhci1 = configvdcdc2->curveType;
+   switch (defaultsdhci1)
+   {
+      #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1TLS13:
+         defaultsdhci1 = SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1;
+         break;
+      #endif
+      #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1TLS13:
+         defaultsdhci1 = SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1;
+         break;
+      #endif
+      #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1TLS13:
+         defaultsdhci1 = SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1;
+         break;
+      #endif
+      default:
+         break;
+   }
+   if (defaultsdhci1 != configvdcdc2->curveType)
+   {
+      namedGroupParam = *configvdcdc2;
+      namedGroupParam.curveType = defaultsdhci1;
+      configvdcdc2 = &namedGroupParam;
+   }
+   #endif
 
    xy = configvdcdc2->XY;
    x_len = configvdcdc2->xLen;         
@@ -81020,11 +83009,9 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    baAssert(x_lenk >= x_lenr);
 
    icachealiases  = x_lenk;  
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    icachealiases += x_lenk;  
-   #endif
    icachealiases += (U16)(x_lenr * 2);  
-   #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+   #if SHARKSSL_ECC_USE_SECP521R1
    if (x_len != x_lenr)
    {
       icachealiases += (U16)(x_lenr * 2);  
@@ -81033,7 +83020,7 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    if (op & switcheractive)
    {
       icachealiases += (x_lenr * 2);  
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (x_len != x_lenr)
       {
          icachealiases += x_lenr;  
@@ -81077,7 +83064,6 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          k[x_lenk - x_len] |=  0x01;  
       }
 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       #if SHARKSSL_ECC_USE_SECP521R1
       
       if (x_lenr > x_len)
@@ -81086,12 +83072,8 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       }
       #endif
       temporaryentry += x_lenk;
-      memmove_endianess(temporaryentry, k, x_lenk);
+      memmove_endianness(temporaryentry, k, x_lenk);
       k = temporaryentry;
-      #endif
-      #if ((SHARKSSL_BIGINT_WORDSIZE < 32) && (SHARKSSL_ECC_USE_SECP521R1))
-      k += (x_lenk - x_lenr);
-      #endif
 
       
       onenandpartitions(&spi4000check, (U16)(x_lenr * 8), k);
@@ -81126,12 +83108,8 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          {
             goto _sharkssl_ecdh_cleanup;
          }
-         #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-         memmove_endianess(temporaryentry - x_lenk, temporaryentry, x_lenk);
+         memmove_endianness(temporaryentry - x_lenk, temporaryentry, x_lenk);
          memcpy(configvdcdc2->k, temporaryentry - x_len, x_len);
-         #else
-         memcpy(configvdcdc2->k, k, x_len);
-         #endif
       }
 
       temporaryentry += x_lenk;
@@ -81141,13 +83119,13 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       {
          goto _sharkssl_ecdh_cleanup;
       }
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (x_len != x_lenr)
       {
          temporaryentry += (U16)(x_lenr * 2);
-         memmove_endianess(temporaryentry, (U8*)consoledevice(&(point.x)), x_lenr);
+         memmove_endianness(temporaryentry, (U8*)consoledevice(&(point.x)), x_lenr);
          temporaryentry += x_lenr;
-         memmove_endianess(temporaryentry, (U8*)consoledevice(&(point.y)), x_lenr);
+         memmove_endianness(temporaryentry, (U8*)consoledevice(&(point.y)), x_lenr);
          memcpy(out, temporaryentry - x_len, x_len);
          out  += x_len;
          temporaryentry += x_lenr;
@@ -81158,11 +83136,11 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       else
       #endif
       {
-         memmove_endianess(out, (U8*)consoledevice(&(point.x)), x_len);
+         memmove_endianness(out, (U8*)consoledevice(&(point.x)), x_len);
          #if SHARKSSL_ECC_USE_EDWARDS
          if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
          {
-            swap_endianess(out, x_len);
+            _XzY0x30C(out, x_len);
          }
          #endif
          out += x_len;
@@ -81170,7 +83148,7 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          if ((SHARKSSL_EC_CURVE_ID_CURVE25519 != configvdcdc2->curveType) && (SHARKSSL_EC_CURVE_ID_CURVE448 != configvdcdc2->curveType))
          #endif
          {
-            memmove_endianess(out, (U8*)consoledevice(&(point.y)), x_len);
+            memmove_endianness(out, (U8*)consoledevice(&(point.y)), x_len);
             out += x_len;
          }
       }
@@ -81190,11 +83168,9 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       }
       memcpy(temporaryentry, configvdcdc2->k, x_len);
       temporaryentry += x_len;
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess(temporaryentry, k, x_lenr);
+      memmove_endianness(temporaryentry, k, x_lenr);
       k = temporaryentry;
       temporaryentry += x_lenr;
-      #endif
       onenandpartitions(&spi4000check, x_lenr * 8, k);
    }
 
@@ -81204,7 +83180,7 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       {
          goto _sharkssl_ecdh_cleanup;
       }
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (x_len != x_lenr)
       {
          icachealiases = x_lenr - x_len;
@@ -81215,7 +83191,7 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          memcpy(temporaryentry + icachealiases, xy + x_len, x_len);
          temporaryentry += x_lenr;
          icachealiases = (U16)(x_lenr * 2);
-         memmove_endianess(temporaryentry, temporaryentry - icachealiases, icachealiases);
+         memmove_endianness(temporaryentry, temporaryentry - icachealiases, icachealiases);
       }
       else
       #endif
@@ -81224,14 +83200,14 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
          if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
          {
             baAssert(x_len == x_lenr);
-            memmove_endianess(temporaryentry, xy, x_len);
-            swap_endianess(temporaryentry, x_len);
+            memmove_endianness(temporaryentry, xy, x_len);
+            _XzY0x30C(temporaryentry, x_len);
             memset(temporaryentry + x_len, 0, x_len);
          }
          else
          #endif
          {
-            memmove_endianess(temporaryentry, xy, x_len * 2);
+            memmove_endianness(temporaryentry, xy, x_len * 2);
          }
       }
       updatefrequency(&point, x_lenr * 8, temporaryentry, temporaryentry + x_lenr);
@@ -81254,24 +83230,24 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
       {
          goto _sharkssl_ecdh_cleanup;
       }
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (x_len != x_lenr)
       {
          #if SHARKSSL_ECC_USE_EDWARDS
          baAssert((SHARKSSL_EC_CURVE_ID_CURVE25519 != configvdcdc2->curveType) && (SHARKSSL_EC_CURVE_ID_CURVE448 != configvdcdc2->curveType));
          #endif
          temporaryentry += (U16)(x_lenr * 2);
-         memmove_endianess(temporaryentry, (U8*)consoledevice(&(keypoint.x)), x_lenr);
+         memmove_endianness(temporaryentry, (U8*)consoledevice(&(keypoint.x)), x_lenr);
          memcpy(out, temporaryentry + x_lenr - x_len, x_len);
       }
       else
       #endif
       {
-         memmove_endianess(out, (U8*)consoledevice(&(keypoint.x)), x_len);
+         memmove_endianness(out, (U8*)consoledevice(&(keypoint.x)), x_len);
          #if SHARKSSL_ECC_USE_EDWARDS
          if ((SHARKSSL_EC_CURVE_ID_CURVE25519 == configvdcdc2->curveType) || (SHARKSSL_EC_CURVE_ID_CURVE448 == configvdcdc2->curveType))
          {
-            swap_endianess(out, x_len);
+            _XzY0x30C(out, x_len);
          }
          #endif
       }
@@ -81281,17 +83257,17 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
    #if SHARKSSL_ECC_USE_EDWARDS
    if ((op & switcheractive) && ((configvdcdc2->curveType == SHARKSSL_EC_CURVE_ID_CURVE25519) || (configvdcdc2->curveType == SHARKSSL_EC_CURVE_ID_CURVE448)))
    {
-      U32 n, _XzY0x1E1, word;
+      U32 n, _XzY0x1E1, _XzY0x2F4;
 
       baAssert(0 == (x_len % sizeof(U32)));
       for (n = _XzY0x1E1 = 0; n < x_len; n += sizeof(U32))
       {
-         #if (defined(B_BIG_ENDIAN))
-         read64uint32(word, out, n);
+         #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN))
+         read64uint32(_XzY0x2F4, out, n);
          #else
-         cleanupcount(word, out, n);
+         cleanupcount(_XzY0x2F4, out, n);
          #endif
-         _XzY0x1E1 |= word;
+         _XzY0x1E1 |= _XzY0x2F4;
       }
       if (!_XzY0x1E1)
       {
@@ -81313,18 +83289,18 @@ int SharkSslECDHParam_ECDH(const SharkSslECDHParam *configvdcdc2, U8 op, U8 *out
 #endif
 
 SHARKSSL_API int sharkssl_X25519_createKeyPair(
-   U8 privateKey[SHARKSSL_X25519_KEY_LEN],
+   U8 _XzY0x2D5[SHARKSSL_X25519_KEY_LEN],
    U8 _XzY0x1E7[SHARKSSL_X25519_KEY_LEN])
 {
    SharkSslECDHParam configvdcdc2;
 
-   if ((privateKey == NULL) || (_XzY0x1E7 == NULL))
+   if ((_XzY0x2D5 == NULL) || (_XzY0x1E7 == NULL))
    {
       return -1;
    }
 
    configvdcdc2.XY = NULL;
-   configvdcdc2.k = privateKey;
+   configvdcdc2.k = _XzY0x2D5;
    configvdcdc2.xLen = SHARKSSL_X25519_KEY_LEN;
    configvdcdc2.curveType = SHARKSSL_EC_CURVE_ID_CURVE25519;
    return SharkSslECDHParam_ECDH(&configvdcdc2, signalpreserve, _XzY0x1E7);
@@ -81332,15 +83308,15 @@ SHARKSSL_API int sharkssl_X25519_createKeyPair(
 
 
 SHARKSSL_API int sharkssl_X25519_sharedSecret(
-   const U8 privateKey[SHARKSSL_X25519_KEY_LEN], 
+   const U8 _XzY0x2D5[SHARKSSL_X25519_KEY_LEN], 
    const U8 peerPublicKey[SHARKSSL_X25519_KEY_LEN], 
    U8 sharedSecret[SHARKSSL_X25519_KEY_LEN])
 {
    SharkSslECDHParam configvdcdc2;
-   U32 i, _XzY0x1E1, word;
+   U32 i, _XzY0x1E1, _XzY0x2F4;
    int sffsdrnandflash;
 
-   if ((privateKey == NULL) || (peerPublicKey == NULL) || (sharedSecret == NULL))
+   if ((_XzY0x2D5 == NULL) || (peerPublicKey == NULL) || (sharedSecret == NULL))
    {
       return -1;
    }
@@ -81348,12 +83324,12 @@ SHARKSSL_API int sharkssl_X25519_sharedSecret(
    baAssert(0 == (SHARKSSL_X25519_KEY_LEN % sizeof(U32)));
    for (i = _XzY0x1E1 = 0; i < SHARKSSL_X25519_KEY_LEN; i += sizeof(U32))
    {
-      #if (defined(B_BIG_ENDIAN))
-      read64uint32(word, peerPublicKey, i);
+      #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN))
+      read64uint32(_XzY0x2F4, peerPublicKey, i);
       #else
-      cleanupcount(word, peerPublicKey, i);
+      cleanupcount(_XzY0x2F4, peerPublicKey, i);
       #endif
-      _XzY0x1E1 |= word;
+      _XzY0x1E1 |= _XzY0x2F4;
    }
    if (!_XzY0x1E1)
    {
@@ -81362,7 +83338,7 @@ SHARKSSL_API int sharkssl_X25519_sharedSecret(
    }
 
    configvdcdc2.XY = (U8*)peerPublicKey;
-   configvdcdc2.k = (U8*)privateKey;
+   configvdcdc2.k = (U8*)_XzY0x2D5;
    configvdcdc2.xLen = SHARKSSL_X25519_KEY_LEN;
    configvdcdc2.curveType = SHARKSSL_EC_CURVE_ID_CURVE25519;
    sffsdrnandflash = SharkSslECDHParam_ECDH(&configvdcdc2, switcheractive, sharedSecret);
@@ -81373,12 +83349,12 @@ SHARKSSL_API int sharkssl_X25519_sharedSecret(
 
    for (i = _XzY0x1E1 = 0; i < SHARKSSL_X25519_KEY_LEN; i += sizeof(U32))
    {
-      #if (defined(B_BIG_ENDIAN))
-      read64uint32(word, sharedSecret, i);
+      #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN))
+      read64uint32(_XzY0x2F4, sharedSecret, i);
       #else
-      cleanupcount(word, sharedSecret, i);
+      cleanupcount(_XzY0x2F4, sharedSecret, i);
       #endif
-      _XzY0x1E1 |= word;
+      _XzY0x1E1 |= _XzY0x2F4;
    }
    return _XzY0x1E1 ? 0 : -1;
 }
@@ -81386,137 +83362,46 @@ SHARKSSL_API int sharkssl_X25519_sharedSecret(
 #endif
 
 
-#if SHARKSSL_ENABLE_ECDSA
-#if SHARKSSL_PSA_CONSUMER
-int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
-{
-   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-   psa_key_id_t sourcerouting = 0;
-   #if SHARKSSL_ECC_USE_SECP384R1
-   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP384R1_POINTLEN)];
-   U8 probeguestctl0[2 * SHARKSSL_SECP384R1_POINTLEN];
-   #else
-   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP256R1_POINTLEN)];
-   U8 probeguestctl0[2 * SHARKSSL_SECP256R1_POINTLEN];
-   #endif
-   size_t signatureLen = 0;
-   psa_status_t sffsdrnandflash;
-   psa_algorithm_t algorithm;
-   U16 creategroup;
+#if (SHARKSSL_ENABLE_ECDSA && (!SHARKSSL_PSA_CONSUMER))
+#if (!SHARKSSL_ECDSA_ONLY_VERIFY)
+#if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1)
+#define SHARKSSL_ECDSA_ORDER_FIXED 1
 
-   if ((!audioshutdown) || (!audioshutdown->R) || (!audioshutdown->S) || (!audioshutdown->hash) ||
-       ((op != iommupdata) && (op != fixupdevices)))
+
+static U8 _XzY0x306(U16 _XzY0x1CC)
+{
+   #if SHARKSSL_ECC_USE_SECP256R1
+   if (SHARKSSL_EC_CURVE_ID_SECP256R1 == _XzY0x1CC)
    {
       return 1;
    }
-   if ((!audioshutdown->key) && ((op != iommupdata) || (!audioshutdown->psaSignKey)))
-   {
-      return 1;
-   }
-   if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_SECP256R1)
-   {
-      creategroup = SHARKSSL_SECP256R1_POINTLEN;
-   }
+   #endif
    #if SHARKSSL_ECC_USE_SECP384R1
-   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_SECP384R1)
+   if (SHARKSSL_EC_CURVE_ID_SECP384R1 == _XzY0x1CC)
    {
-      creategroup = SHARKSSL_SECP384R1_POINTLEN;
+      return 1;
    }
    #endif
-   else
+   #if SHARKSSL_ECC_USE_SECP521R1
+   if (SHARKSSL_EC_CURVE_ID_SECP521R1 == _XzY0x1CC)
    {
       return 1;
-   }
-   if (audioshutdown->hashLen == SHARKSSL_SHA256_HASH_LEN)
-   {
-      algorithm = PSA_ALG_ECDSA(PSA_ALG_SHA_256);
-   }
-   #if SHARKSSL_USE_SHA_384
-   else if (audioshutdown->hashLen == SHARKSSL_SHA384_HASH_LEN)
-   {
-      algorithm = PSA_ALG_ECDSA(PSA_ALG_SHA_384);
    }
    #endif
-   else
-   {
-      return 1;
-   }
-   if (audioshutdown->keyLen != creategroup)
-   {
-      return 1;
-   }
-   sffsdrnandflash = psa_crypto_init();
-   if (sffsdrnandflash != PSA_SUCCESS)
-   {
-      return 1;
-   }
-   if ((op == iommupdata) && audioshutdown->psaSignKey)
-   {
-      sourcerouting = audioshutdown->psaSignKey;
-      sffsdrnandflash = PSA_SUCCESS;
-   }
-   else
-   {
-      psa_set_key_bits(&attributes, creategroup * 8);
-      psa_set_key_algorithm(&attributes, algorithm);
-      if (op == iommupdata)
-      {
-         psa_set_key_type(&attributes,
-                          PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
-         psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH);
-         sffsdrnandflash = psa_import_key(&attributes, audioshutdown->key, creategroup, &sourcerouting);
-      }
-      else
-      {
-         psa_set_key_type(&attributes,
-                          PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1));
-         psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_HASH);
-         _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
-         memcpy(_XzY0x1E7 + 1, audioshutdown->key, 2 * creategroup);
-         sffsdrnandflash = psa_import_key(&attributes, _XzY0x1E7, 1 + (2 * creategroup), &sourcerouting);
-      }
-      psa_reset_key_attributes(&attributes);
-   }
-   memset(_XzY0x1E7, 0, sizeof(_XzY0x1E7));
-   if (sffsdrnandflash == PSA_SUCCESS)
-   {
-      if (op == iommupdata)
-      {
-         sffsdrnandflash = psa_sign_hash(sourcerouting, algorithm, audioshutdown->hash, audioshutdown->hashLen, probeguestctl0, sizeof(probeguestctl0), &signatureLen);
-         if ((sffsdrnandflash == PSA_SUCCESS) && (signatureLen != (size_t)(2 * creategroup)))
-         {
-            sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
-         }
-      }
-      else
-      {
-         memcpy(probeguestctl0, audioshutdown->R, creategroup);
-         memcpy(probeguestctl0 + creategroup, audioshutdown->S, creategroup);
-         sffsdrnandflash = psa_verify_hash(sourcerouting, algorithm, audioshutdown->hash, audioshutdown->hashLen, probeguestctl0, 2 * creategroup);
-      }
-   }
-   if (((op != iommupdata) || (!audioshutdown->psaSignKey)) &&
-       (sourcerouting != 0) && (psa_destroy_key(sourcerouting) != PSA_SUCCESS))
-   {
-      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
-   }
-   if ((sffsdrnandflash == PSA_SUCCESS) && (op == iommupdata))
-   {
-      memcpy(audioshutdown->R, probeguestctl0, creategroup);
-      memcpy(audioshutdown->S, probeguestctl0 + creategroup, creategroup);
-   }
-   memset(probeguestctl0, 0, sizeof(probeguestctl0));
-   return (sffsdrnandflash == PSA_SUCCESS) ? 0 : 1;
+   return 0;
 }
 #else
-#if (!SHARKSSL_ECDSA_ONLY_VERIFY)
+#define SHARKSSL_ECDSA_ORDER_FIXED 0
+#endif
+
+
 
 static int _XzY0x1BE(shtype_t *o, const shtype_t *_XzY0x1E2, U16 _XzY0x1CC)
 {
-   #if (SHARKSSL_ECC_TIMING_RESISTANT && SHARKSSL_ECC_USE_SECP256R1)
-   if (SHARKSSL_EC_CURVE_ID_SECP256R1 == _XzY0x1CC)
+   #if SHARKSSL_ECDSA_ORDER_FIXED
+   if (_XzY0x306(_XzY0x1CC))
    {
-      shtype_t_moduloP256OrderFixed(o, _XzY0x1E2);
+      shtype_t_moduloOrderFixed(o, _XzY0x1E2);
       return 0;
    }
    #else
@@ -81530,16 +83415,41 @@ static int _XzY0x1BE(shtype_t *o, const shtype_t *_XzY0x1E2, U16 _XzY0x1CC)
 static void _XzY0x1BD(shtype_t *o, const shtype_t *_XzY0x1C0,
                                           const shtype_t *_XzY0x1E2, U16 _XzY0x1CC)
 {
-   #if (SHARKSSL_ECC_TIMING_RESISTANT && SHARKSSL_ECC_USE_SECP256R1)
-   if (SHARKSSL_EC_CURVE_ID_SECP256R1 == _XzY0x1CC)
+   #if SHARKSSL_ECDSA_ORDER_FIXED
+   if (_XzY0x306(_XzY0x1CC))
    {
-      shtype_t_addmodP256OrderFixed(o, _XzY0x1C0, _XzY0x1E2);
+      shtype_t_addmodOrderFixed(o, _XzY0x1C0, _XzY0x1E2);
       return;
    }
    #else
    (void)_XzY0x1CC;
    #endif
    setupsdhci1(o, _XzY0x1C0, _XzY0x1E2);
+}
+
+
+
+static U8 _XzY0x307(const shtype_t *x, const shtype_t *_XzY0x1E2)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord _XzY0x184, any;
+   U16 i;
+
+   if (x->len != _XzY0x1E2->len)
+   {
+      return (U8)((eventtimeout((shtype_t*)x)) || (timerwrite(x, _XzY0x1E2)));
+   }
+   _XzY0x184 = 0;
+   any = 0;
+   for (i = x->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)x->beg[i] - _XzY0x1E2->beg[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+      any |= x->beg[i];
+   }
+   
+   any = (shtype_tWord)((any | (shtype_tWord)(0 - any)) >> (SHARKSSL_BIGINT_WORDSIZE - 1));
+   return (U8)((any ^ 1) | (_XzY0x184 ^ 1));
 }
 #endif
 
@@ -81550,15 +83460,12 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
 {
    shtype_t e, w, u1, u2, R, S;
    #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
-   shtype_t K, dA;
-   #if SHARKSSL_ECC_TIMING_RESISTANT
-   shtype_t B;
-   #endif
+   shtype_t K, dA, B;
    #endif
    SharkSslECCurve G, T;
    SharkSslECPoint point, Qa;
    U8 *afterhandler, *temporaryentry, *r, *s, *h, *k;
-   #if (SHARKSSL_ECC_TIMING_RESISTANT && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+   #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    U8 *_XzY0x1C5 = NULL;
    #endif
    U32 dm9k1resource;
@@ -81604,19 +83511,14 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
 
    icachealiases  = (U16)((k_lenr << 2) + (k_lenr << 1));     
    icachealiases += k_lenk;                                   
-   #if (SHARKSSL_BIGINT_WORDSIZE > 32)
-   icachealiases += 4;  
-   #else
    baAssert(k_lenk >= k_lenr);
-   #endif
 
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
    icachealiases += h_len;                                    
    #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    if (op & iommupdata)
    {
       icachealiases += k_lenr;                                
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       icachealiases += k_lenr;                                
       #endif
    }
@@ -81625,12 +83527,11 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
    if (op & fixupdevices)
    {
       icachealiases += (U16)(k_lenr << 2);                    
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       icachealiases += (U16)(k_lenr << 2);                    
       #endif
    }
-   #endif  
-   #if (SHARKSSL_ECC_TIMING_RESISTANT && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+   #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    if (op & iommupdata)
    {
       icachealiases += k_lenr;                                
@@ -81652,22 +83553,18 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
    updatefrequency(&point, (k_lenr * 8), temporaryentry, temporaryentry + k_lenr);
    temporaryentry += (U16)(k_lenr << 1);
 
-   #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-   memmove_endianess(temporaryentry, h, h_len);
+   memmove_endianness(temporaryentry, h, h_len);
    h = temporaryentry;
    temporaryentry += h_len;
-   #endif
    onenandpartitions(&e, (h_len * 8), h);
 
    #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    if (op & iommupdata)
    {
       U8 *_XzY0x1E0 = temporaryentry;
-      #if SHARKSSL_ECC_TIMING_RESISTANT
       shtype_tWord maskWord;
       U16 blindBits, blindLen;
       U8 _XzY0x1C6 = 0;
-      #endif
       U8 cnt = 0;
 
       _SharkSslECDSAParam_ECDSA_rng:
@@ -81697,12 +83594,10 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
       }
       #endif
 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      memmove_endianess((U8*)consoledevice(&u1), temporaryentry, k_lenk);
+      memmove_endianness((U8*)consoledevice(&u1), temporaryentry, k_lenk);
       memcpy(temporaryentry, (U8*)consoledevice(&u1), k_lenk);
-      #endif
       onenandpartitions(&K, (k_lenk * 8), temporaryentry);
-      if ((_XzY0x217) && ((eventtimeout(&K)) || (timerwrite(&K, &G.order))))
+      if ((_XzY0x217) && (_XzY0x307(&K, &G.order)))
       {
          if (++cnt >= 8)
          {
@@ -81715,13 +83610,9 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          offsetarray = (int)SharkSslCon_AllocationError;
          goto _SharkSslECDSAParam_ECDSA_end;
       }
-      #if (!SHARKSSL_ECC_TIMING_RESISTANT)
-      blastscache(&K);
-      #endif
       baAssert(pulsewidth(&K) <= k_lenr);
       temporaryentry += k_lenk;
-      #if SHARKSSL_ECC_TIMING_RESISTANT
-      if (eventtimeout(&K))
+      if (_XzY0x307(&K, &G.order))  
       {
          if (++cnt & 0x8)
          {
@@ -81729,7 +83620,6 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          }
          goto _SharkSslECDSAParam_ECDSA_rng;
       }
-      #endif
 
       if (unregisterskciphers(&G, &K, &point))
       {
@@ -81751,30 +83641,23 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          goto _SharkSslECDSAParam_ECDSA_rng;
       }
 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (k_len != k_lenr)
       {
          icachealiases = k_lenr - k_len;
          memset(temporaryentry, 0, icachealiases);
          memcpy(temporaryentry + icachealiases, k, k_len);
          temporaryentry += k_lenr;
-         memmove_endianess(temporaryentry, temporaryentry - k_lenr, k_lenr);
+         memmove_endianness(temporaryentry, temporaryentry - k_lenr, k_lenr);
       }
       else
       #endif
       {
-         memmove_endianess(temporaryentry, k, k_lenr);
+         memmove_endianness(temporaryentry, k, k_lenr);
       }
       onenandpartitions(&dA, (k_lenr * 8), temporaryentry);
-      #else  
-      onenandpartitions(&dA, (k_lenr * 8), k);
-      #endif
-      #if SHARKSSL_ECC_TIMING_RESISTANT
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       temporaryentry += k_lenr;
-      #endif
       _XzY0x1C5 = temporaryentry;
       blindBits = (U16)((G.order.len - 1) * SHARKSSL_BIGINT_WORDSIZE);
       for (maskWord = G.order.beg[0]; maskWord; maskWord >>= 1)
@@ -81801,10 +83684,10 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          }
          memset(u2.mem, 0, k_lenr - blindLen);
          ((U8*)u2.mem)[k_lenr - blindLen] &= (U8)(0xFF >> ((8 - (blindBits & 7)) & 7));
-         memmove_endianess(_XzY0x1C5, (U8*)u2.mem, k_lenr);
+         memmove_endianness(_XzY0x1C5, (U8*)u2.mem, k_lenr);
          onenandpartitions(&B, (k_lenr * 8), _XzY0x1C5);
       }
-      while ((eventtimeout(&B)) || (timerwrite(&B, &G.order)));
+      while (_XzY0x307(&B, &G.order));
 
       hotplugpgtable(&K, &B, &u1);
       if ((_XzY0x1BE(&u1, &G.order, audioshutdown->curveType)) || (iommumapping(&u1, &G.order)))
@@ -81832,26 +83715,6 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          offsetarray = (int)SharkSslCon_AllocationError;
          goto _SharkSslECDSAParam_ECDSA_end;
       }
-      #else
-      hotplugpgtable(&dA, &point.x, &u1);
-      if (_XzY0x1BE(&u1, &G.order, audioshutdown->curveType))
-      {
-         offsetarray = (int)SharkSslCon_AllocationError;
-         goto _SharkSslECDSAParam_ECDSA_end;
-      }
-      _XzY0x1BD(&u1, &e, &G.order, audioshutdown->curveType);
-      if (iommumapping(&K, &G.order))
-      {
-         offsetarray = (int)SharkSslCon_AllocationError;
-         goto _SharkSslECDSAParam_ECDSA_end;
-      }
-      hotplugpgtable(&K, &u1, &u2);
-      if (_XzY0x1BE(&u2, &G.order, audioshutdown->curveType))
-      {
-         offsetarray = (int)SharkSslCon_AllocationError;
-         goto _SharkSslECDSAParam_ECDSA_end;
-      }
-      #endif
       if (eventtimeout(&u2))
       {
          if (++cnt & 0x8)  
@@ -81860,20 +83723,20 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          }
          goto _SharkSslECDSAParam_ECDSA_rng;
       }
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (k_len != k_lenr)
       {
          temporaryentry = (U8*)consoledevice(&(point.y));
-         memmove_endianess(temporaryentry, (U8*)consoledevice(&(point.x)), k_lenr);
+         memmove_endianness(temporaryentry, (U8*)consoledevice(&(point.x)), k_lenr);
          memcpy(r, temporaryentry + k_lenr - k_len, k_len);
-         memmove_endianess(temporaryentry, (U8*)consoledevice(&u2), k_lenr);
+         memmove_endianness(temporaryentry, (U8*)consoledevice(&u2), k_lenr);
          memcpy(s, temporaryentry + k_lenr - k_len, k_len);
       }
       else
       #endif
       {
-         memmove_endianess(r, (U8*)consoledevice(&(point.x)), k_len);
-         memmove_endianess(s, (U8*)consoledevice(&u2), k_len);
+         memmove_endianness(r, (U8*)consoledevice(&(point.x)), k_len);
+         memmove_endianness(s, (U8*)consoledevice(&u2), k_len);
       }
       offsetarray = 0;
    }
@@ -81884,8 +83747,7 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
    {
       int decodeparity;
 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (k_len != k_lenr)
       {
          icachealiases = k_lenr - k_len;
@@ -81899,22 +83761,20 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          temporaryentry += k_lenr;
       }
       #endif
-      memmove_endianess(temporaryentry, r, k_lenr);
+      memmove_endianness(temporaryentry, r, k_lenr);
       r = temporaryentry;
       temporaryentry += k_lenr;
-      memmove_endianess(temporaryentry, s, k_lenr);
+      memmove_endianness(temporaryentry, s, k_lenr);
       s = temporaryentry;
       temporaryentry += k_lenr;
-      #endif
 
       onenandpartitions(&R, (k_lenr * 8), r);
       onenandpartitions(&S, (k_lenr * 8), s);
       onenandpartitions(&w, (k_lenr * 8), temporaryentry);
       temporaryentry += k_lenr;
 
-      #if (SHARKSSL_BIGINT_WORDSIZE > 8)
       
-      #if ((SHARKSSL_BIGINT_WORDSIZE > 16) && (SHARKSSL_ECC_USE_SECP521R1))
+      #if SHARKSSL_ECC_USE_SECP521R1
       if (k_len != k_lenr)
       {
          icachealiases = k_lenr - k_len;
@@ -81925,17 +83785,14 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
          memcpy(temporaryentry + icachealiases, k + k_len, k_len);
          temporaryentry += k_lenr;
          icachealiases = (U16)(k_lenr << 1);
-         memmove_endianess(temporaryentry, temporaryentry - icachealiases, icachealiases);
+         memmove_endianness(temporaryentry, temporaryentry - icachealiases, icachealiases);
       }
       else
       #endif
       {
-         memmove_endianess(temporaryentry, k, (U16)(k_lenr << 1));
+         memmove_endianness(temporaryentry, k, (U16)(k_lenr << 1));
       }
       updatefrequency(&Qa, (k_lenr * 8), temporaryentry, temporaryentry + k_lenr);
-      #else  
-      updatefrequency(&Qa, (k_lenr * 8), k, k + k_lenr);
-      #endif
 
       
       if ((eventtimeout(&R)) || (eventtimeout(&S)) ||
@@ -81996,7 +83853,7 @@ int SharkSslECDSAParam_ECDSAEx(const SharkSslECDSAParam *audioshutdown, void *_X
    }
 
    _SharkSslECDSAParam_ECDSA_end:
-   #if (SHARKSSL_ECC_TIMING_RESISTANT && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+   #if (!SHARKSSL_ECDSA_ONLY_VERIFY)
    if (_XzY0x1C5 != NULL)
    {
       volatile U8 *_XzY0x1FB = _XzY0x1C5;
@@ -82017,7 +83874,6 @@ int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
 {
    return SharkSslECDSAParam_ECDSAEx(audioshutdown, NULL, NULL, op);
 }
-#endif  
 #endif  
 
 
@@ -82069,7 +83925,7 @@ SHARKSSL_API int SharkSslRSAKey_create(SharkSslRSAKey *mcbspplatform, U16 blake2
    onenandpartitions(&H, writeuncached * 2, p);
    p += (writeuncached >> 2);
    onenandpartitions(&E, sizeof(patchimm64)*8, p);
-   memmove_endianess(p, (const U8*)&patchimm64, (sizeof(patchimm64)/sizeof(patchimm64[0])));
+   memmove_endianness(p, (const U8*)&patchimm64, (sizeof(patchimm64)/sizeof(patchimm64[0])));
    p += (sizeof(patchimm64)/sizeof(patchimm64[0]));
    onenandpartitions(&G, writeuncached * 2, p);
 
@@ -82193,18 +84049,18 @@ SHARKSSL_API int SharkSslRSAKey_create(SharkSslRSAKey *mcbspplatform, U16 blake2
             *(p + i) = patchimm64[i];
          }
          p += sizeof(patchimm64)/sizeof(patchimm64[0]);
-         memmove_endianess(p, (U8*)consoledevice(&N), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&N), writeuncached);
          p += writeuncached;
          writeuncached >>= 1;
-         memmove_endianess(p, (U8*)consoledevice(&P), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&P), writeuncached);
          p += writeuncached;
-         memmove_endianess(p, (U8*)consoledevice(&Q), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&Q), writeuncached);
          p += writeuncached;
-         memmove_endianess(p, (U8*)consoledevice(&DP), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&DP), writeuncached);
          p += writeuncached;
-         memmove_endianess(p, (U8*)consoledevice(&DQ), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&DQ), writeuncached);
          p += writeuncached;
-         memmove_endianess(p, (U8*)consoledevice(&QP), writeuncached);
+         memmove_endianness(p, (U8*)consoledevice(&QP), writeuncached);
       }
    }
 
@@ -82230,6 +84086,9 @@ SHARKSSL_API U8 *SharkSslRSAKey_getPublic(SharkSslRSAKey mcbspplatform)
 }
 #endif
 #endif  
+
+#endif
+
 
 
 #ifndef BA_LIB
@@ -82275,7 +84134,7 @@ static const char responseHeaderFmt[] = {
 static const char responseFooter[] = {"\074\057\104\072\162\145\163\160\157\156\163\145\076\012"};
 
 
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
 #define BA_FILE_FMT "\045\154\154\165"
 #else
 #define BA_FILE_FMT "\045\165"
@@ -84671,6 +86530,7 @@ WebDAV_lockmgr(WebDAV* o, WebDAVLockMgr* mgr)
    }
    return -10;
 }
+#if !SHARKSSL_PSA_CONSUMER
 #undef G
 
 
@@ -84683,6 +86543,846 @@ WebDAV_lockmgr(WebDAV* o, WebDAVLockMgr* mgr)
 #include <string.h>
 #include <stddef.h>
 #include "crypto/SharkSslCryptoASM.h"
+
+#if (SHARKSSL_ENABLE_AES_GCM && SHARKSSL_OPTIMIZED_GCM_ASM && (!SHARKSSL_AES_GCM_SOFTWARE_CT) && \
+     (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES) && \
+     (SHARKSSL_X86_ASM_PLATFORM || defined(__aarch64__) || defined(_M_ARM64)))
+#define SHARKSSL_AES_GCM_ASM_CT 1
+#else
+#define SHARKSSL_AES_GCM_ASM_CT 0
+#endif
+#if (SHARKSSL_AES_GCM_SOFTWARE_CT || SHARKSSL_AES_GCM_ASM_CT)
+
+
+
+#ifndef SHARKSSL_AES_GCM_CT_H
+#define SHARKSSL_AES_GCM_CT_H
+
+#include <stddef.h>
+#include <string.h>
+
+
+#define SHARKSSL_AES_CT_BLOCK (SHARKSSL_AES_GCM_SOFTWARE_CT || (SHARKSSL_AES_GCM_ASM_CT && (!SHARKSSL_X86_ASM_PLATFORM)))
+
+#if SHARKSSL_AES_CT_BLOCK
+
+#if (!((__ICCARM__ && __ARM_PROFILE_M__) || (__CC_ARM && __TARGET_PROFILE_M__)) && SHARKSSL_UNALIGNED_ACCESS)
+static U32 _XzY0x310(const U8 *p, int _XzY0x173)
+{
+   U32 w;
+
+   memcpy(&w, p, sizeof(w));
+   return _XzY0x173 ? blockarray(w) : w;
+}
+
+static void _XzY0x311(U8 *p, U32 w, int _XzY0x173)
+{
+   if (_XzY0x173)
+   {
+      w = blockarray(w);
+   }
+   memcpy(p, &w, sizeof(w));
+}
+
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
+#define SHARKSSL_CT_LE_SWAP 0
+#else
+#define SHARKSSL_CT_LE_SWAP 1
+#endif
+#define SHARKSSL_CT_GET_U32_LE(w,a,i) (w) = _XzY0x310((a) + (i), SHARKSSL_CT_LE_SWAP)
+#define SHARKSSL_CT_PUT_U32_LE(w,a,i) _XzY0x311((a) + (i), (w), SHARKSSL_CT_LE_SWAP)
+#define SHARKSSL_CT_GET_U32_BE(w,a,i) (w) = _XzY0x310((a) + (i), !SHARKSSL_CT_LE_SWAP)
+#define SHARKSSL_CT_PUT_U32_BE(w,a,i) _XzY0x311((a) + (i), (w), !SHARKSSL_CT_LE_SWAP)
+#else
+#define SHARKSSL_CT_GET_U32_LE(w,a,i) cleanupcount(w,a,i)
+#define SHARKSSL_CT_PUT_U32_LE(w,a,i) hsotgpdata(w,a,i)
+#define SHARKSSL_CT_GET_U32_BE(w,a,i) read64uint32(w,a,i)
+#define SHARKSSL_CT_PUT_U32_BE(w,a,i) inputlevel(w,a,i)
+#endif
+#endif  
+
+
+typedef char sharkssl_gcm_ct_m0_alignment[(0 == (offsetof(SharkSslAesGcmCtx, M0) & 3)) ? 1 : -1];
+#if defined(__clang__) || (defined(__GNUC__) && (!defined(__CC_ARM)) && \
+    ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7))))
+#define SHARKSSL_GCM_CT_ALIGNED4(p) __builtin_assume_aligned((p), 4)
+#else
+#define SHARKSSL_GCM_CT_ALIGNED4(p) (p)
+#endif
+
+
+
+
+
+#define SHARKSSL_AES_CT_EXCHANGE(a, b, n, fpemulthreshold) do {    \
+   U32 d_ = (((a) >> (n)) ^ (b)) & (fpemulthreshold);              \
+   (b) ^= d_;                                           \
+   (a) ^= d_ << (n);                                    \
+} while (0)
+
+
+
+static void sharkssl_aes_ct_transpose(U32 q[8])
+{
+   unsigned k;
+
+   for (k = 0; k < 4; ++k)
+   {
+      SHARKSSL_AES_CT_EXCHANGE(q[k], q[k + 4], 4, 0x0f0f0f0fu);
+   }
+   for (k = 0; k < 8; k += 4)
+   {
+      SHARKSSL_AES_CT_EXCHANGE(q[k], q[k + 2], 2, 0x33333333u);
+      SHARKSSL_AES_CT_EXCHANGE(q[k + 1], q[k + 3], 2, 0x33333333u);
+   }
+   for (k = 0; k < 8; k += 2)
+   {
+      SHARKSSL_AES_CT_EXCHANGE(q[k], q[k + 1], 1, 0x55555555u);
+   }
+}
+
+
+
+#if SHARKSSL_AES_CIPHER_LOOP_UNROLL
+#if defined(__GNUC__) || defined(__clang__)
+#define SHARKSSL_AES_CT_SBOX_INLINE __inline__ __attribute__((always_inline))
+#elif defined(_MSC_VER) || defined(__CC_ARM)
+#define SHARKSSL_AES_CT_SBOX_INLINE __forceinline
+#elif defined(__ICCARM__) || defined(__ICCRX__)
+#pragma inline=forced
+#endif
+#endif
+#ifndef SHARKSSL_AES_CT_SBOX_INLINE
+#define SHARKSSL_AES_CT_SBOX_INLINE
+#endif
+static SHARKSSL_AES_CT_SBOX_INLINE void sharkssl_aes_ct_sbox(U32 q[8])
+{
+   U32 u0, u1, u2, u3, u4, u5, u6, u7;
+   U32 y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11;
+   U32 y12, y13, y14, y15, y16, y17, y18, y19, y20, y21;
+   U32 t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15;
+   U32 t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29;
+   U32 t30, t31, t32, t33, t34, t35, t36, t37, t38, t39, t40, t41, t42, t43;
+   U32 t44, t45;
+   U32 z0, z1, z2, z3, z4, z5, z6, z7, z8, z9;
+   U32 z10, z11, z12, z13, z14, z15, z16, z17;
+   U32 tc1, tc2, tc3, tc4, tc5, tc6, tc7, tc8, tc9, tc10, tc11, tc12, tc13;
+   U32 tc14, tc16, tc17, tc18, tc20, tc21, tc26, s3;
+
+   u0 = q[7]; u1 = q[6]; u2 = q[5]; u3 = q[4];
+   u4 = q[3]; u5 = q[2]; u6 = q[1]; u7 = q[0];
+
+   y14 = u3 ^ u5;
+   y13 = u0 ^ u6;
+   y9 = u0 ^ u3;
+   y8 = u0 ^ u5;
+   t0 = u1 ^ u2;
+   y1 = t0 ^ u7;
+   y4 = y1 ^ u3;
+   y12 = y13 ^ y14;
+   y2 = y1 ^ u0;
+   y5 = y1 ^ u6;
+   y3 = y5 ^ y8;
+   t1 = u4 ^ y12;
+   y15 = t1 ^ u5;
+   y20 = t1 ^ u1;
+   y6 = y15 ^ u7;
+   y10 = y15 ^ t0;
+   y11 = y20 ^ y9;
+   y7 = u7 ^ y11;
+   y17 = y10 ^ y11;
+   y19 = y10 ^ y8;
+   y16 = t0 ^ y11;
+   y21 = y13 ^ y16;
+   y18 = u0 ^ y16;
+   t2 = y12 & y15;
+   t3 = y3 & y6;
+   t4 = t3 ^ t2;
+   t5 = y4 & u7;
+   t6 = t5 ^ t2;
+   t7 = y13 & y16;
+   t8 = y5 & y1;
+   t9 = t8 ^ t7;
+   t10 = y2 & y7;
+   t11 = t10 ^ t7;
+   t12 = y9 & y11;
+   t13 = y14 & y17;
+   t14 = t13 ^ t12;
+   t15 = y8 & y10;
+   t16 = t15 ^ t12;
+   t17 = t4 ^ y20;
+   t18 = t6 ^ t16;
+   t19 = t9 ^ t14;
+   t20 = t11 ^ t16;
+   t21 = t17 ^ t14;
+   t22 = t18 ^ y19;
+   t23 = t19 ^ y21;
+   t24 = t20 ^ y18;
+   t25 = t21 ^ t22;
+   t26 = t21 & t23;
+   t27 = t24 ^ t26;
+   t28 = t25 & t27;
+   t29 = t28 ^ t22;
+   t30 = t23 ^ t24;
+   t31 = t22 ^ t26;
+   t32 = t31 & t30;
+   t33 = t32 ^ t24;
+   t34 = t23 ^ t33;
+   t35 = t27 ^ t33;
+   t36 = t24 & t35;
+   t37 = t36 ^ t34;
+   t38 = t27 ^ t36;
+   t39 = t29 & t38;
+   t40 = t25 ^ t39;
+   t41 = t40 ^ t37;
+   t42 = t29 ^ t33;
+   t43 = t29 ^ t40;
+   t44 = t33 ^ t37;
+   t45 = t42 ^ t41;
+   z0 = t44 & y15;
+   z1 = t37 & y6;
+   z2 = t33 & u7;
+   z3 = t43 & y16;
+   z4 = t40 & y1;
+   z5 = t29 & y7;
+   z6 = t42 & y11;
+   z7 = t45 & y17;
+   z8 = t41 & y10;
+   z9 = t44 & y12;
+   z10 = t37 & y3;
+   z11 = t33 & y4;
+   z12 = t43 & y13;
+   z13 = t40 & y5;
+   z14 = t29 & y2;
+   z15 = t42 & y9;
+   z16 = t45 & y14;
+   z17 = t41 & y8;
+   tc1 = z15 ^ z16;
+   tc2 = z10 ^ tc1;
+   tc3 = z9 ^ tc2;
+   tc4 = z0 ^ z2;
+   tc5 = z1 ^ z0;
+   tc6 = z3 ^ z4;
+   tc7 = z12 ^ tc4;
+   tc8 = z7 ^ tc6;
+   tc9 = z8 ^ tc7;
+   tc10 = tc8 ^ tc9;
+   tc11 = tc6 ^ tc5;
+   tc12 = z3 ^ z5;
+   tc13 = z13 ^ tc1;
+   tc14 = tc4 ^ tc12;
+   s3 = tc3 ^ tc11;
+   tc16 = z6 ^ tc8;
+   tc17 = z14 ^ tc10;
+   tc18 = tc13 ^ tc14;
+   tc20 = z15 ^ tc16;
+   tc21 = tc2 ^ z11;
+   tc26 = tc17 ^ tc20;
+
+   q[7] = tc3 ^ tc16;     
+   q[6] = s3 ^ tc16;      
+   q[5] = tc26 ^ z17;     
+   q[4] = s3;             
+   q[3] = tc14 ^ s3;      
+   q[2] = tc21 ^ tc17;    
+   q[1] = tc10 ^ tc18;    
+   q[0] = z12 ^ tc18;     
+}
+
+
+
+#define SHARKSSL_AES_CT_ROR(x, n) (((x) >> (n)) | ((x) << ((32 - (n)) & 31)))
+#define SHARKSSL_AES_CT_ROTATE(x, n, fpemulthreshold) \
+   ((SHARKSSL_AES_CT_ROR(x, n) & (U32)(fpemulthreshold)) | (SHARKSSL_AES_CT_ROR(x, (n) - 4) & ~(U32)(fpemulthreshold)))
+
+
+
+#define SHARKSSL_AES_CT_MIXCOLUMNS(q, n1, mask1, n2, mask2) do {               \
+   U32 r0_, r1_, r2_, r3_, r4_, r5_, r6_, r7_;                                  \
+   U32 t0_, t1_, t2_, t3_, t4_, t5_, t6_, t7_;                                  \
+   r0_ = SHARKSSL_AES_CT_ROTATE((q)[0], n1, mask1); t0_ = (q)[0] ^ r0_;         \
+   r1_ = SHARKSSL_AES_CT_ROTATE((q)[1], n1, mask1); t1_ = (q)[1] ^ r1_;         \
+   r2_ = SHARKSSL_AES_CT_ROTATE((q)[2], n1, mask1); t2_ = (q)[2] ^ r2_;         \
+   r3_ = SHARKSSL_AES_CT_ROTATE((q)[3], n1, mask1); t3_ = (q)[3] ^ r3_;         \
+   r4_ = SHARKSSL_AES_CT_ROTATE((q)[4], n1, mask1); t4_ = (q)[4] ^ r4_;         \
+   r5_ = SHARKSSL_AES_CT_ROTATE((q)[5], n1, mask1); t5_ = (q)[5] ^ r5_;         \
+   r6_ = SHARKSSL_AES_CT_ROTATE((q)[6], n1, mask1); t6_ = (q)[6] ^ r6_;         \
+   r7_ = SHARKSSL_AES_CT_ROTATE((q)[7], n1, mask1); t7_ = (q)[7] ^ r7_;         \
+   (q)[0] = t7_ ^ r0_ ^ SHARKSSL_AES_CT_ROTATE(t0_, n2, mask2);                 \
+   (q)[1] = t0_ ^ t7_ ^ r1_ ^ SHARKSSL_AES_CT_ROTATE(t1_, n2, mask2);           \
+   (q)[2] = t1_ ^ r2_ ^ SHARKSSL_AES_CT_ROTATE(t2_, n2, mask2);                 \
+   (q)[3] = t2_ ^ t7_ ^ r3_ ^ SHARKSSL_AES_CT_ROTATE(t3_, n2, mask2);           \
+   (q)[4] = t3_ ^ t7_ ^ r4_ ^ SHARKSSL_AES_CT_ROTATE(t4_, n2, mask2);           \
+   (q)[5] = t4_ ^ r5_ ^ SHARKSSL_AES_CT_ROTATE(t5_, n2, mask2);                 \
+   (q)[6] = t5_ ^ r6_ ^ SHARKSSL_AES_CT_ROTATE(t6_, n2, mask2);                 \
+   (q)[7] = t6_ ^ r7_ ^ SHARKSSL_AES_CT_ROTATE(t7_, n2, mask2);                 \
+} while (0)
+
+
+#if SHARKSSL_AES_CT_BLOCK
+
+static void sharkssl_aes_ct_addRoundKey(U32 q[8], const U32 *rk)
+{
+   unsigned j;
+
+   for (j = 0; j < 4; ++j)
+   {
+      U32 lo = rk[j] & 0x0f0f0f0fu;
+      U32 hi = rk[j] & 0xf0f0f0f0u;
+
+      q[j] ^= lo | (lo << 4);
+      q[j + 4] ^= hi | (hi >> 4);
+   }
+}
+
+
+static void sharkssl_aes_ct_rounds(const SharkSslAesCtx *o, U32 q[8])
+{
+   const U32 *rk = o->key;
+   unsigned round, i;
+
+   sharkssl_aes_ct_transpose(q);
+   sharkssl_aes_ct_addRoundKey(q, rk);
+   for (round = 1; ; ++round)
+   {
+      sharkssl_aes_ct_sbox(q);
+      rk += 4;
+      if (round >= (unsigned)o->nr)
+      {
+         break;
+      }
+      switch (round & 3)
+      {
+         case 0:
+            SHARKSSL_AES_CT_MIXCOLUMNS(q, 8, 0xffffffffu, 16, 0xffffffffu);
+            break;
+
+         case 1:
+            SHARKSSL_AES_CT_MIXCOLUMNS(q, 9, 0x77777777u, 18, 0x33333333u);
+            break;
+
+         case 2:
+            SHARKSSL_AES_CT_MIXCOLUMNS(q, 10, 0x33333333u, 16, 0xffffffffu);
+            break;
+
+         default:
+            SHARKSSL_AES_CT_MIXCOLUMNS(q, 11, 0x11111111u, 18, 0x33333333u);
+            break;
+      }
+      sharkssl_aes_ct_addRoundKey(q, rk);
+   }
+   sharkssl_aes_ct_addRoundKey(q, rk);
+   if (o->nr & 2)
+   {
+      
+      for (i = 0; i < 8; ++i)
+      {
+         U32 d = ((q[i] >> 2) ^ q[i]) & 0x33003300u;
+         q[i] ^= d ^ (d << 2);
+      }
+   }
+   sharkssl_aes_ct_transpose(q);
+}
+#endif  
+
+
+
+static U32 _XzY0x31(U32 _XzY0x2F4)
+{
+   U32 q[8];
+
+   memset(q, 0, sizeof(q));
+   q[0] = _XzY0x2F4;
+   sharkssl_aes_ct_transpose(q);
+   sharkssl_aes_ct_sbox(q);
+   sharkssl_aes_ct_transpose(q);
+   _XzY0x2F4 = q[0] ^ 0x63636363u;
+   sharkssl_clear(q, sizeof(q));
+   return _XzY0x2F4;
+}
+
+
+#if SHARKSSL_AES_CT_BLOCK
+
+static void sharkssl_aes_ct_roundKey(const U32 column[4], unsigned round, U32 rk[4])
+{
+   U32 q[8];
+   unsigned c, m = round & 3;
+
+   
+   for (c = 0; c < 4; ++c)
+   {
+      q[c] = (column[c] & 0x000000ffu) |
+             (column[(c - m) & 3] & 0x0000ff00u) |
+             (column[(c - 2 * m) & 3] & 0x00ff0000u) |
+             (column[(c - 3 * m) & 3] & 0xff000000u);
+      q[c + 4] = q[c];
+   }
+   sharkssl_aes_ct_transpose(q);
+   for (c = 0; c < 4; ++c)
+   {
+      rk[c] = (q[c] & 0x0f0f0f0fu) | (q[c + 4] & 0xf0f0f0f0u);
+   }
+   if (round)
+   {
+      
+      rk[0] ^= 0x0f0f0f0fu;
+      rk[1] ^= 0xffffffffu;
+      rk[2] ^= 0xf0f0f0f0u;
+   }
+   sharkssl_clear(q, sizeof(q));
+}
+#endif  
+
+
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+static void _XzY0x30D(SharkSslAesCtx *o, const U8 *sourcerouting, U8 creategroup)
+{
+   U32 countersvalid[8], column[4], _XzY0x2F4 = 0, *rk = o->key;
+   U32 _XzY0x30F = 1;
+   unsigned keyWords, writepmresrn, uart2hwmod, _XzY0x22D;
+
+   if (((creategroup != 16) || (!SHARKSSL_USE_AES_128)) &&
+       ((creategroup != 24) || (!SHARKSSL_USE_AES_192)) &&
+       ((creategroup != 32) || (!SHARKSSL_USE_AES_256)))
+   {
+      baAssert(0);
+      o->nr = 0;
+      return;
+   }
+   keyWords = creategroup / 4;
+   writepmresrn = 4 * (keyWords + 7);
+   for (uart2hwmod = 0, _XzY0x22D = 0; uart2hwmod < writepmresrn; ++uart2hwmod)
+   {
+      
+      if (uart2hwmod < keyWords)
+      {
+         SHARKSSL_CT_GET_U32_LE(_XzY0x2F4, sourcerouting, 4 * uart2hwmod);
+      }
+      else
+      {
+         if (_XzY0x22D == 0)
+         {
+            _XzY0x2F4 = _XzY0x31((_XzY0x2F4 >> 8) | (_XzY0x2F4 << 24)) ^ _XzY0x30F;
+            _XzY0x30F = (_XzY0x30F << 1) ^ (0x11bu & (0u - (_XzY0x30F >> 7)));
+         }
+         else if ((keyWords == 8) && (_XzY0x22D == 4))
+         {
+            _XzY0x2F4 = _XzY0x31(_XzY0x2F4);
+         }
+         _XzY0x2F4 ^= countersvalid[_XzY0x22D];
+      }
+      countersvalid[_XzY0x22D] = _XzY0x2F4;
+      if (++_XzY0x22D == keyWords)
+      {
+         _XzY0x22D = 0;
+      }
+      column[uart2hwmod & 3] = _XzY0x2F4;
+
+      if ((uart2hwmod & 3) == 3)
+      {
+         sharkssl_aes_ct_roundKey(column, uart2hwmod >> 2, rk);
+         rk += 4;
+      }
+   }
+   o->nr = (U16)(keyWords + 6);
+   sharkssl_clear(countersvalid, sizeof(countersvalid));
+   sharkssl_clear(column, sizeof(column));
+}
+#endif  
+
+
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+static void SharkSslAesCtx_encryptCT(SharkSslAesCtx *o, const U8 updatecause[16], U8 enablehazard[16])
+{
+   U32 q[8];
+   unsigned c;
+
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_GET_U32_LE(q[c], updatecause, 4 * c);
+      q[c + 4] = 0;
+   }
+   sharkssl_aes_ct_rounds(o, q);
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_PUT_U32_LE(q[c], enablehazard, 4 * c);
+   }
+}
+#endif
+
+
+#if SHARKSSL_AES_GCM_ASM_CT
+
+
+#if ((!SHARKSSL_AES_SMALL_FOOTPRINT) && SHARKSSL_AES_CIPHER_LOOP_UNROLL)
+#define SHARKSSL_AES_NR_ENCODE(n) ((U16)(((n) >> 1) - 1))
+#define SHARKSSL_AES_NR_DECODE(n) ((unsigned)(((n) + 1) << 1))
+#else
+#define SHARKSSL_AES_NR_ENCODE(n) ((U16)((n) - 1))
+#define SHARKSSL_AES_NR_DECODE(n) ((unsigned)((n) + 1))
+#endif
+
+static void _XzY0x30E(SharkSslAesCtx *o, const U8 *sourcerouting, U8 creategroup)
+{
+   U32 *countshift = o->key, t, _XzY0x30F = 0x01000000u;
+   unsigned keyWords, writepmresrn, i;
+
+   if (((creategroup != 16) || (!SHARKSSL_USE_AES_128)) &&
+       ((creategroup != 24) || (!SHARKSSL_USE_AES_192)) &&
+       ((creategroup != 32) || (!SHARKSSL_USE_AES_256)))
+   {
+      baAssert(0);
+      o->nr = 0;
+      return;
+   }
+   keyWords = creategroup / 4;
+   writepmresrn = 4 * (keyWords + 7);
+   for (i = 0; i < keyWords; ++i)
+   {
+      read64uint32(countshift[i], sourcerouting, 4 * i);
+   }
+   for (; i < writepmresrn; ++i)
+   {
+      t = countshift[i - 1];
+      if (0 == (i % keyWords))
+      {
+         t = _XzY0x31((t << 8) | (t >> 24)) ^ _XzY0x30F;
+         _XzY0x30F = (_XzY0x30F << 1) ^ (0x1b000000u & (0u - (_XzY0x30F >> 31)));
+      }
+      else if ((keyWords == 8) && (4 == (i % keyWords)))
+      {
+         t = _XzY0x31(t);
+      }
+      countshift[i] = countshift[i - keyWords] ^ t;
+   }
+   o->nr = SHARKSSL_AES_NR_ENCODE(keyWords + 6);
+   t = 0;
+}
+
+
+#if SHARKSSL_AES_CT_BLOCK
+
+static void SharkSslAesCtx_encryptStdCT(const SharkSslAesCtx *o, const U8 updatecause[16], U8 enablehazard[16])
+{
+   SharkSslAesCtx fix;
+   U32 q[8], column[4];
+   unsigned c, round, nr = SHARKSSL_AES_NR_DECODE(o->nr);
+
+   for (round = 0; round <= nr; ++round)
+   {
+      for (c = 0; c < 4; ++c)
+      {
+         column[c] = blockarray(o->key[4 * round + c]);
+      }
+      sharkssl_aes_ct_roundKey(column, round, &fix.key[4 * round]);
+   }
+   fix.nr = (U16)nr;
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_GET_U32_LE(q[c], updatecause, 4 * c);
+      q[c + 4] = 0;
+   }
+   sharkssl_aes_ct_rounds(&fix, q);
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_PUT_U32_LE(q[c], enablehazard, 4 * c);
+   }
+   sharkssl_clear(&fix, sizeof(fix));
+   sharkssl_clear(column, sizeof(column));
+   sharkssl_clear(q, sizeof(q));
+}
+#endif
+#endif  
+
+
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+
+static void SharkSslAesCtx_encrypt2CT(SharkSslAesCtx *o, const U8 in0[16], const U8 in1[16],
+                                      U8 out0[16], U8 out1[16])
+{
+   U32 q[8];
+   unsigned c;
+
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_GET_U32_LE(q[c], in0, 4 * c);
+      SHARKSSL_CT_GET_U32_LE(q[c + 4], in1, 4 * c);
+   }
+   sharkssl_aes_ct_rounds(o, q);
+   for (c = 0; c < 4; ++c)
+   {
+      SHARKSSL_CT_PUT_U32_LE(q[c], out0, 4 * c);
+      SHARKSSL_CT_PUT_U32_LE(q[c + 4], out1, 4 * c);
+   }
+}
+
+
+
+
+
+#if SHARKSSL_AES_GCM_CT_M4_ASM
+static void _XzY0x312(SharkSslAesGcmCtx *o)
+{
+   U8 *basis = (U8 *)SHARKSSL_GCM_CT_ALIGNED4(&o->M0[0][0]);
+   U32 _XzY0x2F4;
+   unsigned i;
+
+   for (i = 0; i < 4; ++i)
+   {
+      SHARKSSL_CT_GET_U32_BE(_XzY0x2F4, o->M0[8], 4 * i);
+      memcpy(basis + 4 * i, &_XzY0x2F4, sizeof(_XzY0x2F4));
+   }
+}
+
+
+#if defined(__ICCARM__)
+#if ((!defined(__ARM_PROFILE_M__)) || ((__CORE__ != __ARM7EM__) && ((__CORE__ != __ARM8EM_MAINLINE__) || (!defined(__ARM_FEATURE_BTI)))) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_M4_ASM requires little-granuleshift Cortex-M4/M7/M85 and GCC or IAR
+#endif
+#include <intrinsics.h>
+#elif (((!defined(__ARM_ARCH_7EM__)) && ((!defined(__ARM_ARCH_8M_MAIN__)) || (!defined(__ARM_FEATURE_BTI)))) || (!defined(__GNUC__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_M4_ASM requires little-granuleshift Cortex-M4/M7/M85 and GCC or IAR
+#endif
+
+
+
+extern U64 sharkssl_ct_clmul32(U32 a, U32 b);
+
+
+static U32 ZZTSTsharkssl_ct_rbit(U32 x)
+{
+   #if defined(__ICCARM__)
+   return __RBIT(x);
+   #else
+   __asm__ ("\162\142\151\164\040\045\060\054\040\045\061" : "\075\162" (x) : "\162" (x));
+   return x;
+   #endif
+}
+
+
+static void sharkssl_gcm_multCT(const SharkSslAesGcmCtx *o, U8 x[16])
+{
+   const U8 *basis = (const U8 *)SHARKSSL_GCM_CT_ALIGNED4(&o->M0[0][0]);
+   U64 p[9], lo, hi, cross;
+   U32 a[4], b[4], z[8], w;
+   unsigned i;
+
+   for (i = 0; i < 4; ++i)
+   {
+      SHARKSSL_CT_GET_U32_BE(w, x, 4 * i);
+      a[i] = ZZTSTsharkssl_ct_rbit(w);
+      memcpy(&w, basis + 4 * i, sizeof(w));
+      b[i] = ZZTSTsharkssl_ct_rbit(w);
+   }
+   p[0] = sharkssl_ct_clmul32(a[0], b[0]);
+   p[1] = sharkssl_ct_clmul32(a[1], b[1]);
+   p[2] = sharkssl_ct_clmul32(a[0] ^ a[1], b[0] ^ b[1]);
+   p[3] = sharkssl_ct_clmul32(a[2], b[2]);
+   p[4] = sharkssl_ct_clmul32(a[3], b[3]);
+   p[5] = sharkssl_ct_clmul32(a[2] ^ a[3], b[2] ^ b[3]);
+   p[6] = sharkssl_ct_clmul32(a[0] ^ a[2], b[0] ^ b[2]);
+   p[7] = sharkssl_ct_clmul32(a[1] ^ a[3], b[1] ^ b[3]);
+   p[8] = sharkssl_ct_clmul32(a[0] ^ a[1] ^ a[2] ^ a[3], b[0] ^ b[1] ^ b[2] ^ b[3]);
+   lo = p[0];
+   hi = p[1];
+   cross = p[2] ^ lo ^ hi;
+   z[0] = (U32)lo;
+   z[1] = (U32)(lo >> 32) ^ (U32)cross;
+   z[2] = (U32)hi ^ (U32)(cross >> 32);
+   z[3] = (U32)(hi >> 32);
+   lo = p[3];
+   hi = p[4];
+   cross = p[5] ^ lo ^ hi;
+   z[4] = (U32)lo;
+   z[5] = (U32)(lo >> 32) ^ (U32)cross;
+   z[6] = (U32)hi ^ (U32)(cross >> 32);
+   z[7] = (U32)(hi >> 32);
+   lo = p[6] ^ p[0] ^ p[3];
+   hi = p[7] ^ p[1] ^ p[4];
+   cross = p[8] ^ p[6] ^ p[7] ^ p[2] ^ p[0] ^ p[1] ^ p[5] ^ p[3] ^ p[4];
+   z[2] ^= (U32)lo;
+   z[3] ^= (U32)(lo >> 32) ^ (U32)cross;
+   z[4] ^= (U32)hi ^ (U32)(cross >> 32);
+   z[5] ^= (U32)(hi >> 32);
+   for (i = 8; i > 4; --i)
+   {
+      w = z[i - 1];
+      z[i - 5] ^= w ^ (w << 1) ^ (w << 2) ^ (w << 7);
+      z[i - 4] ^= (w >> 31) ^ (w >> 30) ^ (w >> 25);
+   }
+   for (i = 0; i < 4; ++i)
+   {
+      w = ZZTSTsharkssl_ct_rbit(z[i]);
+      SHARKSSL_CT_PUT_U32_BE(w, x, 4 * i);
+   }
+}
+
+
+#else
+static void _XzY0x312(SharkSslAesGcmCtx *o)
+{
+   U8 *basis = (U8 *)SHARKSSL_GCM_CT_ALIGNED4(&o->M0[0][0]);
+   U32 v[4], carry;
+   unsigned k;
+
+   SHARKSSL_CT_GET_U32_BE(v[0], o->M0[8], 0);
+   SHARKSSL_CT_GET_U32_BE(v[1], o->M0[8], 4);
+   SHARKSSL_CT_GET_U32_BE(v[2], o->M0[8], 8);
+   SHARKSSL_CT_GET_U32_BE(v[3], o->M0[8], 12);
+   for (k = 0; k < 16; ++k)
+   {
+      memcpy(basis + 16u * k, v, sizeof(v));
+      carry = 0u - (v[3] & 1u);
+      v[3] = (v[3] >> 1) | (v[2] << 31);
+      v[2] = (v[2] >> 1) | (v[1] << 31);
+      v[1] = (v[1] >> 1) | (v[0] << 31);
+      v[0] = (v[0] >> 1) ^ (0xe1000000u & carry);
+   }
+}
+
+
+
+static void sharkssl_gcm_multCT(const SharkSslAesGcmCtx *o, U8 x[16])
+{
+   const U8 *basis = (const U8 *)SHARKSSL_GCM_CT_ALIGNED4(&o->M0[0][0]);
+   U32 b[8], w[4], z0 = 0, z1 = 0, z2 = 0, z3 = 0, enablekernel, fpemulthreshold, carry;
+   unsigned bootmemalloc, k;
+
+   SHARKSSL_CT_GET_U32_BE(w[0], x, 0);
+   SHARKSSL_CT_GET_U32_BE(w[1], x, 4);
+   SHARKSSL_CT_GET_U32_BE(w[2], x, 8);
+   SHARKSSL_CT_GET_U32_BE(w[3], x, 12);
+   for (bootmemalloc = 8; bootmemalloc != 0; --bootmemalloc)
+   {
+      
+      enablekernel = w[(bootmemalloc - 1) >> 1] << (((bootmemalloc - 1) & 1) << 4);
+      for (k = 0; k < 8; ++k)
+      {
+         
+         memcpy(b, basis + 32u * k, sizeof(b));
+         fpemulthreshold = 0u - (enablekernel >> 31);
+         enablekernel <<= 1;
+         z0 ^= b[0] & fpemulthreshold;
+         z1 ^= b[1] & fpemulthreshold;
+         z2 ^= b[2] & fpemulthreshold;
+         z3 ^= b[3] & fpemulthreshold;
+         fpemulthreshold = 0u - (enablekernel >> 31);
+         enablekernel <<= 1;
+         z0 ^= b[4] & fpemulthreshold;
+         z1 ^= b[5] & fpemulthreshold;
+         z2 ^= b[6] & fpemulthreshold;
+         z3 ^= b[7] & fpemulthreshold;
+      }
+      if (bootmemalloc > 1)
+      {
+         
+         carry = z3 & 0xffffu;
+         z3 = (z3 >> 16) | (z2 << 16);
+         z2 = (z2 >> 16) | (z1 << 16);
+         z1 = (z1 >> 16) | (z0 << 16);
+         z0 = (z0 >> 16) ^ (carry << 16) ^ (carry << 15) ^ (carry << 14) ^ (carry << 9);
+      }
+   }
+   SHARKSSL_CT_PUT_U32_BE(z0, x, 0);
+   SHARKSSL_CT_PUT_U32_BE(z1, x, 4);
+   SHARKSSL_CT_PUT_U32_BE(z2, x, 8);
+   SHARKSSL_CT_PUT_U32_BE(z3, x, 12);
+}
+
+
+#endif  
+
+
+static void _XzY0x313(U8 *r, const U8 *a, const U8 *b, U32 len)
+{
+   #if SHARKSSL_UNALIGNED_ACCESS
+   U32 u, v;
+
+   while (len >= 4)
+   {
+      SHARKSSL_CT_GET_U32_LE(u, a, 0);
+      SHARKSSL_CT_GET_U32_LE(v, b, 0);
+      u ^= v;
+      SHARKSSL_CT_PUT_U32_LE(u, r, 0);
+      r += 4;
+      a += 4;
+      b += 4;
+      len -= 4;
+   }
+   #endif
+   while (len--)
+   {
+      *r++ = (U8)(*a++ ^ *b++);
+   }
+}
+
+
+
+static void sharkssl_gcm_cryptCT(SharkSslAesGcmCtx *o, U8 remapiospace[16], U8 chargerplatform[16],
+                                 const U8 *updatecause, U8 *enablehazard, U32 len,
+                                 SharkSslAesCtx_Type rightsvalid, U8 fpemulthreshold[16])
+{
+   U8 block[2][16], _XzY0x202[2][16];
+   U32 debugstart, take;
+   unsigned contextoffset, lanes, _XzY0x2B2;
+
+   SHARKSSL_CT_GET_U32_BE(debugstart, remapiospace, 12);
+   memcpy(block[0], remapiospace, 12);
+   memcpy(block[1], remapiospace, 12);
+   contextoffset = 0;
+   if (fpemulthreshold)
+   {
+      SHARKSSL_CT_PUT_U32_BE(debugstart, block[0], 12);
+      contextoffset = 1;
+   }
+   while (contextoffset || len)
+   {
+      for (lanes = contextoffset; (lanes < 2) && (len > 16u * (lanes - contextoffset)); ++lanes)
+      {
+         ++debugstart;
+         SHARKSSL_CT_PUT_U32_BE(debugstart, block[lanes], 12);
+      }
+      if (lanes == 2)
+      {
+         SharkSslAesCtx_encrypt2CT(&o->super, block[0], block[1], _XzY0x202[0], _XzY0x202[1]);
+      }
+      else
+      {
+         SharkSslAesCtx_encryptCT(&o->super, block[0], _XzY0x202[0]);
+      }
+      if (contextoffset)
+      {
+         memcpy(fpemulthreshold, _XzY0x202[0], 16);
+      }
+      for (_XzY0x2B2 = contextoffset; _XzY0x2B2 < lanes; ++_XzY0x2B2)
+      {
+         take = (len < 16u) ? len : 16u;
+         if (SharkSslAesCtx_Decrypt == rightsvalid)
+         {
+            _XzY0x313(chargerplatform, chargerplatform, updatecause, take);
+         }
+         _XzY0x313(enablehazard, updatecause, _XzY0x202[_XzY0x2B2], take);
+         if (SharkSslAesCtx_Encrypt == rightsvalid)
+         {
+            _XzY0x313(chargerplatform, chargerplatform, enablehazard, take);
+         }
+         sharkssl_gcm_multCT(o, chargerplatform);
+         updatecause += take;
+         enablehazard += take;
+         len -= take;
+      }
+      contextoffset = 0;
+   }
+   SHARKSSL_CT_PUT_U32_BE(debugstart, remapiospace, 12);
+   sharkssl_clear(_XzY0x202, sizeof(_XzY0x202));
+}
+
+#endif  
+
+#endif  
+
+#endif
 #if SHARKSSL_PSA_CONSUMER
 #include <psa/crypto.h>
 #endif
@@ -84694,7 +87394,7 @@ void sharkssl_clear(void *alloccontroller, U32 len)
 {
    volatile U8 *p;
    #if SHARKSSL_UNALIGNED_ACCESS
-   __sharkssl_packed volatile U32 *p32 = (volatile U32*)alloccontroller;
+   volatile SHARKSSL_UNALIGNED_U32 *p32 = (volatile SHARKSSL_UNALIGNED_U32*)alloccontroller;
 
    while (len >= 4)
    {
@@ -84770,7 +87470,7 @@ static void kernelenable(void)
     U32 x, y;
 
     y = sharkSslRngCtx.status[3];
-    x = (sharkSslRngCtx.status[0] & unmaptable)	^ sharkSslRngCtx.status[1]	^ sharkSslRngCtx.status[2];
+    x = (sharkSslRngCtx.status[0] & unmaptable) ^ sharkSslRngCtx.status[1] ^ sharkSslRngCtx.status[2];
     x ^= (x << backlightpower);
     y ^= (y >> backlightpower) ^ x;
     sharkSslRngCtx.status[0] = sharkSslRngCtx.status[1];
@@ -84819,7 +87519,7 @@ static void templaterestore(void)
 
    for (i = 0; i < framecreation; i++)
    {
-	   kernelenable();
+      kernelenable();
    }
 }
 
@@ -85007,8 +87707,8 @@ SHARKSSL_API int sharkssl_rng(U8 *ptr, U16 len)
          dm9k0device();  
       }
       sharkSslRngCtx.cursor -= 4;
-      r = (*(__sharkssl_packed U32*)&sharkSslRngCtx.blk[sharkSslRngCtx.cursor]);
-      #ifndef B_LITTLE_ENDIAN
+      r = (*(SHARKSSL_UNALIGNED_U32*)&sharkSslRngCtx.blk[sharkSslRngCtx.cursor]);
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
       inputlevel(r, ptr, 0);
       #else
       hsotgpdata(r, ptr, 0);
@@ -85205,7 +87905,7 @@ SHARKSSL_API int sharkssl_rng(U8 *ptr, U16 len)
    while (len)
    {
       register U32 r = classdevregister();
-      #ifndef B_LITTLE_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
       inputlevel(r, ptr, 0);
       #else
       hsotgpdata(r, ptr, 0);
@@ -85285,7 +87985,7 @@ static const U8 writefeature[64] =
 #endif
 
 
-#ifndef B_LITTLE_ENDIAN
+#if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
 static void kexecalloc(SharkSslMd5Ctx *registermcasp, const U8 alloccontroller[64])
 #else
 static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
@@ -85297,7 +87997,7 @@ static void kexecalloc(SharkSslMd5Ctx *registermcasp, U32 countshift[16])
    unsigned int i;
    #endif
 
-   #ifndef B_LITTLE_ENDIAN
+   #if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
    U32 countshift[16];
 
    #if SHARKSSL_MD5_SMALL_FOOTPRINT
@@ -85496,7 +88196,7 @@ SHARKSSL_API void SharkSslMd5Ctx_append(SharkSslMd5Ctx *registermcasp, const U8 
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_LITTLE_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
       kexecalloc(registermcasp, registermcasp->buffer);
       #else
       kexecalloc(registermcasp, (U32*)(registermcasp->buffer));
@@ -85508,7 +88208,7 @@ SHARKSSL_API void SharkSslMd5Ctx_append(SharkSslMd5Ctx *registermcasp, const U8 
 
    while (len >= 64)
    {
-      #ifndef B_LITTLE_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
       kexecalloc(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 64);
@@ -85585,7 +88285,7 @@ SHARKSSL_API int sharkssl_md5(const U8 *alloccontroller, U32 len, U8 *secondarye
 
 #if SHARKSSL_USE_SHA1
 
-#ifndef B_BIG_ENDIAN
+#if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
 static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, const U8 alloccontroller[64])
 #else
 static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
@@ -85595,7 +88295,7 @@ static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
    #if SHARKSSL_SHA1_SMALL_FOOTPRINT
    unsigned int i;
    #endif
-   #ifndef B_BIG_ENDIAN
+   #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
    U32 countshift[16];
 
    #if SHARKSSL_SHA1_SMALL_FOOTPRINT
@@ -85792,7 +88492,7 @@ static void irqwakeintallow(SharkSslSha1Ctx *registermcasp, U32 countshift[16])
 }
 
 
-SHARKSSL_API void SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *registermcasp)
+SHARKSSL_API int SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *registermcasp)
 {
    baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
 
@@ -85804,10 +88504,11 @@ SHARKSSL_API void SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *registermcasp)
    registermcasp->state[2] = 0x98BADCFE;
    registermcasp->state[3] = 0x10325476;
    registermcasp->state[4] = 0xC3D2E1F0;
+   return 0;
 }
 
 
-SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U8 *in, U32 len)
+SHARKSSL_API int SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U8 *in, U32 len)
 {
    unsigned int dm9000platdata, pxa300evalboard;
 
@@ -85823,7 +88524,7 @@ SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       irqwakeintallow(registermcasp, registermcasp->buffer);
       #else
       irqwakeintallow(registermcasp, (U32*)(registermcasp->buffer));
@@ -85835,7 +88536,7 @@ SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U
 
    while (len >= 64)
    {
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       irqwakeintallow(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 64);
@@ -85849,10 +88550,11 @@ SHARKSSL_API void SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, len);
    }
+   return 0;
 }
 
 
-SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA1_HASH_LEN])
+SHARKSSL_API int SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA1_HASH_LEN])
 {
    U32 timerenable, dummywrites;
    U32 timer0start, checkcontext;
@@ -85875,6 +88577,7 @@ SHARKSSL_API void SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 seco
    inputlevel(registermcasp->state[2], secondaryentry,  8);
    inputlevel(registermcasp->state[3], secondaryentry, 12);
    inputlevel(registermcasp->state[4], secondaryentry, 16);
+   return 0;
 }
 
 
@@ -85913,6 +88616,19 @@ SHARKSSL_API int sharkssl_sha1(const U8 *alloccontroller, U32 len, U8 *secondary
 
 
 #if SHARKSSL_USE_SHA_256
+#if SHARKSSL_OPTIMIZED_SHA256_ASM
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
+#error SHARKSSL_OPTIMIZED_SHA256_ASM requires a little-granuleshift target
+#endif
+extern void alignmentfinish(SharkSslSha256Ctx *registermcasp, const U8 alloccontroller[64]);
+#else
+#if (SHARKSSL_ARM64_SHA256_INTRINSICS && (!SHARKSSL_PSA_CONSUMER))
+#if (!defined(__aarch64__) && !(defined(__ICCARM__) && defined(__ARM_ARCH_ISA_A64))) || defined(__AARCH64EB__)
+#error SHARKSSL_ARM64_SHA256_INTRINSICS requires little-granuleshift AArch64
+#endif
+extern int sharkssl_arm64_sha2_available(void);
+extern void SharkSslSha256Ctx_process_arm64(SharkSslSha256Ctx *registermcasp, const U8 alloccontroller[64], const U32 *write64uint32);
+#endif
 
 static const U32 callchainentry[64] =
 {
@@ -85935,19 +88651,26 @@ static const U32 callchainentry[64] =
 };
 
 
-#ifndef B_BIG_ENDIAN
+#if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
 static void alignmentfinish(SharkSslSha256Ctx *registermcasp, const U8 alloccontroller[64])
 #else
 static void alignmentfinish(SharkSslSha256Ctx *registermcasp, U32 countshift[16])
 #endif
 {
    U32 a, b, c, d, e, f, g, h, T1, T2;
+   #if (SHARKSSL_ARM64_SHA256_INTRINSICS && (!SHARKSSL_PSA_CONSUMER))
+   if (sharkssl_arm64_sha2_available())
+   {
+      SharkSslSha256Ctx_process_arm64(registermcasp, alloccontroller, callchainentry);
+      return;
+   }
+   #endif
    #if SHARKSSL_SHA256_SMALL_FOOTPRINT
    unsigned int i;
    #else
    const U32 *p;
    #endif
-   #ifndef B_BIG_ENDIAN
+   #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
    U32 countshift[16];
 
    #if SHARKSSL_SHA256_SMALL_FOOTPRINT
@@ -86098,6 +88821,7 @@ static void alignmentfinish(SharkSslSha256Ctx *registermcasp, U32 countshift[16]
    #undef SHR
    #undef invalidcontext
 }
+#endif  
 
 
 SHARKSSL_API int SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *registermcasp)
@@ -86135,7 +88859,7 @@ SHARKSSL_API int SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, cons
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       alignmentfinish(registermcasp, registermcasp->buffer);
       #else
       alignmentfinish(registermcasp, (U32*)(registermcasp->buffer));
@@ -86147,7 +88871,7 @@ SHARKSSL_API int SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, cons
 
    while (len >= 64)
    {
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       alignmentfinish(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 64);
@@ -86229,6 +88953,12 @@ SHARKSSL_API int sharkssl_sha256(const U8 *alloccontroller, U32 len, U8 *seconda
 
 
 #if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
+#if SHARKSSL_OPTIMIZED_SHA384_ASM
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
+#error SHARKSSL_OPTIMIZED_SHA384_ASM requires a little-granuleshift target
+#endif
+extern void pcimtresource(SharkSslSha384Ctx *registermcasp, const U8 alloccontroller[128]);
+#else
 
 static const U64 pxa270income[80] =
 {
@@ -86307,7 +89037,7 @@ static U64 sm501resources(U64 *x)
 }
 
 
-#ifndef B_BIG_ENDIAN
+#if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
 static void pcimtresource(SharkSslSha384Ctx *registermcasp, const U8 alloccontroller[128])
 #else
 static void pcimtresource(SharkSslSha384Ctx *registermcasp, U64 countshift[16])
@@ -86315,7 +89045,7 @@ static void pcimtresource(SharkSslSha384Ctx *registermcasp, U64 countshift[16])
 {
    U64 a, b, c, d, e, f, g, h, T1, T2;
    unsigned int i;
-   #ifndef B_BIG_ENDIAN
+   #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
    U64 countshift[16];
 
    detectboard(countshift[0],  alloccontroller,   0);
@@ -86379,6 +89109,7 @@ static void pcimtresource(SharkSslSha384Ctx *registermcasp, U64 countshift[16])
    #undef CH
 }
 #endif  
+#endif  
 
 
 #if SHARKSSL_USE_SHA_384
@@ -86405,7 +89136,7 @@ SHARKSSL_API int SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *registermcasp)
 
 
 #if SHARKSSL_USE_SHA_512
-SHARKSSL_API void SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *registermcasp)
+SHARKSSL_API int SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *registermcasp)
 {
    baAssert(((unsigned int)(UPTR)(registermcasp->buffer) & (sizeof(int)-1)) == 0);
 
@@ -86422,6 +89153,15 @@ SHARKSSL_API void SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *registermcasp
    registermcasp->state[5] = 0x9B05688C2B3E6C1FULL;
    registermcasp->state[6] = 0x1F83D9ABFB41BD6BULL;
    registermcasp->state[7] = 0x5BE0CD19137E2179ULL;
+   return 0;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_512
+SHARKSSL_API int SharkSslSha512Ctx_append(SharkSslSha512Ctx *registermcasp, const U8 *in, U32 len)
+{
+   return SharkSslSha384Ctx_append((SharkSslSha384Ctx*)registermcasp, in, len);
 }
 #endif
 
@@ -86449,7 +89189,7 @@ SHARKSSL_API int SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, cons
    if((dm9000platdata) && (len >= pxa300evalboard))
    {
       memcpy((registermcasp->buffer + dm9000platdata), in, pxa300evalboard);
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       pcimtresource(registermcasp, registermcasp->buffer);
       #else
       pcimtresource(registermcasp, (U64*)(registermcasp->buffer));
@@ -86461,7 +89201,7 @@ SHARKSSL_API int SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, cons
 
    while (len >= 128)
    {
-      #ifndef B_BIG_ENDIAN
+      #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
       pcimtresource(registermcasp, in);
       #else
       memcpy(registermcasp->buffer, in, 128);
@@ -86547,12 +89287,16 @@ SHARKSSL_API int sharkssl_sha384(const U8 *alloccontroller, U32 len, U8 *seconda
 
 
 #if SHARKSSL_USE_SHA_512
-SHARKSSL_API void SharkSslSha512Ctx_finish(SharkSslSha512Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA512_HASH_LEN])
+SHARKSSL_API int SharkSslSha512Ctx_finish(SharkSslSha512Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA512_HASH_LEN])
 {
    baAssert(sizeof(SharkSslSha512Ctx) == sizeof(SharkSslSha384Ctx));
-   SharkSslSha384Ctx_finish((SharkSslSha384Ctx*)registermcasp, secondaryentry);
+   if (SharkSslSha384Ctx_finish((SharkSslSha384Ctx*)registermcasp, secondaryentry))
+   {
+      return -1;
+   }
    hwmoddisable(registermcasp->state[6], secondaryentry, 48);
    hwmoddisable(registermcasp->state[7], secondaryentry, 56);
+   return 0;
 }
 
 
@@ -86668,7 +89412,7 @@ U16 sharkssl_getHashLen(U8 configwrite)
 int sharkssl_hash(U8 *secondaryentry, U8 *alloccontroller, U32 len, U8 configwrite)
 {
    #if SHARKSSL_PSA_CONSUMER
-   psa_algorithm_t algorithm;
+   psa_algorithm_t _XzY0x261;
    size_t ftraceupdate;
    U16 _XzY0x1D1 = sharkssl_getHashLen(configwrite);
    if ((!secondaryentry) || ((!alloccontroller) && len) ||
@@ -86677,8 +89421,8 @@ int sharkssl_hash(U8 *secondaryentry, U8 *alloccontroller, U32 len, U8 configwri
    {
       return -1;
    }
-   algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-   if ((PSA_SUCCESS != psa_hash_compute(algorithm, alloccontroller, len, secondaryentry, _XzY0x1D1, &ftraceupdate)) || (_XzY0x1D1 != ftraceupdate))
+   _XzY0x261 = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   if ((PSA_SUCCESS != psa_hash_compute(_XzY0x261, alloccontroller, len, secondaryentry, _XzY0x1D1, &ftraceupdate)) || (_XzY0x1D1 != ftraceupdate))
    {
       sharkssl_clear(secondaryentry, _XzY0x1D1);
       return -1;
@@ -86854,12 +89598,10 @@ SHARKSSL_API int SharkSslHMACCtx_finish(SharkSslHMACCtx *registermcasp, U8 *cfco
 
    if (usb11device)
    {
-      U8 *k;
-      U16 l4, ftraceupdate;
+      U8 *k = registermcasp->key;
+      U16 i, l4 = (usb11device >> 2), ftraceupdate;
 
-      k = registermcasp->key;
-      l4 = (usb11device >> 2);
-      while (l4--)
+      for (i = 0; i < l4; ++i)
       {
          *(k++) ^= (0x36 ^ 0x5C);  
          *(k++) ^= (0x36 ^ 0x5C);
@@ -86945,7 +89687,7 @@ SHARKSSL_API int sharkssl_HMAC(const U8 configwrite, const U8 *alloccontroller, 
    #if SHARKSSL_PSA_CONSUMER
    psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
    psa_key_id_t keyID;
-   psa_algorithm_t algorithm;
+   psa_algorithm_t _XzY0x261;
    psa_status_t sffsdrnandflash, _XzY0x1CD;
    size_t digestLen;
    U16 _XzY0x1D0 = sharkssl_getHashLen(configwrite);
@@ -86958,18 +89700,18 @@ SHARKSSL_API int sharkssl_HMAC(const U8 configwrite, const U8 *alloccontroller, 
    {
       return -1;
    }
-   algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   _XzY0x261 = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
    psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
    psa_set_key_bits(&attr, (size_t)creategroup * 8u);
    psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
-   psa_set_key_algorithm(&attr, PSA_ALG_HMAC(algorithm));
+   psa_set_key_algorithm(&attr, PSA_ALG_HMAC(_XzY0x261));
    sffsdrnandflash = psa_import_key(&attr, sourcerouting, creategroup, &keyID);
    psa_reset_key_attributes(&attr);
    if (PSA_SUCCESS != sffsdrnandflash)
    {
       return -1;
    }
-   sffsdrnandflash = psa_mac_compute(keyID, PSA_ALG_HMAC(algorithm), alloccontroller, len, secondaryentry, _XzY0x1D0, &digestLen);
+   sffsdrnandflash = psa_mac_compute(keyID, PSA_ALG_HMAC(_XzY0x261), alloccontroller, len, secondaryentry, _XzY0x1D0, &digestLen);
    _XzY0x1CD = psa_destroy_key(keyID);
    if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != _XzY0x1CD) || (_XzY0x1D0 != digestLen))
    {
@@ -87397,22 +90139,22 @@ SHARKSSL_API void SharkSslChaChaCtx_crypt(SharkSslChaChaCtx *registermcasp, cons
          {
             while (len >= 4)
             {
-               #ifdef B_LITTLE_ENDIAN
+               #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
                #if SHARKSSL_CHACHA_SMALL_FOOTPRINT
-               hsotgpdata((state[i] + registermcasp->state[i]) ^ (*(__sharkssl_packed U32*)updatecause), enablehazard, 0);
+               hsotgpdata((state[i] + registermcasp->state[i]) ^ (*(SHARKSSL_UNALIGNED_U32*)updatecause), enablehazard, 0);
                #else
-               hsotgpdata(state[i] ^ (*(__sharkssl_packed U32*)updatecause), enablehazard, 0);
+               hsotgpdata(state[i] ^ (*(SHARKSSL_UNALIGNED_U32*)updatecause), enablehazard, 0);
                #endif
 
-               #elif defined(B_BIG_ENDIAN)
+               #elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
                #if SHARKSSL_CHACHA_SMALL_FOOTPRINT
-               hsotgpdata((state[i] + registermcasp->state[i]) ^ blockarray(*(__sharkssl_packed U32*)updatecause), enablehazard, 0);
+               hsotgpdata((state[i] + registermcasp->state[i]) ^ blockarray(*(SHARKSSL_UNALIGNED_U32*)updatecause), enablehazard, 0);
                #else
-               hsotgpdata(state[i] ^ blockarray(*(__sharkssl_packed U32*)updatecause), enablehazard, 0);
+               hsotgpdata(state[i] ^ blockarray(*(SHARKSSL_UNALIGNED_U32*)updatecause), enablehazard, 0);
                #endif
 
                #else
-               #error #define either B_LITTLE_ENDIAN or B_BIG_ENDIAN
+               #error BA_BYTE_ORDER must select a supported cipherencrypt _XzY0x1E2
                #endif
                i++;
                enablehazard += 4;
@@ -87439,78 +90181,78 @@ SHARKSSL_API void SharkSslChaChaCtx_crypt(SharkSslChaChaCtx *registermcasp, cons
          }
          else
          {
-            #ifdef B_LITTLE_ENDIAN
+            #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
             #if SHARKSSL_CHACHA_SMALL_FOOTPRINT
-            hsotgpdata((state[0]  + registermcasp->state[0])  ^ ((__sharkssl_packed U32*)updatecause)[0],  enablehazard, 0);
-            hsotgpdata((state[1]  + registermcasp->state[1])  ^ ((__sharkssl_packed U32*)updatecause)[1],  enablehazard, 4);
-            hsotgpdata((state[2]  + registermcasp->state[2])  ^ ((__sharkssl_packed U32*)updatecause)[2],  enablehazard, 8);
-            hsotgpdata((state[3]  + registermcasp->state[3])  ^ ((__sharkssl_packed U32*)updatecause)[3],  enablehazard, 12);
-            hsotgpdata((state[4]  + registermcasp->state[4])  ^ ((__sharkssl_packed U32*)updatecause)[4],  enablehazard, 16);
-            hsotgpdata((state[5]  + registermcasp->state[5])  ^ ((__sharkssl_packed U32*)updatecause)[5],  enablehazard, 20);
-            hsotgpdata((state[6]  + registermcasp->state[6])  ^ ((__sharkssl_packed U32*)updatecause)[6],  enablehazard, 24);
-            hsotgpdata((state[7]  + registermcasp->state[7])  ^ ((__sharkssl_packed U32*)updatecause)[7],  enablehazard, 28);
-            hsotgpdata((state[8]  + registermcasp->state[8])  ^ ((__sharkssl_packed U32*)updatecause)[8],  enablehazard, 32);
-            hsotgpdata((state[9]  + registermcasp->state[9])  ^ ((__sharkssl_packed U32*)updatecause)[9],  enablehazard, 36);
-            hsotgpdata((state[10] + registermcasp->state[10]) ^ ((__sharkssl_packed U32*)updatecause)[10], enablehazard, 40);
-            hsotgpdata((state[11] + registermcasp->state[11]) ^ ((__sharkssl_packed U32*)updatecause)[11], enablehazard, 44);
-            hsotgpdata((state[12] + registermcasp->state[12]) ^ ((__sharkssl_packed U32*)updatecause)[12], enablehazard, 48);
-            hsotgpdata((state[13] + registermcasp->state[13]) ^ ((__sharkssl_packed U32*)updatecause)[13], enablehazard, 52);
-            hsotgpdata((state[14] + registermcasp->state[14]) ^ ((__sharkssl_packed U32*)updatecause)[14], enablehazard, 56);
-            hsotgpdata((state[15] + registermcasp->state[15]) ^ ((__sharkssl_packed U32*)updatecause)[15], enablehazard, 60);
+            hsotgpdata((state[0]  + registermcasp->state[0])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[0],  enablehazard, 0);
+            hsotgpdata((state[1]  + registermcasp->state[1])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[1],  enablehazard, 4);
+            hsotgpdata((state[2]  + registermcasp->state[2])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[2],  enablehazard, 8);
+            hsotgpdata((state[3]  + registermcasp->state[3])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[3],  enablehazard, 12);
+            hsotgpdata((state[4]  + registermcasp->state[4])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[4],  enablehazard, 16);
+            hsotgpdata((state[5]  + registermcasp->state[5])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[5],  enablehazard, 20);
+            hsotgpdata((state[6]  + registermcasp->state[6])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[6],  enablehazard, 24);
+            hsotgpdata((state[7]  + registermcasp->state[7])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[7],  enablehazard, 28);
+            hsotgpdata((state[8]  + registermcasp->state[8])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[8],  enablehazard, 32);
+            hsotgpdata((state[9]  + registermcasp->state[9])  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[9],  enablehazard, 36);
+            hsotgpdata((state[10] + registermcasp->state[10]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[10], enablehazard, 40);
+            hsotgpdata((state[11] + registermcasp->state[11]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[11], enablehazard, 44);
+            hsotgpdata((state[12] + registermcasp->state[12]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[12], enablehazard, 48);
+            hsotgpdata((state[13] + registermcasp->state[13]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[13], enablehazard, 52);
+            hsotgpdata((state[14] + registermcasp->state[14]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[14], enablehazard, 56);
+            hsotgpdata((state[15] + registermcasp->state[15]) ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[15], enablehazard, 60);
             #else
-            hsotgpdata(state[0]  ^ ((__sharkssl_packed U32*)updatecause)[0],  enablehazard, 0);
-            hsotgpdata(state[1]  ^ ((__sharkssl_packed U32*)updatecause)[1],  enablehazard, 4);
-            hsotgpdata(state[2]  ^ ((__sharkssl_packed U32*)updatecause)[2],  enablehazard, 8);
-            hsotgpdata(state[3]  ^ ((__sharkssl_packed U32*)updatecause)[3],  enablehazard, 12);
-            hsotgpdata(state[4]  ^ ((__sharkssl_packed U32*)updatecause)[4],  enablehazard, 16);
-            hsotgpdata(state[5]  ^ ((__sharkssl_packed U32*)updatecause)[5],  enablehazard, 20);
-            hsotgpdata(state[6]  ^ ((__sharkssl_packed U32*)updatecause)[6],  enablehazard, 24);
-            hsotgpdata(state[7]  ^ ((__sharkssl_packed U32*)updatecause)[7],  enablehazard, 28);
-            hsotgpdata(state[8]  ^ ((__sharkssl_packed U32*)updatecause)[8],  enablehazard, 32);
-            hsotgpdata(state[9]  ^ ((__sharkssl_packed U32*)updatecause)[9],  enablehazard, 36);
-            hsotgpdata(state[10] ^ ((__sharkssl_packed U32*)updatecause)[10], enablehazard, 40);
-            hsotgpdata(state[11] ^ ((__sharkssl_packed U32*)updatecause)[11], enablehazard, 44);
-            hsotgpdata(state[12] ^ ((__sharkssl_packed U32*)updatecause)[12], enablehazard, 48);
-            hsotgpdata(state[13] ^ ((__sharkssl_packed U32*)updatecause)[13], enablehazard, 52);
-            hsotgpdata(state[14] ^ ((__sharkssl_packed U32*)updatecause)[14], enablehazard, 56);
-            hsotgpdata(state[15] ^ ((__sharkssl_packed U32*)updatecause)[15], enablehazard, 60);
+            hsotgpdata(state[0]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[0],  enablehazard, 0);
+            hsotgpdata(state[1]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[1],  enablehazard, 4);
+            hsotgpdata(state[2]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[2],  enablehazard, 8);
+            hsotgpdata(state[3]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[3],  enablehazard, 12);
+            hsotgpdata(state[4]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[4],  enablehazard, 16);
+            hsotgpdata(state[5]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[5],  enablehazard, 20);
+            hsotgpdata(state[6]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[6],  enablehazard, 24);
+            hsotgpdata(state[7]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[7],  enablehazard, 28);
+            hsotgpdata(state[8]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[8],  enablehazard, 32);
+            hsotgpdata(state[9]  ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[9],  enablehazard, 36);
+            hsotgpdata(state[10] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[10], enablehazard, 40);
+            hsotgpdata(state[11] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[11], enablehazard, 44);
+            hsotgpdata(state[12] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[12], enablehazard, 48);
+            hsotgpdata(state[13] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[13], enablehazard, 52);
+            hsotgpdata(state[14] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[14], enablehazard, 56);
+            hsotgpdata(state[15] ^ ((SHARKSSL_UNALIGNED_U32*)updatecause)[15], enablehazard, 60);
             #endif
 
-            #elif defined(B_BIG_ENDIAN)
+            #elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
             #if SHARKSSL_CHACHA_SMALL_FOOTPRINT
-            hsotgpdata((state[0]  + registermcasp->state[0])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[0]),  enablehazard, 0);
-            hsotgpdata((state[1]  + registermcasp->state[1])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[1]),  enablehazard, 4);
-            hsotgpdata((state[2]  + registermcasp->state[2])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[2]),  enablehazard, 8);
-            hsotgpdata((state[3]  + registermcasp->state[3])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[3]),  enablehazard, 12);
-            hsotgpdata((state[4]  + registermcasp->state[4])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[4]),  enablehazard, 16);
-            hsotgpdata((state[5]  + registermcasp->state[5])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[5]),  enablehazard, 20);
-            hsotgpdata((state[6]  + registermcasp->state[6])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[6]),  enablehazard, 24);
-            hsotgpdata((state[7]  + registermcasp->state[7])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[7]),  enablehazard, 28);
-            hsotgpdata((state[8]  + registermcasp->state[8])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[8]),  enablehazard, 32);
-            hsotgpdata((state[9]  + registermcasp->state[9])  ^ blockarray(((__sharkssl_packed U32*)updatecause)[9]),  enablehazard, 36);
-            hsotgpdata((state[10] + registermcasp->state[10]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[10]), enablehazard, 40);
-            hsotgpdata((state[11] + registermcasp->state[11]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[11]), enablehazard, 44);
-            hsotgpdata((state[12] + registermcasp->state[12]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[12]), enablehazard, 48);
-            hsotgpdata((state[13] + registermcasp->state[13]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[13]), enablehazard, 52);
-            hsotgpdata((state[14] + registermcasp->state[14]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[14]), enablehazard, 56);
-            hsotgpdata((state[15] + registermcasp->state[15]) ^ blockarray(((__sharkssl_packed U32*)updatecause)[15]), enablehazard, 60);
+            hsotgpdata((state[0]  + registermcasp->state[0])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[0]),  enablehazard, 0);
+            hsotgpdata((state[1]  + registermcasp->state[1])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[1]),  enablehazard, 4);
+            hsotgpdata((state[2]  + registermcasp->state[2])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[2]),  enablehazard, 8);
+            hsotgpdata((state[3]  + registermcasp->state[3])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[3]),  enablehazard, 12);
+            hsotgpdata((state[4]  + registermcasp->state[4])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[4]),  enablehazard, 16);
+            hsotgpdata((state[5]  + registermcasp->state[5])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[5]),  enablehazard, 20);
+            hsotgpdata((state[6]  + registermcasp->state[6])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[6]),  enablehazard, 24);
+            hsotgpdata((state[7]  + registermcasp->state[7])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[7]),  enablehazard, 28);
+            hsotgpdata((state[8]  + registermcasp->state[8])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[8]),  enablehazard, 32);
+            hsotgpdata((state[9]  + registermcasp->state[9])  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[9]),  enablehazard, 36);
+            hsotgpdata((state[10] + registermcasp->state[10]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[10]), enablehazard, 40);
+            hsotgpdata((state[11] + registermcasp->state[11]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[11]), enablehazard, 44);
+            hsotgpdata((state[12] + registermcasp->state[12]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[12]), enablehazard, 48);
+            hsotgpdata((state[13] + registermcasp->state[13]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[13]), enablehazard, 52);
+            hsotgpdata((state[14] + registermcasp->state[14]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[14]), enablehazard, 56);
+            hsotgpdata((state[15] + registermcasp->state[15]) ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[15]), enablehazard, 60);
             #else
-            hsotgpdata(state[0]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[0]),  enablehazard, 0);
-            hsotgpdata(state[1]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[1]),  enablehazard, 4);
-            hsotgpdata(state[2]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[2]),  enablehazard, 8);
-            hsotgpdata(state[3]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[3]),  enablehazard, 12);
-            hsotgpdata(state[4]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[4]),  enablehazard, 16);
-            hsotgpdata(state[5]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[5]),  enablehazard, 20);
-            hsotgpdata(state[6]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[6]),  enablehazard, 24);
-            hsotgpdata(state[7]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[7]),  enablehazard, 28);
-            hsotgpdata(state[8]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[8]),  enablehazard, 32);
-            hsotgpdata(state[9]  ^ blockarray(((__sharkssl_packed U32*)updatecause)[9]),  enablehazard, 36);
-            hsotgpdata(state[10] ^ blockarray(((__sharkssl_packed U32*)updatecause)[10]), enablehazard, 40);
-            hsotgpdata(state[11] ^ blockarray(((__sharkssl_packed U32*)updatecause)[11]), enablehazard, 44);
-            hsotgpdata(state[12] ^ blockarray(((__sharkssl_packed U32*)updatecause)[12]), enablehazard, 48);
-            hsotgpdata(state[13] ^ blockarray(((__sharkssl_packed U32*)updatecause)[13]), enablehazard, 52);
-            hsotgpdata(state[14] ^ blockarray(((__sharkssl_packed U32*)updatecause)[14]), enablehazard, 56);
-            hsotgpdata(state[15] ^ blockarray(((__sharkssl_packed U32*)updatecause)[15]), enablehazard, 60);
+            hsotgpdata(state[0]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[0]),  enablehazard, 0);
+            hsotgpdata(state[1]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[1]),  enablehazard, 4);
+            hsotgpdata(state[2]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[2]),  enablehazard, 8);
+            hsotgpdata(state[3]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[3]),  enablehazard, 12);
+            hsotgpdata(state[4]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[4]),  enablehazard, 16);
+            hsotgpdata(state[5]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[5]),  enablehazard, 20);
+            hsotgpdata(state[6]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[6]),  enablehazard, 24);
+            hsotgpdata(state[7]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[7]),  enablehazard, 28);
+            hsotgpdata(state[8]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[8]),  enablehazard, 32);
+            hsotgpdata(state[9]  ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[9]),  enablehazard, 36);
+            hsotgpdata(state[10] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[10]), enablehazard, 40);
+            hsotgpdata(state[11] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[11]), enablehazard, 44);
+            hsotgpdata(state[12] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[12]), enablehazard, 48);
+            hsotgpdata(state[13] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[13]), enablehazard, 52);
+            hsotgpdata(state[14] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[14]), enablehazard, 56);
+            hsotgpdata(state[15] ^ blockarray(((SHARKSSL_UNALIGNED_U32*)updatecause)[15]), enablehazard, 60);
             #endif
 
             #endif
@@ -87921,6 +90663,25 @@ static const U32 timeoutshift[10] =
 #define mcspidevice(a, n) (((a) >> n) | ((a) << (32 - n)))
 
 
+#if SHARKSSL_AES_TABLES_IN_RAM
+static void SharkSslAesCtx_initTables(void)
+{
+   if (!alloczeroed[0])
+   {
+      memcpy(alloczeroed, timerevtstrm, sizeof(timerevtstrm));
+      memcpy(domainalways, thumb32break, sizeof(thumb32break));
+      memcpy(timeoutshift, enterlowpower, sizeof(enterlowpower));
+      #if (!SHARKSSL_AES_DISABLE_SBOX)
+      memcpy(class3configure, singlefuito, sizeof(singlefuito));
+      #endif
+      #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
+      memcpy(powerpdata, spinboxhwmod, sizeof(spinboxhwmod));
+      #endif
+   }
+}
+#endif
+
+
 SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *registermcasp,
                                              SharkSslAesCtx_Type rightsvalid,
                                              const U8 *sourcerouting, U8 creategroup)
@@ -87966,18 +90727,7 @@ SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *registermcasp,
    #endif
 
    #if SHARKSSL_AES_TABLES_IN_RAM
-   if (!alloczeroed[0])
-   {
-      memcpy(alloczeroed, timerevtstrm, sizeof(timerevtstrm));
-      memcpy(domainalways, thumb32break, sizeof(thumb32break));
-      memcpy(timeoutshift, enterlowpower, sizeof(enterlowpower));
-      #if (!SHARKSSL_AES_DISABLE_SBOX)
-      memcpy(class3configure, singlefuito, sizeof(singlefuito));
-      #endif
-      #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-      memcpy(powerpdata, spinboxhwmod, sizeof(spinboxhwmod));
-      #endif
-   }
+   SharkSslAesCtx_initTables();
    #endif
 
    countshift = registermcasp->key;
@@ -88407,10 +91157,10 @@ SHARKSSL_API void SharkSslAesCtx_cbc_encrypt(SharkSslAesCtx *registermcasp, U8 v
    while (len > 0)
    {
       #if SHARKSSL_UNALIGNED_ACCESS
-      ((__sharkssl_packed U32*)enablehazard)[0] = ((__sharkssl_packed U32*)updatecause)[0] ^ ((__sharkssl_packed U32*)q)[0];
-      ((__sharkssl_packed U32*)enablehazard)[1] = ((__sharkssl_packed U32*)updatecause)[1] ^ ((__sharkssl_packed U32*)q)[1];
-      ((__sharkssl_packed U32*)enablehazard)[2] = ((__sharkssl_packed U32*)updatecause)[2] ^ ((__sharkssl_packed U32*)q)[2];
-      ((__sharkssl_packed U32*)enablehazard)[3] = ((__sharkssl_packed U32*)updatecause)[3] ^ ((__sharkssl_packed U32*)q)[3];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[0] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[0] ^ ((SHARKSSL_UNALIGNED_U32*)q)[0];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[1] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[1] ^ ((SHARKSSL_UNALIGNED_U32*)q)[1];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[2] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[2] ^ ((SHARKSSL_UNALIGNED_U32*)q)[2];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[3] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[3] ^ ((SHARKSSL_UNALIGNED_U32*)q)[3];
       #else
       enablehazard[0]  = (U8)(updatecause[0]  ^ q[0]);
       enablehazard[1]  = (U8)(updatecause[1]  ^ q[1]);
@@ -88485,10 +91235,10 @@ SHARKSSL_API void SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *registermcasp, U8 v
       SharkSslAesCtx_decrypt(registermcasp, updatecause, enablehazard);
       updatecause = q;
       #if SHARKSSL_UNALIGNED_ACCESS
-      ((__sharkssl_packed U32*)enablehazard)[0] ^= ((__sharkssl_packed U32*)q)[0];
-      ((__sharkssl_packed U32*)enablehazard)[1] ^= ((__sharkssl_packed U32*)q)[1];
-      ((__sharkssl_packed U32*)enablehazard)[2] ^= ((__sharkssl_packed U32*)q)[2];
-      ((__sharkssl_packed U32*)enablehazard)[3] ^= ((__sharkssl_packed U32*)q)[3];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[0] ^= ((SHARKSSL_UNALIGNED_U32*)q)[0];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[1] ^= ((SHARKSSL_UNALIGNED_U32*)q)[1];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[2] ^= ((SHARKSSL_UNALIGNED_U32*)q)[2];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[3] ^= ((SHARKSSL_UNALIGNED_U32*)q)[3];
       #else
       enablehazard[0]  ^= q[0];
       enablehazard[1]  ^= q[1];
@@ -88533,8 +91283,8 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *registermcasp, U8 ctr[
    {
       
       k = 0;
-      #if (defined(B_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-      while ((k < 4)  && (0 == ++((__sharkssl_packed U32*)ctr)[k]))
+      #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
+      while ((k < 4)  && (0 == ++((SHARKSSL_UNALIGNED_U32*)ctr)[k]))
       #else
       while ((k < 16) && (0 == ++ctr[k]))
       #endif
@@ -88547,10 +91297,10 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *registermcasp, U8 ctr[
 
       
       #if SHARKSSL_UNALIGNED_ACCESS
-      ((__sharkssl_packed U32*)enablehazard)[0] = ((__sharkssl_packed U32*)updatecause)[0] ^ ((U32*)sossirecalc)[0];
-      ((__sharkssl_packed U32*)enablehazard)[1] = ((__sharkssl_packed U32*)updatecause)[1] ^ ((U32*)sossirecalc)[1];
-      ((__sharkssl_packed U32*)enablehazard)[2] = ((__sharkssl_packed U32*)updatecause)[2] ^ ((U32*)sossirecalc)[2];
-      ((__sharkssl_packed U32*)enablehazard)[3] = ((__sharkssl_packed U32*)updatecause)[3] ^ ((U32*)sossirecalc)[3];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[0] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[0] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[0];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[1] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[1] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[1];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[2] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[2] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[2];
+      ((SHARKSSL_UNALIGNED_U32*)enablehazard)[3] = ((SHARKSSL_UNALIGNED_U32*)updatecause)[3] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[3];
       #else
       enablehazard[0]  = (U8)(updatecause[0]  ^ sossirecalc[0]);
       enablehazard[1]  = (U8)(updatecause[1]  ^ sossirecalc[1]);
@@ -88588,10 +91338,10 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *registermcasp, U8 ctr[
 #if SHARKSSL_UNALIGNED_ACCESS
 
 #define paz00wifikill(r, a, b)  do {  \
-  ((__sharkssl_packed U32*)(r))[0] = ((__sharkssl_packed U32*)(a))[0] ^ ((__sharkssl_packed U32*)(b))[0];  \
-  ((__sharkssl_packed U32*)(r))[1] = ((__sharkssl_packed U32*)(a))[1] ^ ((__sharkssl_packed U32*)(b))[1];  \
-  ((__sharkssl_packed U32*)(r))[2] = ((__sharkssl_packed U32*)(a))[2] ^ ((__sharkssl_packed U32*)(b))[2];  \
-  ((__sharkssl_packed U32*)(r))[3] = ((__sharkssl_packed U32*)(a))[3] ^ ((__sharkssl_packed U32*)(b))[3];  \
+  ((SHARKSSL_UNALIGNED_U32*)(r))[0] = ((SHARKSSL_UNALIGNED_U32*)(a))[0] ^ ((SHARKSSL_UNALIGNED_U32*)(b))[0];  \
+  ((SHARKSSL_UNALIGNED_U32*)(r))[1] = ((SHARKSSL_UNALIGNED_U32*)(a))[1] ^ ((SHARKSSL_UNALIGNED_U32*)(b))[1];  \
+  ((SHARKSSL_UNALIGNED_U32*)(r))[2] = ((SHARKSSL_UNALIGNED_U32*)(a))[2] ^ ((SHARKSSL_UNALIGNED_U32*)(b))[2];  \
+  ((SHARKSSL_UNALIGNED_U32*)(r))[3] = ((SHARKSSL_UNALIGNED_U32*)(a))[3] ^ ((SHARKSSL_UNALIGNED_U32*)(b))[3];  \
 } while (0)
 
 #else
@@ -88676,7 +91426,64 @@ static void sharkssl_gcm_gmult_dispatch(U8 (*M0)[16], U8 *x);
 #endif  
 
 
-#if ((!SHARKSSL_OPTIMIZED_GHASH_ASM) || SHARKSSL_X86_GCM_RUNTIME_DISPATCH || ((!defined(B_LITTLE_ENDIAN)) && (!defined(B_BIG_ENDIAN))))
+#if (SHARKSSL_AES_GCM_ASM_CT && SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define SHARKSSL_AESNI_TARGET
+#else
+#include <immintrin.h>
+#define SHARKSSL_AESNI_TARGET __attribute__((target("\141\145\163\054\163\163\163\145\063")))
+#endif
+
+static SHARKSSL_AESNI_TARGET void sharkssl_x86_aesniBlock(const SharkSslAesCtx *o, const U8 updatecause[16], U8 enablehazard[16])
+{
+   const __m128i bswap = _mm_set_epi8(12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3);
+   unsigned nr = SHARKSSL_AES_NR_DECODE(o->nr), round;
+   __m128i b = _mm_loadu_si128((const __m128i*)updatecause);
+
+   b = _mm_xor_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[0]), bswap));
+   for (round = 1; round < nr; ++round)
+   {
+      b = _mm_aesenc_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[4 * round]), bswap));
+   }
+   b = _mm_aesenclast_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[4 * nr]), bswap));
+   _mm_storeu_si128((__m128i*)enablehazard, b);
+}
+#endif
+
+
+void SharkSslAesGcmCtx_encryptBlock(SharkSslAesGcmCtx *o, U8 updatecause[16], U8 enablehazard[16])
+{
+   #if SHARKSSL_AES_GCM_SOFTWARE_CT
+   SharkSslAesCtx_encryptCT(&o->super, updatecause, enablehazard);
+   #else
+   #if SHARKSSL_AES_GCM_ASM_CT
+   #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
+   
+   if (sharkssl_gcm_asmAvailable())
+   {
+      sharkssl_x86_aesniBlock(&o->super, updatecause, enablehazard);
+      return;
+   }
+   #else
+   SharkSslAesCtx_encryptStdCT(&o->super, updatecause, enablehazard);
+   return;
+   #endif
+   #endif
+   SharkSslAesCtx_encrypt(&o->super, updatecause, enablehazard);
+   #endif
+}
+
+
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+static void pcibiossetup(SharkSslAesGcmCtx *o)
+{
+   memset(o->M0, 0, sizeof(o->M0));
+   SharkSslAesGcmCtx_encryptBlock(o, o->M0[8], o->M0[8]);
+   _XzY0x312(o);
+}
+#else
+#if ((!SHARKSSL_OPTIMIZED_GHASH_ASM) || SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
 static const U16 serialsetup[16] =
 {
     0x0000, 0x1C20, 0x3840, 0x2460,
@@ -88692,21 +91499,14 @@ static void machinecheck(U8 *X)
    U32 Z[4];
    U8  b;
 
-   #if ((!defined(B_LITTLE_ENDIAN)) && (!defined(B_BIG_ENDIAN)))
-   if (0x20 == (*(U8*)&serialsetup[1]))  
-   #endif
-   #ifndef B_BIG_ENDIAN
+   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
    {
       cleanupcount(Z[0], X, 0);
       cleanupcount(Z[1], X, 4);
       cleanupcount(Z[2], X, 8);
       cleanupcount(Z[3], X, 12);
    }
-   #endif
-   #if ((!defined(B_LITTLE_ENDIAN)) && (!defined(B_BIG_ENDIAN)))
-   else
-   #endif
-   #ifndef B_LITTLE_ENDIAN
+   #else
    {
       read64uint32(Z[0], X, 0);
       read64uint32(Z[1], X, 4);
@@ -88737,21 +91537,14 @@ static void machinecheck(U8 *X)
       Z[0] ^= 0xE1000000;
    }
 
-   #if ((!defined(B_LITTLE_ENDIAN)) && (!defined(B_BIG_ENDIAN)))
-   if (0x20 == (*(U8*)&serialsetup[1]))  
-   #endif
-   #ifndef B_BIG_ENDIAN
+   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
    {
       hsotgpdata(Z[0], X, 0);
       hsotgpdata(Z[1], X, 4);
       hsotgpdata(Z[2], X, 8);
       hsotgpdata(Z[3], X, 12);
    }
-   #endif
-   #if ((!defined(B_LITTLE_ENDIAN)) && (!defined(B_BIG_ENDIAN)))
-   else
-   #endif
-   #ifndef B_LITTLE_ENDIAN
+   #else
    {
       inputlevel(Z[0], X, 0);
       inputlevel(Z[1], X, 4);
@@ -88771,12 +91564,9 @@ static void pcibiossetup(SharkSslAesGcmCtx *aes)
 
    memset(m[0], 0, 16);
    memset(m[8], 0, 16);
-   SharkSslAesCtx_encrypt((SharkSslAesCtx*)aes, m[8], m[8]);
+   SharkSslAesGcmCtx_encryptBlock(aes, m[8], m[8]);
 
-   #ifndef B_BIG_ENDIAN
-   #ifndef B_LITTLE_ENDIAN
-   if (0x20 == (*(U8*)&serialsetup[1]))  
-   #endif
+   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
    {
       U32 t;
 
@@ -88829,13 +91619,17 @@ static void pcibiossetup(SharkSslAesGcmCtx *aes)
    }
    #endif
 }
+#endif  
 
 
-#if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+#define simplebuffer(c,x) sharkssl_gcm_multCT((c), x)
+#elif SHARKSSL_X86_GCM_RUNTIME_DISPATCH
 #define simplebuffer(c,x) sharkssl_gcm_gmult_dispatch(c->M0, x)
 #else
 #define simplebuffer(c,x) sharkssl_gcm_gmult32M0(c->M0, x)
 #endif
+#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
 #if ((!SHARKSSL_OPTIMIZED_GHASH_ASM) || SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
 #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
 static void sharkssl_gcm_gmult32M0_c(U8 (*M0)[16], U8 *x)
@@ -88895,6 +91689,7 @@ static void sharkssl_gcm_gmult_dispatch(U8 (*M0)[16], U8 *x)
    }
 }
 #endif
+#endif  
 
 #if SHARKSSL_OPTIMIZED_GCM_ASM
 void sharkssl_gcm_crypt_blocks(SharkSslAesGcmCtx *registermcasp, U8 remapiospace[16],
@@ -88919,7 +91714,17 @@ void sharkssl_gcm_prepare64M0(U8 (*M0)[16]);
 SHARKSSL_API void SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *registermcasp,
                                                 const U8 *sourcerouting, U8 creategroup)
 {
+   #if SHARKSSL_AES_GCM_SOFTWARE_CT
+   _XzY0x30D(&registermcasp->super, sourcerouting, creategroup);
+   #elif SHARKSSL_AES_GCM_ASM_CT
+   
+   #if SHARKSSL_AES_TABLES_IN_RAM
+   SharkSslAesCtx_initTables();
+   #endif
+   _XzY0x30E(&registermcasp->super, sourcerouting, creategroup);
+   #else
    SharkSslAesCtx_constructor((SharkSslAesCtx*)registermcasp, SharkSslAesCtx_Encrypt, sourcerouting, creategroup);
+   #endif
    #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
    sharkssl_gcm_validateAsmLayout();
    #endif
@@ -88965,6 +91770,10 @@ void SharkSslAesGcmCtx_authBlocks(SharkSslAesGcmCtx *o, U8 chargerplatform[16], 
 
 void SharkSslAesGcmCtx_cryptBlocks(SharkSslAesGcmCtx *o, U8 remapiospace[16], U8 chargerplatform[16], const U8 *updatecause, U8 *enablehazard, U32 traceleave, SharkSslAesCtx_Type rightsvalid)
 {
+   #if SHARKSSL_AES_GCM_SOFTWARE_CT
+   baAssert((traceleave & 15u) == 0u);
+   sharkssl_gcm_cryptCT(o, remapiospace, chargerplatform, updatecause, enablehazard, traceleave, rightsvalid, NULL);
+   #else
    U8 _XzY0x202[16];
    U32 debugstart;
    U8 i;
@@ -88995,7 +91804,7 @@ void SharkSslAesGcmCtx_cryptBlocks(SharkSslAesGcmCtx *o, U8 remapiospace[16], U8
       read64uint32(debugstart, remapiospace, 12);
       ++debugstart;
       inputlevel(debugstart, remapiospace, 12);
-      SharkSslAesCtx_encrypt(&o->super, remapiospace, _XzY0x202);
+      SharkSslAesGcmCtx_encryptBlock(o, remapiospace, _XzY0x202);
       if (SharkSslAesCtx_Decrypt == rightsvalid)
       {
          SharkSslAesGcmCtx_authBlocks(o, chargerplatform, updatecause, 16);
@@ -89013,6 +91822,7 @@ void SharkSslAesGcmCtx_cryptBlocks(SharkSslAesGcmCtx *o, U8 remapiospace[16], U8
       traceleave -= 16;
    }
    sharkssl_clear(_XzY0x202, sizeof(_XzY0x202));
+   #endif
 }
 
 
@@ -89023,7 +91833,7 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
                                      SharkSslAesCtx_Type rightsvalid)
 {
    U8 remapiospace[16], sossirecalc[16], tagi[16];
-   U32 alen, pxafbmodes;
+   U32 _XzY0x2A, pxafbmodes;
 
    baAssert(registermcasp);
    baAssert(vect);
@@ -89031,7 +91841,7 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
    baAssert(updatecause);
    baAssert(enablehazard);
 
-   alen = ((U32)authlen << 3);  
+   _XzY0x2A = ((U32)authlen << 3);  
    pxafbmodes = ((U32)len << 3);      
 
    memset(&tagi[0], 0, 16);
@@ -89058,6 +91868,10 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
    memcpy(&remapiospace[0], vect, 12);
    inputlevel(1, remapiospace, 12);  
 
+#if SHARKSSL_AES_GCM_SOFTWARE_CT
+   
+   sharkssl_gcm_cryptCT(registermcasp, remapiospace, tagi, updatecause, enablehazard, len, rightsvalid, sossirecalc);
+#else
 #if SHARKSSL_OPTIMIZED_GCM_ASM
    if (len >= 16)
    {
@@ -89094,7 +91908,7 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
       inputlevel(requestflags, remapiospace, 12);
 
       
-      SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
+      SharkSslAesGcmCtx_encryptBlock(registermcasp, remapiospace, sossirecalc);
 
       
       if (len >= 16)
@@ -89131,10 +91945,19 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
 
       simplebuffer(registermcasp, tagi);
    }
+#endif
 
    
+   #if SHARKSSL_AES_GCM_SOFTWARE_CT
+   inputlevel(0,    remapiospace, 0);
+   inputlevel(_XzY0x2A, remapiospace, 4);
+   inputlevel(0,    remapiospace, 8);
+   inputlevel(pxafbmodes, remapiospace, 12);
+   paz00wifikill(tagi, tagi, remapiospace);
+   simplebuffer(registermcasp, tagi);
+   #else
    inputlevel(0,    sossirecalc, 0);
-   inputlevel(alen, sossirecalc, 4);
+   inputlevel(_XzY0x2A, sossirecalc, 4);
    inputlevel(0,    sossirecalc, 8);
    inputlevel(pxafbmodes, sossirecalc, 12);
    paz00wifikill(tagi, tagi, sossirecalc);
@@ -89142,7 +91965,8 @@ static int pcmciaregister(SharkSslAesGcmCtx *registermcasp,
 
    
    inputlevel(1, remapiospace, 12);
-   SharkSslAesCtx_encrypt((SharkSslAesCtx*)registermcasp, remapiospace, sossirecalc);
+   SharkSslAesGcmCtx_encryptBlock(registermcasp, remapiospace, sossirecalc);
+   #endif
    if (SharkSslAesCtx_Encrypt == rightsvalid)
    {
       paz00wifikill(tag, tagi, sossirecalc);
@@ -89351,6 +92175,7 @@ SHARKSSL_API int SharkSslAesCcmCtx_decrypt(SharkSslAesCcmCtx *registermcasp,
    return modifyparam(registermcasp, vect, directionoutput, pmuv3event, authlen, updatecause, enablehazard, len, SharkSslAesCtx_Decrypt);
 }
 #endif  
+#endif
 #endif
 
 #ifndef BA_LIB
@@ -90321,10 +93146,19 @@ NsTree_printNsAttrList(NsTree* o, const char gpio27parents, BufPrint* out)
 #include "SharkSslASN1.h"
 
 #include "SharkSslCrypto.h"
-#if SHARKSSL_USE_ECC
+#if (SHARKSSL_USE_ECC || SHARKSSL_ENABLE_EDDSA)
 
 #endif
+#if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT)
+#include "psa-consumer/SharkSslPSAConsumerPBKDF2.h"
+#endif
 #include <string.h>
+
+#if SHARKSSL_ENABLE_EDDSA
+#if ((SHARKSSL_ASN1_ALGO_ID_ED25519 != (SHARKSSL_SIGNATUREALGORITHM_ED25519 << 4)) || (SHARKSSL_ASN1_ALGO_ID_ED448 != (SHARKSSL_SIGNATUREALGORITHM_ED448 << 4)))
+#error EdDSA ASN.1 IDs must match probeguestctl0 _XzY0x261 IDs
+#endif
+#endif
 
 #ifndef EXT_SHARK_LIB
 #define sharkStrstr strstr
@@ -90399,6 +93233,19 @@ U8 SharkSslParseASN1_getAlgoID(const SharkSslParseASN1 *o)
 {
    switch (o->datalen)
    {
+      #if SHARKSSL_ENABLE_EDDSA
+      case 3:
+         if (0 == sharkssl_kmemcmp(o->dataptr, sharkssl_oid_ed25519, sizeof(sharkssl_oid_ed25519)))
+         {
+            return SHARKSSL_ASN1_ALGO_ID_ED25519;
+         }
+         if (0 == sharkssl_kmemcmp(o->dataptr, sharkssl_oid_ed448, sizeof(sharkssl_oid_ed448)))
+         {
+            return SHARKSSL_ASN1_ALGO_ID_ED448;
+         }
+         break;
+      #endif
+
       case 9:
          #if SHARKSSL_ENABLE_RSA
          if (0 == sharkssl_kmemcmp(o->dataptr, sharkssl_oid_rsaEncryption, SHARKSSL_DIM_ARR(sharkssl_oid_rsaEncryption)))
@@ -90584,9 +93431,34 @@ U8 controllerregister(U16 defaultsdhci1, U8 _XzY0x203)
 {
    (void)_XzY0x203;
    #if SHARKSSL_USE_ECC
+   #if (SHARKSSL_TLS_1_3 && SHARKSSL_ECC_USE_BRAINPOOL)
+   if (_XzY0x203)
+   {
+      switch (defaultsdhci1)
+      {
+         #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+         case SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1TLS13:
+            return SHARKSSL_BRAINPOOLP256R1_POINTLEN;
+         #endif
+         #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+         case SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1TLS13:
+            return SHARKSSL_BRAINPOOLP384R1_POINTLEN;
+         #endif
+         #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+         case SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1TLS13:
+            return SHARKSSL_BRAINPOOLP512R1_POINTLEN;
+         #endif
+         default:
+            break;
+      }
+   }
+   #endif
    #if (SHARKSSL_ECC_USE_SECP521R1 || SHARKSSL_ECC_USE_BRAINPOOL)
    
-   if (_XzY0x203 && (defaultsdhci1 >= SHARKSSL_EC_CURVE_ID_SECP521R1) && (defaultsdhci1 <= SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1))
+   if (_XzY0x203 &&
+       (((defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP521R1) && (!SHARKSSL_PSA_CONSUMER)) ||
+        ((defaultsdhci1 >= SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1) &&
+         (defaultsdhci1 <= SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1))))
    {
       return 0;
    }
@@ -90878,6 +93750,9 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
 {
    SharkSslParseASN1 parseCert, parseBitString;
    U8 *pTemp, tag;
+   #if SHARKSSL_ENABLE_EDDSA
+   U8 *_XzY0x277;
+   #endif
    U32 probealchemy = 0;
    int l, v;
    U16 _XzY0x1AC = 0;
@@ -90942,7 +93817,8 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    }
    #endif
 
-   #if (SHARKSSL_ENABLE_CLIENT_AUTH || SHARKSSL_ENABLE_CSR_SIGNING)
+   #if (SHARKSSL_ENABLE_CLIENT_AUTH || SHARKSSL_ENABLE_CSR_SIGNING || \
+        (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION))
    if ((U32)-2 == len)
    {
       goto SharkSslCertParam_parseCert_1;
@@ -90969,6 +93845,13 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
       memset(o->signature.hash, 0, 20);
    }
    #endif
+   #if SHARKSSL_ENABLE_EDDSA
+   else if ((SHARKSSL_ASN1_ALGO_ID_ED25519 == tag) || (SHARKSSL_ASN1_ALGO_ID_ED448 == tag))
+   {
+      o->signature.message = pTemp;
+      o->signature.messageLen = (U32)l + (U32)(parseCert.ptr - pTemp);
+   }
+   #endif
    else if (sharkssl_hash(o->signature.hash, pTemp, (U32)l + (U32)(parseCert.ptr - pTemp), o->signature.hashAlgo) < 0)
    {
       return -1;  
@@ -90978,7 +93861,8 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    probealchemy = parseBitString.len;
    pTemp  = parseBitString.ptr;
 
-   #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING)
+   #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING || \
+        (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION))
    SharkSslCertParam_parseCert_1:
    #endif
 
@@ -90993,7 +93877,8 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
          return -1;    
       }
 
-      #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING)
+      #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING || \
+           (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION))
       if (((U32)-2 != len) && ((U32)-3 != len))
       #endif
       {
@@ -91018,7 +93903,8 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    if ((U32)-4 != len)  
    #endif
    {
-      #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING)
+      #if (SHARKSSL_ENABLE_CLIENT_AUTH || (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI) || SHARKSSL_ENABLE_CSR_SIGNING || \
+           (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION))
       if (((U32)-2 != len) && ((U32)-3 != len))
       #endif
       {
@@ -91032,7 +93918,8 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
          return -1;
       }
 
-      #if (SHARKSSL_ENABLE_CLIENT_AUTH || SHARKSSL_ENABLE_CSR_SIGNING)
+      #if (SHARKSSL_ENABLE_CLIENT_AUTH || SHARKSSL_ENABLE_CSR_SIGNING || \
+           (SHARKSSL_SSL_CLIENT_CODE && SHARKSSL_ENABLE_CA_LIST && SHARKSSL_ENABLE_CA_EXTENSION))
       if ((U32)-2 == len)
       {
          
@@ -91138,18 +94025,57 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    }
 
    
-   if (SharkSslParseASN1_getSequence(&parseCert) < 0)
+   if ((l = SharkSslParseASN1_getSequence(&parseCert)) < 0)
    {
       return -1;
    }
+   #if SHARKSSL_ENABLE_EDDSA
+   _XzY0x277 = parseCert.ptr + l;
+   #endif
    if (SharkSslParseASN1_getOID(&parseCert) < 0)
    {
       return -1;
    }
 
    
-   switch (SharkSslParseASN1_getAlgoID(&parseCert))
+   l = SharkSslParseASN1_getAlgoID(&parseCert);
+   switch (l)
    {
+      #if SHARKSSL_ENABLE_EDDSA
+      case SHARKSSL_ASN1_ALGO_ID_ED25519:
+      case SHARKSSL_ASN1_ALGO_ID_ED448:
+         if ((parseCert.ptr != _XzY0x277) || (parseCert.ptr != parseCert.dataptr + parseCert.datalen))
+         {
+            return -1;
+         }
+         if (SharkSslParseASN1_getBitString(&parseCert) < 0)
+         {
+            return -1;
+         }
+         #if (SHARKSSL_SSL_SERVER_CODE && SHARKSSL_ENABLE_SNI)
+         if ((U32)-3 == len)
+         {
+            goto SharkSslCertParam_parseCert_2;
+         }
+         #endif
+         if (((SHARKSSL_ASN1_ALGO_ID_ED25519 == l) && (parseCert.datalen != (SHARKSSL_ED25519_PUBLIC_KEY_LEN + 1))) ||
+             ((SHARKSSL_ASN1_ALGO_ID_ED448 == l) && (parseCert.datalen != (SHARKSSL_ED448_PUBLIC_KEY_LEN + 1))))
+         {
+            return -1;
+         }
+         if (0 != parseCert.dataptr[0])
+         {
+            return -1;
+         }
+         o->certKey.mod = parseCert.dataptr + 1;
+         o->certKey.modLen = (U16)(parseCert.datalen - 1);
+         o->certKey.exp = NULL;
+         o->certKey.expLen = 0;
+         SHARKSSL_EXPLEN_SET_KEYTYPE_EDDSA_PUB(o->certKey.expLen);
+         parseBitString.ptr = parseCert.ptr;
+         break;
+      #endif
+
       #if SHARKSSL_USE_ECC
       case ALGO_OID_EC_PUBLIC_KEY:
          if (SharkSslParseASN1_getOID(&parseCert) < 0)
@@ -91305,6 +94231,12 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    {
       
       l = SharkSslParseASN1_getCSRAttributes(&parseCert);
+      if ((U32)(parseCert.ptr - p) > (U16)-1)
+      {
+         return -1;
+      }
+      
+      *(U16*)&(o->certInfo.issuer.commonNameLen) = (U16)(parseCert.ptr - p);
       *(U32*)doublefnmul = 0;  
    }
    else
@@ -91649,6 +94581,18 @@ int spromregister(SharkSslCertParam *o, const U8 *p, U32 len, U8 *doublefnmul)
    }
    o->signature.signature = parseBitString.dataptr;
    o->signature.signLen   = (U16)parseBitString.datalen;
+   #if SHARKSSL_ENABLE_EDDSA
+   if ((SHARKSSL_SIGNATUREALGORITHM_ED25519 == o->signature.signatureAlgo) || (SHARKSSL_SIGNATUREALGORITHM_ED448 == o->signature.signatureAlgo))
+   {
+      U16 _XzY0x26F = (SHARKSSL_SIGNATUREALGORITHM_ED25519 == o->signature.signatureAlgo) ? SHARKSSL_ED25519_SIGNATURE_LEN : SHARKSSL_ED448_SIGNATURE_LEN;
+      if ((parseBitString.datalen != (U32)(_XzY0x26F + 1)) || (0 != o->signature.signature[0]))
+      {
+         return -1;
+      }
+      o->signature.signature++;
+      o->signature.signLen--;
+   }
+   #endif
 
    #if SHARKSSL_ENABLE_ECDSA
    if (o->signature.signatureAlgo == ALGO_ID_ECDSA)
@@ -91794,6 +94738,23 @@ SharkSslCert removerecursive(SharkSslCertEnum *o)
                else
                {
                   o->cert += (U16)(chargeerror << 1);
+               }
+            }
+            #endif
+            #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+            #if (SHARKSSL_ENABLE_RSA || SHARKSSL_USE_ECC)
+            else
+            #endif
+            if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(setpropinplace))
+            {
+               if ((!coupledexynos(setpropinplace)) || (mousethresh(setpropinplace) != 0) ||
+                   ((chargeerror != SHARKSSL_ED25519_PUBLIC_KEY_LEN) && (chargeerror != SHARKSSL_ED448_PUBLIC_KEY_LEN)))
+               {
+                  o->cert = NULL;
+               }
+               else
+               {
+                  o->cert += chargeerror;
                }
             }
             #endif
@@ -91971,6 +94932,14 @@ U8 SharkSslCertInfo_matchesSNI(const SharkSslCertInfo *o, const char *name, U16 
 
 
 #if SHARKSSL_ENABLE_ECDSA
+static U16 _XzY0x2F6(U16 creategroup)
+{
+   
+   U16 simulatebxblx = (U16)((creategroup + SHARKSSL_ASN1_MIN_INTEGER_TLV_LEN) << 1);
+   return (U16)(simulatebxblx + ((simulatebxblx < 0x80) ? 2 : 3));
+}
+
+
 static sharkssl_ECDSA_RetVal registerboard(SharkSslECDSAParam *audioshutdown, U8 *sig, U16 *platformconfig)
 {
    SharkSslASN1Create wasn1;
@@ -92076,32 +95045,45 @@ static int _XzY0x1FC(const SharkSslSignParam *o, U16 *cachemumbojumbo)
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
    SharkSslASN1Create fixupconfig;
    psa_key_id_t sourcerouting = 0;
-   psa_algorithm_t algorithm;
+   psa_algorithm_t _XzY0x261;
    psa_status_t sffsdrnandflash;
    U8 *_XzY0x200 = NULL;
-   size_t signatureLen = 0;
-   U16 modulusLen, exponentLen, ftraceupdate;
+   size_t _XzY0x299 = 0;
+   U16 _XzY0x28F, _XzY0x27, ftraceupdate;
    int ret = -1;
 
    if ((!o) || (!o->pCertKey) || (!o->signature.signature) || (!machinekexec(o->pCertKey->expLen)))
    {
       return -1;
    }
-   modulusLen = supportedvector(o->pCertKey->modLen);
-   exponentLen = mousethresh(o->pCertKey->expLen);
+   _XzY0x28F = supportedvector(o->pCertKey->modLen);
+   _XzY0x27 = mousethresh(o->pCertKey->expLen);
    ftraceupdate = sharkssl_getHashLen(o->signature.hashAlgo);
-   if ((0 == modulusLen) || (0 == exponentLen) || (!o->pCertKey->mod) || (!o->pCertKey->exp) || (!ftraceupdate))
+   if ((0 == _XzY0x28F) || (0 == _XzY0x27) || (!o->pCertKey->mod) || (!o->pCertKey->exp) || (!ftraceupdate))
    {
       return -1;
    }
+   #if SHARKSSL_USE_SHA1
+   if (presentpages == o->signature.hashAlgo)
+   {
+      _XzY0x261 = PSA_ALG_SHA_1;
+   }
+   else
+   #endif
    if (domainnumber == o->signature.hashAlgo)
    {
-      algorithm = PSA_ALG_SHA_256;
+      _XzY0x261 = PSA_ALG_SHA_256;
    }
    #if SHARKSSL_USE_SHA_384
    else if (probewrite == o->signature.hashAlgo)
    {
-      algorithm = PSA_ALG_SHA_384;
+      _XzY0x261 = PSA_ALG_SHA_384;
+   }
+   #endif
+   #if SHARKSSL_USE_SHA_512
+   else if (batterythread == o->signature.hashAlgo)
+   {
+      _XzY0x261 = PSA_ALG_SHA_512;
    }
    #endif
    else
@@ -92110,11 +95092,11 @@ static int _XzY0x1FC(const SharkSslSignParam *o, U16 *cachemumbojumbo)
    }
    if (SHARKSSL_SIGNATUREALGORITHM_RSA_PSS == o->signature.signatureAlgo)
    {
-      algorithm = PSA_ALG_RSA_PSS(algorithm);
+      _XzY0x261 = PSA_ALG_RSA_PSS(_XzY0x261);
    }
    else if (entryearly == o->signature.signatureAlgo)
    {
-      algorithm = PSA_ALG_RSA_PKCS1V15_SIGN(algorithm);
+      _XzY0x261 = PSA_ALG_RSA_PKCS1V15_SIGN(_XzY0x261);
    }
    else
    {
@@ -92130,42 +95112,42 @@ static int _XzY0x1FC(const SharkSslSignParam *o, U16 *cachemumbojumbo)
       {
          return -1;
       }
-      sffsdrnandflash = psa_sign_hash(o->psaSignKey, algorithm, o->signature.hash, ftraceupdate,
-                             o->signature.signature, modulusLen, &signatureLen);
-      if ((PSA_SUCCESS == sffsdrnandflash) && (signatureLen == modulusLen))
+      sffsdrnandflash = psa_sign_hash(o->psaSignKey, _XzY0x261, o->signature.hash, ftraceupdate,
+                             o->signature.signature, _XzY0x28F, &_XzY0x299);
+      if ((PSA_SUCCESS == sffsdrnandflash) && (_XzY0x299 == _XzY0x28F))
       {
-         *cachemumbojumbo = (U16)signatureLen;
+         *cachemumbojumbo = (U16)_XzY0x299;
          return 0;
       }
       return -1;
    }
-   if (o->signature.signLen != modulusLen)
+   if (o->signature.signLen != _XzY0x28F)
    {
       return -1;
    }
-   _XzY0x200 = (U8*)baMalloc((U32)modulusLen + exponentLen + 16);
+   _XzY0x200 = (U8*)baMalloc((U32)_XzY0x28F + _XzY0x27 + 16);
    if (!_XzY0x200)
    {
       return -1;
    }
-   SharkSslASN1Create_constructor(&fixupconfig, _XzY0x200, (int)((U32)modulusLen + exponentLen + 16));
-   if (SharkSslASN1Create_int(&fixupconfig, o->pCertKey->exp, exponentLen) ||
-       SharkSslASN1Create_int(&fixupconfig, o->pCertKey->mod, modulusLen) ||
+   SharkSslASN1Create_constructor(&fixupconfig, _XzY0x200, (int)((U32)_XzY0x28F + _XzY0x27 + 16));
+   if (SharkSslASN1Create_int(&fixupconfig, o->pCertKey->exp, _XzY0x27) ||
+       SharkSslASN1Create_int(&fixupconfig, o->pCertKey->mod, _XzY0x28F) ||
        SharkSslASN1Create_length(&fixupconfig, SharkSslASN1Create_getLen(&fixupconfig)) ||
        SharkSslASN1Create_sequence(&fixupconfig))
    {
       goto _SharkSslSignParam_psaRSA_cleanup;
    }
    psa_set_key_type(&attributes, PSA_KEY_TYPE_RSA_PUBLIC_KEY);
-   psa_set_key_bits(&attributes, (size_t)modulusLen * 8);
+   psa_set_key_bits(&attributes, (size_t)_XzY0x28F * 8);
    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_HASH);
-   psa_set_key_algorithm(&attributes, algorithm);
+   psa_set_key_algorithm(&attributes, _XzY0x261);
    sffsdrnandflash = psa_import_key(&attributes, SharkSslASN1Create_getData(&fixupconfig),
                            SharkSslASN1Create_getLen(&fixupconfig), &sourcerouting);
    psa_reset_key_attributes(&attributes);
    if (PSA_SUCCESS == sffsdrnandflash)
    {
-      sffsdrnandflash = psa_verify_hash(sourcerouting, algorithm, o->signature.hash, ftraceupdate,
+      sffsdrnandflash = psa_verify_hash(sourcerouting, _XzY0x261, o->signature.hash, ftraceupdate,
                                o->signature.signature, o->signature.signLen);
       if (PSA_SUCCESS == sffsdrnandflash)
       {
@@ -92210,6 +95192,43 @@ int checkactions(SharkSslSignParam *o)
 
    switch (o->signature.signatureAlgo)
    {
+      #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_3)
+      case SHARKSSL_SIGNATUREALGORITHM_ED25519:
+      case SHARKSSL_SIGNATUREALGORITHM_ED448:
+      {
+         size_t _XzY0x299;
+         U16 _XzY0x26E, expectedSigLen;
+         if (SHARKSSL_SIGNATUREALGORITHM_ED25519 == o->signature.signatureAlgo)
+         {
+            _XzY0x26E = SHARKSSL_ED25519_PUBLIC_KEY_LEN;
+            expectedSigLen = SHARKSSL_ED25519_SIGNATURE_LEN;
+         }
+         else
+         {
+            _XzY0x26E = SHARKSSL_ED448_PUBLIC_KEY_LEN;
+            expectedSigLen = SHARKSSL_ED448_SIGNATURE_LEN;
+         }
+         if ((!o->pCertKey) || (!o->psaSignKey) || (!o->signature.message) ||
+             (!SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(o->pCertKey->expLen)) ||
+             (o->pCertKey->modLen != _XzY0x26E) ||
+             (PSA_SUCCESS != psa_crypto_init()))
+         {
+            return -1;
+         }
+         if (PSA_SUCCESS != psa_sign_message(o->psaSignKey, PSA_ALG_PURE_EDDSA, o->signature.message,
+                                             o->signature.messageLen, pciercxcfg448, expectedSigLen, &_XzY0x299))
+         {
+            return -1;
+         }
+         if (_XzY0x299 != expectedSigLen)
+         {
+            return -1;
+         }
+         o->signature.signLen = (U16)_XzY0x299;
+         return 0;
+      }
+      #endif
+
       #if SHARKSSL_ENABLE_RSA
       #if SHARKSSL_PSA_CONSUMER
       #if SHARKSSL_ENABLE_RSA_PKCS1
@@ -92380,7 +95399,7 @@ int checkactions(SharkSslSignParam *o)
          {
             audioshutdown.key = o->pCertKey->exp;
             audioshutdown.keyLen = attachdevice(o->pCertKey->modLen);
-            o->signature.signLen = (U16)((audioshutdown.keyLen << 1) + 8);
+            o->signature.signLen = _XzY0x2F6(audioshutdown.keyLen);
          }
          else
          #endif
@@ -92428,6 +95447,56 @@ int systemcapabilities(const SharkSslSignParam *o)
 
    switch (o->signature.signatureAlgo)
    {
+      #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+      case SHARKSSL_SIGNATUREALGORITHM_ED25519:
+      case SHARKSSL_SIGNATUREALGORITHM_ED448:
+      {
+         psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+         psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+         psa_status_t sffsdrnandflash;
+         U16 _XzY0x26E, expectedSigLen, _XzY0x26D;
+         if (SHARKSSL_SIGNATUREALGORITHM_ED25519 == o->signature.signatureAlgo)
+         {
+            _XzY0x26E = SHARKSSL_ED25519_PUBLIC_KEY_LEN;
+            expectedSigLen = SHARKSSL_ED25519_SIGNATURE_LEN;
+            _XzY0x26D = SHARKSSL_ED25519_BITS;
+         }
+         else
+         {
+            _XzY0x26E = SHARKSSL_ED448_PUBLIC_KEY_LEN;
+            expectedSigLen = SHARKSSL_ED448_SIGNATURE_LEN;
+            _XzY0x26D = SHARKSSL_ED448_BITS;
+         }
+         if ((!o->pCertKey) || (!o->pCertKey->mod) || (!o->signature.message) ||
+             (!SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(o->pCertKey->expLen)) ||
+             (o->pCertKey->modLen != _XzY0x26E) ||
+             (o->signature.signLen != expectedSigLen))
+         {
+            return -1;
+         }
+         if (psa_crypto_init() != PSA_SUCCESS)
+         {
+            return -1;
+         }
+         psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_TWISTED_EDWARDS));
+         psa_set_key_bits(&attributes, _XzY0x26D);
+         psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_MESSAGE);
+         psa_set_key_algorithm(&attributes, PSA_ALG_PURE_EDDSA);
+         sffsdrnandflash = psa_import_key(&attributes, o->pCertKey->mod, _XzY0x26E, &sourcerouting);
+         psa_reset_key_attributes(&attributes);
+         if (sffsdrnandflash != PSA_SUCCESS)
+         {
+            return -1;
+         }
+         sffsdrnandflash = psa_verify_message(sourcerouting, PSA_ALG_PURE_EDDSA, o->signature.message, o->signature.messageLen, o->signature.signature, o->signature.signLen);
+         if (psa_destroy_key(sourcerouting) != PSA_SUCCESS)
+         {
+            return -1;
+         }
+         return (PSA_SUCCESS == sffsdrnandflash) ? 0 : -1;
+      }
+      #endif
+
       #if SHARKSSL_ENABLE_RSA
       #if SHARKSSL_PSA_CONSUMER
       #if SHARKSSL_ENABLE_RSA_PKCS1
@@ -92502,7 +95571,7 @@ int systemcapabilities(const SharkSslSignParam *o)
             }
             while (len >= 4)
             {
-               #if (defined(B_BIG_ENDIAN))
+               #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN))
                read64uint32(sgnWord, s, 0);
                #else
                cleanupcount(sgnWord, s, 0);
@@ -92703,6 +95772,228 @@ U16 interrupthandler(SharkSslCertKey *disableclock, SharkSslCert kernelvaddr)
    memset(disableclock, 0, sizeof(SharkSslCertKey));
    return 0;
 }
+
+
+#if (SHARKSSL_PSA_CONSUMER && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA))
+
+static U8 _XzY0x276(psa_algorithm_t _XzY0x261)
+{
+   switch (PSA_ALG_GET_HASH(_XzY0x261))
+   {
+      case PSA_ALG_ANY_HASH:
+         return 1;
+
+      #if SHARKSSL_USE_SHA1
+      case PSA_ALG_SHA_1:
+         return 1;
+      #endif
+
+      #if SHARKSSL_USE_SHA_256
+      case PSA_ALG_SHA_256:
+         return 1;
+      #endif
+
+      #if SHARKSSL_USE_SHA_384
+      case PSA_ALG_SHA_384:
+         return 1;
+      #endif
+
+      #if SHARKSSL_USE_SHA_512
+      case PSA_ALG_SHA_512:
+         return 1;
+      #endif
+
+      default:
+         return 0;
+   }
+}
+#endif
+
+
+#if (SHARKSSL_ENABLE_RSA && SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY)
+
+U8 SharkSslCertKey_validateRSACertPSA(const SharkSslCertKey *o, SharkSslCert kernelvaddr, psa_key_id_t _XzY0x20)
+{
+   SharkSslCertParam parsed;
+   SharkSslParseASN1 _XzY0x291;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   U8 *_XzY0x1E7;
+   const U8 *patchimm64;
+   size_t _XzY0x2D8;
+   U32 _XzY0x273;
+   psa_algorithm_t _XzY0x261;
+   int _XzY0x269;
+   U16 _XzY0x27;
+   U8 _XzY0x278 = 0;
+
+   if ((!o) || (!kernelvaddr) || (!_XzY0x20) || (!machinekexec(o->expLen)) || (!coupledexynos(o->expLen)))
+   {
+      return 0;
+   }
+   _XzY0x27 = mousethresh(o->expLen);
+   if ((!_XzY0x27) || (!o->exp))
+   {
+      return 0;
+   }
+   patchimm64 = o->exp;
+   while ((_XzY0x27 > 1) && (0 == *patchimm64))
+   {
+      ++patchimm64;
+      --_XzY0x27;
+   }
+   if ((0 == *patchimm64) || (spromregister(&parsed, kernelvaddr, SharkSslCert_len(kernelvaddr), NULL) < 0) ||
+       (!machinekexec(parsed.certKey.expLen)) ||
+       (parsed.certKey.modLen != o->modLen) ||
+       (mousethresh(parsed.certKey.expLen) != _XzY0x27) ||
+       (0 != memcmp(parsed.certKey.mod, o->mod, o->modLen)) ||
+       (0 != memcmp(parsed.certKey.exp, patchimm64, _XzY0x27)))
+   {
+      return 0;
+   }
+   if (PSA_SUCCESS != psa_get_key_attributes(_XzY0x20, &attributes))
+   {
+      psa_reset_key_attributes(&attributes);
+      return 0;
+   }
+   _XzY0x261 = psa_get_key_algorithm(&attributes);
+   if ((psa_get_key_type(&attributes) != PSA_KEY_TYPE_RSA_KEY_PAIR) ||
+       (psa_get_key_bits(&attributes) != ((size_t)o->modLen << 3)) ||
+       (!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_HASH)) ||
+       (!_XzY0x276(_XzY0x261)) ||
+       ((_XzY0x261 != PSA_ALG_RSA_PSS(PSA_ALG_GET_HASH(_XzY0x261))) &&
+        (_XzY0x261 != PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_GET_HASH(_XzY0x261)))) ||
+       (_XzY0x261 == PSA_ALG_RSA_PKCS1V15_SIGN_RAW))
+   {
+      psa_reset_key_attributes(&attributes);
+      return 0;
+   }
+   psa_reset_key_attributes(&attributes);
+
+   _XzY0x273 = (U32)o->modLen + _XzY0x27 + 16; 
+   _XzY0x1E7 = (U8*)baMalloc(_XzY0x273);
+   if (!_XzY0x1E7)
+   {
+      return 0;
+   }
+   if (PSA_SUCCESS == psa_export_public_key(_XzY0x20, _XzY0x1E7, _XzY0x273, &_XzY0x2D8))
+   {
+      _XzY0x291.ptr = _XzY0x1E7;
+      _XzY0x291.len = (U32)_XzY0x2D8;
+      _XzY0x269 = SharkSslParseASN1_getSequence(&_XzY0x291);
+      if ((_XzY0x269 >= 0) && ((U32)_XzY0x269 == _XzY0x291.len) &&
+          (SharkSslParseASN1_getInt(&_XzY0x291) >= 0) &&
+          (_XzY0x291.datalen == o->modLen) &&
+          (0 == memcmp(_XzY0x291.dataptr, o->mod, o->modLen)) &&
+          (SharkSslParseASN1_getInt(&_XzY0x291) >= 0) &&
+          (_XzY0x291.datalen == _XzY0x27) &&
+          (0 == memcmp(_XzY0x291.dataptr, patchimm64, _XzY0x27)) && (!_XzY0x291.len))
+      {
+         _XzY0x278 = 1;
+      }
+   }
+   baFree(_XzY0x1E7);
+   return _XzY0x278;
+}
+#endif
+
+
+#if (SHARKSSL_ENABLE_ECDSA && SHARKSSL_PSA_CONSUMER)
+
+U8 SharkSslCertKey_validateECDSACertPSA(const SharkSslCertKey *o, SharkSslCert kernelvaddr, psa_key_id_t _XzY0x20)
+{
+   U8 _XzY0x1E7[1 + (SHARKSSL_SECP521R1_POINTLEN << 1)];
+   SharkSslCertParam parsed;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   size_t _XzY0x2D8;
+   psa_key_type_t expectedType;
+   U16 _XzY0x267;
+
+   if ((!o) || (!kernelvaddr) || (!_XzY0x20) || (!machinereboot(o->expLen)) ||
+       (mousethresh(o->expLen) != 0))
+   {
+      return 0;
+   }
+   _XzY0x267 = attachdevice(o->modLen);
+   if ((_XzY0x267 == 0) || (_XzY0x267 > SHARKSSL_SECP521R1_POINTLEN) ||
+       (spromregister(&parsed, kernelvaddr, SharkSslCert_len(kernelvaddr), NULL) < 0) ||
+       (!machinereboot(parsed.certKey.expLen)) ||
+       (parsed.certKey.modLen != o->modLen) ||
+       (0 != memcmp(parsed.certKey.mod, o->mod, _XzY0x267 << 1)))
+   {
+      return 0;
+   }
+   switch (wakeupenable(o->modLen))
+   {
+      case SHARKSSL_EC_CURVE_ID_SECP256R1:
+      case SHARKSSL_EC_CURVE_ID_SECP384R1:
+      case SHARKSSL_EC_CURVE_ID_SECP521R1:
+         expectedType = PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1);
+         break;
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1:
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1:
+      case SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1:
+         expectedType = PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_BRAINPOOL_P_R1);
+         break;
+      default:
+         return 0;
+   }
+   if ((PSA_SUCCESS != psa_get_key_attributes(_XzY0x20, &attributes)) ||
+       (psa_get_key_type(&attributes) != expectedType) ||
+       (PSA_BITS_TO_BYTES(psa_get_key_bits(&attributes)) != _XzY0x267) ||
+       (SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY &&
+        ((!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_HASH)) ||
+         (!_XzY0x276(psa_get_key_algorithm(&attributes))) ||
+         (psa_get_key_algorithm(&attributes) != PSA_ALG_ECDSA(PSA_ALG_GET_HASH(psa_get_key_algorithm(&attributes)))))) ||
+       (PSA_SUCCESS != psa_export_public_key(_XzY0x20, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8)) ||
+       (_XzY0x2D8 != (size_t)(1 + (_XzY0x267 << 1))) ||
+       (_XzY0x1E7[0] != SHARKSSL_EC_POINT_UNCOMPRESSED) ||
+       (0 != memcmp(_XzY0x1E7 + 1, o->mod, _XzY0x267 << 1)))
+   {
+      psa_reset_key_attributes(&attributes);
+      return 0;
+   }
+   psa_reset_key_attributes(&attributes);
+   return 1;
+}
+#endif
+
+
+#if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+
+U8 SharkSslCertKey_validateEdDSACertPSA(const SharkSslCertKey *o, SharkSslCert kernelvaddr, psa_key_id_t _XzY0x20)
+{
+   U8 _XzY0x1E7[SHARKSSL_ED448_PUBLIC_KEY_LEN];
+   SharkSslCertParam parsed;
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   size_t _XzY0x2D8;
+   U16 _XzY0x26D;
+
+   if ((!o) || (!kernelvaddr) || (!_XzY0x20) || (!SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(o->expLen)) ||
+       (!coupledexynos(o->expLen)) || (mousethresh(o->expLen) != 0) ||
+       ((o->modLen != SHARKSSL_ED25519_PUBLIC_KEY_LEN) && (o->modLen != SHARKSSL_ED448_PUBLIC_KEY_LEN)) ||
+       (spromregister(&parsed, kernelvaddr, SharkSslCert_len(kernelvaddr), NULL) < 0) ||
+       (!SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(parsed.certKey.expLen)) ||
+       (parsed.certKey.modLen != o->modLen) || (0 != memcmp(parsed.certKey.mod, o->mod, o->modLen)))
+   {
+      return 0;
+   }
+   _XzY0x26D = (o->modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN) ? SHARKSSL_ED25519_BITS : SHARKSSL_ED448_BITS;
+   if ((PSA_SUCCESS != psa_get_key_attributes(_XzY0x20, &attributes)) ||
+       (psa_get_key_type(&attributes) != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS)) ||
+       (psa_get_key_bits(&attributes) != _XzY0x26D) ||
+       (SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY &&
+        ((!(psa_get_key_usage_flags(&attributes) & PSA_KEY_USAGE_SIGN_MESSAGE)) ||
+         (psa_get_key_algorithm(&attributes) != PSA_ALG_PURE_EDDSA))) ||
+       (PSA_SUCCESS != psa_export_public_key(_XzY0x20, _XzY0x1E7, sizeof(_XzY0x1E7), &_XzY0x2D8)) ||
+       (_XzY0x2D8 != o->modLen) || (0 != memcmp(_XzY0x1E7, o->mod, o->modLen)))
+   {
+      psa_reset_key_attributes(&attributes);
+      return 0;
+   }
+   psa_reset_key_attributes(&attributes);
+   return 1;
+}
+#endif
 
 
 #if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
@@ -93107,7 +96398,10 @@ static sharkssl_PEM_RetVal tcpudpnofold(SharkSslCertKey *disableclock, U8 *sourc
    
    memset(sourcerouting, 0, signaldefined);
    sourcerouting += signaldefined;
-   memmove(sourcerouting, disableclock->exp, expLen);
+   if (expLen)
+   {
+      memmove(sourcerouting, disableclock->exp, expLen);
+   }
    sourcerouting += expLen;
    modLen = loaderbinfmt(disableclock->modLen, disableclock->expLen);
    #if SHARKSSL_USE_ECC
@@ -93344,6 +96638,47 @@ static sharkssl_PEM_RetVal debugmonitors(const char *pxa270flash, key_enc_type d
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
 SHARKSSL_API int sharkssl_PEM_PBKDF2(U8 *dk, const char *pxa270flash, const char *softresetcomplete, U32 singleftoui, U32 syskeyunlock, U16 registerioapic, U8 configwrite)
 {
+   #if SHARKSSL_PSA_CONSUMER
+   psa_algorithm_t _XzY0x2AD;
+
+   if (!pxa270flash)
+   {
+      return -1;
+   }
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA1
+      case SHARKSSL_HASHID_SHA1: 
+         _XzY0x2AD = PSA_ALG_SHA_1; 
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_224
+      case SHARKSSL_HASHID_SHA224: 
+         _XzY0x2AD = PSA_ALG_SHA_224; 
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256: 
+         _XzY0x2AD = PSA_ALG_SHA_256; 
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384: 
+         _XzY0x2AD = PSA_ALG_SHA_384; 
+         break;
+      #endif
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512: 
+         _XzY0x2AD = PSA_ALG_SHA_512; 
+         break;
+      #endif
+      default: 
+         return -1;
+   }
+   return SharkSslPSAPBKDF2_derive(dk, (const U8*)pxa270flash, (const U8*)softresetcomplete,
+                                    PSA_ALG_PBKDF2_HMAC(_XzY0x2AD), (U32)strlen(pxa270flash),
+                                    singleftoui, syskeyunlock, registerioapic);
+   #else
    SharkSslHMACCtx registermcasp;
    U8 handledomain[4], chargerplatform[SHARKSSL_MAX_HASH_LEN];
    U32 i;
@@ -93399,6 +96734,7 @@ SHARKSSL_API int sharkssl_PEM_PBKDF2(U8 *dk, const char *pxa270flash, const char
       }
    }
    return 0;
+   #endif
 }
 #endif
 
@@ -93934,6 +97270,7 @@ static sharkssl_PEM_RetVal clusterpower(const char *logicpwrst, const char *pxa2
                      baFree(sourcerouting);
                      return (sharkssl_PEM_RetVal)l;
                   }
+                  pernodememory = sharkrestart.len;  
                   goto _plain_PKCS8_parsing;
                   #endif  
                   #else
@@ -93949,22 +97286,22 @@ static sharkssl_PEM_RetVal clusterpower(const char *logicpwrst, const char *pxa2
 
 
 
-static sharkssl_PEM_RetVal cpuidledevice(const char **begin, const char **end)
+static sharkssl_PEM_RetVal cpuidledevice(const char **_XzY0x265, const char **end)
 {
-   *begin = sharkStrstr(*begin, "\055\055\055\055\055\102\105\107\111\116");
-   if (*begin)
+   *_XzY0x265 = sharkStrstr(*_XzY0x265, "\055\055\055\055\055\102\105\107\111\116");
+   if (*_XzY0x265)
    {
-      *begin = sharkStrstr(*begin, "\103\105\122\124\111\106\111\103\101\124\105\055\055\055\055\055");
-      if (NULL == *begin)
+      *_XzY0x265 = sharkStrstr(*_XzY0x265, "\103\105\122\124\111\106\111\103\101\124\105\055\055\055\055\055");
+      if (NULL == *_XzY0x265)
       {
          return SHARKSSL_PEM_CERT_UNRECOGNIZED_FORMAT;
       }
-      *begin += 16;  
-      while (('\015' == **begin) || ('\012' == **begin))
+      *_XzY0x265 += 16;  
+      while (('\015' == **_XzY0x265) || ('\012' == **_XzY0x265))
       {
-         (*begin)++;
+         (*_XzY0x265)++;
       }
-      *end = sharkStrstr(*begin, "\055\055\055\055\055\105\116\104");
+      *end = sharkStrstr(*_XzY0x265, "\055\055\055\055\055\105\116\104");
       if (NULL == *end)
       {
          return SHARKSSL_PEM_CERT_UNRECOGNIZED_FORMAT;
@@ -93975,12 +97312,18 @@ static sharkssl_PEM_RetVal cpuidledevice(const char **begin, const char **end)
 
 
 
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API SharkSslKey sharkssl_PEM_extractPublicKey_ext(const char *allowresize, U8 *earlyconsole);
+#endif
+
+
 SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(const char *allowresize, const char *logicpwrst,
                                               const char *pxa270flash, SharkSslCert *psizecompute)
 {
    U8 *ptr;
    const char *cbeg, *cend = NULL;
-   sharkssl_PEM_RetVal ret = clusterpower(logicpwrst, pxa270flash, psizecompute);
+   sharkssl_PEM_RetVal ret;
+   U8 _XzY0x2DA;
    U32 pernodememory = 0;  
    U32 pxafbmodes;
    U8  rdlo12rdhi16rn0rm8rwflags;
@@ -93988,16 +97331,31 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(const char *allowresize, const cha
    U8  devicerelease;
    #endif
 
-   if ((SHARKSSL_PEM_OK_PUBLIC == ret) && (allowresize))
+   #if SHARKSSL_PSA_CONSUMER
+   if ((!logicpwrst) && allowresize)
+   {
+      U8 earlyconsole;
+      *psizecompute = (SharkSslCert)sharkssl_PEM_extractPublicKey_ext(allowresize, &earlyconsole);
+      ret = *psizecompute ? SHARKSSL_PEM_OK_PUBLIC : SHARKSSL_PEM_CERT_UNSUPPORTED_TYPE;
+   }
+   else
+   #endif
+   {
+      ret = clusterpower(logicpwrst, pxa270flash, psizecompute);
+   }
+   _XzY0x2DA = (SHARKSSL_PEM_OK_PUBLIC == ret);
+   #if (!SHARKSSL_PSA_CONSUMER)
+   if ((SHARKSSL_PEM_OK_PUBLIC == ret) && allowresize)
    {
       return SHARKSSL_PEM_KEY_PRIVATE_KEY_REQUIRED;
    }
+   #endif
    if (ret >= 0)  
    {
       pernodememory = SharkSslKey_vectSize((SharkSslKey)*psizecompute);
    }
    
-   if ((SHARKSSL_PEM_OK != ret) || (!allowresize))
+   if ((ret < 0) || (!allowresize))
    {
       if (ret >= 0)
       {
@@ -94022,6 +97380,7 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(const char *allowresize, const cha
    {
       _sharkssl_PEM_free_ret:
       baFree((void*)*psizecompute);
+      *psizecompute = NULL;
       return ret;
    }
    if (cbeg)
@@ -94034,6 +97393,11 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(const char *allowresize, const cha
       pxafbmodes += (U32)(cend - cbeg);
       #if SHARKSSL_ENABLE_CERT_CHAIN
       devicerelease++;
+      if (devicerelease > 16)
+      {
+         ret = SHARKSSL_PEM_CERT_UNSUPPORTED_TYPE;
+         goto _sharkssl_PEM_free_ret;
+      }
       cbeg = cend;
       goto _sharkssl_PEM_scan_next_cert;
       #endif
@@ -94096,12 +97460,12 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(const char *allowresize, const cha
       }
    }
    #endif
-   return SHARKSSL_PEM_OK;
+   return _XzY0x2DA ? SHARKSSL_PEM_OK_PUBLIC : SHARKSSL_PEM_OK;
 }
 
 
 
-#if ((SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_ECDSA_API) && \
+#if ((SHARKSSL_ENABLE_RSA_API || SHARKSSL_ENABLE_ECDSA_API || SHARKSSL_PSA_CONSUMER) && \
     ((SHARKSSL_SSL_CLIENT_CODE && (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)) || \
      (SHARKSSL_SSL_SERVER_CODE)))
 SHARKSSL_API SharkSslKey sharkssl_PEM_extractPublicKey_ext(const char *allowresize, U8 *earlyconsole)
@@ -94209,7 +97573,10 @@ SHARKSSL_API SharkSslKey sharkssl_PEM_extractPublicKey_ext(const char *allowresi
    {
       *cbeg++ = 0;
    }
-   memcpy(cbeg, certParam.certKey.exp, kco);
+   if (kco)
+   {
+      memcpy(cbeg, certParam.certKey.exp, kco);
+   }
    cbeg += kco;
    memcpy(cbeg, certParam.certKey.mod, pxafbmodes);
    baFree(aemifresources);
@@ -94343,18 +97710,28 @@ int writemessage(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, 
    if (seepromprobe == SHARKSSL_RSA_PKCS1_PADDING)
    {
       
-      if ((*in++ != 0x00) || (*in++ != 0x02))
+      U32 good, setupiocoherency, _XzY0x257;
+      U16 i, sep;
+
+      if (creategroup < 4)
       {
          return (int)SHARKSSL_RSA_PKCS1_PADDING_ERROR;
       }
-      creategroup -= 2;
-      while ((--creategroup) && (*in++ != 0x00))
+      good = (((U32)in[0] | ((U32)in[1] ^ 0x02)) - 1) >> 31;
+      setupiocoherency = 0;
+      sep = 0;
+      for (i = 2; i < (U16)(creategroup - 1); i++)
       {
+         _XzY0x257 = ((U32)in[i] - 1) >> 31;
+         sep |= (U16)(i & (U16)(0 - (_XzY0x257 & (setupiocoherency ^ 1))));
+         setupiocoherency |= _XzY0x257;
       }
-      if (0 == creategroup)
+      if (0 == (good & setupiocoherency))
       {
          return (int)SHARKSSL_RSA_PKCS1_PADDING_ERROR;
       }
+      in += sep + 1;
+      creategroup = (U16)(creategroup - sep - 1);
    }
    #endif
    memmove(out, in, creategroup);
@@ -94870,15 +98247,7 @@ U16 relocationchain(SharkSslCertKey *disableclock)
    U16 len = mousethresh(disableclock->expLen);
    if (len && (len < 0x70))
    {
-      len <<= 1;
-      len += 8;
-      #if SHARKSSL_ECC_USE_SECP521R1
-      if (len >= 0x80)
-      {
-         len++;
-      }
-      #endif
-      return len;
+      return _XzY0x2F6(len);
    }
    return 0;
 }
@@ -95561,6 +98930,9 @@ RecIoIter_doResource(RecIoIter* o, const char* forcereload, const char* to)
    return sffsdrnandflash;
 }
 
+#if SHARKSSL_PSA_CONSUMER == 0
+
+
 
 #ifndef BA_LIB
 #define BA_LIB
@@ -95574,7 +98946,7 @@ RecIoIter_doResource(RecIoIter* o, const char* forcereload, const char* to)
 
 void traceaddress(shtype_t *o, U16 writepmresrn, void *alloccontroller)
 {
-   #if ((SHARKSSL_BIGINT_WORDSIZE > 8) && (!(SHARKSSL_UNALIGNED_ACCESS)))
+   #if (!(SHARKSSL_UNALIGNED_ACCESS))
    baAssert(0 == ((unsigned int)(UPTR)alloccontroller & computereturn));  
    #endif
    baAssert((sizeof(U64) == 8) && (sizeof(S64) == 8));
@@ -95666,11 +99038,7 @@ void shtype_t_swapConditional(shtype_t *o1, shtype_t *o2, U32 swapFlag)
 
 
 
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
-#if (SHARKSSL_BIGINT_WORDSIZE != 32)
-#error SharkSSL optimized big int library requires SHARKSSL_BIGINT_WORDSIZE = 32
-#endif
-#else
+#if (!SHARKSSL_OPTIMIZED_BIGINT_ASM)
 shtype_tWord updatepmull(shtype_t *o1,
                                       const shtype_t *o2)
 {
@@ -95937,14 +99305,9 @@ void shtype_t_mult_(const shtype_t *o1,
          s += *--pr + ((shtype_tDoubleWord)a * a);
          *pr-- = (shtype_tWord)s;
          s >>= SHARKSSL_BIGINT_WORDSIZE;
-         #if (!SHARKSSL_BIGINT_TIMING_RESISTANT)
-         if (s)
-         #endif
-         {
-            s += *pr;
-            *pr = (shtype_tWord)s;
-            s >>= SHARKSSL_BIGINT_WORDSIZE;
-         }
+         s += *pr;
+         *pr = (shtype_tWord)s;
+         s >>= SHARKSSL_BIGINT_WORDSIZE;
       }
    }
 }
@@ -96005,7 +99368,6 @@ void envdatamcheck(shtype_t *injectexception,
          {
             dr.beg[0] = (shtype_tWord)(-1);
          }
-         #if (SHARKSSL_BIGINT_WORDSIZE == 32)
          {
             shtype_t dd, rr;
             shtype_tWord R[3];  
@@ -96057,27 +99419,6 @@ void envdatamcheck(shtype_t *injectexception,
                dr.beg[0] = (shtype_tWord)(-1);
             }
          }
-         #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-         {
-            U64 d1 = ((U64)(tmp2.beg[0]) << 32) | ((U32)(tmp2.beg[1]) << 16) | tmp2.beg[2];
-            U32 d2 = ((U32)(mod->beg[0]) << 16) | mod->beg[1];
-            dr.beg[0] = (U16)((U64)d1/(U32)d2);
-            if ((d1 >= d2) && (dr.beg[0] == 0))
-            {
-               dr.beg[0] = (shtype_tWord)(-1);
-            }
-         }
-         #elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-         {
-            U32 d1 = ((U32)(tmp2.beg[0]) << 16) | ((U16)(tmp2.beg[1]) << 8) | tmp2.beg[2];
-            U16 d2 = ((U16)(mod->beg[0]) << 8) | mod->beg[1];
-            dr.beg[0] = (U8)((U32)d1/(U16)d2);
-            if ((d1 >= d2) && (dr.beg[0] == 0))
-            {
-               dr.beg[0] = (shtype_tWord)(-1);
-            }
-         }
-         #endif
          hotplugpgtable(&dm, &dr, &tmp1);
          while (!(timerwrite(&tmp2, &tmp1)))
          {
@@ -96113,9 +99454,7 @@ int suspendfinish(shtype_t *injectexception,
    flash1resources += (flash1resources << 1);
    flash1resources -= mod->len;
    flash1resources++;
-   #if (SHARKSSL__M > 1)
    flash1resources *= SHARKSSL__M;
-   #endif
    afterhandler = (shtype_tWord*)baMalloc(pcmciapdata(flash1resources));
    if (afterhandler == NULL)
    {
@@ -96137,56 +99476,52 @@ int suspendfinish(shtype_t *injectexception,
 }
 
 
-#if (SHARKSSL_ENABLE_ECDSA && SHARKSSL_ECC_TIMING_RESISTANT && SHARKSSL_ECC_USE_SECP256R1 && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+#if (SHARKSSL_ENABLE_ECDSA && (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1) && (!SHARKSSL_ECDSA_ONLY_VERIFY))
 
-void shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
+void shtype_t_moduloOrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
 {
-   shtype_tWord remainder[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
-   shtype_tWord _XzY0x20E[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
+   shtype_tWord remainder[SHARKSSL_ORDER_FIXED_WORDS + 1];
+   shtype_tWord _XzY0x20E[SHARKSSL_ORDER_FIXED_WORDS + 1];
    shtype_tDoubleWord subtraction;
-   shtype_tWord updatecause, carry, nextCarry, _XzY0x184, fpemulthreshold;
-   U16 i, j, bit, inputWords;
-   const U16 writepmresrn = (U16)(256 / SHARKSSL_BIGINT_WORDSIZE);
+   shtype_tWord updatecause, videoprobe, carry, _XzY0x184, fpemulthreshold;
+   U16 i, j, bit, inputWords, totalWords;
+   const U16 writepmresrn = _XzY0x1E2->len;
 
-   baAssert((_XzY0x1E2->len == writepmresrn) && (o->len >= writepmresrn) && (o->len <= (writepmresrn << 1)) &&
-            (o->beg == o->mem));
+   baAssert((writepmresrn <= SHARKSSL_ORDER_FIXED_WORDS) && (o->len >= writepmresrn) && (o->beg == o->mem));
    inputWords = o->len;
+   totalWords = (inputWords > (writepmresrn << 1)) ? inputWords : (U16)(writepmresrn << 1);
    memset(remainder, 0, sizeof(remainder));
-   for (i = 0; i < (writepmresrn << 1); i++)
+   memset(_XzY0x20E, 0, sizeof(_XzY0x20E));
+   fpemulthreshold = 0;
+   for (i = 0; i < totalWords; i++)
    {
       updatecause = 0;
-      if (i >= ((writepmresrn << 1) - inputWords))
+      if (i >= (totalWords - inputWords))
       {
-         updatecause = o->beg[i - ((writepmresrn << 1) - inputWords)];
+         updatecause = o->beg[i - (totalWords - inputWords)];
       }
       for (bit = 0; bit < SHARKSSL_BIGINT_WORDSIZE; bit++)
       {
+         
          carry = (shtype_tWord)((updatecause >> (SHARKSSL_BIGINT_WORDSIZE - 1 - bit)) & 1);
-         for (j = 0; j <= writepmresrn; j++)
-         {
-            nextCarry = (shtype_tWord)(remainder[j] >> (SHARKSSL_BIGINT_WORDSIZE - 1));
-            remainder[j] = (shtype_tWord)((remainder[j] << 1) | carry);
-            carry = nextCarry;
-         }
          _XzY0x184 = 0;
          for (j = 0; j <= writepmresrn; j++)
          {
+            videoprobe = (shtype_tWord)((_XzY0x20E[j] & fpemulthreshold) | (remainder[j] & ~fpemulthreshold));
+            remainder[j] = (shtype_tWord)((videoprobe << 1) | carry);
+            carry = (shtype_tWord)(videoprobe >> (SHARKSSL_BIGINT_WORDSIZE - 1));
             subtraction = (shtype_tDoubleWord)remainder[j] -
                           (j == writepmresrn ? 0 : _XzY0x1E2->beg[writepmresrn - 1 - j]) - _XzY0x184;
             _XzY0x20E[j] = (shtype_tWord)subtraction;
             _XzY0x184 = (shtype_tWord)((subtraction >> SHARKSSL_BIGINT_WORDSIZE) & 1);
          }
          fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(_XzY0x184 ^ 1));
-         for (j = 0; j <= writepmresrn; j++)
-         {
-            remainder[j] = (shtype_tWord)((_XzY0x20E[j] & fpemulthreshold) | (remainder[j] & ~fpemulthreshold));
-         }
       }
    }
    sharkssl_clear(o->mem, (U32)(inputWords * SHARKSSL__M));
    for (j = 0; j < writepmresrn; j++)
    {
-      o->mem[j] = remainder[writepmresrn - 1 - j];
+      o->mem[j] = (shtype_tWord)((_XzY0x20E[writepmresrn - 1 - j] & fpemulthreshold) | (remainder[writepmresrn - 1 - j] & ~fpemulthreshold));
    }
    o->beg = o->mem;
    o->len = writepmresrn;
@@ -96196,15 +99531,15 @@ void shtype_t_moduloP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1E2)
 
 
 
-void shtype_t_addmodP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1C0, const shtype_t *_XzY0x1E2)
+void shtype_t_addmodOrderFixed(shtype_t *o, const shtype_t *_XzY0x1C0, const shtype_t *_XzY0x1E2)
 {
-   shtype_tWord sum[(256 / SHARKSSL_BIGINT_WORDSIZE) + 1];
+   shtype_tWord sum[SHARKSSL_ORDER_FIXED_WORDS + 1];
    shtype_t videoprobe;
    shtype_tDoubleWord carry = 0;
    U16 i;
-   const U16 writepmresrn = (U16)(256 / SHARKSSL_BIGINT_WORDSIZE);
+   const U16 writepmresrn = _XzY0x1E2->len;
 
-   baAssert((o->len == writepmresrn) && (_XzY0x1C0->len <= writepmresrn) && (_XzY0x1E2->len == writepmresrn) && (o->beg == o->mem));
+   baAssert((writepmresrn <= SHARKSSL_ORDER_FIXED_WORDS) && (o->len == writepmresrn) && (_XzY0x1C0->len <= writepmresrn) && (o->beg == o->mem));
    
    for (i = 0; i < writepmresrn; i++)
    {
@@ -96214,8 +99549,8 @@ void shtype_t_addmodP256OrderFixed(shtype_t *o, const shtype_t *_XzY0x1C0, const
    }
    sum[0] = (shtype_tWord)carry;
    traceaddress(&videoprobe, (U16)(writepmresrn + 1), sum);
-   shtype_t_moduloP256OrderFixed(&videoprobe, _XzY0x1E2);
-   memcpy(o->mem, videoprobe.beg, 256 / 8);
+   shtype_t_moduloOrderFixed(&videoprobe, _XzY0x1E2);
+   memcpy(o->mem, videoprobe.beg, writepmresrn * SHARKSSL__M);
    o->beg = o->mem;
    o->len = writepmresrn;
    sharkssl_clear(sum, (U32)sizeof(sum));
@@ -96233,13 +99568,9 @@ shtype_tWord remapcfgspace(const shtype_t *mod)
    m0 = mod->beg[mod->len - 1];
    mu = (shtype_tWord)((((m0 + 2) & 4) << 1) + m0);
    mu = (shtype_tWord)((shtype_tDoubleWord)mu * (2 - (shtype_tDoubleWord)m0 * mu));
-   #if (SHARKSSL_BIGINT_WORDSIZE >= 16)
-   mu = (shtype_tWord)((shtype_tDoubleWord)mu * (2 - (shtype_tDoubleWord)m0 * mu));
-   #endif
-   #if (SHARKSSL_BIGINT_WORDSIZE == 32)
    mu = (shtype_tWord)((shtype_tDoubleWord)mu * (2 - (shtype_tDoubleWord)m0 * mu));
    mu = (shtype_tWord)((shtype_tDoubleWord)mu * (2 - (shtype_tDoubleWord)m0 * mu));
-   #endif
+   mu = (shtype_tWord)((shtype_tDoubleWord)mu * (2 - (shtype_tDoubleWord)m0 * mu));
    mu = (shtype_tWord)(~mu + 1);
    return mu;
 }
@@ -96300,17 +99631,12 @@ void writebytes(const shtype_t *o1,
          *pr-- = (shtype_tWord)s;
          c = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
       }
-      #if (SHARKSSL_BIGINT_TIMING_RESISTANT)
       while (pr >= deltadevices->beg);
-      #else
-      while (c > 0);
-      #endif
-      
    }
 
    deltadevices->len = (U16)(mod->len + 1);
 
-   #if (SHARKSSL_BIGINT_TIMING_RESISTANT)
+   
    m0 = updatepmull(deltadevices, mod);
    p1 = &deltadevices->beg[deltadevices->len - 1];
    p2 = &mod->beg[mod->len - 1];
@@ -96321,12 +99647,6 @@ void writebytes(const shtype_t *o1,
       *p1-- = (shtype_tWord)s;
    }
    *p1 = (shtype_tWord)((shtype_tDoubleWord)*p1 + (s >> SHARKSSL_BIGINT_WORDSIZE));
-   #else
-   if (timerwrite(deltadevices, mod))
-   {
-      updatepmull(deltadevices, mod);
-   }
-   #endif
 
    deltadevices->beg++;
    deltadevices->len--;
@@ -96605,8 +99925,252 @@ int chunkmutex(const shtype_t *validconfig,
 #endif  
 
 
+#if SHARKSSL_RSA_PRIVATE_CT
 
-#if ((SHARKSSL_USE_ECC) || (SHARKSSL_ENABLE_RSAKEY_CREATE && SHARKSSL_ENABLE_RSA))
+
+
+void shtype_t_addmodCT(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord carry, _XzY0x184, fpemulthreshold;
+   U16 i;
+
+   carry = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] + o2->beg[i] + carry;
+      o1->beg[i] = (shtype_tWord)s;
+      carry = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+   }
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - mod->beg[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(carry | (_XzY0x184 ^ 1)));  
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - (mod->beg[i] & fpemulthreshold) - _XzY0x184;
+      o1->beg[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+}
+
+
+
+void shtype_t_submodCT(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord carry, _XzY0x184, fpemulthreshold;
+   U16 i;
+
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - o2->beg[i] - _XzY0x184;
+      o1->beg[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(0 - _XzY0x184);  
+   carry = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] + (mod->beg[i] & fpemulthreshold) + carry;
+      o1->beg[i] = (shtype_tWord)s;
+      carry = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+   }
+}
+
+
+
+int shtype_t_montR2CT(const shtype_t *mod, shtype_t *r2)
+{
+   shtype_t a;
+   shtype_tDoubleWord s;
+   shtype_tWord *x, *tmp_b, w, gpiolibfbank, _XzY0x184, fpemulthreshold, mu;
+   U32 i, enablekernel, dm9k1resource;
+   U16 j, sqr;
+
+   dm9k1resource = pcmciapdata(((U32)2 * mod->len + 1) * SHARKSSL__M);
+   tmp_b = (shtype_tWord*)baMalloc(dm9k1resource);
+   if (tmp_b == NULL)
+   {
+      return 1;
+   }
+   traceaddress(&a, (U16)(2 * mod->len + 1), selectaudio(tmp_b));
+   enablekernel = (U32)mod->len * SHARKSSL_BIGINT_WORDSIZE;
+   for (sqr = 0; 0 == (enablekernel & 1); sqr++)
+   {
+      enablekernel >>= 1;
+   }
+
+   r2->beg = r2->mem;
+   r2->len = mod->len;
+   deviceparse(r2);
+   x = r2->beg;
+   x[mod->len - 1] = 1;
+   for (i = ((U32)mod->len * SHARKSSL_BIGINT_WORDSIZE) + enablekernel; i > 0; i--)
+   {
+      
+      gpiolibfbank = _XzY0x184 = 0;
+      for (j = mod->len; j-- > 0; )
+      {
+         w = x[j];
+         s = (shtype_tDoubleWord)(shtype_tWord)((shtype_tWord)(w << 1) | gpiolibfbank) - mod->beg[j] - _XzY0x184;
+         gpiolibfbank = (shtype_tWord)(w >> (SHARKSSL_BIGINT_WORDSIZE - 1));
+         x[j] = (shtype_tWord)s;
+         _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+      }
+      
+      fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(_XzY0x184 & (gpiolibfbank ^ 1)));
+      gpiolibfbank = 0;
+      for (j = mod->len; j-- > 0; )
+      {
+         s = (shtype_tDoubleWord)x[j] + (mod->beg[j] & fpemulthreshold) + gpiolibfbank;
+         x[j] = (shtype_tWord)s;
+         gpiolibfbank = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+      }
+   }
+
+   mu = remapcfgspace(mod);
+   while (sqr--)
+   {
+      writebytes(r2, r2, &a, mod, mu);
+      memcpy(x, a.beg, mod->len * SHARKSSL__M);
+   }
+
+   sharkssl_clear(tmp_b, dm9k1resource);
+   baFree((void*)tmp_b);
+   return 0;
+}
+
+
+
+int shtype_t_expmodCT(const shtype_t *validconfig,
+                            const shtype_t *exp,
+                            const shtype_t *mod,
+                            const shtype_t *r2,
+                            shtype_t *res)
+{
+   shtype_t a, b, sel, one, hi, lo, *r, *s, *t;
+   shtype_tWord *tmp_b, *tab, mu, fpemulthreshold, word1;
+   U32 dm9k1resource, bit;
+   U16 n, i, j, idx, nbits;
+
+   n = mod->len;
+   if ((validconfig->len > (2 * n)) || (0 == exp->len))
+   {
+      return 1;
+   }
+
+   
+   dm9k1resource = ((U32)2 * (2 * n + 1)) + (((U32)(1 << SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K) + 1) * n);
+   dm9k1resource = pcmciapdata(dm9k1resource * SHARKSSL__M);
+   if ((U32)(size_t)dm9k1resource != dm9k1resource)
+   {
+      return 1;
+   }
+   tmp_b = (shtype_tWord*)baMalloc(dm9k1resource);
+   if (tmp_b == NULL)
+   {
+      return 1;
+   }
+   tab = (shtype_tWord*)selectaudio(tmp_b);
+   traceaddress(&a, (U16)(2 * n + 1), tab);
+   tab += 2 * n + 1;
+   traceaddress(&b, (U16)(2 * n + 1), tab);
+   tab += 2 * n + 1;
+   traceaddress(&sel, n, tab);
+   tab += n;
+   word1 = 1;
+   traceaddress(&one, 1, &word1);
+   mu = remapcfgspace(mod);
+
+   
+   if (validconfig->len > n)
+   {
+      traceaddress(&hi, (U16)(validconfig->len - n), validconfig->beg);
+      traceaddress(&lo, n, &validconfig->beg[validconfig->len - n]);
+      writebytes(r2, r2, &a, mod, mu);    
+      writebytes(&hi, &a, &b, mod, mu);   
+      writebytes(&lo, r2, &a, mod, mu);   
+      shtype_t_addmodCT(&b, &a, mod);
+      memcpy(&tab[n], b.beg, n * SHARKSSL__M);
+   }
+   else
+   {
+      writebytes(validconfig, r2, &a, mod, mu);
+      memcpy(&tab[n], a.beg, n * SHARKSSL__M);
+   }
+
+   
+   writebytes(r2, &one, &a, mod, mu);
+   memcpy(&tab[0], a.beg, n * SHARKSSL__M);
+   traceaddress(&lo, n, &tab[n]);
+   for (i = 2; i < (1 << SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K); i++)
+   {
+      traceaddress(&hi, n, &tab[(i - 1) * n]);
+      writebytes(&hi, &lo, &a, mod, mu);
+      memcpy(&tab[i * n], a.beg, n * SHARKSSL__M);
+   }
+
+   
+   a.beg = a.mem + 1;
+   a.len = n;
+   memcpy(a.beg, &tab[0], n * SHARKSSL__M);
+   r = &a;
+   s = &b;
+
+   
+   bit = (U32)exp->len * SHARKSSL_BIGINT_WORDSIZE;
+   nbits = (U16)(bit % SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K);
+   if (0 == nbits)
+   {
+      nbits = SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K;
+   }
+   while (bit)
+   {
+      idx = 0;
+      for (i = nbits; i > 0; i--)
+      {
+         writebytes(r, r, s, mod, mu);
+         t = r; r = s; s = t;
+         bit--;
+         idx = (U16)((idx << 1) | ((exp->beg[exp->len - 1 - (bit / SHARKSSL_BIGINT_WORDSIZE)] >> (bit % SHARKSSL_BIGINT_WORDSIZE)) & 1));
+      }
+
+      
+      deviceparse(&sel);
+      for (i = 0; i < (1 << SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K); i++)
+      {
+         fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)((((U32)i ^ idx) - 1) >> 31));
+         for (j = 0; j < n; j++)
+         {
+            sel.beg[j] |= (shtype_tWord)(tab[(i * n) + j] & fpemulthreshold);
+         }
+      }
+      writebytes(r, &sel, s, mod, mu);
+      t = r; r = s; s = t;
+      nbits = SHARKSSL_BIGINT_EXP_SLIDING_WINDOW_K;
+   }
+
+   
+   writebytes(r, &one, s, mod, mu);
+   res->beg = res->mem;
+   res->len = n;
+   memcpy(res->beg, s->beg, n * SHARKSSL__M);
+
+   sharkssl_clear(tmp_b, dm9k1resource);
+   baFree((void*)tmp_b);
+   return 0;
+}
+#endif  
+
+
+
+#if (SHARKSSL_USE_ECC || SHARKSSL_ENABLE_RSA)
 #if (!SHARKSSL_OPTIMIZED_BIGINT_ASM)
 void backlightpdata(shtype_t *o)
 {
@@ -96823,9 +100387,7 @@ int iommumapping(shtype_t *o,
    }
    flash1resources += 8;
 
-   #if (SHARKSSL__M > 1)
    flash1resources *= SHARKSSL__M;
-   #endif
    afterhandler = (shtype_tWord*)baMalloc(pcmciapdata(flash1resources));
    if (afterhandler == NULL)
    {
@@ -96841,15 +100403,6 @@ int iommumapping(shtype_t *o,
    {
       ioswabwdefault(o, mod, (shtype_tWord*)selectaudio(afterhandler));
    }
-   #if (SHARKSSL_BIGINT_WORDSIZE == 8)
-   while (o->len < mod->len)
-   {
-      baAssert(o->beg > o->mem);
-      o->len++;
-      o->beg--;
-      baAssert(0 == o->beg[0]);
-   }
-   #endif
    sharkssl_clear(afterhandler, (U32)pcmciapdata(flash1resources));
    baFree(afterhandler);
    return 0;
@@ -96865,25 +100418,25 @@ static int irqwakeintmask(shtype_t *o)
    U8 *afterhandler, *p;
    shtype_t N, R, A, Y, M, ONE;
    int ret = 0;
-   U16 s, j, width = (U16)(o->len * SHARKSSL__M);
+   U16 s, j, _XzY0x2F3 = (U16)(o->len * SHARKSSL__M);
    U8 round, _XzY0x1FE;
 
-   afterhandler = (U8*)baMalloc(pcmciapdata(width * 6));
+   afterhandler = (U8*)baMalloc(pcmciapdata(_XzY0x2F3 * 6));
    if (!afterhandler)
    {
       return -2;
    }
    p = (U8*)selectaudio(afterhandler);
    onenandpartitions(&ONE, SHARKSSL_BIGINT_WORDSIZE, &one);
-   onenandpartitions(&N, width * 8, p);
-   p += width;
-   onenandpartitions(&R, width * 8, p);
-   p += width;
-   onenandpartitions(&A, width * 8, p);
-   p += width;
-   onenandpartitions(&Y, width * 8, p);
-   p += width;
-   onenandpartitions(&M, width * 16, p);
+   onenandpartitions(&N, _XzY0x2F3 * 8, p);
+   p += _XzY0x2F3;
+   onenandpartitions(&R, _XzY0x2F3 * 8, p);
+   p += _XzY0x2F3;
+   onenandpartitions(&A, _XzY0x2F3 * 8, p);
+   p += _XzY0x2F3;
+   onenandpartitions(&Y, _XzY0x2F3 * 8, p);
+   p += _XzY0x2F3;
+   onenandpartitions(&M, _XzY0x2F3 * 16, p);
    unassignedvector(o, &N);
    updatepmull(&N, &ONE);
    unassignedvector(&N, &R);
@@ -96897,7 +100450,7 @@ static int irqwakeintmask(shtype_t *o)
    {
       for (_XzY0x1FE = 0; _XzY0x1FE < 128; ++_XzY0x1FE)
       {
-         if (sharkssl_rng((U8*)A.beg, width) < 0)
+         if (sharkssl_rng((U8*)A.beg, _XzY0x2F3) < 0)
          {
             ret = -1;
             goto iommucreate;
@@ -96944,7 +100497,7 @@ static int irqwakeintmask(shtype_t *o)
    }
 
 iommucreate:
-   sharkssl_clear(afterhandler, (U32)pcmciapdata(width * 6));
+   sharkssl_clear(afterhandler, (U32)pcmciapdata(_XzY0x2F3 * 6));
    baFree(afterhandler);
    return ret;
 }
@@ -96956,12 +100509,8 @@ static U16 pc104irqmasks(shtype_t *o, U16 div)
    U16 i;
    for (i = 0; i < o->len; ++i)
    {
-      #if (SHARKSSL_BIGINT_WORDSIZE == 32)
       mod = ((mod << 16) | (o->beg[i] >> 16)) % div;
       mod = ((mod << 16) | (o->beg[i] & 0xffff)) % div;
-      #else
-      mod = ((mod << SHARKSSL_BIGINT_WORDSIZE) | o->beg[i]) % div;
-      #endif
    }
    return (U16)mod;
 }
@@ -97100,8 +100649,8 @@ int translateaddress(const shtype_t *o1,
 #endif
 
 #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_X25519_DEDICATED)
-#if (SHARKSSL_X25519_ASM && (!defined(__ARM_FEATURE_DSP)) && ((!defined(__RX__)) || (!defined(__RX_LITTLE_ENDIAN__))) && ((!defined(__ICCRX__)) || (!__LITTLE_ENDIAN__)))
-#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support or little-granuleshift GNU/IAR RX
+#if (SHARKSSL_X25519_ASM && (!defined(__ARM_FEATURE_DSP)) && ((!defined(__ARM_ARCH_ISA_THUMB)) || (__ARM_ARCH_ISA_THUMB != 1)) && ((!defined(__RX__)) || (!defined(__RX_LITTLE_ENDIAN__))) && ((!defined(__ICCRX__)) || (!__LITTLE_ENDIAN__)))
+#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support, ARMv6-M/ARMv8-M Baseline or little-granuleshift GNU/IAR RX
 #endif
 #if SHARKSSL_X25519_ASM
 typedef struct { U32 w[8]; } fe25519;
@@ -97660,8 +101209,8 @@ int shtype_t_X25519_mult(shtype_t *deltadevices, const shtype_t *k, const shtype
 
    _XzY0x15B(&x1, ub);
    memset((&z2)->w, 0, sizeof((&z2)->w));
-	memset((&x2)->w, 0, sizeof((&x2)->w)); (&x2)->w[0] = 1;
-	memset((&z3)->w, 0, sizeof((&z3)->w)); (&z3)->w[0] = 1;
+   memset((&x2)->w, 0, sizeof((&x2)->w)); (&x2)->w[0] = 1;
+   memset((&z3)->w, 0, sizeof((&z3)->w)); (&z3)->w[0] = 1;
    memcpy((&x3)->w, (&x1)->w, sizeof((&x3)->w));
 
    #if SHARKSSL_X25519_ASM
@@ -97718,6 +101267,9 @@ int shtype_t_X25519_mult(shtype_t *deltadevices, const shtype_t *k, const shtype
 }
 
 #endif  
+
+#endif
+
 
 
 
@@ -97861,25 +101413,13 @@ setuppercpu(JLexer* o, JParserVal* v)
    baAssert(asmB->buf);
    if(o->isDouble)
    {
-#ifdef NO_DOUBLE
-      U8* ptr = asmB->buf;
-      while(ptr && *ptr!='\056' && *ptr!='\145' && *ptr=='\105')
-         ptr++;
-      *ptr=0;
-      asmB->index = ptr - asmB->buf;
-      goto L_int;
-#else
       v->v.f=atof((char*)asmB->buf);
       v->t=JParserT_Double;
       if(o->sn)
          v->v.f = -v->v.f;
-#endif
    }
    else
    {
-#ifdef NO_DOUBLE
-     L_int:
-#endif
       v->t = JParserT_Int;
       if(asmB->index > 9)
       {
@@ -98540,9 +102080,8 @@ L_endParse:
 #include <string.h>
 #include <ctype.h>
 
-#ifndef EXT_SHARK_LIB
-#define sharkStrchr strchr
-#endif
+#define SHARKSSL_MAX_REFERENCE_NAME_LEN  253
+#define SHARKSSL_MAX_DNS_LABEL_LEN       63
 
 
 
@@ -98599,19 +102138,102 @@ sharkStrCaseCmp(const char *a, int enableblock, const char *b, int timerinterrup
 static int
 memblockregions(const char* cn, int cnl, const char* name, int alignresource)
 {
-   if((cn[0] == '\052') && (cn[1] == '\056') && (cnl > 2)) 
+   if((cnl > 2) && (cn[0] == '\052') && (cn[1] == '\056')) 
    {
-      char *writereg16;
+      const char *writereg16;
       
-      writereg16=sharkStrchr(name, '\056');
+      writereg16=(const char*)memchr(name, '\056', (size_t)alignresource);
       if(writereg16 && (writereg16 != name))
       {
          
          if( ! sharkStrCaseCmp(cn+2,(cnl-2),writereg16+1,alignresource - (int)(writereg16 - name) -1) )
+         {
             return 0;
+         }
       }
    }
    return -1;
+}
+
+
+static int _XzY0x2E1(const char *name, U16 alignresource)
+{
+   U16 i, auxdatalookup = 0;
+
+   if ((!name) || (0 == alignresource) || (alignresource > SHARKSSL_MAX_REFERENCE_NAME_LEN))
+   {
+      return 0;
+   }
+   for (i = 0; i < alignresource; i++)
+   {
+      U8 c = (U8)name[i];
+      if ('\056' == c)
+      {
+         if ((0 == auxdatalookup) || (auxdatalookup > SHARKSSL_MAX_DNS_LABEL_LEN))
+         {
+            return 0;
+         }
+         auxdatalookup = 0;
+      }
+      else if (((c >= '\060') && (c <= '\071')) || ((c >= '\101') && (c <= '\132')) ||
+               ((c >= '\141') && (c <= '\172')) || ('\055' == c) || ('\137' == c))
+      {
+         auxdatalookup++;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+   return ((0 < auxdatalookup) && (auxdatalookup <= SHARKSSL_MAX_DNS_LABEL_LEN));
+}
+
+
+
+static int _XzY0x2E0(const char *name, U16 alignresource)
+{
+   int pos = 0;
+
+   if ((name[0] < '\060') || (name[0] > '\071'))
+   {
+      return 0;
+   }
+   while (pos < alignresource)
+   {
+      int cachesysfs;
+      if ((name[pos] == '\060') && ((pos + 1) < alignresource) &&
+          ((name[pos + 1] == '\170') || (name[pos + 1] == '\130')))
+      {
+         pos += 2;
+         cachesysfs = pos;
+         while ((pos < alignresource) && (((name[pos] >= '\060') && (name[pos] <= '\071')) ||
+                ((name[pos] >= '\141') && (name[pos] <= '\146')) || ((name[pos] >= '\101') && (name[pos] <= '\106'))))
+         {
+            pos++;
+         }
+      }
+      else
+      {
+         cachesysfs = pos;
+         while ((pos < alignresource) && (name[pos] >= '\060') && (name[pos] <= '\071'))
+         {
+            pos++;
+         }
+      }
+      if (pos == cachesysfs)
+      {
+         return 0;
+      }
+      if (pos == alignresource)
+      {
+         return 1;
+      }
+      if (name[pos++] != '\056')
+      {
+         return 0;
+      }
+   }
+   return 1;
 }
 
 
@@ -98622,6 +102244,11 @@ sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattribu
 {
    U8 ip[4];
    int i, pos = 0;
+
+   if (!_XzY0x2E1(name, alignresource))
+   {
+      return -1;
+   }
    
    for(i = 0; i < 4; i++)
    {
@@ -98637,6 +102264,10 @@ sharkSubjectSubjectAltCmp(const char *cn, U16 registermmcsd1, U8 *programattribu
       ip[i] = (U8)videoprobe;
       if(i == 3 ? pos != alignresource : (pos == alignresource || name[pos++] != '\056'))
          break;
+   }
+   if ((i != 4) && (_XzY0x2E0(name, alignresource)))
+   {
+      return -1;
    }
    if(i != 4 && cn && registermmcsd1)
    {
@@ -98808,15 +102439,18 @@ SharkSslCon_trusted(SharkSslCon *o, const char *name, SharkSslCertInfo **cPtr)
       if(ci)
       {
          int usbsshwmod = SharkSslCon_trustedCA(o);
+         size_t alignresource;
          if( !name )
          {
             return usbsshwmod ? SharkSslConTrust_CertCn : SharkSslConTrust_None;
          }
-         if (!sharkSubjectSubjectAltCmp((const char*)ci->subject.commonName,
+         alignresource = strlen(name);
+         if ((alignresource <= SHARKSSL_MAX_REFERENCE_NAME_LEN) &&
+             (!sharkSubjectSubjectAltCmp((const char*)ci->subject.commonName,
                                         ci->subject.commonNameLen, 
                                         ci->subjectAltNamesPtr,
                                         ci->subjectAltNamesLen,
-                                        name, (U16)strlen(name)))
+                                         name, (U16)alignresource)))
          {
             return usbsshwmod ?
                dbdmastart(ci) : SharkSslConTrust_Cn;
@@ -98978,7 +102612,6 @@ JEncoder_setLong(JEncoder* o, S64 val)
 }
 
 
-#ifndef NO_DOUBLE
 int
 JEncoder_setDouble(JEncoder* o, double val)
 {
@@ -98990,7 +102623,6 @@ JEncoder_setDouble(JEncoder* o, double val)
    }
    return -1;
 }
-#endif
 
 
 int
@@ -99082,7 +102714,7 @@ JEncoder_setNull(JEncoder* o)
 }
 
 
-#ifdef NO_JVAL_DEPENDENCY
+#if !BA_ENABLE_JENCODER_JVAL
 #define JEncoder_setJV(o,val,x)                                         \
    JErr_setError(o->err, JErrT_FmtValErr, "\106\145\141\164\165\162\145\040\047\112\047\040\104\151\163\141\142\154\145\144");return -1
 #else
@@ -99107,11 +102739,7 @@ JEncoder_setJV(JEncoder* o, JVal* val, BaBool kaslroffset)
             break;
 
          case JVType_Double:
-#ifdef NO_DOUBLE
-            baAssert(0);
-#else
             JEncoder_setDouble(o, JVal_getDouble(val, o->err));
-#endif
             break;
 
          case JVType_Int:
@@ -99579,7 +103207,7 @@ U16 SharkSsl_getCacheSize(SharkSsl *o)
 #endif
 
 
-#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
+#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA || (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER))
 #if SHARKSSL_PSA_CONSUMER
 static U8 _XzY0x1FD(SharkSsl *o, SharkSslCert kernelvaddr, psa_key_id_t _XzY0x20)
 #else
@@ -99626,10 +103254,22 @@ SHARKSSL_API U8 SharkSsl_addCertificate(SharkSsl *o, SharkSslCert kernelvaddr)
          {
             goto _SharkSsl_addCertificate_exit;
          }
+         #if SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY
+         if ((!_XzY0x20) || (!coupledexynos(sourcerouting.expLen)))
+         {
+            goto _SharkSsl_addCertificate_exit;
+         }
+         #endif
          if (machinekexec(sourcerouting.expLen))
          {
             #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_RSA)
             if (!_XzY0x20)
+            {
+               goto _SharkSsl_addCertificate_exit;
+            }
+            #endif
+            #if (SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY && SHARKSSL_ENABLE_RSA)
+            if (!SharkSslCertKey_validateRSACertPSA(&sourcerouting, kernelvaddr, _XzY0x20))
             {
                goto _SharkSsl_addCertificate_exit;
             }
@@ -99644,10 +103284,27 @@ SHARKSSL_API U8 SharkSsl_addCertificate(SharkSsl *o, SharkSslCert kernelvaddr)
             {
                goto _SharkSsl_addCertificate_exit;
             }
+            #if SHARKSSL_ENABLE_ECDSA
+            if (_XzY0x20 && (!SharkSslCertKey_validateECDSACertPSA(&sourcerouting, kernelvaddr, _XzY0x20)))
+            {
+               goto _SharkSsl_addCertificate_exit;
+            }
+            #endif
             #endif
             c->certP.keyType = compatrestart;
             c->certP.keyOID =  wakeupenable(sourcerouting.modLen);
          }
+         #if (SHARKSSL_ENABLE_EDDSA && SHARKSSL_PSA_CONSUMER)
+         else if (SHARKSSL_EXPLEN_IS_KEYTYPE_EDDSA(sourcerouting.expLen))
+         {
+            if (!SharkSslCertKey_validateEdDSACertPSA(&sourcerouting, kernelvaddr, _XzY0x20))
+            {
+               goto _SharkSsl_addCertificate_exit;
+            }
+            c->certP.keyType = SHARKSSL_CLIENTCERTTYPE_EDDSA;
+            c->certP.keyOID = (sourcerouting.modLen == SHARKSSL_ED25519_PUBLIC_KEY_LEN) ? SHARKSSL_SIGNATUREALGORITHM_ED25519 : SHARKSSL_SIGNATUREALGORITHM_ED448;
+         }
+         #endif
          else  
          {
             _SharkSsl_addCertificate_exit:
@@ -99700,6 +103357,9 @@ SHARKSSL_API U8 SharkSsl_setCAListEx(SharkSsl *o, SharkSslCAList displaysetup, U
       {
          return 0;
       }
+      #if SHARKSSL_ENABLE_SESSION_CACHE
+      SharkSslSessionCache_invalidateCA(&o->sessionCache);
+      #endif
       o->caList = displaysetup;
       return 1;
    }
@@ -99774,11 +103434,7 @@ pcimtsetup(JVal* o, JVal* checkstack, JParserVal* pv, AllocatorIntf* threadclean
          o->stringLen=pv->stringLen;
          break;
       case JParserT_Double:
-#ifdef NO_DOUBLE
-         baAssert(0);
-#else
          o->v.f=pv->v.f;
-#endif
          o->type = JVType_Double;
          break;
       case JParserT_Int:
@@ -99851,12 +103507,10 @@ JVal_extractValue(JVal* o,
          u.l = va_arg(*breakpointthread, S64*);
          *u.l = JVal_getLong(o, err);
          return 0;
-#ifndef NO_DOUBLE
       case '\146':
          u.f = va_arg(*breakpointthread, double*);
          *u.f = JVal_getDouble(o, err);
          return 0;
-#endif
       case '\163':
          u.s = va_arg(*breakpointthread, const char**);
          *u.s = JVal_getString(o, err);
@@ -99928,11 +103582,9 @@ fpsimdbegin(JVal* o,
          case '\154':
             ((S64*)lcdspigpiod)[i] = JVal_getLong(o, err);
             break;
-#ifndef NO_DOUBLE
          case '\146':
             ((double*)lcdspigpiod)[i] = JVal_getDouble(o, err);
             break;
-#endif
          case '\163':
             ((const char**)lcdspigpiod)[i] = JVal_getString(o, err);
             break;
@@ -100046,10 +103698,8 @@ JVal_getInt(JVal* o, JErr* e)
    {
       if(o->type == JVType_Int)
          return o->v.d;
-#ifndef NO_DOUBLE
       if(o->type == JVType_Double)
          return (S32)o->v.f;
-#endif
       if(o->type == JVType_Long)
          return (S32)o->v.l;
       else if(o->type == JVType_Boolean)
@@ -100071,10 +103721,8 @@ JVal_getLong(JVal* o, JErr* e)
    {
       if(o->type == JVType_Long)
          return o->v.l;
-#ifndef NO_DOUBLE
       if(o->type == JVType_Double)
          return (S64)o->v.f;
-#endif
       if(o->type == JVType_Int)
          return (S64)o->v.d;
       else if(o->type == JVType_Boolean)
@@ -100088,7 +103736,6 @@ JVal_getLong(JVal* o, JErr* e)
    return 0;
 }
 
-#ifndef NO_DOUBLE
 double
 JVal_getDouble(JVal* o, JErr* e)
 {
@@ -100110,7 +103757,6 @@ JVal_getDouble(JVal* o, JErr* e)
       JErr_setTooFewParams(e);
    return 0;
 }
-#endif
 
 BaBool
 JVal_getBoolean(JVal* o, JErr* e)
@@ -100284,11 +103930,7 @@ JVal_setX(JVal* o, JErr* e, JVType t, void* v)
             o->stringLen=v ? strlen((char*)v) : 0;
             break;
          case JVType_Double:
-#ifdef NO_DOUBLE
-            o->v.l=*((S64*)v);
-#else
             o->v.f=*((double*)v);
-#endif
             break;
          case JVType_Int:
             o->v.d=*((S32*)v);
@@ -100414,6 +104056,9 @@ platformcreate(JParserValFact* o)
       AllocatorIntf_malloc(o->dAlloc, &indexnospec);
    if(v)
    {
+      
+      memset(v + o->vStackSize, 0,
+             indexnospec - o->vStackSize * sizeof(void*));
       o->vStack = v;
       o->vStackSize=(int)(indexnospec/sizeof(void*));
       return 0;
@@ -100537,11 +104182,7 @@ JValFact_mkVal(JValFact* o, JVType t, const void* uv)
                v->stringLen=strlen((const char*)uv);
             break;
          case JVType_Double:
-#ifdef NO_DOUBLE
-            v->v.l=*((S64*)uv);
-#else
             v->v.f=*((double*)uv);
-#endif
             break;
          case JVType_Int:
             v->v.d=*((S32*)uv);
@@ -101302,7 +104943,7 @@ registersubpacket(
 }
 
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 static void
 erratumworkaround(HttpSharkSslServCon* o)
 {
@@ -101370,7 +105011,7 @@ rangeparser(HttpSharkSslServCon* o)
    int sffsdrnandflash;
    HttpConnection* hCon = (HttpConnection*)o; 
    SoDispCon* soCon = (SoDispCon*)o; 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 L_tryAgain:
 #endif
    memset(&boardmanufacturer, 0, sizeof(HttpConnection));
@@ -101408,7 +105049,7 @@ L_tryAgain:
       }
       HttpSocket_close(&newSoCon->httpSocket);
    }
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
    else
    {
       HttpServer* uarchbuild = HttpConnection_getServer(hCon);
@@ -101553,7 +105194,7 @@ HttpSharkSslServCon_constructor(HttpSharkSslServCon* o,
       return;
    }
 #endif
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    if(!emulateeffective) baFatalE(FE_INCORRECT_USE,0);
    HttpConnection_constructor((HttpConnection*)o,uarchbuild,sha256start,
       (SoDispCon_DispRecEv)rangeparser);
@@ -102250,6 +105891,31 @@ void counter1clocksource(SharkSslSessionCache *commoncontiguous, U16 detectbootw
 }
 
 
+#if SHARKSSL_ENABLE_CA_LIST
+
+void SharkSslSessionCache_invalidateCA(SharkSslSessionCache *o)
+{
+   SharkSslSession *func2fixup;
+   U16 uart2hwmod;
+
+   if (0 == o->cacheSize)
+   {
+      return;
+   }
+   func2fixup = (SharkSslSession*)selectaudio(o->cache);
+   filtermatch(o);
+   for (uart2hwmod = o->cacheSize; uart2hwmod > 0; uart2hwmod--, func2fixup++)
+   {
+      if (func2fixup->cipherSuite)
+      {
+         func2fixup->flags |= SHARKSSL_SESSION_FLAG_STALE_CA;
+      }
+   }
+   helperglobal(o);
+}
+#endif
+
+
 #if (SHARKSSL_PSA_CONSUMER && SHARKSSL_TLS_1_2)
 static int _XzY0x207(SharkSslSession *o)
 {
@@ -102358,6 +106024,10 @@ SharkSslSession *sa1111device(SharkSslSessionCache *commoncontiguous,
    SharkSslSession *func2fixup = 0;
 
    baAssert(o);
+   #if (!SHARKSSL_SSL_CLIENT_CODE)
+   (void)id;
+   (void)setupinterface;
+   #endif
    if (commoncontiguous->cacheSize)
    {
       SharkSslSession *oldestSession = 0;
@@ -102554,6 +106224,9 @@ SharkSslSession *sa1111device(SharkSslSessionCache *commoncontiguous,
                func2fixup->nUse = 1;
                func2fixup->flags = 0;
                func2fixup->firstAccess = now;
+               #if SHARKSSL_PSA_CONSUMER
+               func2fixup->psaIdentityCert = o->psaIdentityCert;
+               #endif
                sha224final(func2fixup, o->major, o->minor);
 
                #if SHARKSSL_TLS_1_2
@@ -102664,6 +106337,14 @@ static int decodethumb16(SharkSslSession *func2fixup, SharkSslCon *o, U8 *id, U1
 #endif  
 
 
+#if SHARKSSL_PSA_CONSUMER
+static U8 _XzY0x260(const SharkSslSession *o, const SharkSslCon *con)
+{
+   return ((!con->psaIdentityCert) || (o->psaIdentityCert == con->psaIdentityCert));
+}
+#endif
+
+
 SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
                                                   SharkSslCon *o, U8 *id, U16 setupinterface)
 {
@@ -102696,11 +106377,18 @@ SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
          #if SHARKSSL_TLS_1_2
          if ((func2fixup) &&
              (func2fixup->cipherSuite) &&
+             (func2fixup->flags & SHARKSSL_SESSION_FLAG_TLS12_READY) &&
+             #if SHARKSSL_ENABLE_CA_LIST
+             (!(func2fixup->flags & SHARKSSL_SESSION_FLAG_STALE_CA)) &&
+             #endif
+             #if SHARKSSL_PSA_CONSUMER
+             _XzY0x260(func2fixup, o) &&
+             #endif
              (restarthandler(func2fixup, o->major, o->minor)) &&
              (SharkSslSession_isProtocol(func2fixup, SHARKSSL_PROTOCOL_TLS_1_2)) &&
              (setupinterface <= SHARKSSL_MAX_SESSION_ID_LEN) &&
              (0 == sharkssl_kmemcmp(func2fixup->prot.tls12.id, id, setupinterface)) &&
-             ((U32)(now - func2fixup->firstAccess) < 21600L ) &&
+             ((U32)(now - func2fixup->firstAccess) < SHARKSSL_TLS12_SESSION_LIFETIME) &&
              (func2fixup->nUse < 0xFFFF))
          {
             func2fixup->nUse++;
@@ -102719,7 +106407,14 @@ SharkSslSession *latchgpiochip(SharkSslSessionCache *commoncontiguous,
          #endif
          #endif  
          #if SHARKSSL_TLS_1_3
-         if ((func2fixup) && (func2fixup->cipherSuite) && restarthandler(func2fixup, o->major, o->minor) &&
+         if ((func2fixup) && (func2fixup->cipherSuite) &&
+             #if SHARKSSL_ENABLE_CA_LIST
+             (!(func2fixup->flags & SHARKSSL_SESSION_FLAG_STALE_CA)) &&
+             #endif
+             restarthandler(func2fixup, o->major, o->minor) &&
+             #if SHARKSSL_PSA_CONSUMER
+             _XzY0x260(func2fixup, o) &&
+             #endif
              SharkSslSession_isProtocol(func2fixup, SHARKSSL_PROTOCOL_TLS_1_3) &&
              decodethumb16(func2fixup, o, id, setupinterface, now) &&
              (func2fixup->nUse < 0xFFFF))
@@ -103000,19 +106695,27 @@ int ioremapresource(SharkSslHSParam *o, U8 *alloccontroller, U32 len)
    baAssert(alloccontroller);
    baAssert(len);
    #if SHARKSSL_PSA_CONSUMER
+   U8 _XzY0x2DE;
    if ((o->psaHashFailed) || (!o->psaTranscript))
    {
       o->psaHashFailed = 1;
       return -1;
    }
-   if (((!o->cipherSuite) || (domainnumber == o->cipherSuite->hashID)) &&
+   #if SHARKSSL_TLS_1_2 && SHARKSSL_TLS_1_3
+   _XzY0x2DE = (U8)((!o->cipherSuite) || (!(o->cipherSuite->flags & SHARKSSL_CS_TLS13)));
+   #elif SHARKSSL_TLS_1_2
+   _XzY0x2DE = 1;
+   #else
+   _XzY0x2DE = (U8)(!o->cipherSuite);
+   #endif
+   if ((_XzY0x2DE || (domainnumber == o->cipherSuite->hashID)) &&
        (PSA_SUCCESS != psa_hash_update(o->psaTranscript, alloccontroller, len)))
    {
       o->psaHashFailed = 1;
       return -1;
    }
    #if SHARKSSL_USE_SHA_384
-   if (((!o->cipherSuite) || (probewrite == o->cipherSuite->hashID)) &&
+   if ((_XzY0x2DE || (probewrite == o->cipherSuite->hashID)) &&
        ((!o->psaTranscript384) || (PSA_SUCCESS != psa_hash_update(o->psaTranscript384, alloccontroller, len))))
    {
       o->psaHashFailed = 1;
@@ -103091,12 +106794,14 @@ int wakeupvector(SharkSslHSParam *o, U8 *chargerplatform, U8 configwrite)
          transcript = o->psaTranscript;
          _XzY0x1D1 = SHARKSSL_SHA256_HASH_LEN;
          break;
+
       #if SHARKSSL_USE_SHA_384
       case probewrite:
          transcript = o->psaTranscript384;
          _XzY0x1D1 = SHARKSSL_SHA384_HASH_LEN;
          break;
       #endif
+
       default:
          return -1;
    }
@@ -103177,7 +106882,7 @@ int SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam *o)
    U8 _XzY0x1A8[traceentry + SHARKSSL_TLS_1_3_MAX_DIGEST_LENGTH];
    #if SHARKSSL_PSA_CONSUMER
    psa_hash_operation_t *transcript;
-   psa_algorithm_t algorithm;
+   psa_algorithm_t _XzY0x261;
    #endif
    U8 ftraceupdate;
 
@@ -103196,13 +106901,13 @@ int SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam *o)
    if (domainnumber == o->cipherSuite->hashID)
    {
       transcript = o->psaTranscript;
-      algorithm = PSA_ALG_SHA_256;
+      _XzY0x261 = PSA_ALG_SHA_256;
    }
    #if SHARKSSL_USE_SHA_384
    else if (probewrite == o->cipherSuite->hashID)
    {
       transcript = o->psaTranscript384;
-      algorithm = PSA_ALG_SHA_384;
+      _XzY0x261 = PSA_ALG_SHA_384;
    }
    #endif
    else
@@ -103210,7 +106915,7 @@ int SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam *o)
       return -1;
    }
    if ((PSA_SUCCESS != psa_hash_abort(transcript)) ||
-       (PSA_SUCCESS != psa_hash_setup(transcript, algorithm)))
+       (PSA_SUCCESS != psa_hash_setup(transcript, _XzY0x261)))
    {
       o->psaHashFailed = 1;
       sharkssl_clear(_XzY0x1A8, sizeof(_XzY0x1A8));
@@ -103226,6 +106931,7 @@ int SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam *o)
          SharkSslSha256Ctx_constructor(&o->sha256Ctx);
          break;
       #endif
+
       #if SHARKSSL_USE_SHA_384
       case probewrite:
          ftraceupdate = SHARKSSL_SHA384_HASH_LEN;
@@ -103233,6 +106939,7 @@ int SharkSslHSParam_beginHelloRetryRequest(SharkSslHSParam *o)
          SharkSslSha384Ctx_constructor(&o->sha384Ctx);
          break;
       #endif
+
       default:
          return -1;
    }
@@ -103355,6 +107062,47 @@ void conditionvalid(SharkSslCon *o, SharkSsl *resetcounters)
 
 
 #if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API U8 SharkSslCon_selectCertificatePSA(SharkSslCon *o, SharkSslCert kernelvaddr)
+{
+   SingleListEnumerator e;
+   SingleLink *link;
+
+   if ((!o) || (!o->sharkSsl) || (!microresources(&o->inBuf)) || (!microresources(&o->outBuf)))
+   {
+      return 0;
+   }
+   if (!kernelvaddr)
+   {
+      #if SHARKSSL_ENABLE_SESSION_CACHE
+      if ((o->session) && (o->session->psaIdentityCert))
+      {
+         return 0;
+      }
+      #endif
+      o->psaIdentityCert = NULL;
+      return 1;
+   }
+   SingleListEnumerator_constructor(&e, (SingleList*)&o->sharkSsl->certList);
+   for (link = SingleListEnumerator_getElement(&e); link; link = SingleListEnumerator_nextElement(&e))
+   {
+      SharkSslCertParsed *candidate = &((SharkSslCertList*)link)->certP;
+
+      if ((candidate->cert == kernelvaddr) && (candidate->psaSignKey != PSA_KEY_ID_NULL))
+      {
+         #if SHARKSSL_ENABLE_SESSION_CACHE
+         if ((o->session) && (o->session->psaIdentityCert != candidate))
+         {
+            return 0;
+         }
+         #endif
+         o->psaIdentityCert = candidate;
+         return 1;
+      }
+   }
+   return 0;
+}
+
+
 int SharkSslCon_destroyPSAECDHKey(SharkSslCon *o)
 {
    baAssert(o);
@@ -104828,7 +108576,7 @@ static int _XzY0x1F3(U8 *softresetcomplete, U16 singleftoui, U8 *spi4000check,
 {
    #if SHARKSSL_PSA_CONSUMER
    psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
-   psa_algorithm_t algorithm;
+   psa_algorithm_t _XzY0x261;
    psa_status_t sffsdrnandflash;
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
 
@@ -104840,8 +108588,8 @@ static int _XzY0x1F3(U8 *softresetcomplete, U16 singleftoui, U8 *spi4000check,
       }
       return -1;
    }
-   algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(algorithm));
+   _XzY0x261 = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(_XzY0x261));
    if (sffsdrnandflash == PSA_SUCCESS)
    {
       sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, softresetcomplete, singleftoui);
@@ -104950,16 +108698,16 @@ static int bgezllabel(U8 *spi4000check, char *clkdmoperations, U8 *context, U8 *
    #if SHARKSSL_PSA_CONSUMER
    {
       psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
-      psa_algorithm_t algorithm;
+      psa_algorithm_t _XzY0x261;
       psa_status_t psaStatus;
 
       if (((SHARKSSL_HASHID_SHA256 != configwrite) && (SHARKSSL_HASHID_SHA384 != configwrite)) || (psa_crypto_init() != PSA_SUCCESS))
       {
          goto _sharkssl_HKDF_cleanup;
       }
-      algorithm = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+      _XzY0x261 = (SHARKSSL_HASHID_SHA384 == configwrite) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
       psaStatus = psa_key_derivation_setup(&_XzY0x219,
-                     PSA_ALG_HKDF_EXPAND(algorithm));
+                     PSA_ALG_HKDF_EXPAND(_XzY0x261));
       if (psaStatus == PSA_SUCCESS)
       {
          psaStatus = psa_key_derivation_input_bytes(&_XzY0x219,
@@ -105045,7 +108793,7 @@ static psa_status_t _XzY0x22C(psa_key_derivation_operation_t *_XzY0x219,
                                                  U16 cachemumbojumbo, U8 configwrite)
 {
    U8 memblocksteal[2 + 1 + 6 + 12 + 1 + 255];
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    psa_status_t sffsdrnandflash;
    size_t auxdatalookup;
    size_t infoLen;
@@ -105059,7 +108807,7 @@ static psa_status_t _XzY0x22C(psa_key_derivation_operation_t *_XzY0x219,
    {
       return PSA_ERROR_INVALID_ARGUMENT;
    }
-   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
    memblocksteal[0] = (U8)(cachemumbojumbo >> 8);
    memblocksteal[1] = (U8)cachemumbojumbo;
    memblocksteal[2] = (U8)(auxdatalookup + 6);
@@ -105071,7 +108819,7 @@ static psa_status_t _XzY0x22C(psa_key_derivation_operation_t *_XzY0x219,
       memcpy(memblocksteal + 10 + auxdatalookup, context, ptrauthdisable);
    }
    infoLen = 10 + auxdatalookup + ptrauthdisable;
-   sffsdrnandflash = psa_key_derivation_setup(_XzY0x219, PSA_ALG_HKDF_EXPAND(hashAlg));
+   sffsdrnandflash = psa_key_derivation_setup(_XzY0x219, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
    if (sffsdrnandflash == PSA_SUCCESS)
    {
       sffsdrnandflash = psa_key_derivation_input_key(_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, spi4000check);
@@ -105120,7 +108868,7 @@ static int _XzY0x229(psa_key_id_t spi4000check, const char *clkdmoperations,
 {
    psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    psa_status_t sffsdrnandflash;
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
 
@@ -105131,35 +108879,40 @@ static int _XzY0x229(psa_key_id_t spi4000check, const char *clkdmoperations,
    sffsdrnandflash = _XzY0x22C(&_XzY0x219, spi4000check, clkdmoperations, context, ptrauthdisable, ftraceupdate, configwrite);
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+      _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
       psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
       switch (_XzY0x21D)
       {
          case SHARKSSL_PSA_KEY_DERIVE_EXPAND:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
+
          case SHARKSSL_PSA_KEY_DERIVE_EXTRACT:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
+
          case SHARKSSL_PSA_KEY_RAW_EXTRACT:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_RAW_DATA);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
+
          case SHARKSSL_PSA_KEY_RAW_AGREEMENT_EXTRACT:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_RAW_DATA);
-            psa_set_key_algorithm(&attributes, PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
+            psa_set_key_algorithm(&attributes, PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD)));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
             break;
+
          case SHARKSSL_PSA_KEY_HMAC_SIGN:
             psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(hashAlg));
+            psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(_XzY0x2AD));
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
             break;
+
          default:
             sffsdrnandflash = PSA_ERROR_INVALID_ARGUMENT;
             break;
@@ -105192,10 +108945,10 @@ static int _XzY0x22B(psa_key_id_t _XzY0x221, U8 configwrite,
 {
    psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-   psa_key_id_t zeroKey = PSA_KEY_ID_NULL;
+   psa_key_id_t _XzY0x2F5 = PSA_KEY_ID_NULL;
    U8 _XzY0x257[SHARKSSL_MAX_HASH_LEN] = {0};
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    psa_status_t sffsdrnandflash;
 
    if ((!_XzY0x215) || (*_XzY0x215 != PSA_KEY_ID_NULL) || (!_XzY0x221) ||
@@ -105204,15 +108957,15 @@ static int _XzY0x22B(psa_key_id_t _XzY0x221, U8 configwrite,
    {
       return -1;
    }
-   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
    psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
    psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
    psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-   psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
-   sffsdrnandflash = psa_import_key(&attributes, _XzY0x257, ftraceupdate, &zeroKey);
+   psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
+   sffsdrnandflash = psa_import_key(&attributes, _XzY0x257, ftraceupdate, &_XzY0x2F5);
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(hashAlg));
+      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
@@ -105220,18 +108973,18 @@ static int _XzY0x22B(psa_key_id_t _XzY0x221, U8 configwrite,
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, zeroKey);
+      sffsdrnandflash = psa_key_derivation_input_key(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SECRET, _XzY0x2F5);
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
       sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, _XzY0x215);
    }
    if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
    {
       sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
    }
-   if ((zeroKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroKey) != PSA_SUCCESS))
+   if ((_XzY0x2F5 != PSA_KEY_ID_NULL) && (psa_destroy_key(_XzY0x2F5) != PSA_SUCCESS))
    {
       sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
    }
@@ -105254,7 +109007,7 @@ static int _XzY0x22A(psa_key_id_t _XzY0x223, U8 configwrite, psa_key_id_t *_XzY0
 {
    psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    psa_status_t sffsdrnandflash;
    U8 _XzY0x257 = 0;
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
@@ -105264,8 +109017,8 @@ static int _XzY0x22A(psa_key_id_t _XzY0x223, U8 configwrite, psa_key_id_t *_XzY0
    {
       return -1;
    }
-   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(hashAlg));
+   _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
    if (sffsdrnandflash == PSA_SUCCESS)
    {
       sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, &_XzY0x257, 1);
@@ -105279,7 +109032,7 @@ static int _XzY0x22A(psa_key_id_t _XzY0x223, U8 configwrite, psa_key_id_t *_XzY0
       psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
       psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
       psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
       sffsdrnandflash = psa_key_derivation_output_key(&attributes, &_XzY0x219, _XzY0x20F);
    }
    if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
@@ -105306,18 +109059,27 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
 {
    psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
    SharkSslHSParam *hs = hsParam(o);
-   #if SHARKSSL_ECC_USE_SECP384R1
+   #if SHARKSSL_ECC_USE_SECP521R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP521R1_POINTLEN)];
+   #elif SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN)];
+   #elif SHARKSSL_ECC_USE_SECP384R1
    U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP384R1_POINTLEN)];
+   #elif SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_BRAINPOOLP384R1_POINTLEN)];
    #else
    U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP256R1_POINTLEN)];
    #endif
+   #if SHARKSSL_ECC_USE_CURVE448
+   U8 _XzY0x257[(SHARKSSL_MAX_HASH_LEN > SHARKSSL_CURVE448_POINTLEN) ? SHARKSSL_MAX_HASH_LEN : SHARKSSL_CURVE448_POINTLEN] = {0};
+   #else
    U8 _XzY0x257[SHARKSSL_MAX_HASH_LEN] = {0};
+   #endif
    U8 _XzY0x210[SHARKSSL_MAX_HASH_LEN];
    #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
    U8 _XzY0x209[16], zeroCanary[16];
    psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-   psa_key_derivation_operation_t zeroOperation = PSA_KEY_DERIVATION_OPERATION_INIT;
-   psa_key_id_t zeroKey = PSA_KEY_ID_NULL;
+   psa_key_id_t _XzY0x2F5 = PSA_KEY_ID_NULL;
    psa_key_id_t _XzY0x20F = PSA_KEY_ID_NULL;
    psa_key_id_t derivedSaltKey = PSA_KEY_ID_NULL;
    psa_key_id_t zeroSaltKey = PSA_KEY_ID_NULL;
@@ -105328,7 +109090,7 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
    U8 _XzY0x20D[SHARKSSL_MAX_HASH_LEN];
    U8 _XzY0x258[SHARKSSL_MAX_HASH_LEN];
    #endif
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    psa_status_t psaStatus = PSA_ERROR_GENERIC_ERROR;
    U16 ftraceupdate = 0;
    size_t peerLen = 0;
@@ -105347,23 +109109,64 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
    {
       goto iommucreate;
    }
-   hashAlg = (hs->cipherSuite->hashID == SHARKSSL_HASHID_SHA384) ?
+   _XzY0x2AD = (hs->cipherSuite->hashID == SHARKSSL_HASHID_SHA384) ?
              PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
-   if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
-   {
-      peerLen = SHARKSSL_CURVE25519_POINTLEN;
-      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
-   }
-   else if (_XzY0x1D4 == ucb1400pdata)
+   if (_XzY0x1D4 == ucb1400pdata)
    {
       peerLen = 1 + (2 * SHARKSSL_SECP256R1_POINTLEN);
       _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
       memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
+   #if SHARKSSL_ECC_USE_CURVE25519
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+   {
+      peerLen = SHARKSSL_CURVE25519_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_CURVE448
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE448)
+   {
+      peerLen = SHARKSSL_CURVE448_POINTLEN;
+      memcpy(_XzY0x1E7, _XzY0x1E4, peerLen);
+   }
+   #endif
    #if SHARKSSL_ECC_USE_SECP384R1
    else if (_XzY0x1D4 == pciercxcfg034)
    {
       peerLen = 1 + (2 * SHARKSSL_SECP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP521R1
+   else if (_XzY0x1D4 == audiopdata)
+   {
+      peerLen = 1 + (2 * SHARKSSL_SECP521R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_BRAINPOOLP256R1TLS13)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP256R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_BRAINPOOLP384R1TLS13)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP384R1_POINTLEN);
+      _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+      memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   else if (_XzY0x1D4 == TLS_NAMEDGROUP_BRAINPOOLP512R1TLS13)
+   {
+      peerLen = 1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN);
       _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
       memcpy(_XzY0x1E7 + 1, _XzY0x1E4, peerLen - 1);
    }
@@ -105401,12 +109204,18 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
       psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
       psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
       psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
-      if ((psa_import_key(&attributes, _XzY0x257, ftraceupdate, &zeroKey) != PSA_SUCCESS) || _XzY0x22A(zeroKey, hs->cipherSuite->hashID, &_XzY0x20F))
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
+      if ((psa_import_key(&attributes, _XzY0x257, ftraceupdate, &_XzY0x2F5) != PSA_SUCCESS) || _XzY0x22A(_XzY0x2F5, hs->cipherSuite->hashID, &_XzY0x20F))
       {
          goto iommucreate;
       }
    }
+   
+   if ((_XzY0x2F5 != PSA_KEY_ID_NULL) && (psa_destroy_key(_XzY0x2F5) != PSA_SUCCESS))
+   {
+      goto iommucreate;
+   }
+   _XzY0x2F5 = PSA_KEY_ID_NULL;
    if (sharkssl_hash(_XzY0x210, _XzY0x257, 0, hs->cipherSuite->hashID) ||
        _XzY0x229(_XzY0x20F, "\144\145\162\151\166\145\144", _XzY0x210,
                                   (U8)ftraceupdate, hs->cipherSuite->hashID,
@@ -105437,7 +109246,7 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
    }
    #endif
    psaStatus = psa_key_derivation_setup(&_XzY0x219,
-      PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(hashAlg)));
+      PSA_ALG_KEY_AGREEMENT(PSA_ALG_ECDH, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD)));
    if (psaStatus == PSA_SUCCESS)
    {
       #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
@@ -105463,7 +109272,7 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
       psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
       psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
       psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
+      psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
       psaStatus = psa_key_derivation_output_key(&attributes, &_XzY0x219, &hs->prot.tls13.psaHSSecret);
       #else
       psaStatus = psa_key_derivation_output_bytes(&_XzY0x219, hs->prot.tls13.HSSecret, ftraceupdate);
@@ -105475,9 +109284,15 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
       #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
       o->psaTLS13HSKeysActive = 1;
       #endif
-      if (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519)
+      if ((_XzY0x1D4 == TLS_NAMEDGROUP_CURVE25519) || (_XzY0x1D4 == TLS_NAMEDGROUP_CURVE448))
       {
          #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
+         
+         if (psa_key_derivation_abort(&_XzY0x219) != PSA_SUCCESS)
+         {
+            deltadevices = 1;
+            goto iommucreate;
+         }
          
          if (_XzY0x229(_XzY0x20F, "\144\145\162\151\166\145\144", _XzY0x210,
                                         (U8)ftraceupdate, hs->cipherSuite->hashID,
@@ -105485,31 +109300,32 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
          {
             deltadevices = 1;
          }
-         psaStatus = psa_key_derivation_setup(&zeroOperation, PSA_ALG_HKDF_EXTRACT(hashAlg));
+         psaStatus = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
          if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
          {
-            psaStatus = psa_key_derivation_input_key(&zeroOperation,
+            psaStatus = psa_key_derivation_input_key(&_XzY0x219,
                PSA_KEY_DERIVATION_INPUT_SALT, zeroSaltKey);
          }
          if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
          {
             
+            
             psa_set_key_type(&attributes, PSA_KEY_TYPE_DERIVE);
-            psa_set_key_bits(&attributes, SHARKSSL_CURVE25519_POINTLEN * 8);
+            psa_set_key_bits(&attributes, peerLen * CHAR_BIT);
             psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_DERIVE);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(hashAlg));
-            psaStatus = psa_import_key(&attributes, _XzY0x257, SHARKSSL_CURVE25519_POINTLEN, &zeroSharedKey);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXTRACT(_XzY0x2AD));
+            psaStatus = psa_import_key(&attributes, _XzY0x257, peerLen, &zeroSharedKey);
          }
          if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
          {
-            psaStatus = psa_key_derivation_input_key(&zeroOperation,
+            psaStatus = psa_key_derivation_input_key(&_XzY0x219,
                PSA_KEY_DERIVATION_INPUT_SECRET, zeroSharedKey);
          }
          if ((psaStatus == PSA_SUCCESS) && (!deltadevices))
          {
             psa_set_key_bits(&attributes, (size_t)ftraceupdate * 8);
-            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(hashAlg));
-            psaStatus = psa_key_derivation_output_key(&attributes, &zeroOperation, &zeroResultKey);
+            psa_set_key_algorithm(&attributes, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
+            psaStatus = psa_key_derivation_output_key(&attributes, &_XzY0x219, &zeroResultKey);
          }
          if (deltadevices || (psaStatus != PSA_SUCCESS) ||
              _XzY0x228(hs->prot.tls13.psaHSSecret,
@@ -105530,7 +109346,7 @@ int SharkSslCon_derivePSAHandshakeSecret(SharkSslCon *o, const U8 *_XzY0x1E4, U1
          }
          #else
          if (_XzY0x1F3(_XzY0x20D, ftraceupdate, _XzY0x257,
-                                   SHARKSSL_CURVE25519_POINTLEN, _XzY0x258,
+                                   (U16)peerLen, _XzY0x258,
                                    hs->cipherSuite->hashID))
          {
             deltadevices = 1;
@@ -105555,10 +109371,6 @@ iommucreate:
       deltadevices = 1;
    }
    #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
-   if (psa_key_derivation_abort(&zeroOperation) != PSA_SUCCESS)
-   {
-      deltadevices = 1;
-   }
    if ((zeroResultKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroResultKey) != PSA_SUCCESS))
    {
       deltadevices = 1;
@@ -105579,7 +109391,7 @@ iommucreate:
    {
       deltadevices = 1;
    }
-   if ((zeroKey != PSA_KEY_ID_NULL) && (psa_destroy_key(zeroKey) != PSA_SUCCESS))
+   if ((_XzY0x2F5 != PSA_KEY_ID_NULL) && (psa_destroy_key(_XzY0x2F5) != PSA_SUCCESS))
    {
       deltadevices = 1;
    }
@@ -105680,21 +109492,21 @@ int SharkSslCon_calcBinder(SharkSslCon *o, U8 *chargerplatform, U8 configwrite)
    U8 _XzY0x20A[SHARKSSL_MAX_HASH_LEN];
    U16 ftraceupdate = sharkssl_getHashLen(configwrite);
    size_t macLen = 0;
-   psa_algorithm_t hashAlg;
+   psa_algorithm_t _XzY0x2AD;
    int deltadevices = -1;
 
    if ((o->psaEarlySecret == PSA_KEY_ID_NULL) || (!chargerplatform) || ((configwrite != SHARKSSL_HASHID_SHA256) && (configwrite != SHARKSSL_HASHID_SHA384)))
    {
       return -1;
    }
-   hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
    if (sharkssl_hash(_XzY0x210, chargerplatform, 0, configwrite) ||
        _XzY0x229(o->psaEarlySecret, "\162\145\163\040\142\151\156\144\145\162", _XzY0x210, (U8)ftraceupdate, configwrite, SHARKSSL_PSA_KEY_DERIVE_EXPAND, &binderKey) ||
        _XzY0x229(binderKey, "\146\151\156\151\163\150\145\144", NULL, 0, configwrite, SHARKSSL_PSA_KEY_HMAC_SIGN, &finishedKey))
    {
       goto iommucreate;
    }
-   if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(hashAlg), chargerplatform, ftraceupdate, _XzY0x20A, sizeof(_XzY0x20A), &macLen) == PSA_SUCCESS) && (macLen == ftraceupdate))
+   if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(_XzY0x2AD), chargerplatform, ftraceupdate, _XzY0x20A, sizeof(_XzY0x20A), &macLen) == PSA_SUCCESS) && (macLen == ftraceupdate))
    {
       memcpy(chargerplatform, _XzY0x20A, ftraceupdate);
       deltadevices = 0;
@@ -105764,7 +109576,7 @@ static int sharkssl_deriveRecordKey(U8 *delaytimer, SharkSslCipherSuite *clockmo
    
    U8 memblocksteal[13] = {0, 0, 9, '\164', '\154', '\163', '\061', '\063', '\040', '\153', '\145', '\171', 0};
    psa_key_id_t _XzY0x223 = PSA_KEY_ID_NULL;
-   psa_algorithm_t hashAlg, cipherAlg;
+   psa_algorithm_t _XzY0x2AD, cipherAlg;
    psa_key_type_t earlyconsole;
    psa_status_t sffsdrnandflash;
    U16 ftraceupdate = sharkssl_getHashLen(clockmodtable->hashID);
@@ -105792,7 +109604,7 @@ static int sharkssl_deriveRecordKey(U8 *delaytimer, SharkSslCipherSuite *clockmo
    {
       return -1;
    }
-   hashAlg = (clockmodtable->hashID == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+   _XzY0x2AD = (clockmodtable->hashID == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
    memblocksteal[1] = clockmodtable->keyLen;
    #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
    _XzY0x223 = delaytimer;
@@ -105801,12 +109613,12 @@ static int sharkssl_deriveRecordKey(U8 *delaytimer, SharkSslCipherSuite *clockmo
    psa_set_key_type(&secretAttr, PSA_KEY_TYPE_DERIVE);
    psa_set_key_bits(&secretAttr, (size_t)ftraceupdate * 8u);
    psa_set_key_usage_flags(&secretAttr, PSA_KEY_USAGE_DERIVE);
-   psa_set_key_algorithm(&secretAttr, PSA_ALG_HKDF_EXPAND(hashAlg));
+   psa_set_key_algorithm(&secretAttr, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
    sffsdrnandflash = psa_import_key(&secretAttr, delaytimer, ftraceupdate, &_XzY0x223);
    #endif
    if (sffsdrnandflash == PSA_SUCCESS)
    {
-      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXPAND(hashAlg));
+      sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, PSA_ALG_HKDF_EXPAND(_XzY0x2AD));
    }
    if (sffsdrnandflash == PSA_SUCCESS)
    {
@@ -107269,7 +111081,7 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
       #if SHARKSSL_PSA_CONSUMER_SECRET_HANDLES
       psa_key_id_t *trafficSlot;
       psa_key_id_t traffic, finishedKey = PSA_KEY_ID_NULL;
-      psa_algorithm_t hashAlg = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
+      psa_algorithm_t _XzY0x2AD = (configwrite == SHARKSSL_HASHID_SHA384) ? PSA_ALG_SHA_384 : PSA_ALG_SHA_256;
 
       trafficSlot = (fixupcy82c693 == tvp5146routes) ? &hsParam(o)->prot.tls13.psaCliHSTraffic : &hsParam(o)->prot.tls13.psaSrvHSTraffic;
       traffic = *trafficSlot;
@@ -107290,7 +111102,7 @@ int printsilicon(SharkSslCon *o, SharkSslCon_SendersRole fixupcy82c693, U8 *char
       }
       {
          size_t macLen = 0;
-         if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(hashAlg), chargerplatform, ftraceupdate, buf, sizeof(buf), &macLen) != PSA_SUCCESS) || (macLen != ftraceupdate))
+         if ((psa_mac_compute(finishedKey, PSA_ALG_HMAC(_XzY0x2AD), chargerplatform, ftraceupdate, buf, sizeof(buf), &macLen) != PSA_SUCCESS) || (macLen != ftraceupdate))
          {
             goto _SharkSslCon_calcFinishedHash_tls13_exit;
          }
@@ -107810,7 +111622,7 @@ U8 SharkSslCon_isHandshakeComplete(SharkSslCon *o)
    }
    if (!(o->flags & SHARKSSL_FLAG_HANDSHAKE_DATA_PENDING))
    {
-      if ((o->state == loongson3notifier)
+      if (o->state == loongson3notifier
           #if SHARKSSL_ENABLE_SECURE_RENEGOTIATION
           && (!(o->flags & skciphersetkey))
           #endif
@@ -108858,6 +112670,13 @@ U8 SharkSslCon_resumeSession(SharkSslCon *o, SharkSslSession *s)
    {
       U32 uart2hwmod = o->sharkSsl->sessionCache.cacheSize;
 
+      #if SHARKSSL_PSA_CONSUMER
+      if ((o->psaIdentityCert) && (s->psaIdentityCert != o->psaIdentityCert))
+      {
+         return 0;
+      }
+      #endif
+
       if (uart2hwmod)
       {
          SharkSslSession *sv = o->sharkSsl->sessionCache.cache;
@@ -108867,6 +112686,30 @@ U8 SharkSslCon_resumeSession(SharkSslCon *o, SharkSslSession *s)
             if (s == sv)
             {
                baAssert(s->cipherSuite);
+               #if SHARKSSL_ENABLE_CA_LIST
+               if (s->flags & SHARKSSL_SESSION_FLAG_STALE_CA)
+               {
+                  return 0;
+               }
+               #endif
+               #if SHARKSSL_TLS_1_2
+               if ((SharkSslSession_isProtocol(s, SHARKSSL_PROTOCOL_TLS_1_2)) && (!(s->flags & SHARKSSL_SESSION_FLAG_TLS12_READY)))
+               {
+                  return 0;
+               }
+               
+               if ((SharkSslSession_isProtocol(s, SHARKSSL_PROTOCOL_TLS_1_2)) && ((U32)(baGetUnixTime() - s->firstAccess) >= SHARKSSL_TLS12_SESSION_LIFETIME))
+               {
+                  return 0;
+               }
+               #endif
+               #if SHARKSSL_TLS_1_3
+               
+               if ((SharkSslSession_isProtocol(s, SHARKSSL_PROTOCOL_TLS_1_3)) && ((U32)(baGetUnixTime() - s->firstAccess) >= s->prot.tls13.role.client.lifetime))
+               {
+                  return 0;
+               }
+               #endif
                o->session = s;
 
                
@@ -108928,6 +112771,2264 @@ U32 SharkSslSession_getLatestAccessTime(SharkSslSession *o)
 }
 #endif
 #endif
+#if SHARKSSL_PSA_CONSUMER == 1
+
+
+#ifndef BA_LIB
+#define BA_LIB
+#endif
+
+#include "SharkSslCrypto.h"
+
+#include <psa/crypto.h>
+#include <string.h>
+
+#if (!SHARKSSL_PSA_CONSUMER)
+#error SharkSslPSAConsumerCrypto.c requires SHARKSSL_PSA_CONSUMER
+#endif
+
+void sharkssl_clear(void *alloccontroller, U32 len)
+{
+   volatile U8 *p;
+   #if SHARKSSL_UNALIGNED_ACCESS
+   volatile SHARKSSL_UNALIGNED_U32 *p32 = (volatile SHARKSSL_UNALIGNED_U32*)alloccontroller;
+
+   while (len >= 4)
+   {
+      *p32++ = 0;
+      len -= 4;
+   }
+   p = (volatile U8*)p32;
+   #else
+   p = (volatile U8*)alloccontroller;
+   #endif
+
+   while (len--)
+   {
+      *p++ = 0;
+   }
+}
+
+
+SHARKSSL_API int sharkssl_entropy(U32 deviceuevent)
+{
+   (void)deviceuevent;
+   return (PSA_SUCCESS == psa_crypto_init()) ? 0 : -1;
+}
+
+
+SHARKSSL_API int sharkssl_rng(U8 *ptr, U16 len)
+{
+   baAssert(ptr);
+   baAssert((len) && (0 == (len & 0x3)));
+   return ((PSA_SUCCESS == psa_crypto_init()) && (PSA_SUCCESS == psa_generate_random(ptr, len))) ? 0 : -1;
+}
+
+
+U16 sharkssl_getHashLen(U8 configwrite)
+{
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA1
+      case SHARKSSL_HASHID_SHA1:
+         return SHARKSSL_SHA1_HASH_LEN;
+      #endif
+
+      #if SHARKSSL_USE_SHA_224
+      case SHARKSSL_HASHID_SHA224:
+         return SHARKSSL_SHA224_HASH_LEN;
+      #endif
+
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384:
+         return SHARKSSL_SHA384_HASH_LEN;
+      #endif
+
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256:
+         return SHARKSSL_SHA256_HASH_LEN;
+      #endif
+
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512:
+         return SHARKSSL_SHA512_HASH_LEN;
+      #endif
+
+      default:
+         return 0;
+   }
+}
+
+
+static psa_algorithm_t _XzY0x2E7(U8 configwrite)
+{
+   switch (configwrite)
+   {
+      #if SHARKSSL_USE_SHA1
+      case SHARKSSL_HASHID_SHA1:
+         return PSA_ALG_SHA_1;
+      #endif
+      #if SHARKSSL_USE_SHA_224
+      case SHARKSSL_HASHID_SHA224:
+         return PSA_ALG_SHA_224;
+      #endif
+      #if SHARKSSL_USE_SHA_256
+      case SHARKSSL_HASHID_SHA256:
+         return PSA_ALG_SHA_256;
+      #endif
+      #if SHARKSSL_USE_SHA_384
+      case SHARKSSL_HASHID_SHA384:
+         return PSA_ALG_SHA_384;
+      #endif
+      #if SHARKSSL_USE_SHA_512
+      case SHARKSSL_HASHID_SHA512:
+         return PSA_ALG_SHA_512;
+      #endif
+      default:
+         return 0;
+   }
+}
+
+
+static int _XzY0x2E6(U8 *secondaryentry, const U8 *alloccontroller, U32 len, psa_algorithm_t _XzY0x261, U16 _XzY0x1D1)
+{
+   size_t ftraceupdate;
+   if ((!secondaryentry) || ((!alloccontroller) && len) || (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   if ((PSA_SUCCESS != psa_hash_compute(_XzY0x261, alloccontroller, len, secondaryentry, _XzY0x1D1, &ftraceupdate)) || (_XzY0x1D1 != ftraceupdate))
+   {
+      sharkssl_clear(secondaryentry, _XzY0x1D1);
+      return -1;
+   }
+   return 0;
+}
+
+
+int sharkssl_hash(U8 *secondaryentry, U8 *alloccontroller, U32 len, U8 configwrite)
+{
+   U16 _XzY0x1D1 = sharkssl_getHashLen(configwrite);
+   psa_algorithm_t _XzY0x261 = _XzY0x2E7(configwrite);
+   if ((!_XzY0x1D1) || (!_XzY0x261))
+   {
+      return -1;
+   }
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, _XzY0x261, _XzY0x1D1);
+}
+
+
+#if SHARKSSL_USE_SHA1
+SHARKSSL_API int sharkssl_sha1(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
+{
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, PSA_ALG_SHA_1, SHARKSSL_SHA1_HASH_LEN);
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_224
+SHARKSSL_API int sharkssl_sha224(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
+{
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, PSA_ALG_SHA_224, SHARKSSL_SHA224_HASH_LEN);
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_256
+SHARKSSL_API int sharkssl_sha256(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
+{
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, PSA_ALG_SHA_256, SHARKSSL_SHA256_HASH_LEN);
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_384
+SHARKSSL_API int sharkssl_sha384(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
+{
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, PSA_ALG_SHA_384, SHARKSSL_SHA384_HASH_LEN);
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_512
+SHARKSSL_API int sharkssl_sha512(const U8 *alloccontroller, U32 len, U8 *secondaryentry)
+{
+   return _XzY0x2E6(secondaryentry, alloccontroller, len, PSA_ALG_SHA_512, SHARKSSL_SHA512_HASH_LEN);
+}
+#endif
+
+
+static int _XzY0x2EB(psa_hash_operation_t *_XzY0x219, psa_status_t *state, psa_algorithm_t _XzY0x261)
+{
+   if ((!_XzY0x219) || (!state))
+   {
+      return -1;
+   }
+   *_XzY0x219 = psa_hash_operation_init();
+   *state = psa_crypto_init();
+   if (PSA_SUCCESS == *state)
+   {
+      *state = psa_hash_setup(_XzY0x219, _XzY0x261);
+   }
+   if (PSA_SUCCESS != *state)
+   {
+      (void)psa_hash_abort(_XzY0x219);
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x2EC(psa_hash_operation_t *_XzY0x219, psa_status_t *state, const U8 *alloccontroller, U32 len)
+{
+   if ((!_XzY0x219) || (!state) || (PSA_SUCCESS != *state))
+   {
+      return -1;
+   }
+   if ((!alloccontroller) && len)
+   {
+      *state = PSA_ERROR_INVALID_ARGUMENT;
+   }
+   else if (len)
+   {
+      *state = psa_hash_update(_XzY0x219, alloccontroller, len);
+   }
+   if (PSA_SUCCESS != *state)
+   {
+      (void)psa_hash_abort(_XzY0x219);
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x2EA(psa_hash_operation_t *_XzY0x219, psa_status_t *state, U8 *secondaryentry, U16 _XzY0x26F)
+{
+   psa_status_t finishStatus, abortStatus;
+   size_t actualLen = 0;
+   if ((!_XzY0x219) || (!state))
+   {
+      return -1;
+   }
+   if ((!secondaryentry) && (PSA_SUCCESS == *state))
+   {
+      *state = PSA_ERROR_INVALID_ARGUMENT;
+   }
+   finishStatus = *state;
+   if (PSA_SUCCESS == finishStatus)
+   {
+      finishStatus = psa_hash_finish(_XzY0x219, secondaryentry, _XzY0x26F, &actualLen);
+   }
+   abortStatus = psa_hash_abort(_XzY0x219);
+   if ((PSA_SUCCESS != finishStatus) || (PSA_SUCCESS != abortStatus) || (_XzY0x26F != actualLen))
+   {
+      if (PSA_SUCCESS != finishStatus)
+      {
+         *state = finishStatus;
+      }
+      else if (PSA_SUCCESS != abortStatus)
+      {
+         *state = abortStatus;
+      }
+      else
+      {
+         *state = PSA_ERROR_CORRUPTION_DETECTED;
+      }
+      if (secondaryentry)
+      {
+         sharkssl_clear(secondaryentry, _XzY0x26F);
+      }
+      return -1;
+   }
+   *state = PSA_ERROR_BAD_STATE;
+   return 0;
+}
+
+
+static int _XzY0x2E9(const psa_hash_operation_t *panicblock, psa_status_t _XzY0x2F,
+                                    psa_hash_operation_t *target, psa_status_t *_XzY0x2F1)
+{
+   if ((!panicblock) || (!target) || (!_XzY0x2F1) || (panicblock == target))
+   {
+      return -1;
+   }
+   *target = psa_hash_operation_init();
+   *_XzY0x2F1 = _XzY0x2F;
+   if (PSA_SUCCESS == *_XzY0x2F1)
+   {
+      *_XzY0x2F1 = psa_hash_clone(panicblock, target);
+   }
+   if (PSA_SUCCESS != *_XzY0x2F1)
+   {
+      (void)psa_hash_abort(target);
+      return -1;
+   }
+   return 0;
+}
+
+
+static int _XzY0x2E8(psa_hash_operation_t *_XzY0x219, psa_status_t *state)
+{
+   psa_status_t sffsdrnandflash;
+   if ((!_XzY0x219) || (!state))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_hash_abort(_XzY0x219);
+   *state = (PSA_SUCCESS == sffsdrnandflash) ? PSA_ERROR_BAD_STATE : sffsdrnandflash;
+   return (PSA_SUCCESS == sffsdrnandflash) ? 0 : -1;
+}
+
+
+#if SHARKSSL_USE_SHA1
+SHARKSSL_API int SharkSslSha1Ctx_constructor(SharkSslSha1Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2EB(&registermcasp->operation, &registermcasp->status, PSA_ALG_SHA_1) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha1Ctx_append(SharkSslSha1Ctx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   return registermcasp ? _XzY0x2EC(&registermcasp->operation, &registermcasp->status, alloccontroller, len) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha1Ctx_finish(SharkSslSha1Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA1_HASH_LEN])
+{
+   return registermcasp ? _XzY0x2EA(&registermcasp->operation, &registermcasp->status, secondaryentry, SHARKSSL_SHA1_HASH_LEN) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha1Ctx_clone(const SharkSslSha1Ctx *panicblock, SharkSslSha1Ctx *target)
+{
+   return ((panicblock) && (target)) ? _XzY0x2E9(&panicblock->operation, panicblock->status,
+                                                           &target->operation, &target->status) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha1Ctx_abort(SharkSslSha1Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2E8(&registermcasp->operation, &registermcasp->status) : -1;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_224
+SHARKSSL_API int SharkSslSha224Ctx_constructor(SharkSslSha224Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2EB(&registermcasp->operation, &registermcasp->status, PSA_ALG_SHA_224) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha224Ctx_append(SharkSslSha224Ctx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   return registermcasp ? _XzY0x2EC(&registermcasp->operation, &registermcasp->status, alloccontroller, len) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha224Ctx_finish(SharkSslSha224Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA224_HASH_LEN])
+{
+   return registermcasp ? _XzY0x2EA(&registermcasp->operation, &registermcasp->status, secondaryentry, SHARKSSL_SHA224_HASH_LEN) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha224Ctx_clone(const SharkSslSha224Ctx *panicblock, SharkSslSha224Ctx *target)
+{
+   return ((panicblock) && (target)) ? _XzY0x2E9(&panicblock->operation, panicblock->status,
+                                                           &target->operation, &target->status) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha224Ctx_abort(SharkSslSha224Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2E8(&registermcasp->operation, &registermcasp->status) : -1;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_256
+SHARKSSL_API int SharkSslSha256Ctx_constructor(SharkSslSha256Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2EB(&registermcasp->operation, &registermcasp->status, PSA_ALG_SHA_256) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha256Ctx_append(SharkSslSha256Ctx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   return registermcasp ? _XzY0x2EC(&registermcasp->operation, &registermcasp->status, alloccontroller, len) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha256Ctx_finish(SharkSslSha256Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA256_HASH_LEN])
+{
+   return registermcasp ? _XzY0x2EA(&registermcasp->operation, &registermcasp->status, secondaryentry, SHARKSSL_SHA256_HASH_LEN) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha256Ctx_clone(const SharkSslSha256Ctx *panicblock, SharkSslSha256Ctx *target)
+{
+   return ((panicblock) && (target)) ? _XzY0x2E9(&panicblock->operation, panicblock->status,
+                                                           &target->operation, &target->status) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha256Ctx_abort(SharkSslSha256Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2E8(&registermcasp->operation, &registermcasp->status) : -1;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_384
+SHARKSSL_API int SharkSslSha384Ctx_constructor(SharkSslSha384Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2EB(&registermcasp->operation, &registermcasp->status, PSA_ALG_SHA_384) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha384Ctx_append(SharkSslSha384Ctx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   return registermcasp ? _XzY0x2EC(&registermcasp->operation, &registermcasp->status, alloccontroller, len) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha384Ctx_finish(SharkSslSha384Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA384_HASH_LEN])
+{
+   return registermcasp ? _XzY0x2EA(&registermcasp->operation, &registermcasp->status, secondaryentry, SHARKSSL_SHA384_HASH_LEN) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha384Ctx_clone(const SharkSslSha384Ctx *panicblock, SharkSslSha384Ctx *target)
+{
+   return ((panicblock) && (target)) ? _XzY0x2E9(&panicblock->operation, panicblock->status,
+                                                           &target->operation, &target->status) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha384Ctx_abort(SharkSslSha384Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2E8(&registermcasp->operation, &registermcasp->status) : -1;
+}
+#endif
+
+
+#if SHARKSSL_USE_SHA_512
+SHARKSSL_API int SharkSslSha512Ctx_constructor(SharkSslSha512Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2EB(&registermcasp->operation, &registermcasp->status, PSA_ALG_SHA_512) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha512Ctx_append(SharkSslSha512Ctx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   return registermcasp ? _XzY0x2EC(&registermcasp->operation, &registermcasp->status, alloccontroller, len) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha512Ctx_finish(SharkSslSha512Ctx *registermcasp, U8 secondaryentry[SHARKSSL_SHA512_HASH_LEN])
+{
+   return registermcasp ? _XzY0x2EA(&registermcasp->operation, &registermcasp->status, secondaryentry, SHARKSSL_SHA512_HASH_LEN) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha512Ctx_clone(const SharkSslSha512Ctx *panicblock, SharkSslSha512Ctx *target)
+{
+   return ((panicblock) && (target)) ? _XzY0x2E9(&panicblock->operation, panicblock->status,
+                                                           &target->operation, &target->status) : -1;
+}
+
+
+SHARKSSL_API int SharkSslSha512Ctx_abort(SharkSslSha512Ctx *registermcasp)
+{
+   return registermcasp ? _XzY0x2E8(&registermcasp->operation, &registermcasp->status) : -1;
+}
+#endif
+
+
+SHARKSSL_API int SharkSslHMACCtx_destructor(SharkSslHMACCtx *registermcasp)
+{
+   psa_status_t abortStatus, _XzY0x1CD = PSA_SUCCESS;
+   if (!registermcasp)
+   {
+      return -1;
+   }
+   abortStatus = psa_mac_abort(&registermcasp->operation);
+   if (PSA_KEY_ID_NULL != registermcasp->key)
+   {
+      _XzY0x1CD = psa_destroy_key(registermcasp->key);
+      if (PSA_SUCCESS == _XzY0x1CD)
+      {
+         registermcasp->key = PSA_KEY_ID_NULL;
+      }
+   }
+   if ((PSA_SUCCESS != abortStatus) || (PSA_SUCCESS != _XzY0x1CD))
+   {
+      registermcasp->status = (PSA_SUCCESS != abortStatus) ? abortStatus : _XzY0x1CD;
+      return -1;
+   }
+   sharkssl_clear(registermcasp, sizeof(*registermcasp));
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslHMACCtx_constructor(SharkSslHMACCtx *registermcasp, U8 configwrite, const U8 *sourcerouting, U16 creategroup)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   const U8 _XzY0x2F5 = 0;
+   psa_algorithm_t _XzY0x261;
+   U16 _XzY0x2AE = creategroup ? creategroup : 1;
+   
+   if (!registermcasp)
+   {
+      return -1;
+   }
+   registermcasp->operation = psa_mac_operation_init();
+   registermcasp->key = PSA_KEY_ID_NULL;
+   registermcasp->hashID = configwrite;
+   registermcasp->status = PSA_ERROR_INVALID_ARGUMENT;
+   if (((!sourcerouting) && creategroup) || (!sharkssl_getHashLen(configwrite)) || (!_XzY0x2E7(configwrite)))
+   {
+      return -1;
+   }
+   _XzY0x261 = _XzY0x2E7(configwrite);
+   registermcasp->status = psa_crypto_init();
+   if (PSA_SUCCESS != registermcasp->status)
+   {
+      return -1;
+   }
+   psa_set_key_type(&attributes, PSA_KEY_TYPE_HMAC);
+   psa_set_key_bits(&attributes, (size_t)_XzY0x2AE * 8);
+   psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_MESSAGE);
+   psa_set_key_algorithm(&attributes, PSA_ALG_HMAC(_XzY0x261));
+   registermcasp->status = psa_import_key(&attributes, creategroup ? sourcerouting : &_XzY0x2F5, _XzY0x2AE, &registermcasp->key);
+   psa_reset_key_attributes(&attributes);
+   if (PSA_SUCCESS != registermcasp->status)
+   {
+      return -1;
+   }
+   registermcasp->status = psa_mac_sign_setup(&registermcasp->operation, registermcasp->key, PSA_ALG_HMAC(_XzY0x261));
+   if (PSA_SUCCESS != registermcasp->status)
+   {
+      (void)SharkSslHMACCtx_destructor(registermcasp);
+      return -1;
+   }
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslHMACCtx_append(SharkSslHMACCtx *registermcasp, const U8 *alloccontroller, U32 len)
+{
+   if ((!registermcasp) || (PSA_SUCCESS != registermcasp->status))
+   {
+      return -1;
+   }
+   if ((!alloccontroller) && len)
+   {
+      registermcasp->status = PSA_ERROR_INVALID_ARGUMENT;
+      return -1;
+   }
+   if (len)
+   {
+      registermcasp->status = psa_mac_update(&registermcasp->operation, alloccontroller, len);
+   }
+   return (PSA_SUCCESS == registermcasp->status) ? 0 : -1;
+}
+
+
+SHARKSSL_API int SharkSslHMACCtx_finish(SharkSslHMACCtx *registermcasp, U8 *cfconresource)
+{
+   psa_status_t finishStatus;
+   size_t actualLen = 0;
+   U16 _XzY0x26F;
+   if (!registermcasp)
+   {
+      return -1;
+   }
+   _XzY0x26F = sharkssl_getHashLen(registermcasp->hashID);
+   finishStatus = registermcasp->status;
+   if ((!cfconresource) && (PSA_SUCCESS == finishStatus))
+   {
+      finishStatus = PSA_ERROR_INVALID_ARGUMENT;
+   }
+   if (PSA_SUCCESS == finishStatus)
+   {
+      finishStatus = psa_mac_sign_finish(&registermcasp->operation, cfconresource, _XzY0x26F, &actualLen);
+   }
+   if ((0 != SharkSslHMACCtx_destructor(registermcasp)) || (PSA_SUCCESS != finishStatus) || (_XzY0x26F != actualLen))
+   {
+      if (cfconresource)
+      {
+         sharkssl_clear(cfconresource, _XzY0x26F);
+      }
+      return -1;
+   }
+   return 0;
+}
+
+
+SHARKSSL_API int sharkssl_HMAC(const U8 configwrite, const U8 *alloccontroller, U32 len, const U8 *sourcerouting, U16 creategroup, U8 *secondaryentry)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_id_t keyID;
+   psa_algorithm_t _XzY0x261;
+   psa_status_t sffsdrnandflash, _XzY0x1CD;
+   size_t digestLen;
+   U16 _XzY0x1D0 = sharkssl_getHashLen(configwrite);
+
+   baAssert(alloccontroller || (0 == len));
+   baAssert(sourcerouting);
+   baAssert(creategroup);
+   baAssert(secondaryentry);
+   _XzY0x261 = _XzY0x2E7(configwrite);
+   if ((!_XzY0x261) || (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   psa_set_key_type(&attr, PSA_KEY_TYPE_HMAC);
+   psa_set_key_bits(&attr, (size_t)creategroup * 8u);
+   psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_MESSAGE);
+   psa_set_key_algorithm(&attr, PSA_ALG_HMAC(_XzY0x261));
+   sffsdrnandflash = psa_import_key(&attr, sourcerouting, creategroup, &keyID);
+   psa_reset_key_attributes(&attr);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_mac_compute(keyID, PSA_ALG_HMAC(_XzY0x261), alloccontroller, len, secondaryentry, _XzY0x1D0, &digestLen);
+   _XzY0x1CD = psa_destroy_key(keyID);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != _XzY0x1CD) || (_XzY0x1D0 != digestLen))
+   {
+      sharkssl_clear(secondaryentry, _XzY0x1D0);
+      return -1;
+   }
+   return 0;
+}
+
+
+SHARKSSL_API int sharkssl_kmemcmp(const void *a, const void *b, U32 n)
+{
+   const U8 *p8a = (const U8*)a;
+   const U8 *p8b = (const U8*)b;
+   U8 cmp = 0;
+   #if SHARKSSL_UNALIGNED_ACCESS
+   U32 a32, b32;
+   U32 dointvecminmax = 0;
+
+   while (n >= 4)
+   {
+      memcpy(&a32, p8a, sizeof(a32));
+      memcpy(&b32, p8b, sizeof(b32));
+      dointvecminmax |= (a32 ^ b32);
+      p8a += 4;
+      p8b += 4;
+      n -= 4;
+   }
+   dointvecminmax = (dointvecminmax & 0xFFFF) | (dointvecminmax >> 16);
+   cmp = (U8)dointvecminmax | (U8)(dointvecminmax >> 8);
+   #endif
+
+   while (n--)
+   {
+      cmp |= (*p8a++ ^ *p8b++);
+   }
+   return (int)cmp;
+}
+
+
+#include "psa-consumer/SharkSslPSAConsumerPBKDF2.h"
+#include <string.h>
+
+SHARKSSL_API int SharkSslPSAPBKDF2_derive(U8 *enablehazard, const U8 *emptytables, const U8 *softresetcomplete,
+                                          psa_algorithm_t alg, U32 tlbdumpsingle,
+                                          U32 singleftoui, U32 syskeyunlock, U16 _XzY0x2CF)
+{
+   static const U8 _XzY0x2AA = 0;
+   psa_key_derivation_operation_t _XzY0x219 = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_status_t sffsdrnandflash = PSA_ERROR_INVALID_ARGUMENT;
+   psa_status_t abortStatus;
+
+   if ((!enablehazard) || (!_XzY0x2CF))
+   {
+      return -1;
+   }
+   if (((!emptytables) && tlbdumpsingle) || ((!softresetcomplete) && singleftoui) || (!syskeyunlock))
+   {
+      goto _XzY0x117;
+   }
+   #if defined(PSA_ALG_PBKDF2_AES_CMAC_PRF_128)
+   if ((!PSA_ALG_IS_PBKDF2_HMAC(alg)) && (alg != PSA_ALG_PBKDF2_AES_CMAC_PRF_128))
+   #else
+   if (!PSA_ALG_IS_PBKDF2_HMAC(alg))
+   #endif
+   {
+      goto _XzY0x117;
+   }
+   if (!emptytables)
+   {
+      emptytables = &_XzY0x2AA;
+   }
+   if (!softresetcomplete)
+   {
+      softresetcomplete = &_XzY0x2AA;
+   }
+   sffsdrnandflash = psa_crypto_init();
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      goto _XzY0x117;
+   }
+   sffsdrnandflash = psa_key_derivation_setup(&_XzY0x219, alg);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      goto _XzY0x117;
+   }
+   sffsdrnandflash = psa_key_derivation_input_integer(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_COST, syskeyunlock);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      goto _XzY0x117;
+   }
+   sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_SALT, softresetcomplete, singleftoui);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      goto _XzY0x117;
+   }
+   sffsdrnandflash = psa_key_derivation_input_bytes(&_XzY0x219, PSA_KEY_DERIVATION_INPUT_PASSWORD, emptytables, tlbdumpsingle);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      goto _XzY0x117;
+   }
+   sffsdrnandflash = psa_key_derivation_output_bytes(&_XzY0x219, enablehazard, _XzY0x2CF);
+
+_XzY0x117:
+   abortStatus = psa_key_derivation_abort(&_XzY0x219);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != abortStatus))
+   {
+      memset(enablehazard, 0, _XzY0x2CF);
+      return -1;
+   }
+   return 0;
+}
+
+
+#ifndef BA_LIB
+#define BA_LIB
+#endif
+
+
+
+#include <psa/crypto.h>
+#include <limits.h>
+#include <string.h>
+
+#if (!SHARKSSL_PSA_CONSUMER)
+#error SharkSslPSAConsumerECDSAAdapter.c requires SHARKSSL_PSA_CONSUMER
+#endif
+
+#if SHARKSSL_ENABLE_ECDSA
+int SharkSslECDSAParam_ECDSA(const SharkSslECDSAParam *audioshutdown, U8 op)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_id_t sourcerouting = 0;
+   #if SHARKSSL_ECC_USE_SECP521R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP521R1_POINTLEN)];
+   U8 probeguestctl0[2 * SHARKSSL_SECP521R1_POINTLEN];
+   #elif SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN)];
+   U8 probeguestctl0[2 * SHARKSSL_BRAINPOOLP512R1_POINTLEN];
+   #elif (SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_BRAINPOOLP384R1)
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP384R1_POINTLEN)];
+   U8 probeguestctl0[2 * SHARKSSL_SECP384R1_POINTLEN];
+   #else
+   U8 _XzY0x1E7[1 + (2 * SHARKSSL_SECP256R1_POINTLEN)];
+   U8 probeguestctl0[2 * SHARKSSL_SECP256R1_POINTLEN];
+   #endif
+   size_t _XzY0x299 = 0;
+   psa_status_t sffsdrnandflash;
+   psa_algorithm_t _XzY0x261;
+   psa_ecc_family_t _XzY0x2AC;
+   size_t _XzY0x28C;
+   U16 creategroup;
+
+   if ((!audioshutdown) || (!audioshutdown->R) || (!audioshutdown->S) || (!audioshutdown->hash) ||
+       ((op != iommupdata) && (op != fixupdevices)))
+   {
+      return 1;
+   }
+   if ((!audioshutdown->key) && ((op != iommupdata) || (!audioshutdown->psaSignKey)))
+   {
+      return 1;
+   }
+   if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_SECP256R1)
+   {
+      creategroup = SHARKSSL_SECP256R1_POINTLEN;
+      _XzY0x28C = (size_t)creategroup * CHAR_BIT;
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+   }
+   #if SHARKSSL_ECC_USE_SECP384R1
+   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_SECP384R1)
+   {
+      creategroup = SHARKSSL_SECP384R1_POINTLEN;
+      _XzY0x28C = (size_t)creategroup * CHAR_BIT;
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_SECP521R1
+   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_SECP521R1)
+   {
+      creategroup = SHARKSSL_SECP521R1_POINTLEN;
+      _XzY0x28C = SHARKSSL_SECP521R1_BITS;
+      _XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP256R1
+   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1)
+   {
+      creategroup = SHARKSSL_BRAINPOOLP256R1_POINTLEN;
+      _XzY0x28C = (size_t)creategroup * CHAR_BIT;
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP384R1
+   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1)
+   {
+      creategroup = SHARKSSL_BRAINPOOLP384R1_POINTLEN;
+      _XzY0x28C = (size_t)creategroup * CHAR_BIT;
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+   }
+   #endif
+   #if SHARKSSL_ECC_USE_BRAINPOOLP512R1
+   else if (audioshutdown->curveType == SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1)
+   {
+      creategroup = SHARKSSL_BRAINPOOLP512R1_POINTLEN;
+      _XzY0x28C = (size_t)creategroup * CHAR_BIT;
+      _XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+   }
+   #endif
+   else
+   {
+      return 1;
+   }
+   #if SHARKSSL_USE_SHA1
+   if (audioshutdown->hashLen == SHARKSSL_SHA1_HASH_LEN)
+   {
+      _XzY0x261 = PSA_ALG_ECDSA(PSA_ALG_SHA_1);
+   }
+   else
+   #endif
+   if (audioshutdown->hashLen == SHARKSSL_SHA256_HASH_LEN)
+   {
+      _XzY0x261 = PSA_ALG_ECDSA(PSA_ALG_SHA_256);
+   }
+   #if SHARKSSL_USE_SHA_384
+   else if (audioshutdown->hashLen == SHARKSSL_SHA384_HASH_LEN)
+   {
+      _XzY0x261 = PSA_ALG_ECDSA(PSA_ALG_SHA_384);
+   }
+   #endif
+   #if SHARKSSL_USE_SHA_512
+   else if (audioshutdown->hashLen == SHARKSSL_SHA512_HASH_LEN)
+   {
+      _XzY0x261 = PSA_ALG_ECDSA(PSA_ALG_SHA_512);
+   }
+   #endif
+   else
+   {
+      return 1;
+   }
+   if (audioshutdown->keyLen != creategroup)
+   {
+      return 1;
+   }
+   sffsdrnandflash = psa_crypto_init();
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      return 1;
+   }
+   if ((op == iommupdata) && audioshutdown->psaSignKey)
+   {
+      sourcerouting = audioshutdown->psaSignKey;
+      sffsdrnandflash = PSA_SUCCESS;
+   }
+   else
+   {
+      psa_set_key_bits(&attributes, _XzY0x28C);
+      psa_set_key_algorithm(&attributes, _XzY0x261);
+      if (op == iommupdata)
+      {
+         psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(_XzY0x2AC));
+         psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH);
+         sffsdrnandflash = psa_import_key(&attributes, audioshutdown->key, creategroup, &sourcerouting);
+      }
+      else
+      {
+         psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_PUBLIC_KEY(_XzY0x2AC));
+         psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_VERIFY_HASH);
+         _XzY0x1E7[0] = SHARKSSL_EC_POINT_UNCOMPRESSED;
+         memcpy(_XzY0x1E7 + 1, audioshutdown->key, 2 * creategroup);
+         sffsdrnandflash = psa_import_key(&attributes, _XzY0x1E7, 1 + (2 * creategroup), &sourcerouting);
+      }
+      psa_reset_key_attributes(&attributes);
+   }
+   memset(_XzY0x1E7, 0, sizeof(_XzY0x1E7));
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      if (op == iommupdata)
+      {
+         sffsdrnandflash = psa_sign_hash(sourcerouting, _XzY0x261, audioshutdown->hash, audioshutdown->hashLen, probeguestctl0, sizeof(probeguestctl0), &_XzY0x299);
+         if ((sffsdrnandflash == PSA_SUCCESS) && (_XzY0x299 != (size_t)(2 * creategroup)))
+         {
+            sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+         }
+      }
+      else
+      {
+         memcpy(probeguestctl0, audioshutdown->R, creategroup);
+         memcpy(probeguestctl0 + creategroup, audioshutdown->S, creategroup);
+         sffsdrnandflash = psa_verify_hash(sourcerouting, _XzY0x261, audioshutdown->hash, audioshutdown->hashLen, probeguestctl0, 2 * creategroup);
+      }
+   }
+   if (((op != iommupdata) || (!audioshutdown->psaSignKey)) &&
+       (sourcerouting != 0) && (psa_destroy_key(sourcerouting) != PSA_SUCCESS))
+   {
+      sffsdrnandflash = PSA_ERROR_GENERIC_ERROR;
+   }
+   if ((sffsdrnandflash == PSA_SUCCESS) && (op == iommupdata))
+   {
+      memcpy(audioshutdown->R, probeguestctl0, creategroup);
+      memcpy(audioshutdown->S, probeguestctl0 + creategroup, creategroup);
+   }
+   memset(probeguestctl0, 0, sizeof(probeguestctl0));
+   return (sffsdrnandflash == PSA_SUCCESS) ? 0 : 1;
+}
+#endif
+
+
+#include "psa-consumer/SharkSslPSAConsumerECDSA.h"
+#include <string.h>
+
+static int _XzY0x2E5(U16 defaultsdhci1, psa_ecc_family_t *_XzY0x2AC,
+                                   size_t *enablekernel, size_t *_XzY0x2A6, size_t *_XzY0x2D9)
+{
+   if ((!enablekernel) || (!_XzY0x2A6) || (!_XzY0x2D9))
+   {
+      return -1;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP256R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      }
+      *enablekernel = 256;
+      *_XzY0x2A6 = 32;
+      *_XzY0x2D9 = 65;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP384R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      }
+      *enablekernel = 384;
+      *_XzY0x2A6 = 48;
+      *_XzY0x2D9 = 97;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_PSA_CURVE_ID_SECP224R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      }
+      *enablekernel = 224;
+      *_XzY0x2A6 = 28;
+      *_XzY0x2D9 = 57;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_SECP521R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_SECP_R1;
+      }
+      *enablekernel = 521;
+      *_XzY0x2A6 = 66;
+      *_XzY0x2D9 = 133;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_PSA_CURVE_ID_BRAINPOOLP224R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      }
+      *enablekernel = 224;
+      *_XzY0x2A6 = 28;
+      *_XzY0x2D9 = 57;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      }
+      *enablekernel = 256;
+      *_XzY0x2A6 = 32;
+      *_XzY0x2D9 = 65;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_PSA_CURVE_ID_BRAINPOOLP320R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      }
+      *enablekernel = 320;
+      *_XzY0x2A6 = 40;
+      *_XzY0x2D9 = 81;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      }
+      *enablekernel = 384;
+      *_XzY0x2A6 = 48;
+      *_XzY0x2D9 = 97;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_BRAINPOOL_P_R1;
+      }
+      *enablekernel = 512;
+      *_XzY0x2A6 = 64;
+      *_XzY0x2D9 = 129;
+      return 0;
+   }
+   if (defaultsdhci1 == SHARKSSL_PSA_CURVE_ID_SECP256K1)
+   {
+      if (_XzY0x2AC)
+      {
+         *_XzY0x2AC = PSA_ECC_FAMILY_SECP_K1;
+      }
+      *enablekernel = 256;
+      *_XzY0x2A6 = 32;
+      *_XzY0x2D9 = 65;
+      return 0;
+   }
+   return -1;
+}
+
+
+static int _XzY0x2E4(psa_algorithm_t _XzY0x2AD, size_t *ftraceupdate)
+{
+   if (!ftraceupdate)
+   {
+      return -1;
+   }
+   if (_XzY0x2AD == PSA_ALG_SHA_256)
+   {
+      *ftraceupdate = 32;
+      return 0;
+   }
+   if (_XzY0x2AD == PSA_ALG_SHA_384)
+   {
+      *ftraceupdate = 48;
+      return 0;
+   }
+   if (_XzY0x2AD == PSA_ALG_SHA_512)
+   {
+      *ftraceupdate = 64;
+      return 0;
+   }
+   return -1;
+}
+
+
+static int _XzY0x2E2(SharkSslPSAEcdsaKey *o, U16 defaultsdhci1,
+                                   psa_algorithm_t _XzY0x2AD, int _XzY0x2A9,
+                                   const U8 *_XzY0x2B, U16 creategroup, int _XzY0x2DA)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_ecc_family_t _XzY0x2AC;
+   psa_status_t sffsdrnandflash;
+   size_t enablekernel, _XzY0x2A6, _XzY0x2D9, ftraceupdate;
+   psa_algorithm_t _XzY0x261;
+   if (!o)
+   {
+      return -1;
+   }
+   memset(o, 0, sizeof(*o));
+   if (_XzY0x2E5(defaultsdhci1, &_XzY0x2AC, &enablekernel, &_XzY0x2A6, &_XzY0x2D9) ||
+       _XzY0x2E4(_XzY0x2AD, &ftraceupdate) ||
+       ((_XzY0x2B) && (creategroup != (_XzY0x2DA ? _XzY0x2D9 : _XzY0x2A6))) ||
+       ((!_XzY0x2B) && (creategroup || _XzY0x2DA)))
+   {
+      return -1;
+   }
+   if (_XzY0x2DA && (_XzY0x2B[0] != 4))
+   {
+      return -1;
+   }
+   _XzY0x261 = _XzY0x2A9 ? PSA_ALG_DETERMINISTIC_ECDSA(_XzY0x2AD) : PSA_ALG_ECDSA(_XzY0x2AD);
+   sffsdrnandflash = psa_crypto_init();
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_set_key_type(&attr, _XzY0x2DA ? PSA_KEY_TYPE_ECC_PUBLIC_KEY(_XzY0x2AC) :
+                                        PSA_KEY_TYPE_ECC_KEY_PAIR(_XzY0x2AC));
+      psa_set_key_bits(&attr, enablekernel);
+      psa_set_key_usage_flags(&attr, _XzY0x2DA ? PSA_KEY_USAGE_VERIFY_HASH :
+                                                (PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH));
+      psa_set_key_algorithm(&attr, _XzY0x261);
+      sffsdrnandflash = _XzY0x2B ? psa_import_key(&attr, _XzY0x2B, creategroup, &o->handle) :
+                          psa_generate_key(&attr, &o->handle);
+      if ((!_XzY0x2DA) && ((sffsdrnandflash == PSA_ERROR_NOT_SUPPORTED) ||
+                            (sffsdrnandflash == PSA_ERROR_NOT_PERMITTED) ||
+                            (sffsdrnandflash == PSA_ERROR_INVALID_ARGUMENT)))
+      {
+         psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_HASH);
+         sffsdrnandflash = _XzY0x2B ? psa_import_key(&attr, _XzY0x2B, creategroup, &o->handle) :
+                             psa_generate_key(&attr, &o->handle);
+      }
+   }
+   psa_reset_key_attributes(&attr);
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      memset(o, 0, sizeof(*o));
+      return -1;
+   }
+   o->algorithm = _XzY0x261;
+   o->curveID = defaultsdhci1;
+   o->publicOnly = (U8)_XzY0x2DA;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_generate(SharkSslPSAEcdsaKey *o, U16 defaultsdhci1,
+                                              psa_algorithm_t _XzY0x2AD, int _XzY0x2A9)
+{
+   return _XzY0x2E2(o, defaultsdhci1, _XzY0x2AD, _XzY0x2A9, NULL, 0, 0);
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_importPrivate(SharkSslPSAEcdsaKey *o, U16 defaultsdhci1,
+                                                   psa_algorithm_t _XzY0x2AD, int _XzY0x2A9,
+                                                   const U8 *_XzY0x2D5, U16 _XzY0x2D6)
+{
+   if (!_XzY0x2D5)
+   {
+      return -1;
+   }
+   return _XzY0x2E2(o, defaultsdhci1, _XzY0x2AD, _XzY0x2A9,
+                                  _XzY0x2D5, _XzY0x2D6, 0);
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_importPublic(SharkSslPSAEcdsaKey *o, U16 defaultsdhci1,
+                                                  psa_algorithm_t _XzY0x2AD, int _XzY0x2A9,
+                                                  const U8 *_XzY0x1E7, U16 _XzY0x2D8)
+{
+   if (!_XzY0x1E7)
+   {
+      return -1;
+   }
+   return _XzY0x2E2(o, defaultsdhci1, _XzY0x2AD, _XzY0x2A9,
+                                  _XzY0x1E7, _XzY0x2D8, 1);
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_exportPublic(const SharkSslPSAEcdsaKey *o,
+                                                  U8 *_XzY0x1E7, U16 _XzY0x273, U16 *_XzY0x2D8)
+{
+   psa_status_t sffsdrnandflash;
+   size_t enablekernel, _XzY0x2A6, _XzY0x26F, written = 0;
+   if (!_XzY0x2D8)
+   {
+      return -1;
+   }
+   *_XzY0x2D8 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || (!_XzY0x1E7) ||
+       _XzY0x2E5(o->curveID, NULL, &enablekernel, &_XzY0x2A6, &_XzY0x26F) ||
+       (_XzY0x273 < _XzY0x26F))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_export_public_key(o->handle, _XzY0x1E7, _XzY0x273, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (written != _XzY0x26F) || (_XzY0x1E7[0] != 4))
+   {
+      memset(_XzY0x1E7, 0, _XzY0x273);
+      return -1;
+   }
+   *_XzY0x2D8 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_signRaw(const SharkSslPSAEcdsaKey *o,
+                                             const U8 *chargerplatform, U16 ftraceupdate,
+                                             U8 *probeguestctl0, U16 systemstring, U16 *_XzY0x299)
+{
+   psa_status_t sffsdrnandflash;
+   size_t enablekernel, _XzY0x2A6, _XzY0x2D9, _XzY0x1D1, written = 0;
+   if (!_XzY0x299)
+   {
+      return -1;
+   }
+   *_XzY0x299 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || o->publicOnly || (!chargerplatform) || (!probeguestctl0) ||
+       _XzY0x2E5(o->curveID, NULL, &enablekernel, &_XzY0x2A6, &_XzY0x2D9) ||
+       _XzY0x2E4(PSA_ALG_GET_HASH(o->algorithm), &_XzY0x1D1) ||
+       (ftraceupdate != _XzY0x1D1) || (systemstring < 2 * _XzY0x2A6))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_sign_hash(o->handle, o->algorithm, chargerplatform, ftraceupdate,
+                          probeguestctl0, systemstring, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (written != 2 * _XzY0x2A6))
+   {
+      memset(probeguestctl0, 0, systemstring);
+      return -1;
+   }
+   *_XzY0x299 = (U16)written;
+   return 0;
+}
+
+
+static int _XzY0x30A(const SharkSslPSAEcdsaKey *o,
+                                             const U8 *chargerplatform, U16 ftraceupdate,
+                                             const U8 *probeguestctl0, U16 _XzY0x299)
+{
+   SharkSslPSAEcdsaKey _XzY0x1E7 = {0};
+   U8 _XzY0x309[PSA_EXPORT_PUBLIC_KEY_MAX_SIZE];
+   U16 _XzY0x2D9 = 0;
+   int deltadevices;
+
+   if (SharkSslPSAEcdsaKey_exportPublic(o, _XzY0x309, sizeof(_XzY0x309), &_XzY0x2D9) ||
+       SharkSslPSAEcdsaKey_importPublic(&_XzY0x1E7, o->curveID, PSA_ALG_GET_HASH(o->algorithm),
+                                       PSA_ALG_IS_DETERMINISTIC_ECDSA(o->algorithm), _XzY0x309, _XzY0x2D9))
+   {
+      memset(_XzY0x309, 0, sizeof(_XzY0x309));
+      return -1;
+   }
+   memset(_XzY0x309, 0, sizeof(_XzY0x309));
+   deltadevices = SharkSslPSAEcdsaKey_verifyRaw(&_XzY0x1E7, chargerplatform, ftraceupdate, probeguestctl0, _XzY0x299);
+   if (SharkSslPSAEcdsaKey_destructor(&_XzY0x1E7))
+   {
+      return -1;
+   }
+   return deltadevices;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_verifyRaw(const SharkSslPSAEcdsaKey *o,
+                                               const U8 *chargerplatform, U16 ftraceupdate,
+                                               const U8 *probeguestctl0, U16 _XzY0x299)
+{
+   size_t enablekernel, _XzY0x2A6, _XzY0x2D9, _XzY0x1D1;
+   psa_status_t sffsdrnandflash;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || (!chargerplatform) || (!probeguestctl0) ||
+       _XzY0x2E5(o->curveID, NULL, &enablekernel, &_XzY0x2A6, &_XzY0x2D9) ||
+       _XzY0x2E4(PSA_ALG_GET_HASH(o->algorithm), &_XzY0x1D1) ||
+       (ftraceupdate != _XzY0x1D1) || (_XzY0x299 != 2 * _XzY0x2A6))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_verify_hash(o->handle, o->algorithm, chargerplatform, ftraceupdate, probeguestctl0, _XzY0x299);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      return 0;
+   }
+   if (o->publicOnly || ((sffsdrnandflash != PSA_ERROR_NOT_SUPPORTED) &&
+                         (sffsdrnandflash != PSA_ERROR_NOT_PERMITTED) &&
+                         (sffsdrnandflash != PSA_ERROR_INVALID_ARGUMENT) &&
+                         (sffsdrnandflash != PSA_ERROR_INVALID_SIGNATURE)))
+   {
+      return -1;
+   }
+   return _XzY0x30A(o, chargerplatform, ftraceupdate, probeguestctl0, _XzY0x299);
+}
+
+
+static size_t _XzY0x2E3(const U8 *videoprobe, size_t _XzY0x2F3)
+{
+   size_t idmapstart = 0;
+   while ((idmapstart + 1 < _XzY0x2F3) && (videoprobe[idmapstart] == 0))
+   {
+      ++idmapstart;
+   }
+   return (_XzY0x2F3 - idmapstart) + ((videoprobe[idmapstart] & 0x80) ? 1 : 0);
+}
+
+
+static U8 *sharkssl_psaEcdsaWriteDerInteger(U8 *out, const U8 *videoprobe, size_t _XzY0x2F3)
+{
+   size_t idmapstart = 0, len;
+   while ((idmapstart + 1 < _XzY0x2F3) && (videoprobe[idmapstart] == 0))
+   {
+      ++idmapstart;
+   }
+   len = _XzY0x2F3 - idmapstart;
+   *out++ = 2;
+   *out++ = (U8)(len + ((videoprobe[idmapstart] & 0x80) ? 1 : 0));
+   if (videoprobe[idmapstart] & 0x80)
+   {
+      *out++ = 0;
+   }
+   memcpy(out, videoprobe + idmapstart, len);
+   return out + len;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsa_rawToDer(U16 defaultsdhci1, const U8 *raw, U16 _XzY0x2DB,
+                                           U8 *der, U16 _XzY0x2A7, U16 *_XzY0x269)
+{
+   size_t enablekernel, _XzY0x2F3, _XzY0x2D9, bodyLen, headerLen;
+   U8 *p;
+   if (!_XzY0x269)
+   {
+      return -1;
+   }
+   *_XzY0x269 = 0;
+   if ((!raw) || (!der) || _XzY0x2E5(defaultsdhci1, NULL, &enablekernel, &_XzY0x2F3, &_XzY0x2D9) ||
+       (_XzY0x2DB != 2 * _XzY0x2F3))
+   {
+      return -1;
+   }
+   bodyLen = 4 + _XzY0x2E3(raw, _XzY0x2F3) +
+             _XzY0x2E3(raw + _XzY0x2F3, _XzY0x2F3);
+   headerLen = (bodyLen > 127) ? 3 : 2;
+   if (_XzY0x2A7 < headerLen + bodyLen)
+   {
+      return -1;
+   }
+   der[0] = 0x30;
+   if (headerLen == 3)
+   {
+      der[1] = 0x81;
+      der[2] = (U8)bodyLen;
+   }
+   else
+   {
+      der[1] = (U8)bodyLen;
+   }
+   p = sharkssl_psaEcdsaWriteDerInteger(der + headerLen, raw, _XzY0x2F3);
+   p = sharkssl_psaEcdsaWriteDerInteger(p, raw + _XzY0x2F3, _XzY0x2F3);
+   *_XzY0x269 = (U16)(p - der);
+   return 0;
+}
+
+
+static int sharkssl_psaEcdsaReadDerInteger(const U8 **enablelevel, const U8 *end, U8 *out, size_t _XzY0x2F3)
+{
+   const U8 *p = *enablelevel;
+   size_t len;
+   if ((end - p < 3) || (p[0] != 2))
+   {
+      return -1;
+   }
+   len = p[1];
+   p += 2;
+   if ((!len) || (len > (size_t)(end - p)) || (p[0] & 0x80) ||
+       ((len > 1) && (p[0] == 0) && (!(p[1] & 0x80))))
+   {
+      return -1;
+   }
+   if (p[0] == 0)
+   {
+      ++p;
+      --len;
+   }
+   if (len > _XzY0x2F3)
+   {
+      return -1;
+   }
+   memset(out, 0, _XzY0x2F3);
+   memcpy(out + _XzY0x2F3 - len, p, len);
+   *enablelevel = p + len;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsa_derToRaw(U16 defaultsdhci1, const U8 *der, U16 _XzY0x269,
+                                           U8 *raw, U16 _XzY0x2DC, U16 *_XzY0x2DB)
+{
+   size_t enablekernel, _XzY0x2F3, _XzY0x2D9, bodyLen, headerLen;
+   const U8 *p, *end;
+   if (!_XzY0x2DB)
+   {
+      return -1;
+   }
+   *_XzY0x2DB = 0;
+   if ((!raw) || _XzY0x2E5(defaultsdhci1, NULL, &enablekernel, &_XzY0x2F3, &_XzY0x2D9) ||
+       (_XzY0x2DC < 2 * _XzY0x2F3))
+   {
+      return -1;
+   }
+   memset(raw, 0, 2 * _XzY0x2F3);
+   if ((!der) || (_XzY0x269 < 8) || (_XzY0x269 > 3 + 4 + 2 * (_XzY0x2F3 + 1)) || (der[0] != 0x30))
+   {
+      return -1;
+   }
+   if (der[1] < 0x80)
+   {
+      headerLen = 2;
+      bodyLen = der[1];
+   }
+   else if ((der[1] == 0x81) && (_XzY0x269 >= 3) && (der[2] >= 0x80))
+   {
+      headerLen = 3;
+      bodyLen = der[2];
+   }
+   else
+   {
+      return -1;
+   }
+   if (bodyLen != (size_t)_XzY0x269 - headerLen)
+   {
+      return -1;
+   }
+   p = der + headerLen;
+   end = der + _XzY0x269;
+   if (sharkssl_psaEcdsaReadDerInteger(&p, end, raw, _XzY0x2F3) ||
+       sharkssl_psaEcdsaReadDerInteger(&p, end, raw + _XzY0x2F3, _XzY0x2F3) || (p != end))
+   {
+      memset(raw, 0, 2 * _XzY0x2F3);
+      return -1;
+   }
+   *_XzY0x2DB = (U16)(2 * _XzY0x2F3);
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSAEcdsaKey_destructor(SharkSslPSAEcdsaKey *o)
+{
+   if (!o)
+   {
+      return -1;
+   }
+   if ((o->handle != PSA_KEY_ID_NULL) && (psa_destroy_key(o->handle) != PSA_SUCCESS))
+   {
+      return -1;
+   }
+   memset(o, 0, sizeof(*o));
+   return 0;
+}
+
+
+#include "psa-consumer/SharkSslPSAConsumerRSA.h"
+#include <limits.h>
+#include <stdint.h>
+#include <string.h>
+
+static int _XzY0x2ED(psa_algorithm_t alg)
+{
+   return (alg == PSA_ALG_RSA_PKCS1V15_CRYPT) ||
+          (PSA_ALG_IS_RSA_OAEP(alg) && PSA_ALG_IS_HASH(PSA_ALG_GET_HASH(alg)));
+}
+
+
+static int _XzY0x2EE(psa_algorithm_t alg)
+{
+   psa_algorithm_t _XzY0x2AD = PSA_ALG_GET_HASH(alg);
+   return ((PSA_ALG_IS_RSA_PKCS1V15_SIGN(alg)) || (PSA_ALG_IS_RSA_PSS_STANDARD_SALT(alg))) &&
+          (PSA_ALG_IS_HASH(_XzY0x2AD)) && (PSA_HASH_LENGTH(_XzY0x2AD) != 0);
+}
+
+
+static int _XzY0x30B(const SharkSslPSARSAKey *o, const U8 *chargerplatform,
+                                           const U8 *probeguestctl0, U16 ftraceupdate, U16 _XzY0x299)
+{
+   U8 _XzY0x291[PSA_EXPORT_PUBLIC_KEY_MAX_SIZE];
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_id_t verifier = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash;
+   size_t _XzY0x2D9 = 0;
+
+   sffsdrnandflash = psa_export_public_key(o->handle, _XzY0x291, sizeof(_XzY0x291), &_XzY0x2D9);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (!_XzY0x2D9))
+   {
+      memset(_XzY0x291, 0, sizeof(_XzY0x291));
+      return -1;
+   }
+   psa_set_key_type(&attr, PSA_KEY_TYPE_RSA_PUBLIC_KEY);
+   psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_VERIFY_HASH);
+   psa_set_key_algorithm(&attr, o->alg);
+   sffsdrnandflash = psa_import_key(&attr, _XzY0x291, _XzY0x2D9, &verifier);
+   psa_reset_key_attributes(&attr);
+   memset(_XzY0x291, 0, sizeof(_XzY0x291));
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_verify_hash(verifier, o->alg, chargerplatform, ftraceupdate, probeguestctl0, _XzY0x299);
+   if (psa_destroy_key(verifier) != PSA_SUCCESS)
+   {
+      return -1;
+   }
+   return sffsdrnandflash == PSA_SUCCESS ? 0 : -1;
+}
+
+
+static int _XzY0x29F(SharkSslPSARSAKey *o, const U8 *_XzY0x2B0,
+                                    psa_algorithm_t alg, int _XzY0x2DA, int _XzY0x2AB,
+                                    U16 _XzY0x2B1, U16 enablekernel)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_attributes_t actual = PSA_KEY_ATTRIBUTES_INIT;
+   psa_status_t sffsdrnandflash;
+   size_t actualBits;
+   int _XzY0x2EF;
+
+   if (!o)
+   {
+      return -1;
+   }
+   memset(o, 0, sizeof(*o));
+   _XzY0x2EF = _XzY0x2EE(alg);
+   if (((!_XzY0x2ED(alg)) && (!_XzY0x2EF)) ||
+       ((_XzY0x2B0) ? (!_XzY0x2B1) : (_XzY0x2B1 || _XzY0x2DA)) ||
+       ((!_XzY0x2B0) && (!enablekernel)) || (_XzY0x2DA && _XzY0x2AB))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_crypto_init();
+   if (sffsdrnandflash != PSA_SUCCESS)
+   {
+      return -1;
+   }
+   psa_set_key_type(&attr, _XzY0x2DA ? PSA_KEY_TYPE_RSA_PUBLIC_KEY : PSA_KEY_TYPE_RSA_KEY_PAIR);
+   if (!_XzY0x2B0)
+   {
+      psa_set_key_bits(&attr, enablekernel);
+   }
+   if (_XzY0x2EF)
+   {
+      psa_set_key_usage_flags(&attr, (_XzY0x2DA ? PSA_KEY_USAGE_VERIFY_HASH : (PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH)) |
+                              (_XzY0x2AB ? PSA_KEY_USAGE_EXPORT : 0));
+   }
+   else
+   {
+      psa_set_key_usage_flags(&attr, _XzY0x2DA ? PSA_KEY_USAGE_ENCRYPT :
+                              (PSA_KEY_USAGE_DECRYPT | (_XzY0x2AB ? PSA_KEY_USAGE_EXPORT : 0)));
+   }
+   psa_set_key_algorithm(&attr, alg);
+   sffsdrnandflash = _XzY0x2B0 ? psa_import_key(&attr, _XzY0x2B0, _XzY0x2B1, &o->handle) :
+                     psa_generate_key(&attr, &o->handle);
+   if (_XzY0x2EF && (!_XzY0x2DA) && ((sffsdrnandflash == PSA_ERROR_NOT_SUPPORTED) ||
+                                    (sffsdrnandflash == PSA_ERROR_NOT_PERMITTED) ||
+                                    (sffsdrnandflash == PSA_ERROR_INVALID_ARGUMENT)))
+   {
+      psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_HASH | (_XzY0x2AB ? PSA_KEY_USAGE_EXPORT : 0));
+      sffsdrnandflash = _XzY0x2B0 ? psa_import_key(&attr, _XzY0x2B0, _XzY0x2B1, &o->handle) : psa_generate_key(&attr, &o->handle);
+   }
+   psa_reset_key_attributes(&attr);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_get_key_attributes(o->handle, &actual);
+   }
+   actualBits = sffsdrnandflash == PSA_SUCCESS ? psa_get_key_bits(&actual) : 0;
+   if ((sffsdrnandflash != PSA_SUCCESS) || (!actualBits) || (actualBits > UINT16_MAX) ||
+       (actualBits % CHAR_BIT) || (enablekernel && actualBits != enablekernel) ||
+       (psa_get_key_type(&actual) != (_XzY0x2DA ? PSA_KEY_TYPE_RSA_PUBLIC_KEY : PSA_KEY_TYPE_RSA_KEY_PAIR)))
+   {
+      psa_reset_key_attributes(&actual);
+      if (o->handle != PSA_KEY_ID_NULL)
+      {
+         if (psa_destroy_key(o->handle) != PSA_SUCCESS)
+         {
+            return -1;
+         }
+      }
+      memset(o, 0, sizeof(*o));
+      return -1;
+   }
+   psa_reset_key_attributes(&actual);
+   o->bits = (U16)actualBits;
+   o->alg = alg;
+   o->publicOnly = (U8)(_XzY0x2DA != 0);
+   o->exportable = (U8)(_XzY0x2AB != 0);
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_generate(SharkSslPSARSAKey *o,
+                                            psa_algorithm_t alg, int _XzY0x2AB, U16 enablekernel)
+{
+   return _XzY0x29F(o, NULL, alg, 0, _XzY0x2AB, 0, enablekernel);
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_importPrivate(SharkSslPSARSAKey *o, const U8 *_XzY0x2D2,
+                                                 psa_algorithm_t alg, int _XzY0x2AB,
+                                                 U16 _XzY0x2D3)
+{
+   if (!_XzY0x2D2)
+   {
+      return -1;
+   }
+   return _XzY0x29F(o, _XzY0x2D2, alg, 0, _XzY0x2AB, _XzY0x2D3, 0);
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_importPublic(SharkSslPSARSAKey *o, const U8 *_XzY0x291,
+                                                psa_algorithm_t alg, U16 _XzY0x292)
+{
+   if (!_XzY0x291)
+   {
+      return -1;
+   }
+   return _XzY0x29F(o, _XzY0x291, alg, 1, 0, _XzY0x292, 0);
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_exportPrivate(const SharkSslPSARSAKey *o,
+                                                 U8 *_XzY0x2D2, U16 _XzY0x2D4,
+                                                 U16 *_XzY0x2D3)
+{
+   psa_status_t sffsdrnandflash;
+   size_t written = 0;
+   if (!_XzY0x2D3)
+   {
+      return -1;
+   }
+   *_XzY0x2D3 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || o->publicOnly || (!o->exportable) ||
+       (!_XzY0x2D2) || (!_XzY0x2D4))
+   {
+      if (_XzY0x2D2)
+      {
+         memset(_XzY0x2D2, 0, _XzY0x2D4);
+      }
+      return -1;
+   }
+   sffsdrnandflash = psa_export_key(o->handle, _XzY0x2D2, _XzY0x2D4, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (!written) || (written > UINT16_MAX))
+   {
+      memset(_XzY0x2D2, 0, _XzY0x2D4);
+      return -1;
+   }
+   *_XzY0x2D3 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_exportPublic(const SharkSslPSARSAKey *o,
+                                                U8 *_XzY0x291, U16 _XzY0x2D7,
+                                                U16 *_XzY0x292)
+{
+   psa_status_t sffsdrnandflash;
+   size_t written = 0;
+   if (!_XzY0x292)
+   {
+      return -1;
+   }
+   *_XzY0x292 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || (!_XzY0x291) || (!_XzY0x2D7))
+   {
+      if (_XzY0x291)
+      {
+         memset(_XzY0x291, 0, _XzY0x2D7);
+      }
+      return -1;
+   }
+   sffsdrnandflash = psa_export_public_key(o->handle, _XzY0x291, _XzY0x2D7, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (!written) || (written > UINT16_MAX))
+   {
+      memset(_XzY0x291, 0, _XzY0x2D7);
+      return -1;
+   }
+   *_XzY0x292 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_encrypt(const SharkSslPSARSAKey *o, const U8 *_XzY0x2D,
+                                           const U8 *clkdmoperations, U8 *_XzY0x2A3,
+                                           U16 _XzY0x2D0, U16 auxdatalookup,
+                                           U16 _XzY0x2A5, U16 *_XzY0x2A4)
+{
+   static const U8 _XzY0x2AA = 0;
+   psa_status_t sffsdrnandflash;
+   size_t written = 0;
+   if (!_XzY0x2A4)
+   {
+      return -1;
+   }
+   *_XzY0x2A4 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || (!o->publicOnly) ||
+       (!_XzY0x2ED(o->alg)) ||
+       ((!_XzY0x2D) && _XzY0x2D0) || (!_XzY0x2A3) ||
+       ((!clkdmoperations) && auxdatalookup) ||
+       ((o->alg == PSA_ALG_RSA_PKCS1V15_CRYPT) && auxdatalookup) ||
+       (_XzY0x2A5 < o->bits / CHAR_BIT))
+   {
+      if (_XzY0x2A3)
+      {
+         memset(_XzY0x2A3, 0, _XzY0x2A5);
+      }
+      return -1;
+   }
+   if (!_XzY0x2D)
+   {
+      _XzY0x2D = &_XzY0x2AA;
+   }
+   sffsdrnandflash = psa_asymmetric_encrypt(o->handle, o->alg, _XzY0x2D, _XzY0x2D0,
+                                   clkdmoperations, auxdatalookup, _XzY0x2A3, _XzY0x2A5, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (written != o->bits / CHAR_BIT))
+   {
+      memset(_XzY0x2A3, 0, _XzY0x2A5);
+      return -1;
+   }
+   *_XzY0x2A4 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_decrypt(const SharkSslPSARSAKey *o, const U8 *_XzY0x2A3,
+                                           const U8 *clkdmoperations, U8 *_XzY0x2D,
+                                           U16 _XzY0x2A4, U16 auxdatalookup,
+                                           U16 _XzY0x2D1, U16 *_XzY0x2D0)
+{
+   psa_status_t sffsdrnandflash;
+   size_t written = 0;
+   if (!_XzY0x2D0)
+   {
+      return -1;
+   }
+   *_XzY0x2D0 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || o->publicOnly ||
+       (!_XzY0x2ED(o->alg)) ||
+       (!_XzY0x2A3) || (!_XzY0x2D) || ((!clkdmoperations) && auxdatalookup) ||
+       ((o->alg == PSA_ALG_RSA_PKCS1V15_CRYPT) && auxdatalookup) ||
+       (_XzY0x2A4 != o->bits / CHAR_BIT) || (_XzY0x2D1 < o->bits / CHAR_BIT))
+   {
+      if (_XzY0x2D)
+      {
+         memset(_XzY0x2D, 0, _XzY0x2D1);
+      }
+      return -1;
+   }
+   sffsdrnandflash = psa_asymmetric_decrypt(o->handle, o->alg, _XzY0x2A3, _XzY0x2A4,
+                                   clkdmoperations, auxdatalookup, _XzY0x2D, _XzY0x2D1, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (written > UINT16_MAX))
+   {
+      memset(_XzY0x2D, 0, _XzY0x2D1);
+      return -1;
+   }
+   *_XzY0x2D0 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_signHash(const SharkSslPSARSAKey *o, const U8 *chargerplatform,
+                                            U8 *probeguestctl0, U16 *_XzY0x299,
+                                            U16 ftraceupdate, U16 systemstring)
+{
+   psa_status_t sffsdrnandflash;
+   size_t written = 0;
+   if (!_XzY0x299)
+   {
+      return -1;
+   }
+   *_XzY0x299 = 0;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) || (o->publicOnly) ||
+       (!_XzY0x2EE(o->alg)) ||
+       (!chargerplatform) || (!probeguestctl0) ||
+       (ftraceupdate != PSA_HASH_LENGTH(PSA_ALG_GET_HASH(o->alg))) ||
+       (systemstring < o->bits / CHAR_BIT))
+   {
+      if (probeguestctl0)
+      {
+         memset(probeguestctl0, 0, systemstring);
+      }
+      return -1;
+   }
+   sffsdrnandflash = psa_sign_hash(o->handle, o->alg, chargerplatform, ftraceupdate, probeguestctl0, systemstring, &written);
+   if ((sffsdrnandflash != PSA_SUCCESS) || (written != o->bits / CHAR_BIT))
+   {
+      memset(probeguestctl0, 0, systemstring);
+      return -1;
+   }
+   *_XzY0x299 = (U16)written;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_verifyHash(const SharkSslPSARSAKey *o, const U8 *chargerplatform,
+                                              const U8 *probeguestctl0, U16 ftraceupdate,
+                                              U16 _XzY0x299)
+{
+   psa_status_t sffsdrnandflash;
+   if ((!o) || (o->handle == PSA_KEY_ID_NULL) ||
+       (!_XzY0x2EE(o->alg)) ||
+       (!chargerplatform) || (!probeguestctl0) ||
+       (ftraceupdate != PSA_HASH_LENGTH(PSA_ALG_GET_HASH(o->alg))) ||
+       (_XzY0x299 != o->bits / CHAR_BIT))
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_verify_hash(o->handle, o->alg, chargerplatform, ftraceupdate, probeguestctl0, _XzY0x299);
+   if (sffsdrnandflash == PSA_SUCCESS)
+   {
+      return 0;
+   }
+   if (o->publicOnly || ((sffsdrnandflash != PSA_ERROR_NOT_SUPPORTED) &&
+                         (sffsdrnandflash != PSA_ERROR_NOT_PERMITTED) &&
+                         (sffsdrnandflash != PSA_ERROR_INVALID_ARGUMENT) &&
+                         (sffsdrnandflash != PSA_ERROR_INVALID_SIGNATURE)))
+   {
+      return -1;
+   }
+   return _XzY0x30B(o, chargerplatform, probeguestctl0, ftraceupdate, _XzY0x299);
+}
+
+
+SHARKSSL_API int SharkSslPSARSAKey_destructor(SharkSslPSARSAKey *o)
+{
+   if (!o)
+   {
+      return -1;
+   }
+   if ((o->handle != PSA_KEY_ID_NULL) && (psa_destroy_key(o->handle) != PSA_SUCCESS))
+   {
+      return -1;
+   }
+   memset(o, 0, sizeof(*o));
+   return 0;
+}
+
+#if SHARKSSL_PSA_CONSUMER_STANDALONE_AES == 1
+
+
+
+#ifndef BA_LIB
+#define BA_LIB
+#endif
+
+#include "SharkSslCrypto.h"
+#include <psa/crypto.h>
+#include <string.h>
+
+#if (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
+#error SharkSslPSAConsumerAES.c requires SHARKSSL_PSA_CONSUMER_STANDALONE_AES
+#endif
+
+static psa_status_t _XzY0x29E(const SharkSslAesCtx *o, psa_key_id_t *sourcerouting, psa_algorithm_t _XzY0x261)
+{
+   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+   psa_status_t sffsdrnandflash;
+   if ((!o) || (!sourcerouting) || (!o->valid))
+   {
+      return PSA_ERROR_BAD_STATE;
+   }
+   *sourcerouting = PSA_KEY_ID_NULL;
+   psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+   psa_set_key_bits(&attributes, (size_t)o->keyLen * 8);
+   psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
+   psa_set_key_algorithm(&attributes, _XzY0x261);
+   sffsdrnandflash = psa_import_key(&attributes, o->key, o->keyLen, sourcerouting);
+   psa_reset_key_attributes(&attributes);
+   return sffsdrnandflash;
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_constructor(SharkSslAesCtx *o, SharkSslAesCtx_Type rightsvalid, const U8 *sourcerouting, U8 creategroup)
+{
+   if (!o)
+   {
+      return -1;
+   }
+   sharkssl_clear(o, sizeof(*o));
+   if ((!sourcerouting) || ((SharkSslAesCtx_Encrypt != rightsvalid) && (SharkSslAesCtx_Decrypt != rightsvalid)) ||
+       ((16 != creategroup) && (24 != creategroup) && (32 != creategroup)) ||
+       ((16 == creategroup) && (!SHARKSSL_USE_AES_128)) ||
+       ((24 == creategroup) && (!SHARKSSL_USE_AES_192)) ||
+       ((32 == creategroup) && (!SHARKSSL_USE_AES_256)) ||
+       (PSA_SUCCESS != psa_crypto_init()))
+   {
+      return -1;
+   }
+   memcpy(o->key, sourcerouting, creategroup);
+   o->keyLen = creategroup;
+   o->valid = 1;
+   return 0;
+}
+
+
+static int SharkSslAesCtx_block(SharkSslAesCtx *o, const U8 updatecause[16], U8 enablehazard[16], int loongsonclear)
+{
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, _XzY0x1CD;
+   size_t _XzY0x2CF = 0;
+   if ((!o) || (!updatecause) || (!enablehazard) || (!o->valid))
+   {
+      return -1;
+   }
+   sffsdrnandflash = _XzY0x29E(o, &sourcerouting, PSA_ALG_ECB_NO_PADDING);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      sharkssl_clear(enablehazard, 16);
+      return -1;
+   }
+   sffsdrnandflash = loongsonclear ? psa_cipher_encrypt(sourcerouting, PSA_ALG_ECB_NO_PADDING, updatecause, 16, enablehazard, 16, &_XzY0x2CF) :
+                      psa_cipher_decrypt(sourcerouting, PSA_ALG_ECB_NO_PADDING, updatecause, 16, enablehazard, 16, &_XzY0x2CF);
+   _XzY0x1CD = psa_destroy_key(sourcerouting);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != _XzY0x1CD) || (16 != _XzY0x2CF))
+   {
+      sharkssl_clear(enablehazard, 16);
+      return -1;
+   }
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_encrypt(SharkSslAesCtx *o, U8 updatecause[16], U8 enablehazard[16])
+{
+   return SharkSslAesCtx_block(o, updatecause, enablehazard, 1);
+}
+
+
+#if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
+SHARKSSL_API int SharkSslAesCtx_decrypt(SharkSslAesCtx *o, const U8 updatecause[16], U8 enablehazard[16])
+{
+   return SharkSslAesCtx_block(o, updatecause, enablehazard, 0);
+}
+#endif
+
+
+#if SHARKSSL_ENABLE_AES_CBC
+static int SharkSslAesCtx_cbc(SharkSslAesCtx *o, U8 vect[16], const U8 *updatecause, U8 *enablehazard, U32 len, int loongsonclear)
+{
+   psa_cipher_operation_t _XzY0x219 = PSA_CIPHER_OPERATION_INIT;
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, abortStatus, _XzY0x1CD;
+   U8 pmuv2events[16];
+   size_t updateLen = 0, finishLen = 0;
+   if ((!o) || (!o->valid) || (!vect) || ((!updatecause) && len) || ((!enablehazard) && len) || (len & 15))
+   {
+      return -1;
+   }
+   if (!len)
+   {
+      return 0;
+   }
+   if (!loongsonclear)
+   {
+      memcpy(pmuv2events, updatecause + len - 16, 16);
+   }
+   sffsdrnandflash = _XzY0x29E(o, &sourcerouting, PSA_ALG_CBC_NO_PADDING);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      sharkssl_clear(enablehazard, len);
+      return -1;
+   }
+   sffsdrnandflash = loongsonclear ? psa_cipher_encrypt_setup(&_XzY0x219, sourcerouting, PSA_ALG_CBC_NO_PADDING) :
+                      psa_cipher_decrypt_setup(&_XzY0x219, sourcerouting, PSA_ALG_CBC_NO_PADDING);
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_cipher_set_iv(&_XzY0x219, vect, 16);
+   }
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_cipher_update(&_XzY0x219, updatecause, len, enablehazard, len, &updateLen);
+   }
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_cipher_finish(&_XzY0x219, enablehazard + updateLen, len - updateLen, &finishLen);
+   }
+   abortStatus = psa_cipher_abort(&_XzY0x219);
+   _XzY0x1CD = psa_destroy_key(sourcerouting);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != abortStatus) || (PSA_SUCCESS != _XzY0x1CD) ||
+       (len != updateLen + finishLen))
+   {
+      sharkssl_clear(enablehazard, len);
+      return -1;
+   }
+   memcpy(vect, loongsonclear ? enablehazard + len - 16 : pmuv2events, 16);
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_cbc_encrypt(SharkSslAesCtx *o, U8 vect[16], const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   return SharkSslAesCtx_cbc(o, vect, updatecause, enablehazard, len, 1);
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *o, U8 vect[16], const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   return SharkSslAesCtx_cbc(o, vect, updatecause, enablehazard, len, 0);
+}
+
+
+#if defined(PSA_ALG_CBC_PKCS7)
+static int SharkSslAesCtx_cbcPKCS7(SharkSslAesCtx *o, const U8 iv[16], const U8 *updatecause, U8 *enablehazard,
+                                   U32 *_XzY0x2CF, U32 len, U32 outputCapacity, int loongsonclear)
+{
+   psa_cipher_operation_t _XzY0x219 = PSA_CIPHER_OPERATION_INIT;
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, abortStatus, _XzY0x1CD;
+   size_t updateLen = 0, finishLen = 0;
+   if (_XzY0x2CF)
+   {
+      *_XzY0x2CF = 0;
+   }
+   if ((!o) || (!o->valid) || (!iv) || ((!updatecause) && len) || (!enablehazard) || (!_XzY0x2CF) ||
+       ((loongsonclear) && (len > 0xFFFFFFEF)) || ((!loongsonclear) && ((!len) || (len & 15))) ||
+       ((loongsonclear) && (outputCapacity < (len + 16) - (len & 15))) ||
+       ((!loongsonclear) && (outputCapacity < len)))
+   {
+      return -1;
+   }
+   sffsdrnandflash = _XzY0x29E(o, &sourcerouting, PSA_ALG_CBC_PKCS7);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      sharkssl_clear(enablehazard, outputCapacity);
+      return -1;
+   }
+   sffsdrnandflash = loongsonclear ? psa_cipher_encrypt_setup(&_XzY0x219, sourcerouting, PSA_ALG_CBC_PKCS7) :
+                      psa_cipher_decrypt_setup(&_XzY0x219, sourcerouting, PSA_ALG_CBC_PKCS7);
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_cipher_set_iv(&_XzY0x219, iv, 16);
+   }
+   if ((PSA_SUCCESS == sffsdrnandflash) && len)
+   {
+      sffsdrnandflash = psa_cipher_update(&_XzY0x219, updatecause, len, enablehazard, outputCapacity, &updateLen);
+   }
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_cipher_finish(&_XzY0x219, enablehazard + updateLen, outputCapacity - updateLen, &finishLen);
+   }
+   abortStatus = psa_cipher_abort(&_XzY0x219);
+   _XzY0x1CD = psa_destroy_key(sourcerouting);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != abortStatus) || (PSA_SUCCESS != _XzY0x1CD) ||
+       (updateLen + finishLen > outputCapacity))
+   {
+      sharkssl_clear(enablehazard, outputCapacity);
+      return -1;
+   }
+   *_XzY0x2CF = (U32)(updateLen + finishLen);
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_cbc_pkcs7_encrypt(SharkSslAesCtx *o, const U8 iv[16],
+                                                  const U8 *updatecause, U8 *enablehazard, U32 *_XzY0x2CF, U32 len, U32 outputCapacity)
+{
+   return SharkSslAesCtx_cbcPKCS7(o, iv, updatecause, enablehazard, _XzY0x2CF, len, outputCapacity, 1);
+}
+
+
+SHARKSSL_API int SharkSslAesCtx_cbc_pkcs7_decrypt(SharkSslAesCtx *o, const U8 iv[16],
+                                                  const U8 *updatecause, U8 *enablehazard, U32 *_XzY0x2CF, U32 len, U32 outputCapacity)
+{
+   return SharkSslAesCtx_cbcPKCS7(o, iv, updatecause, enablehazard, _XzY0x2CF, len, outputCapacity, 0);
+}
+#endif
+#endif
+
+
+#if SHARKSSL_ENABLE_AES_CTR_MODE
+SHARKSSL_API int SharkSslAesCtx_ctr_mode(SharkSslAesCtx *o, U8 ctr[16], const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, _XzY0x1CD;
+   U8 _XzY0x202[16], k;
+   size_t streamLen;
+   U32 idmapstart;
+   U8 i;
+   if ((!o) || (!o->valid) || (!ctr) || ((!updatecause) && len) || ((!enablehazard) && len) || (len & 15))
+   {
+      return -1;
+   }
+   if (!len)
+   {
+      return 0;
+   }
+   sffsdrnandflash = _XzY0x29E(o, &sourcerouting, PSA_ALG_ECB_NO_PADDING);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      sharkssl_clear(enablehazard, len);
+      return -1;
+   }
+   for (idmapstart = 0; idmapstart < len; idmapstart += 16)
+   {
+      for (k = 0; k < 16; ++k)
+      {
+         if (++ctr[k])
+         {
+            break;
+         }
+      }
+      streamLen = 0;
+      sffsdrnandflash = psa_cipher_encrypt(sourcerouting, PSA_ALG_ECB_NO_PADDING, ctr, 16, _XzY0x202, sizeof(_XzY0x202), &streamLen);
+      if ((PSA_SUCCESS != sffsdrnandflash) || (16 != streamLen))
+      {
+         break;
+      }
+      for (i = 0; i < 16; ++i)
+      {
+         enablehazard[idmapstart + i] = updatecause[idmapstart + i] ^ _XzY0x202[i];
+      }
+   }
+   _XzY0x1CD = psa_destroy_key(sourcerouting);
+   sharkssl_clear(_XzY0x202, sizeof(_XzY0x202));
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != _XzY0x1CD) || (idmapstart != len))
+   {
+      sharkssl_clear(enablehazard, len);
+      return -1;
+   }
+   return 0;
+}
+#endif
+
+
+#if (SHARKSSL_ENABLE_AES_GCM || SHARKSSL_ENABLE_AES_CCM)
+static int SharkSslAesCtx_processAEAD(const SharkSslAesCtx *aes, const U8 vect[12], U8 *tag, const U8 *pmuv3event,
+                                      const U8 *updatecause, U8 *enablehazard, U32 len, psa_algorithm_t _XzY0x261,
+                                      int loongsonclear, U16 authlen, U8 requestarray)
+{
+   psa_aead_operation_t _XzY0x219 = PSA_AEAD_OPERATION_INIT;
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, abortStatus, _XzY0x1CD;
+   size_t updateLen = 0, finishLen = 0, actualTagLen = 0;
+   if ((!aes) || (!aes->valid) || (!vect) || (!tag) || (!enablehazard) || ((!pmuv3event) && authlen) ||
+       ((!updatecause) && len))
+   {
+      return -1;
+   }
+   sffsdrnandflash = _XzY0x29E(aes, &sourcerouting, _XzY0x261);
+   if (PSA_SUCCESS != sffsdrnandflash)
+   {
+      if (len)
+      {
+         sharkssl_clear(enablehazard, len);
+      }
+      return -1;
+   }
+   sffsdrnandflash = loongsonclear ? psa_aead_encrypt_setup(&_XzY0x219, sourcerouting, _XzY0x261) :
+                      psa_aead_decrypt_setup(&_XzY0x219, sourcerouting, _XzY0x261);
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_aead_set_lengths(&_XzY0x219, authlen, len);
+   }
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      sffsdrnandflash = psa_aead_set_nonce(&_XzY0x219, vect, 12);
+   }
+   if ((PSA_SUCCESS == sffsdrnandflash) && authlen)
+   {
+      sffsdrnandflash = psa_aead_update_ad(&_XzY0x219, pmuv3event, authlen);
+   }
+   if ((PSA_SUCCESS == sffsdrnandflash) && len)
+   {
+      sffsdrnandflash = psa_aead_update(&_XzY0x219, updatecause, len, enablehazard, len, &updateLen);
+   }
+   if (PSA_SUCCESS == sffsdrnandflash)
+   {
+      if (loongsonclear)
+      {
+         sffsdrnandflash = psa_aead_finish(&_XzY0x219, enablehazard + updateLen, len - updateLen, &finishLen,
+                                  tag, requestarray, &actualTagLen);
+      }
+      else
+      {
+         sffsdrnandflash = psa_aead_verify(&_XzY0x219, enablehazard + updateLen, len - updateLen, &finishLen,
+                                  tag, requestarray);
+         actualTagLen = requestarray;
+      }
+   }
+   abortStatus = psa_aead_abort(&_XzY0x219);
+   _XzY0x1CD = psa_destroy_key(sourcerouting);
+   if ((PSA_SUCCESS != sffsdrnandflash) || (PSA_SUCCESS != abortStatus) || (PSA_SUCCESS != _XzY0x1CD) ||
+       (len != updateLen + finishLen) || (requestarray != actualTagLen))
+   {
+      if (len)
+      {
+         sharkssl_clear(enablehazard, len);
+      }
+      if (loongsonclear)
+      {
+         sharkssl_clear(tag, requestarray);
+      }
+      return -1;
+   }
+   return 0;
+}
+#endif
+
+
+#if SHARKSSL_ENABLE_AES_GCM
+SHARKSSL_API int SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *o, const U8 *sourcerouting, U8 creategroup)
+{
+   return o ? SharkSslAesCtx_constructor(&o->super, SharkSslAesCtx_Encrypt, sourcerouting, creategroup) : -1;
+}
+
+
+SHARKSSL_API int SharkSslAesGcmCtx_encrypt(SharkSslAesGcmCtx *o, const U8 vect[12], U8 panickernel[16],
+                                           const U8 *pmuv3event, U16 authlen, const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   return o ? SharkSslAesCtx_processAEAD(&o->super, vect, panickernel, pmuv3event, updatecause, enablehazard, len, PSA_ALG_GCM, 1, authlen, 16) : -1;
+}
+
+
+SHARKSSL_API int SharkSslAesGcmCtx_decrypt(SharkSslAesGcmCtx *o, const U8 vect[12], U8 directionoutput[16],
+                                           const U8 *pmuv3event, U16 authlen, U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   return o ? SharkSslAesCtx_processAEAD(&o->super, vect, directionoutput, pmuv3event, updatecause, enablehazard, len, PSA_ALG_GCM, 0, authlen, 16) : -1;
+}
+#endif
+
+
+#if SHARKSSL_ENABLE_AES_CCM
+SHARKSSL_API int SharkSslAesCcmCtx_constructor(SharkSslAesCcmCtx *o, const U8 *sourcerouting, U8 creategroup, U8 requestarray)
+{
+   if ((!o) || ((8 != requestarray) && (16 != requestarray)) ||
+       (0 != SharkSslAesCtx_constructor(&o->super, SharkSslAesCtx_Encrypt, sourcerouting, creategroup)))
+   {
+      return -1;
+   }
+   o->tagLen = requestarray;
+   return 0;
+}
+
+
+SHARKSSL_API int SharkSslAesCcmCtx_encrypt(SharkSslAesCcmCtx *o, const U8 vect[12], U8 *panickernel,
+                                           const U8 *pmuv3event, U16 authlen, const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   psa_algorithm_t alg;
+   if (!o)
+   {
+      return -1;
+   }
+   alg = (8 == o->tagLen) ? PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, 8) : PSA_ALG_CCM;
+   return SharkSslAesCtx_processAEAD(&o->super, vect, panickernel, pmuv3event, updatecause, enablehazard, len, alg, 1, authlen, o->tagLen);
+}
+
+
+SHARKSSL_API int SharkSslAesCcmCtx_decrypt(SharkSslAesCcmCtx *o, const U8 vect[12], U8 *directionoutput,
+                                           const U8 *pmuv3event, U16 authlen, const U8 *updatecause, U8 *enablehazard, U32 len)
+{
+   psa_algorithm_t alg;
+   if (!o)
+   {
+      return -1;
+   }
+   alg = (8 == o->tagLen) ? PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, 8) : PSA_ALG_CCM;
+   return SharkSslAesCtx_processAEAD(&o->super, vect, directionoutput, pmuv3event, updatecause, enablehazard, len, alg, 0, authlen, o->tagLen);
+}
+#endif
+
+#endif
+
+#else
 
 
 #ifndef BA_LIB
@@ -109005,17 +115106,65 @@ U32 SharkSslSession_getLatestAccessTime(SharkSslSession *o)
 
 
 #if SHARKSSL_ECC_USE_NIST
+
+static void _XzY0x2F7(shtype_tWord *r, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord _XzY0x184, fpemulthreshold;
+   U16 i;
+
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)r[i] - mod->beg[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(_XzY0x184 - 1);  
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)r[i] - (mod->beg[i] & fpemulthreshold) - _XzY0x184;
+      r[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+}
+
+
+#if SHARKSSL_ECC_USE_SECP521R1
+
+static void _XzY0x2F8(shtype_t *o, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord *r;
+   const U16 len = mod->len;
+   const U16 top = (U16)(521 - ((len - 1) * SHARKSSL_BIGINT_WORDSIZE));  
+   U16 i;
+
+   r = &o->beg[len];
+   s = 0;
+   for (i = len; i-- > 0; )
+   {
+      
+      s += (shtype_tWord)((o->beg[i] << (SHARKSSL_BIGINT_WORDSIZE - top)) | (o->beg[i + 1] >> top));
+      s += (i == 0) ? (shtype_tWord)(r[0] & (((shtype_tWord)1 << top) - 1)) : r[i];
+      r[i] = (shtype_tWord)s;
+      s >>= SHARKSSL_BIGINT_WORDSIZE;
+   }
+   _XzY0x2F7(r, mod);
+   o->beg = r;
+   o->len = len;
+}
+#endif
+
+
 static void availableasids(shtype_t *o, shtype_t *mod)
 {
    
-   #if SHARKSSL_ECC_USE_SECP521R1
-   shtype_t checkcontext;
-   #endif
    #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-   shtype_tDoubleWordS d;
+   shtype_tDoubleWordS d, acc;
+   U16 spinlockunlock, w;
    #endif
 
-   #if   (SHARKSSL_BIGINT_WORDSIZE == 32)
    baAssert(o->len == (mod->len * 2));
    switch (mod->len)
    {
@@ -109089,20 +115238,7 @@ static void availableasids(shtype_t *o, shtype_t *mod)
 
       #if SHARKSSL_ECC_USE_SECP521R1
       case 17:  
-         o->len = 17;
-         traceaddress(&checkcontext, 17, &o->beg[17]);
-         memmove(&o->beg[0], &o->beg[1], 17 * SHARKSSL__M);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         checkcontext.beg[0] &= 0x1FF;
-         setupsdhci1(o, &checkcontext, mod);
+         _XzY0x2F8(o, mod);
          return;
       #endif
 
@@ -109110,420 +115246,25 @@ static void availableasids(shtype_t *o, shtype_t *mod)
          return;
    }
 
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 16)
-   #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-   shtype_tWord *r, *s1, *s2, *s3;
-   shtype_tWord *s4;
-   shtype_tWord *s5, *s6;
-   #endif
-   #if SHARKSSL_ECC_USE_SECP521R1
-   shtype_tWord d0;
-   #endif
-   U16 i = mod->len;
-
-   #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-   d = 0;
-   r = &o->beg[i * 2 - 1];
-   #endif
-   baAssert(o->len == (i * 2));
-   switch (i)
-   {
-      #if SHARKSSL_ECC_USE_SECP256R1
-      case 16:  
-         s1 = &o->beg[13];
-         s2 = NULL;
-         s3 = NULL;
-         s4 = &o->beg[9];
-         s5 = &o->beg[5];
-         s6 = &o->beg[3];
-         while (i--)
-         {
-            d += (shtype_tDoubleWordS)*r;
-            d += *(r - 16);
-            d += *s1--;
-            d -= *s4--;
-            d -= *(s4 - 1);
-            if (s2)
-            {
-               d += *s2;
-               d += *s2--;
-            }
-            if (s3)
-            {
-               d += *s3;
-               d += *s3--;
-            }
-            if (s5)
-            {
-               d -= *s5--;
-            }
-            if (s6)
-            {
-               d -= *s6--;
-            }
-
-            *r-- = (shtype_tWord)d; anatopdisconnect(d);
-
-            if (i & 1)
-            {
-               continue;
-            }
-            if ((i == 12) || (i == 8))
-            {
-               s6 = NULL;
-            }
-            else if (i == 10)
-            {
-               s1 = &o->beg[9];
-               s2 = &o->beg[7];
-               s3 = s5 = &o->beg[5];
-               s4 = &o->beg[15];
-               s6 = &o->beg[1];
-            }
-            else if (i == 4)
-            {
-               s1 = &o->beg[5];
-               s2 = &o->beg[3];
-               s3 = &o->beg[1];
-               s4 = &o->beg[15];
-               s5 = NULL;
-            }
-            else if (i == 2)
-            {
-               s1 = &o->beg[15];
-               s3 = NULL;
-               s4 = &o->beg[11];
-               s5 = &o->beg[7];
-               s6 = &o->beg[5];
-            }
-         }
-         break;
-      #endif
-
-      #if SHARKSSL_ECC_USE_SECP384R1
-      case 24:  
-         s1 = &o->beg[7];
-         s2 = &o->beg[1];
-         s3 = NULL;
-         s4 = NULL;
-         s5 = NULL;
-         s6 = &o->beg[25];
-         while (i--)
-         {
-            d += (shtype_tDoubleWordS)*r;
-            d += *(r - 24);
-            d -= *(r - 22);
-            d += *s1--;
-            d += *(s1 - 1);
-            if (s2)
-            {
-               d -= *s2--;
-            }
-            if (s3)
-            {
-               d -= *s3--;
-            }
-            if (s4)
-            {
-               d += *s4--;
-            }
-            if (s5)
-            {
-               d += *s5;
-               d += *s5--;
-            }
-            if (s6)
-            {
-               d += *s6--;
-            }
-
-            *r-- = (shtype_tWord)d; anatopdisconnect(d);
-
-            if ((i & 1) || (i <= 6))
-            {
-               continue;
-            }
-            if (i == 22)
-            {
-               s1 = &o->beg[3];
-               s2 = &o->beg[7];
-               s6 = NULL;
-            }
-            else if (i == 20)
-            {
-               s1 = s3 = &o->beg[3];
-            }
-            else if (i == 18)
-            {
-               s1 = &o->beg[7];
-               s6 = &o->beg[23];
-            }
-            else if (i == 16)
-            {
-               s1 = &o->beg[23];
-               s3 = &o->beg[1];
-               s4 = &o->beg[7];
-               s5 = &o->beg[5];
-               s6 = &o->beg[3];
-            }
-            else if (i == 14)
-            {
-               s2 = s3 = NULL;
-            }
-            else if (i == 12)
-            {
-               s6 = NULL;
-            }
-            else if (i == 10)
-            {
-               s5 = NULL;
-            }
-            else if (i == 8)
-            {
-               s4 = NULL;
-            }
-         }
-         break;
-      #endif
-
-      #if SHARKSSL_ECC_USE_SECP521R1
-      case 33:  
-         o->len = 33;
-         traceaddress(&checkcontext, 33, &o->beg[33]);
-         d0 = (o->beg[0] & 0x3) << 7;
-         memmove(&o->beg[0], &o->beg[1], 33 * SHARKSSL__M);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         backlightpdata(o);
-         o->beg[0] |= d0;
-         checkcontext.beg[0] &= 0x1FF;
-         setupsdhci1(o, &checkcontext, mod);
-         return;
-      #endif
-
-      default:
-         return;
-   }
-
-   #elif (SHARKSSL_BIGINT_WORDSIZE == 8)
-   #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-   shtype_tWord *r, *s1, *s2, *s3;
-   shtype_tWord *s4;
-   shtype_tWord *s5, *s6;
-   #endif
-   U16 i = mod->len;
-
-   #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
-   d = 0;
-   r = &o->beg[i * 2 - 1];
-   #endif
-   baAssert(o->len == (i * 2));
-   switch (i)
-   {
-      #if SHARKSSL_ECC_USE_SECP256R1
-      case 32:  
-         s1 = &o->beg[27];
-         s2 = NULL;
-         s3 = NULL;
-         s4 = &o->beg[19];
-         s5 = &o->beg[11];
-         s6 = &o->beg[7];
-         while (i--)
-         {
-            d += (shtype_tDoubleWordS)*r;
-            d += *(r - 32);
-            d += *s1--;
-            d -= *s4--;
-            d -= *(s4 - 3);
-            if (s2)
-            {
-               d += *s2;
-               d += *s2--;
-            }
-            if (s3)
-            {
-               d += *s3;
-               d += *s3--;
-            }
-            if (s5)
-            {
-               d -= *s5--;
-            }
-            if (s6)
-            {
-               d -= *s6--;
-            }
-
-            *r-- = (shtype_tWord)d; anatopdisconnect(d);
-
-            if (i & 1)
-            {
-               continue;
-            }
-            if ((i == 24) || (i == 16))
-            {
-               s6 = NULL;
-            }
-            else if (i == 20)
-            {
-               s1 = &o->beg[19];
-               s2 = &o->beg[15];
-               s3 = s5 = &o->beg[11];
-               s4 = &o->beg[31];
-               s6 = &o->beg[3];
-            }
-            else if (i == 8)
-            {
-               s1 = &o->beg[11];
-               s2 = &o->beg[7];
-               s3 = &o->beg[3];
-               s4 = &o->beg[31];
-               s5 = NULL;
-            }
-            else if (i == 4)
-            {
-               s1 = &o->beg[31];
-               s3 = NULL;
-               s4 = &o->beg[23];
-               s5 = &o->beg[15];
-               s6 = &o->beg[11];
-            }
-         }
-         break;
-      #endif
-
-      #if SHARKSSL_ECC_USE_SECP384R1
-      case 48:  
-         s1 = &o->beg[15];
-         s2 = &o->beg[3];
-         s3 = NULL;
-         s4 = NULL;
-         s5 = NULL;
-         s6 = &o->beg[51];
-         while (i--)
-         {
-            d += (shtype_tDoubleWordS)*r;
-            d += *(r - 48);
-            d -= *(r - 44);
-            d += *s1--;
-            d += *(s1 - 3);
-            if (s2)
-            {
-               d -= *s2--;
-            }
-            if (s3)
-            {
-               d -= *s3--;
-            }
-            if (s4)
-            {
-               d += *s4--;
-            }
-            if (s5)
-            {
-               d += *s5;
-               d += *s5--;
-            }
-            if (s6)
-            {
-               d += *s6--;
-            }
-
-            *r-- = (shtype_tWord)d; anatopdisconnect(d);
-
-            if ((i & 1) || (i <= 14))
-            {
-               continue;
-            }
-            if (i == 44)
-            {
-               s1 = &o->beg[7];
-               s2 = &o->beg[15];
-               s6 = NULL;
-            }
-            else if (i == 40)
-            {
-               s1 = s3 = &o->beg[7];
-            }
-            else if (i == 36)
-            {
-               s1 = &o->beg[15];
-               s6 = &o->beg[47];
-            }
-            else if (i == 32)
-            {
-               s1 = &o->beg[47];
-               s3 = &o->beg[3];
-               s4 = &o->beg[15];
-               s5 = &o->beg[11];
-               s6 = &o->beg[7];
-            }
-            else if (i == 28)
-            {
-               s2 = s3 = NULL;
-            }
-            else if (i == 24)
-            {
-               s6 = NULL;
-            }
-            else if (i == 20)
-            {
-               s5 = NULL;
-            }
-            else if (i == 16)
-            {
-               s4 = NULL;
-            }
-         }
-         break;
-      #endif
-
-      #if SHARKSSL_ECC_USE_SECP521R1
-      case 66:  
-         o->len = 66;
-         traceaddress(&checkcontext, 66, &o->beg[66]);
-         memmove(&o->beg[0], &o->beg[1], 66 * SHARKSSL__M);
-         backlightpdata(o);
-         checkcontext.beg[0] &= 0x1;
-         setupsdhci1(o, &checkcontext, mod);
-         return;
-      #endif
-
-      default:
-         return;
-   }
-
-   #else
-   #error unsupported SHARKSSL_BIGINT_WORDSIZE
-
-   #endif  
 
    #if (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1)
    o->len >>= 1;
    o->beg += o->len;
 
-   while (d != 0)
+   
+   for (spinlockunlock = 0; spinlockunlock < 2; spinlockunlock++)
    {
-      if (d < 0)
+      acc = 0;
+      for (w = o->len; w-- > 0; )
       {
-         d += (shtype_tWordS)resolverelocs(o, mod);
+         acc += (shtype_tDoubleWordS)o->beg[w] - (d * (shtype_tDoubleWordS)mod->beg[w]);
+         o->beg[w] = (shtype_tWord)acc;
+         anatopdisconnect(acc);
       }
-      else
-      {
-         d += (shtype_tWordS)updatepmull(o, mod);
-      }
+      d += acc;
    }
-
-   if (timerwrite(o, mod))
-   {
-      updatepmull(o, mod);
-   }
+   baAssert(d == 0);
+   _XzY0x2F7(o->beg, mod);
    #endif
 }
 #endif
@@ -109922,6 +115663,179 @@ void clearerrors(SharkSslECCurve *o, U16 rightsvalid)
 }
 
 
+#define SHARKSSL_ECC_NIST_ASM (SHARKSSL_ECC_P256_ASM || SHARKSSL_ECC_P384_ASM)
+
+#if SHARKSSL_ECC_P256_ASM
+#if (!SHARKSSL_ECC_USE_SECP256R1)
+#error SHARKSSL_ECC_P256_ASM requires SHARKSSL_ECC_USE_SECP256R1
+#endif
+
+void SharkSslP256_mulmod(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices);
+void SharkSslP256_addmod(shtype_t *o1, const shtype_t *o2);
+void SharkSslP256_submod(shtype_t *o1, const shtype_t *o2);
+
+
+#define SharkSslECC_isP256(mod) (((mod)->len == 8) && ((mod)->beg[0] == 0xFFFFFFFF) && ((mod)->beg[1] == 1))
+#endif
+
+#if SHARKSSL_ECC_P384_ASM
+#if (!SHARKSSL_ECC_USE_SECP384R1)
+#error SHARKSSL_ECC_P384_ASM requires SHARKSSL_ECC_USE_SECP384R1
+#endif
+
+void SharkSslP384_mulmod(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices);
+void SharkSslP384_addmod(shtype_t *o1, const shtype_t *o2);
+void SharkSslP384_submod(shtype_t *o1, const shtype_t *o2);
+
+
+#define SharkSslECC_isP384(mod) (((mod)->len == 12) && ((mod)->beg[0] == 0xFFFFFFFF) && ((mod)->beg[7] == 0xFFFFFFFE))
+#endif
+
+
+#define SHARKSSL_ECC_FIELD_CT (SHARKSSL_ECC_USE_NIST || SHARKSSL_ECC_USE_BRAINPOOL)
+
+
+#if (SHARKSSL_ECC_FIELD_CT || SHARKSSL_ECC_USE_EDWARDS_LADDER)
+
+static void _XzY0x2FC(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord carry, _XzY0x184, fpemulthreshold;
+   U16 i;
+
+   carry = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] + o2->beg[i] + carry;
+      o1->beg[i] = (shtype_tWord)s;
+      carry = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+   }
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - mod->beg[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(carry | (_XzY0x184 ^ 1)));  
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - (mod->beg[i] & fpemulthreshold) - _XzY0x184;
+      o1->beg[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+}
+
+
+static void _XzY0x303(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord carry, _XzY0x184, fpemulthreshold;
+   U16 i;
+
+   _XzY0x184 = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] - o2->beg[i] - _XzY0x184;
+      o1->beg[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(0 - _XzY0x184);  
+   carry = 0;
+   for (i = mod->len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o1->beg[i] + (mod->beg[i] & fpemulthreshold) + carry;
+      o1->beg[i] = (shtype_tWord)s;
+      carry = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+   }
+}
+
+#define SharkSslECC_isFieldCT(mod, o1, o2) (((o1)->len == (mod)->len) && ((o2)->len == (mod)->len) &&                  (((mod)->len * SHARKSSL_BIGINT_WORDSIZE > 512) ||                                                                  ((((mod)->len * SHARKSSL_BIGINT_WORDSIZE == 256) || ((mod)->len * SHARKSSL_BIGINT_WORDSIZE == 384) ||                 ((mod)->len * SHARKSSL_BIGINT_WORDSIZE == 512)) &&                                                                  ((mod)->beg[0] >> (SHARKSSL_BIGINT_WORDSIZE - 1)))))
+#endif
+
+#if SHARKSSL_ECC_FIELD_CT
+static void _XzY0x2FB(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   #if SHARKSSL_ECC_P256_ASM
+   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8))
+   {
+      SharkSslP256_addmod(o1, o2);
+      return;
+   }
+   #endif
+   #if SHARKSSL_ECC_P384_ASM
+   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12))
+   {
+      SharkSslP384_addmod(o1, o2);
+      return;
+   }
+   #endif
+   if (SharkSslECC_isFieldCT(mod, o1, o2))
+   {
+      _XzY0x2FC(o1, o2, mod);
+      return;
+   }
+   setupsdhci1(o1, o2, mod);
+}
+
+static void _XzY0x302(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   #if SHARKSSL_ECC_P256_ASM
+   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8))
+   {
+      SharkSslP256_submod(o1, o2);
+      return;
+   }
+   #endif
+   #if SHARKSSL_ECC_P384_ASM
+   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12))
+   {
+      SharkSslP384_submod(o1, o2);
+      return;
+   }
+   #endif
+   if (SharkSslECC_isFieldCT(mod, o1, o2))
+   {
+      _XzY0x303(o1, o2, mod);
+      return;
+   }
+   keypaddevice(o1, o2, mod);
+}
+
+#define setupsdhci1(o1, o2, mod) _XzY0x2FB(o1, o2, mod)
+#define keypaddevice(o1, o2, mod) _XzY0x302(o1, o2, mod)
+#endif
+
+#if SHARKSSL_ECC_NIST_ASM
+
+static __sharkssl_noinline void SharkSslECC_multfastmod(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature)
+{
+   hotplugpgtable(o1, o2, deltadevices);
+   availableasids(deltadevices, cpuidfeature);
+}
+
+
+static void _XzY0x300(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature)
+{
+   #if SHARKSSL_ECC_P256_ASM
+   if ((cpuidfeature->len == 8) && (o1->len == 8) && (o2->len == 8))  
+   {
+      SharkSslP256_mulmod(o1, o2, deltadevices);
+      return;
+   }
+   #endif
+   #if SHARKSSL_ECC_P384_ASM
+   if ((cpuidfeature->len == 12) && (o1->len == 12) && (o2->len == 12))  
+   {
+      SharkSslP384_mulmod(o1, o2, deltadevices);
+      return;
+   }
+   #endif
+   SharkSslECC_multfastmod(o1, o2, deltadevices, cpuidfeature);
+}
+#endif
+
+
 typedef void (*func_mulmod)(const shtype_t*, const shtype_t*, shtype_t*, shtype_t*, shtype_tWord*);
 typedef void (*func_fmulmod)(const shtype_t*, const shtype_t*, shtype_t*, shtype_t*, shtype_tWord);
 
@@ -109961,18 +115875,32 @@ static void branchlikely(const shtype_t *o1, const shtype_t *o2, shtype_t *delta
 static void helpersetup(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord *afterhandler)
 {
    (void)afterhandler;
+   #if SHARKSSL_ECC_NIST_ASM
+   _XzY0x300(o1, o2, deltadevices, cpuidfeature);
+   #else
    hotplugpgtable(o1, o2, deltadevices);
    availableasids(deltadevices, cpuidfeature);
+   #endif
 }
 
 static void softlockupwatchdog(const shtype_t *o1, const shtype_t *o2, shtype_t *deltadevices, shtype_t *cpuidfeature, shtype_tWord mu)
 {
+   #if SHARKSSL_ECC_NIST_ASM
+   (void)mu;
+   _XzY0x300(o1, o2, deltadevices, cpuidfeature);
+   #else
    helpersetup(o1, o2, deltadevices, cpuidfeature, &mu);
+   #endif
 }
 
 #elif SHARKSSL_ECC_USE_NIST  
+#if SHARKSSL_ECC_NIST_ASM
+#define probehandler(x,y,z) _XzY0x300(x, y, z, mod)
+#define traceguest(x,y,z)  _XzY0x300(x, y, z, mod)
+#else
 #define probehandler(x,y,z) hotplugpgtable(x, y, z); availableasids(z, mod)
 #define traceguest(x,y,z)  hotplugpgtable(x, y, z); availableasids(z, mod)
+#endif
 
 #elif (SHARKSSL_ECC_USE_BRAINPOOL || SHARKSSL_ECC_USE_EDWARDS)  
 #define probehandler(x,y,z) writebytes(x, y, z, mod, brightnesslimit->mu)
@@ -110087,9 +116015,7 @@ int SharkSslECCurve_setPoint_NB(SharkSslECCurve *o, SharkSslECPoint *p)
          keypaddevice(&doublefnmul.A, &doublefnmul.B, mod);   
          blastscache(&doublefnmul.A);
          i = (U16)(doublefnmul.A.len - 1) | (U16)(doublefnmul.A.beg[0] & 0xFFFF);
-         #if (SHARKSSL_BIGINT_WORDSIZE == 32)
          i |= (doublefnmul.A.beg[0] >> 16);
-         #endif
          baFree((void*)tmp_b);
          if (i)
          {
@@ -110150,7 +116076,6 @@ typedef struct
 #define SharkSslECPointJ_copy(s,d) \
         unassignedvector(&((s)->x), &((d)->x)); unassignedvector(&((s)->y), &((d)->y)); unassignedvector(&((s)->z), &((d)->z))
 
-#if SHARKSSL_ECC_TIMING_RESISTANT
 
 static void _XzY0x180(SharkSslECPointJ *o, const SharkSslECPointJ *candidate, U32 selected, U16 writepmresrn)
 {
@@ -110168,7 +116093,6 @@ static void _XzY0x180(SharkSslECPointJ *o, const SharkSslECPointJ *candidate, U3
       o->z.mem[i] ^= ((o->z.mem[i] ^ candidate->z.mem[i]) & fpemulthreshold);
    }
 }
-#endif
 
 
 static void timerconfig(SharkSslECPointJ *p,
@@ -110225,57 +116149,6 @@ static void timerconfig(SharkSslECPointJ *p,
 }
 
 
-#if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-static void threadflush(SharkSslECPointJ *p,
-                                     SharkSslECPointJ *g,
-                                     shtype_t   *mod,
-                                     SharkSslEC_temp  *brightnesslimit)
-{
-   
-   probehandler(&p->z, &p->z, &brightnesslimit->A);                
-   probehandler(&brightnesslimit->A, &g->x, &brightnesslimit->C);             
-   probehandler(&g->z, &g->z, &brightnesslimit->B);                
-   probehandler(&brightnesslimit->B, &p->x, &brightnesslimit->D);             
-   probehandler(&brightnesslimit->B, &g->z, &brightnesslimit->E);             
-   probehandler(&brightnesslimit->E, &p->y, &brightnesslimit->B);             
-   probehandler(&brightnesslimit->A, &p->z, &brightnesslimit->E);             
-   probehandler(&brightnesslimit->E, &g->y, &brightnesslimit->A);             
-   keypaddevice(&brightnesslimit->C, &brightnesslimit->D, mod);                
-   keypaddevice(&brightnesslimit->A, &brightnesslimit->B, mod);                
-   if (eventtimeout(&brightnesslimit->C))
-   {
-      if (eventtimeout(&brightnesslimit->A))
-      {
-         timerconfig(p, mod, brightnesslimit);
-      }
-      else
-      {
-         baAssert(0);  
-      }
-   }
-   else
-   {
-      probehandler(&brightnesslimit->C, &p->z, &brightnesslimit->E);             
-      probehandler(&brightnesslimit->E, &g->z, &brightnesslimit->F);             
-      unassignedvector(&brightnesslimit->F, &p->z);
-      probehandler(&brightnesslimit->C, &brightnesslimit->C, &brightnesslimit->E);          
-      probehandler(&brightnesslimit->D, &brightnesslimit->E, &brightnesslimit->F);          
-      probehandler(&brightnesslimit->C, &brightnesslimit->E, &brightnesslimit->D);          
-      probehandler(&brightnesslimit->A, &brightnesslimit->A, &brightnesslimit->C);          
-      keypaddevice(&brightnesslimit->C, &brightnesslimit->D, mod);                
-      keypaddevice(&brightnesslimit->C, &brightnesslimit->F, mod);                
-      keypaddevice(&brightnesslimit->C, &brightnesslimit->F, mod);                
-      unassignedvector(&brightnesslimit->C, &p->x);
-      keypaddevice(&brightnesslimit->F, &brightnesslimit->C, mod);                
-      probehandler(&brightnesslimit->B, &brightnesslimit->D, &brightnesslimit->E);          
-      probehandler(&brightnesslimit->A, &brightnesslimit->F, &brightnesslimit->B);          
-      keypaddevice(&brightnesslimit->B, &brightnesslimit->E, mod);                
-      unassignedvector(&brightnesslimit->B, &p->y);
-   }
-}
-#endif
-
-
 static void deviceu2ootg(SharkSslECPointJ *p,
                                  SharkSslECPoint  *g,
                                  shtype_t   *mod,
@@ -110308,23 +116181,906 @@ static void deviceu2ootg(SharkSslECPointJ *p,
 }
 
 
+
+#define SHARKSSL_ECC_WINDOW ((SHARKSSL_ECC_MULT_FIXED_WINDOW > 0) && SHARKSSL_ECC_USE_NIST)
+
+#if SHARKSSL_ECC_WINDOW
+
+static void ZZTSTSharkSslECPointJ_addJ(SharkSslECPointJ *p,
+                                  SharkSslECPointJ *g,
+                                  shtype_t   *mod,
+                                  SharkSslEC_temp  *brightnesslimit)
+{
+   probehandler(&p->z, &p->z, &brightnesslimit->A);                
+   probehandler(&brightnesslimit->A, &g->x, &brightnesslimit->C);             
+   probehandler(&g->z, &g->z, &brightnesslimit->B);                
+   probehandler(&brightnesslimit->B, &p->x, &brightnesslimit->D);             
+   probehandler(&brightnesslimit->B, &g->z, &brightnesslimit->E);             
+   probehandler(&brightnesslimit->E, &p->y, &brightnesslimit->B);             
+   probehandler(&brightnesslimit->A, &p->z, &brightnesslimit->E);             
+   probehandler(&brightnesslimit->E, &g->y, &brightnesslimit->A);             
+   keypaddevice(&brightnesslimit->C, &brightnesslimit->D, mod);                
+   keypaddevice(&brightnesslimit->A, &brightnesslimit->B, mod);                
+   probehandler(&brightnesslimit->C, &p->z, &brightnesslimit->E);             
+   probehandler(&brightnesslimit->E, &g->z, &brightnesslimit->F);             
+   unassignedvector(&brightnesslimit->F, &p->z);
+   probehandler(&brightnesslimit->C, &brightnesslimit->C, &brightnesslimit->E);          
+   probehandler(&brightnesslimit->D, &brightnesslimit->E, &brightnesslimit->F);          
+   probehandler(&brightnesslimit->C, &brightnesslimit->E, &brightnesslimit->D);          
+   probehandler(&brightnesslimit->A, &brightnesslimit->A, &brightnesslimit->C);          
+   keypaddevice(&brightnesslimit->C, &brightnesslimit->D, mod);                
+   keypaddevice(&brightnesslimit->C, &brightnesslimit->F, mod);                
+   keypaddevice(&brightnesslimit->C, &brightnesslimit->F, mod);                
+   unassignedvector(&brightnesslimit->C, &p->x);
+   keypaddevice(&brightnesslimit->F, &brightnesslimit->C, mod);                
+   probehandler(&brightnesslimit->B, &brightnesslimit->D, &brightnesslimit->E);          
+   probehandler(&brightnesslimit->A, &brightnesslimit->F, &brightnesslimit->B);          
+   keypaddevice(&brightnesslimit->B, &brightnesslimit->E, mod);                
+   unassignedvector(&brightnesslimit->B, &p->y);
+}
+#endif
+
+
+
+#if SHARKSSL_ECC_USE_NIST
+typedef void (*func_mulmodASM)(const shtype_t*, const shtype_t*, shtype_t*);
+
+
+static void _XzY0x301(func_mulmodASM mul, shtype_t *r, const shtype_t *a,
+                                U16 n, const shtype_t *b, shtype_t *s,
+                                shtype_t *mod, SharkSslEC_temp *brightnesslimit)
+{
+   shtype_t *dst = s, *other = r, *t;
+
+   (void)mod;
+   (void)brightnesslimit;
+   for (; n > 0; n--)
+   {
+      if (mul)
+      {
+         mul(a, a, dst);
+      }
+      else
+      {
+         probehandler(a, a, dst);
+      }
+      a = dst;
+      t = dst; dst = other; other = t;
+   }
+   if (mul)
+   {
+      mul(a, b, dst);
+   }
+   else
+   {
+      probehandler(a, b, dst);
+   }
+   if (dst != r)  
+   {
+      unassignedvector(dst, r);
+   }
+}
+
+
+
+#if SHARKSSL_ECC_USE_SECP256R1
+
+static const U8 SharkSslECC_invP256[12 * 4] =
+{
+   2, 0,   1, 0,  
+   3, 2,   1, 0,  
+   4, 3,   3, 3,  
+   5, 4,   6, 4,  
+   4, 5,   3, 3,  
+   5, 4,  15, 4,  
+   3, 5,   2, 2,  
+   6, 3,  32, 0,  
+   6, 6, 128, 3,
+   6, 6,  32, 3,
+   6, 6,  30, 5,
+   6, 6,   2, 0
+};
+#endif
+
+#if SHARKSSL_ECC_USE_SECP384R1
+
+static const U8 SharkSslECC_invP384[14 * 4] =
+{
+   2, 0,   1, 0,  
+   3, 2,   1, 0,  
+   4, 3,   3, 3,  
+   5, 4,   6, 4,  
+   4, 5,   3, 3,  
+   5, 4,  15, 4,  
+   3, 5,   2, 2,  
+   2, 5,  30, 5,  
+   6, 2,  60, 2,  
+   2, 6, 120, 6,  
+   6, 2,  15, 4,  
+   6, 6,  33, 3,
+   6, 6,  94, 5,
+   6, 6,   2, 0
+};
+#endif
+
+#if SHARKSSL_ECC_USE_SECP521R1
+
+static const U8 SharkSslECC_invP521[14 * 4] =
+{
+   2, 0,   1, 0,  
+   3, 2,   1, 0,  
+   4, 2,   2, 2,  
+   5, 4,   4, 4,  
+   6, 5,   8, 5,  
+   5, 6,  16, 6,  
+   6, 5,  32, 5,  
+   5, 6,  64, 6,  
+   6, 5, 128, 5,  
+   6, 6, 128, 5,  
+   6, 6, 128, 5,  
+   6, 6,   4, 4,  
+   6, 6,   3, 3,  
+   6, 6,   2, 0
+};
+#endif
+
+
+
+static void _XzY0x3(func_mulmodASM mul, const U8 *step, U8 steps,
+                                   shtype_t *z, shtype_t *mod, SharkSslEC_temp *brightnesslimit)
+{
+   shtype_t *v[7];
+
+   v[0] = z;
+   v[1] = &brightnesslimit->A;
+   v[2] = &brightnesslimit->B;
+   v[3] = &brightnesslimit->C;
+   v[4] = &brightnesslimit->D;
+   v[5] = &brightnesslimit->E;
+   v[6] = &brightnesslimit->F;
+   for (; steps > 0; steps--, step += 4)
+   {
+      _XzY0x301(mul, v[step[0]], v[step[1]], step[2], v[step[3]], v[1], mod, brightnesslimit);
+   }
+   unassignedvector(v[6], z);
+}
+#endif
+
+
+#if SHARKSSL_ECC_USE_BRAINPOOL
+
+static void _XzY0x2FF(shtype_t *z, shtype_t *mod, SharkSslEC_temp *brightnesslimit)
+{
+   shtype_t two, *x, *s, *t;
+   shtype_tWord w, bit;
+   U16 i;
+   U8 afterreset;
+
+   w = 2;
+   traceaddress(&two, 1, &w);
+   unassignedvector(mod, &brightnesslimit->F);
+   updatepmull(&brightnesslimit->F, &two);  
+   x = &brightnesslimit->B;
+   s = &brightnesslimit->C;
+   afterreset = 0;
+   for (i = 0; i < brightnesslimit->F.len; i++)
+   {
+      for (bit = (shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1); bit > 0; bit >>= 1)
+      {
+         if (afterreset)
+         {
+            probehandler(x, x, s);
+            t = x; x = s; s = t;
+         }
+         if (brightnesslimit->F.beg[i] & bit)
+         {
+            if (afterreset)
+            {
+               probehandler(x, z, s);
+               t = x; x = s; s = t;
+            }
+            else
+            {
+               unassignedvector(z, x);
+               afterreset = 1;
+            }
+         }
+      }
+   }
+   unassignedvector(x, z);
+}
+#endif
+
+
+
+#define SHARKSSL_ECC_AFFINIFY_INVMOD (SHARKSSL_ECC_USE_NIST || (!SHARKSSL_ECC_USE_BRAINPOOL))
+
+#if SHARKSSL_ECC_AFFINIFY_INVMOD
+
+static void _XzY0x2FE(shtype_t *z, shtype_t *mod, SharkSslEC_temp *brightnesslimit)
+{
+   #if SHARKSSL_ECC_P256_ASM
+   if (SharkSslECC_isP256(mod) && (z->len == 8))
+   {
+      _XzY0x3(SharkSslP256_mulmod, SharkSslECC_invP256, 12, z, mod, brightnesslimit);
+      return;
+   }
+   #endif
+   #if SHARKSSL_ECC_P384_ASM
+   if (SharkSslECC_isP384(mod) && (z->len == 12))
+   {
+      _XzY0x3(SharkSslP384_mulmod, SharkSslECC_invP384, 14, z, mod, brightnesslimit);
+      return;
+   }
+   #endif
+   
+   if (z->len == mod->len)
+   {
+      #if SHARKSSL_ECC_USE_SECP256R1
+      if ((mod->len * SHARKSSL_BIGINT_WORDSIZE) == 256)
+      {
+         _XzY0x3(NULL, SharkSslECC_invP256, 12, z, mod, brightnesslimit);
+         return;
+      }
+      #endif
+      #if SHARKSSL_ECC_USE_SECP384R1
+      if ((mod->len * SHARKSSL_BIGINT_WORDSIZE) == 384)
+      {
+         _XzY0x3(NULL, SharkSslECC_invP384, 14, z, mod, brightnesslimit);
+         return;
+      }
+      #endif
+      #if SHARKSSL_ECC_USE_SECP521R1
+      if ((mod->len * SHARKSSL_BIGINT_WORDSIZE) > 512)
+      {
+         _XzY0x3(NULL, SharkSslECC_invP521, 14, z, mod, brightnesslimit);
+         return;
+      }
+      #endif
+   }
+   ioswabwdefault(z, mod, &brightnesslimit->A.mem[0]);
+}
+#endif
+
+
 static void panicblink(SharkSslECPointJ *j,
                                       SharkSslECPoint  *p,
                                       shtype_t   *mod,
                                       SharkSslEC_temp  *brightnesslimit)
 {
-   ioswabwdefault(&j->z, mod, &brightnesslimit->A.mem[0]);
+   #if SHARKSSL_ECC_USE_BRAINPOOL
+   #if SHARKSSL_ECC_USE_NIST
+   if (brightnesslimit->factor_a != NULL)
+   #endif
+   {
+      
+      
+      _XzY0x2FF(&j->z, mod, brightnesslimit);
+      probehandler(&j->z, &j->z, &brightnesslimit->A);     
+      probehandler(&j->z, &brightnesslimit->A, &brightnesslimit->B);  
+      probehandler(&j->x, &brightnesslimit->A, &brightnesslimit->C);
+      probehandler(&j->y, &brightnesslimit->B, &brightnesslimit->D);
+      brightnesslimit->A.len = 1;
+      brightnesslimit->A.beg[0] = 1;
+      probehandler(&brightnesslimit->A, &brightnesslimit->C, &brightnesslimit->E);
+      unassignedvector(&brightnesslimit->E, &p->x);
+      probehandler(&brightnesslimit->A, &brightnesslimit->D, &brightnesslimit->E);
+      unassignedvector(&brightnesslimit->E, &p->y);
+      return;
+   }
+   #endif
+   #if SHARKSSL_ECC_AFFINIFY_INVMOD
+   _XzY0x2FE(&j->z, mod, brightnesslimit);
    traceguest(&j->z, &j->z, &brightnesslimit->A);     
    traceguest(&j->z, &brightnesslimit->A, &brightnesslimit->B);  
    traceguest(&j->x, &brightnesslimit->A, &brightnesslimit->C);
    unassignedvector(&brightnesslimit->C, &p->x);
    traceguest(&j->y, &brightnesslimit->B, &brightnesslimit->C);
    unassignedvector(&brightnesslimit->C, &p->y);
+   #endif
 }
 
 
 #undef probehandler
 #undef traceguest
+
+
+#define SHARKSSL_ECC_COMB (SHARKSSL_ECC_FIXED_BASE_COMB && (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1))
+#if (SHARKSSL_ECC_COMB || SHARKSSL_ECC_WINDOW)
+
+#define SHARKSSL_ECC_MULT_FALLBACK -1
+
+
+static void ZZTSTSharkSslECC_tableSelect(shtype_tWord *dst, const shtype_tWord *ZZTSTtable, U8 ZZTSTentries,
+                                    U8 ZZTSTcoords, U8 idx, U8 neg, const shtype_t *mod)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord fpemulthreshold, _XzY0x184, *y;
+   U16 i, len = mod->len, writepmresrn = (U16)(ZZTSTcoords * len);
+   U8 e;
+
+   memset(dst, 0, writepmresrn * SHARKSSL__M);
+   for (e = 0; e < ZZTSTentries; e++, ZZTSTtable += writepmresrn)
+   {
+      fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)(((U32)(e ^ idx) - 1) >> 31));  
+      for (i = 0; i < writepmresrn; i++)
+      {
+         dst[i] |= (ZZTSTtable[i] & fpemulthreshold);
+      }
+   }
+   y = dst + len;
+   fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)neg);
+   _XzY0x184 = 0;
+   for (i = len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)mod->beg[i] - y[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+      y[i] ^= (((shtype_tWord)s ^ y[i]) & fpemulthreshold);
+   }
+}
+#endif
+
+
+#if SHARKSSL_ECC_COMB
+
+#define SHARKSSL_ECC_COMB_W      5
+#define SHARKSSL_ECC_COMB_SIZE   (1 << (SHARKSSL_ECC_COMB_W - 1))
+#define SHARKSSL_ECC_COMB_COLS(enablekernel) (((enablekernel) + SHARKSSL_ECC_COMB_W - 1) / SHARKSSL_ECC_COMB_W)
+#if SHARKSSL_ECC_USE_SECP384R1
+#define SHARKSSL_ECC_COMB_MAXCOLS SHARKSSL_ECC_COMB_COLS(384)
+#else
+#define SHARKSSL_ECC_COMB_MAXCOLS SHARKSSL_ECC_COMB_COLS(256)
+#endif
+
+#if SHARKSSL_ECC_USE_SECP256R1
+
+static const shtype_tWord SharkSslECC_combP256[16 * 2 * (256 / SHARKSSL_BIGINT_WORDSIZE)] =
+{
+   HEX4_TO_WORDSIZE(6B,17,D1,F2), HEX4_TO_WORDSIZE(E1,2C,42,47), HEX4_TO_WORDSIZE(F8,BC,E6,E5), HEX4_TO_WORDSIZE(63,A4,40,F2),
+   HEX4_TO_WORDSIZE(77,03,7D,81), HEX4_TO_WORDSIZE(2D,EB,33,A0), HEX4_TO_WORDSIZE(F4,A1,39,45), HEX4_TO_WORDSIZE(D8,98,C2,96),
+   HEX4_TO_WORDSIZE(4F,E3,42,E2), HEX4_TO_WORDSIZE(FE,1A,7F,9B), HEX4_TO_WORDSIZE(8E,E7,EB,4A), HEX4_TO_WORDSIZE(7C,0F,9E,16),
+   HEX4_TO_WORDSIZE(2B,CE,33,57), HEX4_TO_WORDSIZE(6B,31,5E,CE), HEX4_TO_WORDSIZE(CB,B6,40,68), HEX4_TO_WORDSIZE(37,BF,51,F5),
+   HEX4_TO_WORDSIZE(3C,FA,0F,87), HEX4_TO_WORDSIZE(29,7B,ED,02), HEX4_TO_WORDSIZE(DF,CC,23,58), HEX4_TO_WORDSIZE(F9,4C,9D,1D),
+   HEX4_TO_WORDSIZE(59,3A,09,A0), HEX4_TO_WORDSIZE(3A,23,C6,AB), HEX4_TO_WORDSIZE(F7,D2,4B,B7), HEX4_TO_WORDSIZE(04,BA,C8,70),
+   HEX4_TO_WORDSIZE(E4,E3,76,94), HEX4_TO_WORDSIZE(70,BE,12,C6), HEX4_TO_WORDSIZE(A7,58,AA,80), HEX4_TO_WORDSIZE(83,09,AF,9B),
+   HEX4_TO_WORDSIZE(62,12,1C,0D), HEX4_TO_WORDSIZE(02,48,A8,AF), HEX4_TO_WORDSIZE(CE,98,A3,0B), HEX4_TO_WORDSIZE(40,F2,69,40),
+   HEX4_TO_WORDSIZE(D6,69,03,37), HEX4_TO_WORDSIZE(6D,F0,FD,5E), HEX4_TO_WORDSIZE(28,FE,9A,4F), HEX4_TO_WORDSIZE(25,4C,54,91),
+   HEX4_TO_WORDSIZE(F6,D7,7C,27), HEX4_TO_WORDSIZE(08,8B,86,DB), HEX4_TO_WORDSIZE(DD,37,E3,FF), HEX4_TO_WORDSIZE(86,EF,7D,7D),
+   HEX4_TO_WORDSIZE(20,E2,A5,3C), HEX4_TO_WORDSIZE(E6,D1,3D,22), HEX4_TO_WORDSIZE(A1,3E,95,78), HEX4_TO_WORDSIZE(DF,07,41,67),
+   HEX4_TO_WORDSIZE(F3,D1,A7,AF), HEX4_TO_WORDSIZE(9E,43,73,F9), HEX4_TO_WORDSIZE(9F,F0,49,92), HEX4_TO_WORDSIZE(AD,DA,D5,96),
+   HEX4_TO_WORDSIZE(62,1C,75,D1), HEX4_TO_WORDSIZE(02,EA,DB,2E), HEX4_TO_WORDSIZE(DB,82,B3,EA), HEX4_TO_WORDSIZE(54,49,20,A4),
+   HEX4_TO_WORDSIZE(C3,02,F8,F4), HEX4_TO_WORDSIZE(96,BE,A2,5A), HEX4_TO_WORDSIZE(AE,BF,D7,35), HEX4_TO_WORDSIZE(52,5D,6A,BF),
+   HEX4_TO_WORDSIZE(D7,C4,A4,FE), HEX4_TO_WORDSIZE(B4,FA,64,9D), HEX4_TO_WORDSIZE(4F,DA,C9,6F), HEX4_TO_WORDSIZE(52,2D,7F,70),
+   HEX4_TO_WORDSIZE(22,5D,03,D8), HEX4_TO_WORDSIZE(57,C4,6D,63), HEX4_TO_WORDSIZE(89,39,DC,4C), HEX4_TO_WORDSIZE(9E,F4,85,F0),
+   HEX4_TO_WORDSIZE(00,DC,46,E7), HEX4_TO_WORDSIZE(C9,9A,73,9D), HEX4_TO_WORDSIZE(9F,05,F9,4A), HEX4_TO_WORDSIZE(8C,26,7D,88),
+   HEX4_TO_WORDSIZE(F7,65,99,58), HEX4_TO_WORDSIZE(ED,D9,58,3F), HEX4_TO_WORDSIZE(8B,C6,59,AA), HEX4_TO_WORDSIZE(C0,B9,37,2A),
+   HEX4_TO_WORDSIZE(03,12,A5,57), HEX4_TO_WORDSIZE(45,79,34,24), HEX4_TO_WORDSIZE(40,D1,E3,AB), HEX4_TO_WORDSIZE(52,28,C1,11),
+   HEX4_TO_WORDSIZE(B5,EB,20,2D), HEX4_TO_WORDSIZE(81,56,BF,6A), HEX4_TO_WORDSIZE(4A,F5,0A,00), HEX4_TO_WORDSIZE(DF,55,D0,F2),
+   HEX4_TO_WORDSIZE(3C,53,E2,90), HEX4_TO_WORDSIZE(15,B0,A1,E5), HEX4_TO_WORDSIZE(76,34,7A,52), HEX4_TO_WORDSIZE(84,E3,2E,59),
+   HEX4_TO_WORDSIZE(05,E3,F2,23), HEX4_TO_WORDSIZE(0D,8C,01,3D), HEX4_TO_WORDSIZE(8D,96,92,F7), HEX4_TO_WORDSIZE(7E,B8,CF,EE),
+   HEX4_TO_WORDSIZE(D3,0E,7C,DA), HEX4_TO_WORDSIZE(14,0E,FE,B3), HEX4_TO_WORDSIZE(11,A9,F0,72), HEX4_TO_WORDSIZE(9A,08,69,3F),
+   HEX4_TO_WORDSIZE(1B,9F,1B,D1), HEX4_TO_WORDSIZE(00,D2,35,91), HEX4_TO_WORDSIZE(53,8B,7D,A5), HEX4_TO_WORDSIZE(FA,E7,98,D4),
+   HEX4_TO_WORDSIZE(ED,84,BB,42), HEX4_TO_WORDSIZE(5F,E3,9A,AD), HEX4_TO_WORDSIZE(FD,42,6D,94), HEX4_TO_WORDSIZE(2D,F2,32,CF),
+   HEX4_TO_WORDSIZE(13,D7,2B,7A), HEX4_TO_WORDSIZE(3F,7F,BE,90), HEX4_TO_WORDSIZE(6D,FC,F7,87), HEX4_TO_WORDSIZE(F8,E8,F6,83),
+   HEX4_TO_WORDSIZE(A3,23,34,55), HEX4_TO_WORDSIZE(58,3C,33,F2), HEX4_TO_WORDSIZE(0C,F8,3B,61), HEX4_TO_WORDSIZE(97,A1,D7,03),
+   HEX4_TO_WORDSIZE(67,DD,0A,8E), HEX4_TO_WORDSIZE(35,54,30,E3), HEX4_TO_WORDSIZE(02,3E,67,A1), HEX4_TO_WORDSIZE(73,29,95,FC),
+   HEX4_TO_WORDSIZE(95,E1,84,52), HEX4_TO_WORDSIZE(66,38,2A,DA), HEX4_TO_WORDSIZE(B3,1D,23,53), HEX4_TO_WORDSIZE(1B,4D,0D,1F),
+   HEX4_TO_WORDSIZE(50,CC,51,C1), HEX4_TO_WORDSIZE(8A,4E,EE,61), HEX4_TO_WORDSIZE(CE,BB,BC,7B), HEX4_TO_WORDSIZE(5F,16,5D,99),
+   HEX4_TO_WORDSIZE(68,D6,8C,8F), HEX4_TO_WORDSIZE(6B,0F,B8,F3), HEX4_TO_WORDSIZE(3E,AA,82,89), HEX4_TO_WORDSIZE(1F,4F,A1,2F),
+   HEX4_TO_WORDSIZE(A0,A2,A9,6E), HEX4_TO_WORDSIZE(41,42,FF,0F), HEX4_TO_WORDSIZE(AC,AD,4F,81), HEX4_TO_WORDSIZE(0A,83,9B,5B),
+   HEX4_TO_WORDSIZE(54,E2,44,D5), HEX4_TO_WORDSIZE(10,1E,5D,E4), HEX4_TO_WORDSIZE(9D,3D,C3,34), HEX4_TO_WORDSIZE(6B,EC,CB,B9),
+   HEX4_TO_WORDSIZE(E8,0F,26,BD), HEX4_TO_WORDSIZE(8D,0F,4F,65), HEX4_TO_WORDSIZE(93,11,A2,69), HEX4_TO_WORDSIZE(51,BB,B3,F1),
+   HEX4_TO_WORDSIZE(D6,BB,EC,0E), HEX4_TO_WORDSIZE(EC,10,6E,B6), HEX4_TO_WORDSIZE(19,BD,41,07), HEX4_TO_WORDSIZE(35,DF,9C,25),
+   HEX4_TO_WORDSIZE(43,34,FB,C0), HEX4_TO_WORDSIZE(58,C2,E3,B7), HEX4_TO_WORDSIZE(B3,AD,4C,6E), HEX4_TO_WORDSIZE(F1,B1,9E,28),
+   HEX4_TO_WORDSIZE(EE,08,16,A3), HEX4_TO_WORDSIZE(D4,D0,21,B6), HEX4_TO_WORDSIZE(10,B3,7E,CD), HEX4_TO_WORDSIZE(77,1E,46,88),
+   HEX4_TO_WORDSIZE(AE,A3,C9,E0), HEX4_TO_WORDSIZE(B9,B5,29,0B), HEX4_TO_WORDSIZE(E8,88,1A,83), HEX4_TO_WORDSIZE(3F,EF,CF,C8),
+   HEX4_TO_WORDSIZE(C4,A4,38,E3), HEX4_TO_WORDSIZE(AD,90,06,E1), HEX4_TO_WORDSIZE(3A,5F,DF,82), HEX4_TO_WORDSIZE(DB,49,01,9F),
+   HEX4_TO_WORDSIZE(48,91,5D,CF), HEX4_TO_WORDSIZE(C1,05,F2,D1), HEX4_TO_WORDSIZE(8E,99,29,BF), HEX4_TO_WORDSIZE(B3,A8,CA,A1),
+   HEX4_TO_WORDSIZE(86,99,DD,31), HEX4_TO_WORDSIZE(E0,9C,B9,F0), HEX4_TO_WORDSIZE(55,27,88,AC), HEX4_TO_WORDSIZE(CB,D2,1E,33),
+   HEX4_TO_WORDSIZE(CA,9F,7A,1D), HEX4_TO_WORDSIZE(AE,D0,35,BE), HEX4_TO_WORDSIZE(5D,6D,C5,03), HEX4_TO_WORDSIZE(E8,3A,D2,C9),
+   HEX4_TO_WORDSIZE(16,E6,54,84), HEX4_TO_WORDSIZE(E9,28,59,B7), HEX4_TO_WORDSIZE(24,19,99,08), HEX4_TO_WORDSIZE(C7,2C,78,C1),
+   HEX4_TO_WORDSIZE(4C,B2,0E,96), HEX4_TO_WORDSIZE(B8,2A,5A,F9), HEX4_TO_WORDSIZE(38,58,41,96), HEX4_TO_WORDSIZE(32,9B,F9,61),
+   HEX4_TO_WORDSIZE(18,6C,7F,79), HEX4_TO_WORDSIZE(3D,F3,24,5E), HEX4_TO_WORDSIZE(C9,B9,7D,37), HEX4_TO_WORDSIZE(4B,60,0B,83),
+   HEX4_TO_WORDSIZE(5F,0B,46,D5), HEX4_TO_WORDSIZE(E9,9D,5C,7C), HEX4_TO_WORDSIZE(A2,0A,2C,70), HEX4_TO_WORDSIZE(DB,30,38,DD),
+   HEX4_TO_WORDSIZE(9C,42,8D,B8), HEX4_TO_WORDSIZE(9A,B5,89,13), HEX4_TO_WORDSIZE(81,39,B3,6A), HEX4_TO_WORDSIZE(8D,2E,A7,97),
+   HEX4_TO_WORDSIZE(92,49,89,7F), HEX4_TO_WORDSIZE(91,E2,D8,ED), HEX4_TO_WORDSIZE(2A,F7,24,60), HEX4_TO_WORDSIZE(4F,1C,E5,7F),
+   HEX4_TO_WORDSIZE(C6,2E,15,5C), HEX4_TO_WORDSIZE(58,A5,F2,63), HEX4_TO_WORDSIZE(5B,C5,34,1E), HEX4_TO_WORDSIZE(27,1A,93,F1),
+   HEX4_TO_WORDSIZE(5F,72,CC,22), HEX4_TO_WORDSIZE(59,5E,65,47), HEX4_TO_WORDSIZE(1F,1E,4F,3F), HEX4_TO_WORDSIZE(4B,E6,45,8D),
+   HEX4_TO_WORDSIZE(FF,9F,23,22), HEX4_TO_WORDSIZE(18,26,7E,4E), HEX4_TO_WORDSIZE(D3,3A,76,57), HEX4_TO_WORDSIZE(EE,AA,4D,04),
+   HEX4_TO_WORDSIZE(67,E1,F7,DC), HEX4_TO_WORDSIZE(7E,36,A6,AD), HEX4_TO_WORDSIZE(5F,6F,84,5A), HEX4_TO_WORDSIZE(58,BA,7F,F4),
+   HEX4_TO_WORDSIZE(5E,67,7D,0C), HEX4_TO_WORDSIZE(95,9C,44,FA), HEX4_TO_WORDSIZE(A4,48,69,16), HEX4_TO_WORDSIZE(F4,64,6F,9F),
+   HEX4_TO_WORDSIZE(40,30,EC,C3), HEX4_TO_WORDSIZE(BB,90,02,D8), HEX4_TO_WORDSIZE(E3,3F,02,55), HEX4_TO_WORDSIZE(C7,64,4C,1D),
+   HEX4_TO_WORDSIZE(44,9F,0C,E6), HEX4_TO_WORDSIZE(31,00,D3,1E), HEX4_TO_WORDSIZE(E3,3D,0B,D5), HEX4_TO_WORDSIZE(02,99,3A,EA),
+   HEX4_TO_WORDSIZE(5D,93,A8,6F), HEX4_TO_WORDSIZE(62,48,F9,1F), HEX4_TO_WORDSIZE(E2,E7,D7,D0), HEX4_TO_WORDSIZE(D8,8B,91,44),
+   HEX4_TO_WORDSIZE(E4,DA,88,E9), HEX4_TO_WORDSIZE(93,D0,CB,92), HEX4_TO_WORDSIZE(2A,84,94,71), HEX4_TO_WORDSIZE(A5,91,F8,53),
+   HEX4_TO_WORDSIZE(68,C0,CD,44), HEX4_TO_WORDSIZE(31,27,35,4C), HEX4_TO_WORDSIZE(52,DF,15,88), HEX4_TO_WORDSIZE(FD,AA,B2,56),
+   HEX4_TO_WORDSIZE(F7,FA,4D,15), HEX4_TO_WORDSIZE(10,06,2E,80), HEX4_TO_WORDSIZE(97,FC,50,DE), HEX4_TO_WORDSIZE(D0,F3,BC,51),
+   HEX4_TO_WORDSIZE(60,FE,2A,36), HEX4_TO_WORDSIZE(26,37,07,BA), HEX4_TO_WORDSIZE(6D,1E,A3,5D), HEX4_TO_WORDSIZE(16,39,C6,24),
+   HEX4_TO_WORDSIZE(82,5F,01,94), HEX4_TO_WORDSIZE(8E,83,1D,5B), HEX4_TO_WORDSIZE(76,C4,C1,80), HEX4_TO_WORDSIZE(42,86,FB,42),
+   HEX4_TO_WORDSIZE(1A,25,30,B0), HEX4_TO_WORDSIZE(5A,00,16,9C), HEX4_TO_WORDSIZE(2E,75,A2,66), HEX4_TO_WORDSIZE(5B,69,65,27),
+   HEX4_TO_WORDSIZE(43,58,72,FE), HEX4_TO_WORDSIZE(BC,72,3A,17), HEX4_TO_WORDSIZE(61,79,4C,4F), HEX4_TO_WORDSIZE(24,11,11,50),
+   HEX4_TO_WORDSIZE(10,6F,9B,C4), HEX4_TO_WORDSIZE(CE,5B,10,6A), HEX4_TO_WORDSIZE(DB,F0,A1,1F), HEX4_TO_WORDSIZE(EF,70,37,39)
+};
+#endif
+
+#if SHARKSSL_ECC_USE_SECP384R1
+
+static const shtype_tWord SharkSslECC_combP384[16 * 2 * (384 / SHARKSSL_BIGINT_WORDSIZE)] =
+{
+   HEX4_TO_WORDSIZE(AA,87,CA,22), HEX4_TO_WORDSIZE(BE,8B,05,37), HEX4_TO_WORDSIZE(8E,B1,C7,1E), HEX4_TO_WORDSIZE(F3,20,AD,74),
+   HEX4_TO_WORDSIZE(6E,1D,3B,62), HEX4_TO_WORDSIZE(8B,A7,9B,98), HEX4_TO_WORDSIZE(59,F7,41,E0), HEX4_TO_WORDSIZE(82,54,2A,38),
+   HEX4_TO_WORDSIZE(55,02,F2,5D), HEX4_TO_WORDSIZE(BF,55,29,6C), HEX4_TO_WORDSIZE(3A,54,5E,38), HEX4_TO_WORDSIZE(72,76,0A,B7),
+   HEX4_TO_WORDSIZE(36,17,DE,4A), HEX4_TO_WORDSIZE(96,26,2C,6F), HEX4_TO_WORDSIZE(5D,9E,98,BF), HEX4_TO_WORDSIZE(92,92,DC,29),
+   HEX4_TO_WORDSIZE(F8,F4,1D,BD), HEX4_TO_WORDSIZE(28,9A,14,7C), HEX4_TO_WORDSIZE(E9,DA,31,13), HEX4_TO_WORDSIZE(B5,F0,B8,C0),
+   HEX4_TO_WORDSIZE(0A,60,B1,CE), HEX4_TO_WORDSIZE(1D,7E,81,9D), HEX4_TO_WORDSIZE(7A,43,1D,7C), HEX4_TO_WORDSIZE(90,EA,0E,5F),
+   HEX4_TO_WORDSIZE(5E,54,D9,53), HEX4_TO_WORDSIZE(0F,DD,80,4E), HEX4_TO_WORDSIZE(49,2E,CE,BD), HEX4_TO_WORDSIZE(3E,EE,91,5B),
+   HEX4_TO_WORDSIZE(0A,9B,91,BD), HEX4_TO_WORDSIZE(21,AD,80,66), HEX4_TO_WORDSIZE(A9,D5,E3,99), HEX4_TO_WORDSIZE(EA,AC,94,20),
+   HEX4_TO_WORDSIZE(82,44,13,2B), HEX4_TO_WORDSIZE(85,47,E6,B6), HEX4_TO_WORDSIZE(4D,F6,24,DB), HEX4_TO_WORDSIZE(8E,8C,F6,BD),
+   HEX4_TO_WORDSIZE(4A,3D,77,63), HEX4_TO_WORDSIZE(4B,A2,4B,C0), HEX4_TO_WORDSIZE(B5,E5,34,AC), HEX4_TO_WORDSIZE(0E,81,31,D0),
+   HEX4_TO_WORDSIZE(50,09,A4,B4), HEX4_TO_WORDSIZE(95,82,1B,09), HEX4_TO_WORDSIZE(6F,98,B3,52), HEX4_TO_WORDSIZE(89,A6,6C,33),
+   HEX4_TO_WORDSIZE(F6,6D,71,25), HEX4_TO_WORDSIZE(42,72,7F,D7), HEX4_TO_WORDSIZE(44,28,8C,00), HEX4_TO_WORDSIZE(CC,5A,43,B2),
+   HEX4_TO_WORDSIZE(D2,3B,74,6B), HEX4_TO_WORDSIZE(6A,A7,12,94), HEX4_TO_WORDSIZE(D9,62,04,E4), HEX4_TO_WORDSIZE(B7,FD,66,64),
+   HEX4_TO_WORDSIZE(27,4E,62,60), HEX4_TO_WORDSIZE(4B,04,73,85), HEX4_TO_WORDSIZE(D5,0A,0A,C4), HEX4_TO_WORDSIZE(1F,2C,CD,66),
+   HEX4_TO_WORDSIZE(66,00,4E,C3), HEX4_TO_WORDSIZE(D2,6C,55,B2), HEX4_TO_WORDSIZE(33,11,EC,54), HEX4_TO_WORDSIZE(93,16,94,D6),
+   HEX4_TO_WORDSIZE(E2,F2,CD,A7), HEX4_TO_WORDSIZE(01,69,07,6A), HEX4_TO_WORDSIZE(5F,34,8F,1D), HEX4_TO_WORDSIZE(09,A7,1B,A8),
+   HEX4_TO_WORDSIZE(27,86,BD,19), HEX4_TO_WORDSIZE(B8,9D,30,90), HEX4_TO_WORDSIZE(C5,BE,10,1D), HEX4_TO_WORDSIZE(AA,3A,EC,73),
+   HEX4_TO_WORDSIZE(47,70,9B,8E), HEX4_TO_WORDSIZE(BE,78,08,47), HEX4_TO_WORDSIZE(9A,72,31,A7), HEX4_TO_WORDSIZE(46,B6,4A,DD),
+   HEX4_TO_WORDSIZE(B7,69,B0,BE), HEX4_TO_WORDSIZE(DA,1C,16,69), HEX4_TO_WORDSIZE(D0,47,2D,D3), HEX4_TO_WORDSIZE(D0,94,B6,A7),
+   HEX4_TO_WORDSIZE(5F,C1,13,E8), HEX4_TO_WORDSIZE(DC,50,39,3C), HEX4_TO_WORDSIZE(D6,BE,AE,B6), HEX4_TO_WORDSIZE(C8,1E,E1,26),
+   HEX4_TO_WORDSIZE(F0,4B,A2,46), HEX4_TO_WORDSIZE(F8,EE,3F,37), HEX4_TO_WORDSIZE(70,CB,8A,4C), HEX4_TO_WORDSIZE(1A,46,5E,E0),
+   HEX4_TO_WORDSIZE(4F,E5,42,B9), HEX4_TO_WORDSIZE(EB,AA,D0,A2), HEX4_TO_WORDSIZE(81,D5,1B,7F), HEX4_TO_WORDSIZE(D4,15,E1,CA),
+   HEX4_TO_WORDSIZE(A2,41,59,11), HEX4_TO_WORDSIZE(8B,36,D6,01), HEX4_TO_WORDSIZE(B9,C0,4F,16), HEX4_TO_WORDSIZE(28,45,69,C0),
+   HEX4_TO_WORDSIZE(DE,0A,ED,5E), HEX4_TO_WORDSIZE(96,BE,EE,C6), HEX4_TO_WORDSIZE(77,24,81,FA), HEX4_TO_WORDSIZE(41,57,BC,A1),
+   HEX4_TO_WORDSIZE(A4,1C,EB,96), HEX4_TO_WORDSIZE(5B,46,96,0B), HEX4_TO_WORDSIZE(59,BD,B6,61), HEX4_TO_WORDSIZE(79,A8,B5,AB),
+   HEX4_TO_WORDSIZE(22,BB,9F,3B), HEX4_TO_WORDSIZE(4D,E7,B0,B3), HEX4_TO_WORDSIZE(5F,DC,0C,0F), HEX4_TO_WORDSIZE(BA,53,28,E9),
+   HEX4_TO_WORDSIZE(4E,E4,99,86), HEX4_TO_WORDSIZE(C5,8B,99,9A), HEX4_TO_WORDSIZE(7F,FA,F7,18), HEX4_TO_WORDSIZE(ED,F8,C9,96),
+   HEX4_TO_WORDSIZE(C6,E9,4C,F8), HEX4_TO_WORDSIZE(10,E2,83,46), HEX4_TO_WORDSIZE(78,5C,B6,25), HEX4_TO_WORDSIZE(E5,EF,AA,D0),
+   HEX4_TO_WORDSIZE(2C,FE,48,4D), HEX4_TO_WORDSIZE(82,ED,FF,44), HEX4_TO_WORDSIZE(98,51,59,D4), HEX4_TO_WORDSIZE(72,5E,98,1D),
+   HEX4_TO_WORDSIZE(16,82,F9,77), HEX4_TO_WORDSIZE(55,46,57,5D), HEX4_TO_WORDSIZE(F9,5F,D8,96), HEX4_TO_WORDSIZE(67,3F,56,5B),
+   HEX4_TO_WORDSIZE(81,C0,2C,3E), HEX4_TO_WORDSIZE(DA,05,DE,0C), HEX4_TO_WORDSIZE(C7,78,EF,62), HEX4_TO_WORDSIZE(87,F8,1D,B5),
+   HEX4_TO_WORDSIZE(C8,A1,65,64), HEX4_TO_WORDSIZE(CE,D4,2A,B2), HEX4_TO_WORDSIZE(A1,34,4A,D0), HEX4_TO_WORDSIZE(16,4A,20,F6),
+   HEX4_TO_WORDSIZE(60,FD,2C,EB), HEX4_TO_WORDSIZE(AC,82,0A,90), HEX4_TO_WORDSIZE(49,BF,60,9F), HEX4_TO_WORDSIZE(B3,31,39,E7),
+   HEX4_TO_WORDSIZE(1C,E0,02,8A), HEX4_TO_WORDSIZE(4C,3E,F2,D3), HEX4_TO_WORDSIZE(0C,34,52,97), HEX4_TO_WORDSIZE(69,CB,4B,1D),
+   HEX4_TO_WORDSIZE(46,A2,A1,2D), HEX4_TO_WORDSIZE(C4,2F,9A,8E), HEX4_TO_WORDSIZE(9D,DA,D4,13), HEX4_TO_WORDSIZE(A9,CE,29,2C),
+   HEX4_TO_WORDSIZE(8B,F3,10,B1), HEX4_TO_WORDSIZE(90,E3,13,40), HEX4_TO_WORDSIZE(92,4D,0E,64), HEX4_TO_WORDSIZE(C1,7D,28,B9),
+   HEX4_TO_WORDSIZE(71,43,98,BB), HEX4_TO_WORDSIZE(65,79,D2,48), HEX4_TO_WORDSIZE(F6,96,C7,56), HEX4_TO_WORDSIZE(B9,78,FA,06),
+   HEX4_TO_WORDSIZE(5C,01,A2,BE), HEX4_TO_WORDSIZE(F7,21,59,66), HEX4_TO_WORDSIZE(71,71,C0,38), HEX4_TO_WORDSIZE(AD,2A,D1,61),
+   HEX4_TO_WORDSIZE(ED,D5,F9,53), HEX4_TO_WORDSIZE(51,D1,44,A0), HEX4_TO_WORDSIZE(F9,A6,E7,F2), HEX4_TO_WORDSIZE(B2,31,91,68),
+   HEX4_TO_WORDSIZE(65,45,AA,51), HEX4_TO_WORDSIZE(A4,B5,D7,B8), HEX4_TO_WORDSIZE(87,01,F6,45), HEX4_TO_WORDSIZE(E1,7F,04,76),
+   HEX4_TO_WORDSIZE(54,AC,28,C5), HEX4_TO_WORDSIZE(90,CD,77,84), HEX4_TO_WORDSIZE(7F,0C,9F,34), HEX4_TO_WORDSIZE(D6,EE,93,7E),
+   HEX4_TO_WORDSIZE(81,8B,42,B4), HEX4_TO_WORDSIZE(FF,0C,18,46), HEX4_TO_WORDSIZE(4A,DE,57,06), HEX4_TO_WORDSIZE(AB,1F,B3,25),
+   HEX4_TO_WORDSIZE(A4,9B,60,2C), HEX4_TO_WORDSIZE(54,DB,FC,48), HEX4_TO_WORDSIZE(D6,95,8C,1E), HEX4_TO_WORDSIZE(60,96,9A,97),
+   HEX4_TO_WORDSIZE(C6,2D,F6,37), HEX4_TO_WORDSIZE(4D,83,E1,1C), HEX4_TO_WORDSIZE(6B,E0,8D,5D), HEX4_TO_WORDSIZE(1B,50,76,C2),
+   HEX4_TO_WORDSIZE(CB,53,57,BA), HEX4_TO_WORDSIZE(53,82,ED,59), HEX4_TO_WORDSIZE(E2,A2,F4,FC), HEX4_TO_WORDSIZE(CB,38,E8,6D),
+   HEX4_TO_WORDSIZE(7E,1D,2F,2E), HEX4_TO_WORDSIZE(B5,CF,54,D1), HEX4_TO_WORDSIZE(9F,5E,1F,E2), HEX4_TO_WORDSIZE(17,A8,18,F2),
+   HEX4_TO_WORDSIZE(B8,E8,CA,59), HEX4_TO_WORDSIZE(A7,5F,00,46), HEX4_TO_WORDSIZE(0A,DC,D9,52), HEX4_TO_WORDSIZE(00,64,4D,20),
+   HEX4_TO_WORDSIZE(B4,BC,64,C9), HEX4_TO_WORDSIZE(AA,21,17,19), HEX4_TO_WORDSIZE(FB,97,D2,EE), HEX4_TO_WORDSIZE(51,91,4B,CA),
+   HEX4_TO_WORDSIZE(AA,0E,19,AA), HEX4_TO_WORDSIZE(44,B8,BF,68), HEX4_TO_WORDSIZE(7D,81,F6,8F), HEX4_TO_WORDSIZE(DA,F8,AA,6C),
+   HEX4_TO_WORDSIZE(A8,78,2B,8E), HEX4_TO_WORDSIZE(BA,44,07,54), HEX4_TO_WORDSIZE(CE,25,4C,FD), HEX4_TO_WORDSIZE(85,3C,B4,59),
+   HEX4_TO_WORDSIZE(51,30,BD,E7), HEX4_TO_WORDSIZE(B6,B9,0F,17), HEX4_TO_WORDSIZE(79,FE,24,65), HEX4_TO_WORDSIZE(1E,06,01,65),
+   HEX4_TO_WORDSIZE(65,DB,0B,8A), HEX4_TO_WORDSIZE(CB,3C,35,A3), HEX4_TO_WORDSIZE(C4,75,07,53), HEX4_TO_WORDSIZE(15,4E,C8,95),
+   HEX4_TO_WORDSIZE(D9,86,B3,57), HEX4_TO_WORDSIZE(CA,81,49,8E), HEX4_TO_WORDSIZE(7A,28,2A,2A), HEX4_TO_WORDSIZE(13,1C,05,0D),
+   HEX4_TO_WORDSIZE(8F,1B,7D,25), HEX4_TO_WORDSIZE(4E,9F,EA,80), HEX4_TO_WORDSIZE(6E,3E,E9,6F), HEX4_TO_WORDSIZE(26,64,A4,87),
+   HEX4_TO_WORDSIZE(5B,64,78,B4), HEX4_TO_WORDSIZE(C8,2A,64,C1), HEX4_TO_WORDSIZE(DA,BB,89,57), HEX4_TO_WORDSIZE(88,49,2C,B7),
+   HEX4_TO_WORDSIZE(2D,31,79,5F), HEX4_TO_WORDSIZE(7F,08,EB,A2), HEX4_TO_WORDSIZE(C0,FE,28,DE), HEX4_TO_WORDSIZE(6B,A2,D1,3C),
+   HEX4_TO_WORDSIZE(E9,17,B3,1C), HEX4_TO_WORDSIZE(39,4F,E4,27), HEX4_TO_WORDSIZE(1D,21,12,8B), HEX4_TO_WORDSIZE(6A,57,0F,04),
+   HEX4_TO_WORDSIZE(0A,E3,33,7F), HEX4_TO_WORDSIZE(7E,9C,C1,5B), HEX4_TO_WORDSIZE(70,93,12,4C), HEX4_TO_WORDSIZE(7B,50,F8,18),
+   HEX4_TO_WORDSIZE(AC,BB,2D,DC), HEX4_TO_WORDSIZE(AE,07,E0,E5), HEX4_TO_WORDSIZE(B3,8D,3C,11), HEX4_TO_WORDSIZE(95,03,33,67),
+   HEX4_TO_WORDSIZE(55,29,92,D1), HEX4_TO_WORDSIZE(21,7D,14,F8), HEX4_TO_WORDSIZE(5D,14,F5,18), HEX4_TO_WORDSIZE(CD,43,0E,4C),
+   HEX4_TO_WORDSIZE(8C,90,10,D0), HEX4_TO_WORDSIZE(DF,18,22,B5), HEX4_TO_WORDSIZE(26,DB,96,AF), HEX4_TO_WORDSIZE(FD,1F,7C,82),
+   HEX4_TO_WORDSIZE(73,C3,0B,F5), HEX4_TO_WORDSIZE(28,57,A9,D5), HEX4_TO_WORDSIZE(45,E5,B4,81), HEX4_TO_WORDSIZE(91,AE,A8,C6),
+   HEX4_TO_WORDSIZE(53,31,6E,D1), HEX4_TO_WORDSIZE(08,E1,14,AE), HEX4_TO_WORDSIZE(B8,56,67,46), HEX4_TO_WORDSIZE(EB,3F,72,ED),
+   HEX4_TO_WORDSIZE(A4,4A,D9,79), HEX4_TO_WORDSIZE(D6,10,B6,6B), HEX4_TO_WORDSIZE(D9,36,5C,D7), HEX4_TO_WORDSIZE(07,0A,6E,08),
+   HEX4_TO_WORDSIZE(66,48,33,BC), HEX4_TO_WORDSIZE(1B,71,B3,BD), HEX4_TO_WORDSIZE(12,98,B7,38), HEX4_TO_WORDSIZE(34,CD,1B,DD),
+   HEX4_TO_WORDSIZE(A3,A4,8C,9F), HEX4_TO_WORDSIZE(6A,02,C7,CD), HEX4_TO_WORDSIZE(24,66,24,AB), HEX4_TO_WORDSIZE(20,42,8D,3D),
+   HEX4_TO_WORDSIZE(79,BA,EF,E3), HEX4_TO_WORDSIZE(EA,9D,8E,EB), HEX4_TO_WORDSIZE(64,46,57,CD), HEX4_TO_WORDSIZE(24,DB,DA,CC),
+   HEX4_TO_WORDSIZE(38,6C,AB,94), HEX4_TO_WORDSIZE(D3,43,27,43), HEX4_TO_WORDSIZE(C6,32,EF,51), HEX4_TO_WORDSIZE(67,E3,31,A8),
+   HEX4_TO_WORDSIZE(AB,A6,0A,2B), HEX4_TO_WORDSIZE(BC,1B,08,86), HEX4_TO_WORDSIZE(A6,51,A2,49), HEX4_TO_WORDSIZE(6F,82,4A,23),
+   HEX4_TO_WORDSIZE(C3,3E,94,2E), HEX4_TO_WORDSIZE(C0,7A,B9,81), HEX4_TO_WORDSIZE(86,11,6D,31), HEX4_TO_WORDSIZE(FD,91,B7,33),
+   HEX4_TO_WORDSIZE(54,37,6A,E2), HEX4_TO_WORDSIZE(43,B9,48,72), HEX4_TO_WORDSIZE(CC,7C,46,8D), HEX4_TO_WORDSIZE(C6,25,D4,7F),
+   HEX4_TO_WORDSIZE(C7,2C,67,D5), HEX4_TO_WORDSIZE(B5,55,25,50), HEX4_TO_WORDSIZE(CE,10,0B,59), HEX4_TO_WORDSIZE(7C,00,22,A9),
+   HEX4_TO_WORDSIZE(B2,A0,C4,49), HEX4_TO_WORDSIZE(37,39,3D,29), HEX4_TO_WORDSIZE(17,7D,47,C6), HEX4_TO_WORDSIZE(BC,B0,48,38),
+   HEX4_TO_WORDSIZE(DE,1F,97,1D), HEX4_TO_WORDSIZE(E7,E9,5F,9A), HEX4_TO_WORDSIZE(09,2B,80,73), HEX4_TO_WORDSIZE(CF,05,44,0B),
+   HEX4_TO_WORDSIZE(3A,34,55,64), HEX4_TO_WORDSIZE(A4,1D,AC,8D), HEX4_TO_WORDSIZE(50,26,D3,E0), HEX4_TO_WORDSIZE(DC,9B,B5,65),
+   HEX4_TO_WORDSIZE(59,7F,C7,F4), HEX4_TO_WORDSIZE(A1,4C,E4,D5), HEX4_TO_WORDSIZE(59,C1,78,BA), HEX4_TO_WORDSIZE(98,C7,09,0F),
+   HEX4_TO_WORDSIZE(4E,D2,21,26), HEX4_TO_WORDSIZE(09,1B,C6,64), HEX4_TO_WORDSIZE(EE,98,B7,85), HEX4_TO_WORDSIZE(BC,55,A5,1B),
+   HEX4_TO_WORDSIZE(31,E3,7B,98), HEX4_TO_WORDSIZE(6A,4E,52,6E), HEX4_TO_WORDSIZE(00,22,4C,3D), HEX4_TO_WORDSIZE(E7,73,40,CD),
+   HEX4_TO_WORDSIZE(11,0A,B6,A9), HEX4_TO_WORDSIZE(94,F5,57,1C), HEX4_TO_WORDSIZE(CD,87,18,03), HEX4_TO_WORDSIZE(AF,89,51,73),
+   HEX4_TO_WORDSIZE(F0,71,4D,17), HEX4_TO_WORDSIZE(10,AF,67,4E), HEX4_TO_WORDSIZE(F1,84,1C,28), HEX4_TO_WORDSIZE(DF,C7,6F,75),
+   HEX4_TO_WORDSIZE(23,22,59,2A), HEX4_TO_WORDSIZE(60,82,A9,F9), HEX4_TO_WORDSIZE(00,F3,05,D9), HEX4_TO_WORDSIZE(FE,DF,31,1D),
+   HEX4_TO_WORDSIZE(1A,08,25,B1), HEX4_TO_WORDSIZE(C6,7B,BA,A3), HEX4_TO_WORDSIZE(C2,A7,A2,CB), HEX4_TO_WORDSIZE(3F,FF,C9,CD),
+   HEX4_TO_WORDSIZE(19,E5,16,1E), HEX4_TO_WORDSIZE(3A,31,C9,61), HEX4_TO_WORDSIZE(BB,E9,18,BA), HEX4_TO_WORDSIZE(B6,B4,AC,39),
+   HEX4_TO_WORDSIZE(CB,6E,B5,94), HEX4_TO_WORDSIZE(A2,FE,7A,5F), HEX4_TO_WORDSIZE(5A,A3,B4,21), HEX4_TO_WORDSIZE(22,D4,D1,24),
+   HEX4_TO_WORDSIZE(DF,A7,4F,E2), HEX4_TO_WORDSIZE(20,2D,88,33), HEX4_TO_WORDSIZE(40,AB,25,D0), HEX4_TO_WORDSIZE(51,34,97,C6),
+   HEX4_TO_WORDSIZE(7C,06,0A,89), HEX4_TO_WORDSIZE(27,90,43,9D), HEX4_TO_WORDSIZE(5B,64,89,9F), HEX4_TO_WORDSIZE(F6,B3,09,7E),
+   HEX4_TO_WORDSIZE(08,99,BA,AD), HEX4_TO_WORDSIZE(AD,C4,C8,38), HEX4_TO_WORDSIZE(3D,41,00,E8), HEX4_TO_WORDSIZE(77,E9,30,E1),
+   HEX4_TO_WORDSIZE(6D,A5,90,D6), HEX4_TO_WORDSIZE(0C,8D,49,31), HEX4_TO_WORDSIZE(E8,C5,5C,C6), HEX4_TO_WORDSIZE(31,95,6F,2B),
+   HEX4_TO_WORDSIZE(47,C8,30,1C), HEX4_TO_WORDSIZE(5D,A9,F7,C2), HEX4_TO_WORDSIZE(38,D0,D5,13), HEX4_TO_WORDSIZE(56,A7,8F,16),
+   HEX4_TO_WORDSIZE(E7,57,10,7A), HEX4_TO_WORDSIZE(E0,B8,E8,8E), HEX4_TO_WORDSIZE(68,9C,CE,C5), HEX4_TO_WORDSIZE(24,66,F9,5B),
+   HEX4_TO_WORDSIZE(25,E2,09,C5), HEX4_TO_WORDSIZE(9D,A9,12,1C), HEX4_TO_WORDSIZE(15,79,81,46), HEX4_TO_WORDSIZE(91,DB,E6,68),
+   HEX4_TO_WORDSIZE(E8,C6,63,C5), HEX4_TO_WORDSIZE(CB,12,99,C9), HEX4_TO_WORDSIZE(FD,A0,47,EB), HEX4_TO_WORDSIZE(72,49,57,66),
+   HEX4_TO_WORDSIZE(31,B9,2B,91), HEX4_TO_WORDSIZE(7F,A0,18,80), HEX4_TO_WORDSIZE(96,ED,F5,0F), HEX4_TO_WORDSIZE(67,9A,2A,BA),
+   HEX4_TO_WORDSIZE(55,32,00,B9), HEX4_TO_WORDSIZE(DA,09,FB,6A), HEX4_TO_WORDSIZE(DA,53,B0,69), HEX4_TO_WORDSIZE(FE,5D,66,97),
+   HEX4_TO_WORDSIZE(6C,27,90,54), HEX4_TO_WORDSIZE(6E,6C,E7,44), HEX4_TO_WORDSIZE(96,05,2F,28), HEX4_TO_WORDSIZE(E9,10,31,89),
+   HEX4_TO_WORDSIZE(63,66,E8,F3), HEX4_TO_WORDSIZE(D8,2A,DB,97), HEX4_TO_WORDSIZE(9A,D0,33,A2), HEX4_TO_WORDSIZE(F6,9B,64,DA)
+};
+#endif
+
+
+static int ZZTSTSharkSslECC_combMultiply(SharkSslECCurve *o, shtype_t *k, SharkSslECPoint *deltadevices)
+{
+   SharkSslEC_temp brightnesslimit;
+   SharkSslECPointJ R;
+   SharkSslECPoint T;
+   shtype_tDoubleWord s;
+   shtype_tWord *tmp_b, *tmp_buf, *m, *t, _XzY0x184, fpemulthreshold, any;
+   const shtype_tWord *ZZTSTtable;
+   U32 dm9k1resource;
+   U16 i, j, len, d, pos;
+   U8 x[SHARKSSL_ECC_COMB_MAXCOLS + 1], carry, prctlenable, sum, even, neg;
+
+   len = o->prime.len;
+   #if SHARKSSL_ECC_USE_SECP256R1
+   if ((o->bits == 256) && ((len * SHARKSSL_BIGINT_WORDSIZE) == 256))
+   {
+      ZZTSTtable = SharkSslECC_combP256;
+   }
+   else
+   #endif
+   #if SHARKSSL_ECC_USE_SECP384R1
+   if ((o->bits == 384) && ((len * SHARKSSL_BIGINT_WORDSIZE) == 384))
+   {
+      ZZTSTtable = SharkSslECC_combP384;
+   }
+   else
+   #endif
+   {
+      return SHARKSSL_ECC_MULT_FALLBACK;
+   }
+   
+   if ((o->G.x.len != len) || (o->G.y.len != len) || (k->len > len) || (k->len == 0) ||
+       memcmp(o->G.x.beg, ZZTSTtable, len * SHARKSSL__M) || memcmp(o->G.y.beg, ZZTSTtable + len, len * SHARKSSL__M))
+   {
+      return SHARKSSL_ECC_MULT_FALLBACK;
+   }
+   d = (U16)SHARKSSL_ECC_COMB_COLS(o->bits);
+
+   dm9k1resource = pcmciapdata((U32)(len * SHARKSSL__M) * (1 + 1 + 3 + 2 + 12));
+   tmp_b = (shtype_tWord*)baMalloc(dm9k1resource);
+   if (tmp_b == NULL)
+   {
+      return 1;
+   }
+   tmp_buf = (shtype_tWord*)selectaudio(tmp_b);
+   m = tmp_buf; tmp_buf += len;
+   t = tmp_buf; tmp_buf += len;
+   traceaddress(&R.x, len, tmp_buf); tmp_buf += len;
+   traceaddress(&R.y, len, tmp_buf); tmp_buf += len;
+   traceaddress(&R.z, len, tmp_buf); tmp_buf += len;
+   receivebroadcast(&T, len, tmp_buf, tmp_buf + len); tmp_buf += (len << 1);
+   SharkSslEC_temp_setmulmod(&brightnesslimit, o);
+   i = (U16)(len << 1);
+   traceaddress(&brightnesslimit.A, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.B, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.C, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.D, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.E, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.F, i, tmp_buf);
+
+   
+   memset(m, 0, (len - k->len) * SHARKSSL__M);
+   memcpy(m + (len - k->len), k->beg, k->len * SHARKSSL__M);
+   _XzY0x184 = 0;
+   for (i = len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)m[i] - o->order.beg[i] - _XzY0x184;
+      t[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   fpemulthreshold = (shtype_tWord)(_XzY0x184 - 1);  
+   any = 0;
+   for (i = 0; i < len; i++)
+   {
+      m[i] ^= ((m[i] ^ t[i]) & fpemulthreshold);
+      any |= m[i];
+   }
+   if (0 == any)  
+   {
+      sharkssl_clear(tmp_b, dm9k1resource);
+      baFree((void*)tmp_b);
+      return SHARKSSL_ECC_MULT_FALLBACK;
+   }
+
+   
+   _XzY0x184 = 0;
+   for (i = len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o->order.beg[i] - m[i] - _XzY0x184;
+      t[i] = (shtype_tWord)s;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+   }
+   neg = (U8)((m[len - 1] & 1) ^ 1);
+   fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)neg);
+   for (i = 0; i < len; i++)
+   {
+      m[i] ^= ((m[i] ^ t[i]) & fpemulthreshold);
+   }
+
+   
+   for (i = 0; i < d; i++)
+   {
+      x[i] = 0;
+      for (j = 0; j < SHARKSSL_ECC_COMB_W; j++)
+      {
+         pos = (U16)(i + (d * j));
+         if (pos < (len * SHARKSSL_BIGINT_WORDSIZE))
+         {
+            x[i] |= (U8)(((m[len - 1 - (pos / SHARKSSL_BIGINT_WORDSIZE)] >> (pos % SHARKSSL_BIGINT_WORDSIZE)) & 1) << j);
+         }
+      }
+   }
+   
+   x[d] = 0;
+   carry = 0;
+   for (i = 1; i <= d; i++)
+   {
+      even = (U8)(((x[i] ^ carry) & 1) ^ 1);
+      prctlenable = 0;
+      sum = 0;
+      for (j = 0; j < SHARKSSL_ECC_COMB_W; j++)
+      {
+         U8 ZZTSTtooth = (U8)(((x[i] >> j) & 1) + ((carry >> j) & 1) + (((x[i - 1] >> j) & 1) & even));
+         sum |= (U8)((ZZTSTtooth & 1) << j);
+         prctlenable |= (U8)((ZZTSTtooth >> 1) << j);
+      }
+      x[i] = sum;
+      carry = prctlenable;
+      x[i - 1] |= (U8)(even << 7);
+   }
+   baAssert(0 == carry);
+
+   baAssert(T.y.mem == (T.x.mem + len));
+   ZZTSTSharkSslECC_tableSelect(T.x.mem, ZZTSTtable, SHARKSSL_ECC_COMB_SIZE, 2, (U8)((x[d] & 0x7F) >> 1), (U8)(x[d] >> 7), &o->prime);
+   unassignedvector(&T.x, &R.x);
+   unassignedvector(&T.y, &R.y);
+   deviceparse(&R.z);
+   R.z.beg[len - 1] = 1;
+   for (i = d; i-- > 0; )
+   {
+      timerconfig(&R, &o->prime, &brightnesslimit);
+      ZZTSTSharkSslECC_tableSelect(T.x.mem, ZZTSTtable, SHARKSSL_ECC_COMB_SIZE, 2, (U8)((x[i] & 0x7F) >> 1), (U8)(x[i] >> 7), &o->prime);
+      deviceu2ootg(&R, &T, &o->prime, &brightnesslimit);
+   }
+
+   
+   baAssert((R.y.len == len) && (R.z.len == len));
+   fpemulthreshold = (shtype_tWord)(0 - (shtype_tWord)neg);
+   _XzY0x184 = 0;
+   any = 0;
+   for (i = len; i-- > 0; )
+   {
+      s = (shtype_tDoubleWord)o->prime.beg[i] - R.y.beg[i] - _XzY0x184;
+      _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+      R.y.beg[i] ^= (((shtype_tWord)s ^ R.y.beg[i]) & fpemulthreshold);
+      any |= R.z.beg[i];
+   }
+   if (any)
+   {
+      panicblink(&R, deltadevices, &o->prime, &brightnesslimit);
+   }
+
+   sharkssl_clear(x, sizeof(x));
+   sharkssl_clear(tmp_b, dm9k1resource);
+   baFree((void*)tmp_b);
+   return any ? 0 : SHARKSSL_ECC_MULT_FALLBACK;
+}
+#endif  
+
+
+#if SHARKSSL_ECC_WINDOW
+#if (SHARKSSL_ECC_MULT_FIXED_WINDOW > 6)
+#error SHARKSSL_ECC_MULT_FIXED_WINDOW must be between 0 and 6
+#endif
+
+#define SHARKSSL_ECC_WINDOW_W     SHARKSSL_ECC_MULT_FIXED_WINDOW
+#define SHARKSSL_ECC_WINDOW_SIZE  (1 << (SHARKSSL_ECC_WINDOW_W - 1))
+
+
+static U8 ZZTSTSharkSslECC_windowBits(const shtype_tWord *m, U16 len, U16 pos)
+{
+   U16 j, bit;
+   U8 b = 0;
+
+   for (j = 0; j < SHARKSSL_ECC_WINDOW_W; j++)
+   {
+      bit = (U16)(pos + j);
+      if (bit < ((len + 1) * SHARKSSL_BIGINT_WORDSIZE))
+      {
+         b |= (U8)(((m[len - (bit / SHARKSSL_BIGINT_WORDSIZE)] >> (bit % SHARKSSL_BIGINT_WORDSIZE)) & 1) << j);
+      }
+   }
+   return b;
+}
+
+
+
+static int ZZTSTSharkSslECC_windowMultiply(SharkSslECCurve *o, shtype_t *k, SharkSslECPoint *deltadevices)
+{
+   SharkSslEC_temp brightnesslimit;
+   SharkSslECPointJ R, T, P;
+   shtype_tDoubleWord s;
+   shtype_tWord *tmp_b, *tmp_buf, *m, *ZZTSTtable, carry, fpemulthreshold, any;
+   U32 dm9k1resource;
+   U16 i, j, len, digits, tw;
+   U8 b, neg;
+
+   len = o->prime.len;
+   if ((o->G.x.len != len) || (o->G.y.len != len) || (o->order.len != len) || (k->len > len) || (k->len == 0))
+   {
+      return SHARKSSL_ECC_MULT_FALLBACK;
+   }
+   SharkSslEC_temp_setmulmod(&brightnesslimit, o);
+   #if SHARKSSL_ECC_USE_BRAINPOOL
+   if (brightnesslimit.factor_a != NULL)  
+   {
+      return SHARKSSL_ECC_MULT_FALLBACK;
+   }
+   #endif
+
+   tw = (U16)(3 * len);
+   dm9k1resource = pcmciapdata((U32)SHARKSSL__M * ((len + 1) + (SHARKSSL_ECC_WINDOW_SIZE * tw) + (2 * tw) + (12 * len)));
+   tmp_b = (shtype_tWord*)baMalloc(dm9k1resource);
+   if (tmp_b == NULL)
+   {
+      return 1;
+   }
+   tmp_buf = (shtype_tWord*)selectaudio(tmp_b);
+   m = tmp_buf; tmp_buf += (len + 1);
+   ZZTSTtable = tmp_buf; tmp_buf += (SHARKSSL_ECC_WINDOW_SIZE * tw);
+   traceaddress(&R.x, len, tmp_buf); tmp_buf += len;
+   traceaddress(&R.y, len, tmp_buf); tmp_buf += len;
+   traceaddress(&R.z, len, tmp_buf); tmp_buf += len;
+   traceaddress(&T.x, len, tmp_buf); tmp_buf += len;
+   traceaddress(&T.y, len, tmp_buf); tmp_buf += len;
+   traceaddress(&T.z, len, tmp_buf); tmp_buf += len;
+   i = (U16)(len << 1);
+   traceaddress(&brightnesslimit.A, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.B, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.C, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.D, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.E, i, tmp_buf); tmp_buf += i;
+   traceaddress(&brightnesslimit.F, i, tmp_buf);
+
+   
+   memcpy(ZZTSTtable, o->G.x.beg, len * SHARKSSL__M);
+   memcpy(ZZTSTtable + len, o->G.y.beg, len * SHARKSSL__M);
+   memset(ZZTSTtable + (2 * len), 0, len * SHARKSSL__M);
+   ZZTSTtable[tw - 1] = 1;
+   memcpy(T.x.mem, ZZTSTtable, tw * SHARKSSL__M);
+   timerconfig(&T, &o->prime, &brightnesslimit);
+   for (j = 1; j < SHARKSSL_ECC_WINDOW_SIZE; j++)
+   {
+      traceaddress(&P.x, len, ZZTSTtable + (j * tw));
+      traceaddress(&P.y, len, ZZTSTtable + (j * tw) + len);
+      traceaddress(&P.z, len, ZZTSTtable + (j * tw) + (2 * len));
+      memcpy(P.x.mem, ZZTSTtable + ((j - 1) * tw), tw * SHARKSSL__M);
+      ZZTSTSharkSslECPointJ_addJ(&P, &T, &o->prime, &brightnesslimit);
+      baAssert((P.x.len == len) && (P.y.len == len) && (P.z.len == len));
+   }
+
+   
+   m[0] = 0;
+   memset(m + 1, 0, (len - k->len) * SHARKSSL__M);
+   memcpy(m + 1 + (len - k->len), k->beg, k->len * SHARKSSL__M);
+   fpemulthreshold = (shtype_tWord)((m[len] & 1) - 1);  
+   carry = 0;
+   for (i = len; i > 0; i--)
+   {
+      s = (shtype_tDoubleWord)m[i] + (o->order.beg[i - 1] & fpemulthreshold) + carry;
+      m[i] = (shtype_tWord)s;
+      carry = (shtype_tWord)(s >> SHARKSSL_BIGINT_WORDSIZE);
+   }
+   m[0] = carry;
+
+   
+   digits = (U16)(((len * SHARKSSL_BIGINT_WORDSIZE) + 1 + SHARKSSL_ECC_WINDOW_W - 1) / SHARKSSL_ECC_WINDOW_W);
+   b = ZZTSTSharkSslECC_windowBits(m, len, (U16)((SHARKSSL_ECC_WINDOW_W * (digits - 1)) + 1));
+   baAssert(b < SHARKSSL_ECC_WINDOW_SIZE);
+   baAssert((R.y.mem == (R.x.mem + len)) && (R.z.mem == (R.y.mem + len)) && (T.y.mem == (T.x.mem + len)) && (T.z.mem == (T.y.mem + len)));
+   ZZTSTSharkSslECC_tableSelect(R.x.mem, ZZTSTtable, SHARKSSL_ECC_WINDOW_SIZE, 3, b, 0, &o->prime);
+   for (i = (U16)(digits - 1); i-- > 0; )
+   {
+      for (j = 0; j < SHARKSSL_ECC_WINDOW_W; j++)
+      {
+         timerconfig(&R, &o->prime, &brightnesslimit);
+      }
+      
+      b = ZZTSTSharkSslECC_windowBits(m, len, (U16)((SHARKSSL_ECC_WINDOW_W * i) + 1));
+      neg = (U8)((b >> (SHARKSSL_ECC_WINDOW_W - 1)) ^ 1);
+      b = (U8)((b ^ (U8)(0 - neg)) & (SHARKSSL_ECC_WINDOW_SIZE - 1));
+      ZZTSTSharkSslECC_tableSelect(T.x.mem, ZZTSTtable, SHARKSSL_ECC_WINDOW_SIZE, 3, b, neg, &o->prime);
+      ZZTSTSharkSslECPointJ_addJ(&R, &T, &o->prime, &brightnesslimit);
+   }
+
+   
+   baAssert(R.z.len == len);
+   any = 0;
+   for (i = 0; i < len; i++)
+   {
+      any |= R.z.beg[i];
+   }
+   if (any)
+   {
+      panicblink(&R, deltadevices, &o->prime, &brightnesslimit);
+   }
+
+   sharkssl_clear(tmp_b, dm9k1resource);
+   baFree((void*)tmp_b);
+   return any ? 0 : SHARKSSL_ECC_MULT_FALLBACK;
+}
+#endif  
+
+
+
+static U8 ZZTSTSharkSslECC_scalarOutOfRange(const shtype_t *k, const shtype_t *n)
+{
+   shtype_tDoubleWord s;
+   shtype_tWord w, _XzY0x184 = 0, timer0start = 0, any = 0;
+   U16 i;
+
+   for (i = 0; (i < k->len) || (i < n->len); i++)  
+   {
+      w = (i < k->len) ? k->beg[k->len - 1 - i] : 0;
+      any |= w;
+      if (i < n->len)
+      {
+         s = (shtype_tDoubleWord)w - n->beg[n->len - 1 - i] - _XzY0x184;
+         _XzY0x184 = (shtype_tWord)((s >> SHARKSSL_BIGINT_WORDSIZE) & 1);
+      }
+      else
+      {
+         timer0start |= w;
+      }
+   }
+   
+   any = (shtype_tWord)((any | (0 - any)) >> (SHARKSSL_BIGINT_WORDSIZE - 1));
+   timer0start = (shtype_tWord)((timer0start | (0 - timer0start)) >> (SHARKSSL_BIGINT_WORDSIZE - 1));
+   return (U8)(((_XzY0x184 ^ 1) | timer0start | (any ^ 1)) & 1);
+}
+
+
+
+static int ZZTSTSharkSslECC_multiplyReduced(SharkSslECCurve *o, shtype_t *k, SharkSslECPoint *deltadevices)
+{
+   shtype_t r;
+   shtype_tWord *buf;
+   U32 icachealiases;
+   int ret = 1;
+
+   if (eventtimeout(k))  
+   {
+      return 1;
+   }
+   icachealiases = pcmciapdata((U32)(k->len + o->order.len) * SHARKSSL__M);
+   buf = (shtype_tWord*)baMalloc(icachealiases);
+   if (buf == NULL)
+   {
+      return 1;
+   }
+   
+   r.mem = (shtype_tWord*)selectaudio(buf);
+   memset(r.mem, 0, o->order.len * SHARKSSL__M);
+   r.beg = r.mem + o->order.len;
+   r.len = k->len;
+   memcpy(r.beg, k->beg, k->len * SHARKSSL__M);
+   if ((0 == suspendfinish(&r, &o->order)) && (!eventtimeout(&r)))
+   {
+      ret = SharkSslECCurve_multiply_NB(o, &r, deltadevices);
+   }
+   sharkssl_clear(buf, icachealiases);
+   baFree((void*)buf);
+   return ret;
+}
 
 
 
@@ -110334,37 +117090,36 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
 {
    SharkSslEC_temp brightnesslimit;
    shtype_tWord *tmp_b, *tmp_buf, bitmask;
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 4)
-   #error SHARKSSL_ECC_MULT_SLIDING_WINDOW_K must be between 1 and 4
-   #elif ((SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1) && (SHARKSSL_ECC_TIMING_RESISTANT))
-   #error SHARKSSL_ECC_MULT_SLIDING_WINDOW_K must be 0 when SHARKSSL_ECC_TIMING_RESISTANT is enabled
-   #endif
-   #if SHARKSSL_ECC_TIMING_RESISTANT
    shtype_tWord m0, afterreset, scalarBit;
    SharkSslECPointJ point[3];
-   #else
-   SharkSslECPointJ point[1];
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   SharkSslECPointJ countshift[1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1)];
-   #endif
-   #endif
    U32 dm9k1resource;
    U16 i, flash1resources;
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   shtype_tWord sha256export;
-   U8 bitcounter, accvalue;
-   #endif
 
    i = o->prime.len;
    baAssert((deltadevices->x.len == i) && (deltadevices->y.len == i));
-   #if SHARKSSL_ECC_TIMING_RESISTANT
+   if ((o->order.len != 0) && ZZTSTSharkSslECC_scalarOutOfRange(k, &o->order))
+   {
+      return ZZTSTSharkSslECC_multiplyReduced(o, k, deltadevices);
+   }
+   #if (SHARKSSL_ECC_COMB || SHARKSSL_ECC_WINDOW)
+   {
+      int ret = SHARKSSL_ECC_MULT_FALLBACK;
+      #if SHARKSSL_ECC_COMB
+      ret = ZZTSTSharkSslECC_combMultiply(o, k, deltadevices);
+      #endif
+      #if SHARKSSL_ECC_WINDOW
+      if (ret == SHARKSSL_ECC_MULT_FALLBACK)
+      {
+         ret = ZZTSTSharkSslECC_windowMultiply(o, k, deltadevices);
+      }
+      #endif
+      if (ret != SHARKSSL_ECC_MULT_FALLBACK)
+      {
+         return ret;
+      }
+   }
+   #endif
    flash1resources  = (i * SHARKSSL__M) * (3 + 3 + 3 + 12);
-   #else
-   flash1resources  = (i * SHARKSSL__M) * (3 + 12);
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   flash1resources += (i * SHARKSSL__M) * (3 * (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1)));
-   #endif
-   #endif
 
    SharkSslEC_temp_setmulmod(&brightnesslimit, o);
    #if SHARKSSL_ECC_USE_BRAINPOOL
@@ -110386,9 +117141,7 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
 
    tmp_buf = (shtype_tWord*)selectaudio(tmp_b);
 
-   #if SHARKSSL_ECC_TIMING_RESISTANT
    m0 = 0;
-   #endif
 
    #if SHARKSSL_ECC_USE_BRAINPOOL
    #if SHARKSSL_ECC_USE_NIST
@@ -110418,7 +117171,6 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
    deviceparse(&point[0].z);
    point[0].z.beg[i - 1] = 1;  
 
-   #if SHARKSSL_ECC_TIMING_RESISTANT
    traceaddress(&point[1].x, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[1].y, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[1].z, i, tmp_buf); tmp_buf += i;
@@ -110426,18 +117178,6 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
    traceaddress(&point[2].x, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[2].y, i, tmp_buf); tmp_buf += i;
    traceaddress(&point[2].z, i, tmp_buf); tmp_buf += i;
-   SharkSslECPointJ_copy(&point[0], &point[2]);
-   #endif
-
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   
-   for (flash1resources = 0; flash1resources < (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1)); flash1resources++)
-   {
-      traceaddress(&countshift[flash1resources].x, i, tmp_buf); tmp_buf += i;
-      traceaddress(&countshift[flash1resources].y, i, tmp_buf); tmp_buf += i;
-      traceaddress(&countshift[flash1resources].z, i, tmp_buf); tmp_buf += i;
-   }
-   #endif
 
    
    i <<= 1;
@@ -110462,123 +117202,30 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
    traceaddress(&brightnesslimit.D, i, tmp_buf); tmp_buf += i;
    traceaddress(&brightnesslimit.E, i, tmp_buf); tmp_buf += i;
    traceaddress(&brightnesslimit.F, i, tmp_buf);
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   SharkSslECPointJ_copy(&point[0], &countshift[0]);
-   timerconfig(&countshift[0], &o->prime, &brightnesslimit);
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 2)
-   timerconfig(&countshift[0], &o->prime, &brightnesslimit);  
-   #endif
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 3)
-   timerconfig(&countshift[0], &o->prime, &brightnesslimit);  
-   #endif
    
-   for (i = 1; i < (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1)); i++)
-   {
-      
-      SharkSslECPointJ_copy(&countshift[i-1], &countshift[i]);
-      deviceu2ootg(&countshift[i], &o->G, &o->prime, &brightnesslimit);
-   }
-   #endif
+   SharkSslECPointJ_copy(&point[0], &point[2]);
 
    bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
-   #if SHARKSSL_ECC_TIMING_RESISTANT
    
    m0  = (SHARKSSL_BIGINT_WORDSIZE - 1);
    afterreset = 0;
-   #else
-   blastscache(k);  
-   for (; bitmask > 0; bitmask >>= 1)
-   {
-      if (k->beg[0] & bitmask)
-      {
-         bitmask >>= 1;
-         break;
-      }
-   }
-   #endif
-   #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-   sha256export = 0;
-   bitcounter = accvalue = 0;
-   #endif
    for (i = 0; i < k->len; i++)
    {
-      #if SHARKSSL_ECC_TIMING_RESISTANT
       for (; bitmask > 0; bitmask >>= 1, m0--)
-      #else
-      for (; bitmask > 0; bitmask >>= 1)
-      #endif
       {
          timerconfig(&point[0], &o->prime, &brightnesslimit);
 
-         #if SHARKSSL_ECC_TIMING_RESISTANT
          scalarBit = (shtype_tWord)((k->beg[i] & bitmask) >> m0);
          SharkSslECPointJ_copy(&point[0], &point[1]);
          deviceu2ootg(&point[1], &o->G, &o->prime, &brightnesslimit);
          _XzY0x180(&point[0], &point[1], (U32)scalarBit, o->prime.len);
          _XzY0x180(&point[0], &point[2], (U32)(afterreset ^ 1), o->prime.len);
          afterreset |= scalarBit;
-
-         #else
-         #if (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K > 1)
-         if (0 == sha256export)
-         {
-            sha256export = (k->beg[i] & bitmask);
-            
-            if (sha256export && (i == (k->len - 1)) && (bitmask < (1 << (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1))))
-            {
-               deviceu2ootg(&point[0], &o->G, &o->prime, &brightnesslimit);
-               sha256export = 0;
-            }
-         }
-         else
-         {
-            bitcounter++;
-            accvalue <<= 1;
-            if (k->beg[i] & bitmask)
-            {
-               accvalue |= 1;
-            }
-            if (bitcounter == (SHARKSSL_ECC_MULT_SLIDING_WINDOW_K - 1))
-            {
-               threadflush(&point[0], &countshift[accvalue], &o->prime, &brightnesslimit);
-               bitcounter = 0;
-               accvalue = 0;
-               sha256export = 0;
-            }
-         }
-
-         #else
-         if (k->beg[i] & bitmask)
-         {
-            deviceu2ootg(&point[0], &o->G, &o->prime, &brightnesslimit);
-         }
-         #endif
-
-         #endif  
       }
 
       bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
-      #if SHARKSSL_ECC_TIMING_RESISTANT
       m0  = (SHARKSSL_BIGINT_WORDSIZE - 1);
-      #endif
    }
-
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   #if SHARKSSL_ECC_USE_NIST
-   if (brightnesslimit.factor_a != NULL)
-   #endif
-   {
-      
-      brightnesslimit.A.len = 1;
-      brightnesslimit.A.beg[0] = 1;
-      writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].z, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
-      unassignedvector(&brightnesslimit.C, &point[0].x);
-      unassignedvector(&brightnesslimit.D, &point[0].y);
-      unassignedvector(&brightnesslimit.E, &point[0].z);
-   }
-   #endif
 
    panicblink(&point[0], deltadevices, &o->prime, &brightnesslimit);
 
@@ -110586,6 +117233,51 @@ int SharkSslECCurve_multiply_NB(SharkSslECCurve *o,
    baFree((void*)tmp_b);
    return 0;
 }
+
+
+#if SHARKSSL_ECC_USE_EDWARDS_LADDER
+
+static void _XzY0x2FD(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   baAssert((o1->len == mod->len) && (o2->len == mod->len));
+   _XzY0x2FC(o1, o2, mod);
+}
+
+static void _XzY0x304(shtype_t *o1, const shtype_t *o2, const shtype_t *mod)
+{
+   baAssert((o1->len == mod->len) && (o2->len == mod->len));
+   _XzY0x303(o1, o2, mod);
+}
+
+
+static void _XzY0x305(shtype_t *o1, shtype_t *o2, shtype_tWord _XzY0x173)
+{
+   shtype_tWord fpemulthreshold = (shtype_tWord)(0 - _XzY0x173), t;
+   U16 i;
+   baAssert(o1->len == o2->len);
+   for (i = 0; i < o1->len; i++)
+   {
+      t = (shtype_tWord)((o1->beg[i] ^ o2->beg[i]) & fpemulthreshold);
+      o1->beg[i] ^= t;
+      o2->beg[i] ^= t;
+   }
+}
+
+
+static void _XzY0x30(shtype_t *o, U16 len)
+{
+   while ((o->len > len) && (o->beg[0] == 0))
+   {
+      o->beg++;
+      o->len--;
+   }
+   baAssert(o->len <= len);
+   memmove(o->mem + (len - o->len), o->beg, o->len * SHARKSSL__M);
+   memset(o->mem, 0, (len - o->len) * SHARKSSL__M);
+   o->beg = o->mem;
+   o->len = len;
+}
+#endif
 
 
 #if SHARKSSL_ECC_USE_EDWARDS
@@ -110652,13 +117344,7 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    if ((brightnesslimit.D.len == 1) && (brightnesslimit.D.beg[0] == 9))
    {
       
-      #if (SHARKSSL_BIGINT_WORDSIZE == 8)
-      brightnesslimit.D.len++;
-      *(brightnesslimit.D.beg--) = 0x56;
-      *(brightnesslimit.D.beg)   = 0x01;
-      #else
       brightnesslimit.D.beg[0] = 0x0156;
-      #endif
       shtype_t_copyfull(&brightnesslimit.D, &brightnesslimit.B);
    }
    else
@@ -110693,58 +117379,50 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    #endif
    
    unassignedvector(&brightnesslimit.A, &brightnesslimit.D);
-   blastscache(&brightnesslimit.A);
-   blastscache(&brightnesslimit.D);
-
-   blastscache(k);  
-   bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
-   for (bIndex = (SHARKSSL_BIGINT_WORDSIZE - 1); bitmask > 0; bitmask >>= 1, bIndex--)
-   {
-      if (k->beg[0] & bitmask)
-      {
-         break;
-      }
-   }
+   flash1resources = o->prime.len;
+   _XzY0x30(&brightnesslimit.A, flash1resources);
+   _XzY0x30(&brightnesslimit.B, flash1resources);
+   _XzY0x30(&brightnesslimit.C, flash1resources);
+   _XzY0x30(&brightnesslimit.D, flash1resources);
    bit = 0;
    for (i = 0; i < k->len; i++)
    {
-      for (; bitmask > 0; bitmask >>= 1, bIndex--)
+      for (bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1)),
+           bIndex = (SHARKSSL_BIGINT_WORDSIZE - 1); bitmask > 0; bitmask >>= 1, bIndex--)
       {
          shtype_tWord kt = (k->beg[i] & bitmask) >> bIndex;
          bit ^= kt;
-         shtype_t_swapConditional(&brightnesslimit.A, &brightnesslimit.B, (U32)bit);
-         shtype_t_swapConditional(&brightnesslimit.C, &brightnesslimit.D, (U32)bit);
+         _XzY0x305(&brightnesslimit.A, &brightnesslimit.B, bit);
+         _XzY0x305(&brightnesslimit.C, &brightnesslimit.D, bit);
          bit = kt;
          shtype_t_copyfull(&brightnesslimit.A, &brightnesslimit.E);
-         setupsdhci1(&brightnesslimit.E, &brightnesslimit.C, &o->prime);
-         keypaddevice(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
+         _XzY0x2FD(&brightnesslimit.E, &brightnesslimit.C, &o->prime);
+         _XzY0x304(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
          shtype_t_copyfull(&brightnesslimit.B, &brightnesslimit.C);
-         setupsdhci1(&brightnesslimit.C, &brightnesslimit.D, &o->prime);
-         keypaddevice(&brightnesslimit.B, &brightnesslimit.D, &o->prime);
+         _XzY0x2FD(&brightnesslimit.C, &brightnesslimit.D, &o->prime);
+         _XzY0x304(&brightnesslimit.B, &brightnesslimit.D, &o->prime);
          temp_fmulmod(&brightnesslimit.E, &brightnesslimit.E, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&brightnesslimit.A, &brightnesslimit.A, &brightnesslimit.F, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&brightnesslimit.C, &brightnesslimit.A, &brightnesslimit.G, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&brightnesslimit.E, &brightnesslimit.B, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
          shtype_t_copyfull(&brightnesslimit.G, &brightnesslimit.A);
-         setupsdhci1(&brightnesslimit.G, &brightnesslimit.C, &o->prime);
-         keypaddevice(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
+         _XzY0x2FD(&brightnesslimit.G, &brightnesslimit.C, &o->prime);
+         _XzY0x304(&brightnesslimit.A, &brightnesslimit.C, &o->prime);
          temp_fmulmod(&brightnesslimit.A, &brightnesslimit.A, &brightnesslimit.B, &o->prime, brightnesslimit.mu);
          shtype_t_copyfull(&brightnesslimit.D, &brightnesslimit.C);
-         keypaddevice(&brightnesslimit.C, &brightnesslimit.F, &o->prime);
+         _XzY0x304(&brightnesslimit.C, &brightnesslimit.F, &o->prime);
          temp_fmulmod(&brightnesslimit.C, brightnesslimit.factor_a, &brightnesslimit.A, &o->prime, brightnesslimit.mu);
-         setupsdhci1(&brightnesslimit.A, &brightnesslimit.D, &o->prime);
+         _XzY0x2FD(&brightnesslimit.A, &brightnesslimit.D, &o->prime);
          temp_fmulmod(&brightnesslimit.A, &brightnesslimit.C, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&brightnesslimit.D, &brightnesslimit.F, &brightnesslimit.A, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&x, &brightnesslimit.B, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
          temp_fmulmod(&brightnesslimit.G, &brightnesslimit.G, &brightnesslimit.B, &o->prime, brightnesslimit.mu);
          shtype_t_copyfull(&brightnesslimit.E, &brightnesslimit.C);
       }
-
-      bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
-      bIndex = (SHARKSSL_BIGINT_WORDSIZE - 1);
    }
+   _XzY0x305(&brightnesslimit.A, &brightnesslimit.B, bit);
+   _XzY0x305(&brightnesslimit.C, &brightnesslimit.D, bit);
 
-   #if (SHARKSSL_ECC_TIMING_RESISTANT)
    #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ECC_USE_CURVE448)
    if (o->bits == 256)  
    {
@@ -110797,31 +117475,6 @@ int SharkSslECCurve_multiply_ED(SharkSslECCurve *o,
    brightnesslimit.A.beg[0] = 1;
    temp_fmulmod(&brightnesslimit.A, &brightnesslimit.D, &brightnesslimit.E, &o->prime, brightnesslimit.mu);
    unassignedvector(&brightnesslimit.E, &deltadevices->x);
-
-   #else
-   
-   brightnesslimit.B.len = 1;
-   brightnesslimit.B.beg[0] = 1;
-   temp_fmulmod(&brightnesslimit.B, &brightnesslimit.C, &brightnesslimit.D, &o->prime, brightnesslimit.mu);
-   temp_fmulmod(&brightnesslimit.B, &brightnesslimit.A, &brightnesslimit.C, &o->prime, brightnesslimit.mu);
-   
-   bit = 0;
-   for (i = 0; i < brightnesslimit.D.len; i++)
-   {
-      bit |= brightnesslimit.D.beg[i];
-   }
-   if (!bit)
-   {
-      deviceparse(&deltadevices->x);
-   }
-   else
-   {
-      iommumapping(&brightnesslimit.D, &o->prime);
-      temp_mulmod(&brightnesslimit.C, &brightnesslimit.D, &brightnesslimit.B, &o->prime, &brightnesslimit.E.mem[0]);
-      unassignedvector(&brightnesslimit.B, &deltadevices->x);
-   }
-
-   #endif
 
    deltadevices->y.mem = NULL;
    deltadevices->y.beg = NULL;
@@ -110994,15 +117647,6 @@ int directalloc(SharkSslECCurve *S,
    {
       
       deviceu2ootg(&point[0], &TG, &S->prime, &brightnesslimit);
-      
-      brightnesslimit.A.len = 1;
-      brightnesslimit.A.beg[0] = 1;
-      writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &T->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &T->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].z, &brightnesslimit.E, &T->prime, brightnesslimit.mu);
-      unassignedvector(&brightnesslimit.C, &point[0].x);
-      unassignedvector(&brightnesslimit.D, &point[0].y);
-      unassignedvector(&brightnesslimit.E, &point[0].z);
    }
    #if SHARKSSL_ECC_USE_NIST
    else
@@ -111126,23 +117770,6 @@ int directalloc(SharkSslECCurve *S,
       bitmask = (shtype_tWord)((shtype_tWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
    }
 
-   #if SHARKSSL_ECC_USE_BRAINPOOL
-   #if SHARKSSL_ECC_USE_NIST
-   if (brightnesslimit.factor_a != NULL)
-   #endif
-   {
-      
-      brightnesslimit.A.len = 1;
-      brightnesslimit.A.beg[0] = 1;
-      writebytes(&brightnesslimit.A, &point[0].x, &brightnesslimit.C, &T->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].y, &brightnesslimit.D, &T->prime, brightnesslimit.mu);
-      writebytes(&brightnesslimit.A, &point[0].z, &brightnesslimit.E, &T->prime, brightnesslimit.mu);
-      unassignedvector(&brightnesslimit.C, &point[0].x);
-      unassignedvector(&brightnesslimit.D, &point[0].y);
-      unassignedvector(&brightnesslimit.E, &point[0].z);
-   }
-   #endif
-
    panicblink(&point[0], deltadevices, &S->prime, &brightnesslimit);
 
    baFree((void*)tmp_b);
@@ -111189,7 +117816,7 @@ SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defa
    #if SHARKSSL_ECC_USE_SECP521R1
    if (allockuser > plen)
    {
-	   d.beg[0] &= nandflashpartition.prime.beg[0];
+      d.beg[0] &= nandflashpartition.prime.beg[0];
    }
    #endif
 
@@ -111198,7 +117825,29 @@ SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defa
    onenandpartitions(&_XzY0x1E2, (nandflashpartition.prime.len * SHARKSSL_BIGINT_WORDSIZE), buf);  
    unassignedvector(&(nandflashpartition.order), &_XzY0x1E2);
    updatepmull(&_XzY0x1E2, &one);
+   #if (SHARKSSL_ENABLE_ECDSA && (SHARKSSL_ECC_USE_SECP256R1 || SHARKSSL_ECC_USE_SECP384R1 || SHARKSSL_ECC_USE_SECP521R1) && (!SHARKSSL_ECDSA_ONLY_VERIFY))
+   {
+      
+      shtype_t n1 = _XzY0x1E2;
+      blastscache(&n1);
+      if (n1.len <= SHARKSSL_ORDER_FIXED_WORDS)
+      {
+         U16 _XzY0x308 = d.len;
+         shtype_t_moduloOrderFixed(&d, &n1);
+         memmove(d.mem + (_XzY0x308 - n1.len), d.mem, n1.len * SHARKSSL__M);
+         memset(d.mem, 0, (_XzY0x308 - n1.len) * SHARKSSL__M);
+         
+         d.beg = d.mem + (_XzY0x308 - _XzY0x1E2.len);
+         d.len = _XzY0x1E2.len;
+      }
+      else
+      {
+         suspendfinish(&d, &_XzY0x1E2);
+      }
+   }
+   #else
    suspendfinish(&d, &_XzY0x1E2);
+   #endif
    resolverelocs(&d, &one);
 
    updatefrequency(&Q, (nandflashpartition.prime.len * SHARKSSL_BIGINT_WORDSIZE), buf , buf + allockuser);  
@@ -111211,14 +117860,14 @@ SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defa
    buf[4] = 0x02;  
    buf[5] = buf[7] = plen;
    buf[6] = (U8)defaultsdhci1;
-   memmove_endianess(&buf[8], &buf[8], (allockuser << 1) + allockuser);
+   memmove_endianness(&buf[8], &buf[8], (allockuser << 1) + allockuser);
    #if SHARKSSL_ECC_USE_SECP521R1
    if (allockuser > plen)
    {
-	   allockuser -= plen;
-	   memmove(&buf[8], &buf[8 + allockuser], plen);
-	   memmove(&buf[8 + plen], &buf[8 + plen + (allockuser * 2)], plen);
-	   memmove(&buf[8 + (plen * 2)], &buf[8 + (plen * 2) + (allockuser * 2) + allockuser], plen);
+      allockuser -= plen;
+      memmove(&buf[8], &buf[8 + allockuser], plen);
+      memmove(&buf[8 + plen], &buf[8 + plen + (allockuser * 2)], plen);
+      memmove(&buf[8 + (plen * 2)], &buf[8 + (plen * 2) + (allockuser * 2) + allockuser], plen);
    }
    #endif
 
@@ -111230,6 +117879,7 @@ SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defa
 #endif
 
 #endif  
+#endif
 
 
 #ifndef BA_LIB
@@ -111240,7 +117890,7 @@ SHARKSSL_API int SharkSslECCKey_createEx(SharkSslECCKey *mcbspplatform, U16 defa
 #include <BaErrorCodes.h>
 #include <ZipFileIterator.h>
 #include <HttpTrace.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 #endif
 
@@ -111272,34 +117922,63 @@ baLMalloc(lua_State* L, size_t icachealiases)
    if(!ptr)
    {
       lua_gc(L,LUA_GCCOLLECT,0);
+#ifdef BA_LEAK_CHECK
+      ptr=baLeakDetectMalloc(icachealiases,debugsetup,enabledisable);
+#else
       ptr=baMalloc(icachealiases);
+#endif
    }
    return ptr;
 }
 
 
-#if 0 
+
 BA_API void*
 #ifdef BA_LEAK_CHECK
-baLReallocL(lua_State* L, void* p, U32 icachealiases,const char* debugsetup, int enabledisable)
+baLReallocL(lua_State* L, void* p, size_t icachealiases,const char* debugsetup, int enabledisable)
 {
    void* ptr=baLeakDetectRealloc(p, icachealiases,debugsetup,enabledisable);
 #else
-baLRealloc(lua_State* L, void* p, U32 icachealiases)
+baLRealloc(lua_State* L, void* p, size_t icachealiases)
 {
    void* ptr=baRealloc(p, icachealiases);
 #endif
-   if(!ptr)
+   if(!ptr && icachealiases)
    {
       lua_gc(L,LUA_GCCOLLECT,0);
+#ifdef BA_LEAK_CHECK
+      ptr=baLeakDetectRealloc(p, icachealiases,debugsetup,enabledisable);
+#else
       ptr=baRealloc(p, icachealiases);
+#endif
    }
    return ptr;
 }
+
+
+
+BA_API char*
+#ifdef BA_LEAK_CHECK
+baLStrdupL(lua_State* L, const char* str,const char* debugsetup, int enabledisable)
+#else
+baLStrdup(lua_State* L, const char* str)
 #endif
+{
+   char* dup;
+   if(!str)
+      return 0;
+#ifdef BA_LEAK_CHECK
+   dup=(char*)baLMallocL(L,strlen(str)+1,debugsetup,enabledisable);
+#else
+   dup=(char*)baLMalloc(L,strlen(str)+1);
+#endif
+   if(dup)
+      strcpy(dup,str);
+   return dup;
+}
 
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 static int
    unwindinner(lua_State* L, int ix, int timerunblocking, int pri)
 {
@@ -111394,14 +118073,14 @@ static const luaL_Reg baGLib[] = {
 static int
 sleepenter(lua_State *L)
 {
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
    BaLua_param* p = balua_getparam(L);
 #endif
    lua_createtable(L, 0, 30);
    luaopen_ba_misc(L);
    luaopen_ba_io(L);
    luaopen_ba_aes(L);
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    lua_newtable(L);  
    lua_setfield(L, -2, "\143\162\145\141\164\145");
 #else
@@ -111418,7 +118097,7 @@ sleepenter(lua_State *L)
    luaopen_xparser(L);
    luaopen_ba_datetime(L);
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
    lua_pushglobaltable(L);
    luaL_setfuncs(L,baGLib,0);
    lua_pop(L,1);
@@ -111538,7 +118217,7 @@ balua_manageerr(
       
       if(strstr(ethernatenable,setupsdhci0))
       {
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
          printf("\045\163\012",setupsdhci0);
 #else
          HttpTrace_printf(0,"\114\165\141\040\045\163",setupsdhci0);
@@ -111724,7 +118403,7 @@ _baluaENV_isudtype(lua_State* L, int barrierreserve, int predividetable, int gpi
 }
 
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 BA_API HttpCommand*
 baluaENV_checkcmd(lua_State* L, int ix)
 {
@@ -111791,7 +118470,7 @@ ocelotpcb123(lua_State *L)
    baiolib_register(L);
    if(p->server)
    {
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
       LHttpDir_register(L);
 #endif
       if(p->timer)
@@ -111850,7 +118529,7 @@ _balua_create(const BaLua_param* p, int dummywrite)
    lua_State *L;
    BaLua_param* pc; 
 
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    if(!p || dummywrite != BALUA_VERSION || !p->L)
 #else
    lSharkSSLFuncs=0;
@@ -111861,7 +118540,7 @@ _balua_create(const BaLua_param* p, int dummywrite)
          "\102\141\114\165\141\137\160\141\162\141\155\072\040\167\162\157\156\147\040\166\145\162\163\151\157\156\040\157\162\040\151\156\143\157\162\162\145\143\164\040\160\141\162\141\155\163");
       return 0;
    }
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    L=p->L;
 #endif
 
@@ -111874,7 +118553,7 @@ _balua_create(const BaLua_param* p, int dummywrite)
    memcpy(pc, p, sizeof(BaLua_param));
    pc->L=0;
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
    
    sharkssl_entropy((U32)((uintptr_t)pc));
    sharkssl_entropy((U32)(baGetMsClock() + baGetUnixTime()));
@@ -111895,7 +118574,7 @@ _balua_create(const BaLua_param* p, int dummywrite)
    
    lua_pushlightuserdata(L, pc);
    pc->L=L;
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    pc->mutex=p->mutex;
    pc->server=p->server;
 #else
@@ -112136,9 +118815,8 @@ luaopen_ba_xmlrpc(lua_State* L)
 
 
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 
-#include <DynBuffer.h>
 #include <limits.h>
 
 #include <SharkSslCrypto.h>
@@ -112193,6 +118871,18 @@ restoreextended(lua_State* L)
 }
 
 
+static void*
+aesFreeString(void* ud, void* ptr, size_t hugetlbvalid, size_t ahashsetkey)
+{
+   (void)ud;
+   (void)hugetlbvalid;
+   baAssert(ahashsetkey == 0);
+   (void)ahashsetkey;
+   baFree(ptr);
+   return 0;
+}
+
+
 static int
 exceptionhandler(lua_State* L)
 {
@@ -112203,13 +118893,16 @@ exceptionhandler(lua_State* L)
    if(dataInLen > (size_t)UINT_MAX-28)
       return cpufreqconfig(L);
    captureresource=dataInLen+28; 
-   if(captureresource > ((((size_t)INT_MAX-8)*3)/4))
+   if(captureresource > (size_t)(INT_MAX/4)*3)
       return cpufreqconfig(L);
    alloccontroller = (U8*)baLMalloc(L,captureresource);
    if(alloccontroller)
    {
       SharkSslAesGcmCtx aesCtx;
-      DynBuffer buf;
+      BufPrint buf;
+      size_t len=(captureresource/3)*4 + (captureresource%3 ? captureresource%3+1 : 0);
+      char* enablehazard;
+      int sffsdrnandflash;
       U8 sourcerouting[32];
       U8 creategroup;
       if(sharkssl_rng(alloccontroller,12) < 0)
@@ -112224,20 +118917,40 @@ exceptionhandler(lua_State* L)
          &aesCtx,alloccontroller,alloccontroller+12+dataInLen,0,0,alloccontroller+12,alloccontroller+12,(U32)dataInLen);
       SharkSslAesGcmCtx_destructor(&aesCtx);
       memset(sourcerouting,0,sizeof(sourcerouting));
-      DynBuffer_constructor(&buf, (int)(((captureresource * 4)/3) + 8), 0, 0, 0);
-      BufPrint_b64urlEncode((BufPrint*)&buf, alloccontroller, (S32)captureresource, FALSE);
-      lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
-      DynBuffer_destructor(&buf);
+      enablehazard=(char*)baLMalloc(L,len+1);
+      if(!enablehazard)
+      {
+         baFree(alloccontroller);
+         return restoreextended(L);
+      }
+      BufPrint_constructor2(&buf,enablehazard,(int)len,0,0);
+      sffsdrnandflash=BufPrint_b64urlEncode(&buf,alloccontroller,(S32)captureresource,FALSE);
+      
       baFree(alloccontroller);
+      if(sffsdrnandflash)
+      {
+         baFree(enablehazard);
+         return restoreextended(L);
+      }
+      enablehazard[len]=0;
+      lua_pushexternalstring(L,enablehazard,len,aesFreeString,0);
+      lua_gc(L,LUA_GCSTEP,(size_t)0);
       return 1;
    }
    return restoreextended(L);
 }
 
 static int
+_XzY0x280(lua_State* L)
+{
+   lua_pushlstring(L, lua_touserdata(L,1), (size_t)lua_tointeger(L,2));
+   return 1;
+}
+
+static int
 switchrequest(lua_State* L)
 {
-   int handlersetup=0;
+   int handlersetup=0, sffsdrnandflash=0;
    size_t keyInLen;
    size_t l;
    U32 rc;
@@ -112248,6 +118961,7 @@ switchrequest(lua_State* L)
       return luaL_argerror(L,2,"\145\155\142\145\144\144\145\144\040\116\125\114\040\151\163\040\156\157\164\040\166\141\154\151\144\040\102\141\163\145\066\064");
    if(l > INT_MAX)
       return cpufreqconfig(L);
+   l -= l/4;
    b = (U8*)baLMalloc(L,l ? l : 1);
    if(b)
    {
@@ -112273,7 +118987,10 @@ switchrequest(lua_State* L)
           memset(sourcerouting,0,sizeof(sourcerouting));
           if(!err)
           {
-             lua_pushlstring(L,(char*)b+12,rebootnotifier);
+             lua_pushcfunction(L,_XzY0x280);
+             lua_pushlightuserdata(L,b+12);
+             lua_pushinteger(L,rebootnotifier);
+             sffsdrnandflash=lua_pcall(L,2,1,0);
              handlersetup=1;
           }
           if(rebootnotifier)
@@ -112283,6 +119000,8 @@ switchrequest(lua_State* L)
    }
    else
       return restoreextended(L);
+   if(sffsdrnandflash)
+      return lua_error(L);
    return handlersetup;
 }
 
@@ -112455,12 +119174,16 @@ void luaopen_ba_aes(lua_State* L) { (void)L; }
 #include <BaDiskIo.h>
 
 
-#if defined(liolib_c) && !defined(LUA_NOIOLIB)
+#if defined(liolib_c) && (BA_ENABLE_LUA_STDIO)
 #define ZIPIO2STREAM
 #endif
 
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
 const LSharkSSLFuncs* lSharkSSLFuncs=0;
+#endif
+
+#if SHARKSSL_PSA_CONSUMER
+int balua_psaVerifyZip(const U8* sourcerouting, const U8* probeguestctl0, size_t len, const U8* chargerplatform);
 #endif
 
 int
@@ -112501,9 +119224,13 @@ baCheckZipSignature(const U8* deviceassert, U32 interfaceregister, CspReader* gu
                SharkSslSha256Ctx_append(&registermcasp, (U8*)buf, devicelcdspi);
             }
             SharkSslSha256Ctx_finish(&registermcasp, secondaryentry);
+#if SHARKSSL_PSA_CONSUMER
+            if(balua_psaVerifyZip(deviceassert, probeguestctl0, systemstring, secondaryentry))
+#else
             if(SHARKSSL_ECDSA_OK != sharkssl_ECDSA_verify_hash(
                   (SharkSslECCKey)deviceassert, probeguestctl0, systemstring, secondaryentry,
                   SHARKSSL_SHA256_HASH_LEN))
+#endif
             {
                sffsdrnandflash = -1;
             }
@@ -112903,7 +119630,7 @@ clocksourceunstable(lua_State *L)
       { 
          if(ssl)
          {
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
             if(lSharkSSLFuncs)
             {
                lSharkSSLFuncs->unlockSharkSSL(L, ssl);
@@ -113321,7 +120048,7 @@ static int topologymatrix(lua_State *L)
    allowedregister = balua_getStringField(L, 2, "\160\162\157\170\171\165\163\145\162", 0);
    timerdelay = balua_getStringField(L, 2, "\160\162\157\170\171\160\141\163\163", 0);
    apecsmachine = balua_getStringField(L, 2, "\151\156\164\146", 0);
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    if(lSharkSSLFuncs)
    {
       lua_getfield(L, 2, "\163\150\141\162\153");
@@ -113753,7 +120480,7 @@ flushicache(lua_State *L)
 #endif
       if(io->i)
       {
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
          
          lua_rawgeti(L, BA_ENV_IX, BA_DBGMON_NEWIO_CB);
          if(lua_iscfunction(L, -1)) 
@@ -113972,11 +120699,10 @@ balua_installZIO(lua_State* L, const char* name, ZipReader* guestconfigs)
 #endif
 
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 #include <zlib.h>
 #endif
 #include <BaServerLib.h>
-#include <DynBuffer.h>
 #include <BaMimeTypes.h>
 #include <AuthenticatedUser.h>
 
@@ -114013,18 +120739,27 @@ masterabort(lua_State* L)
    return 3;
 }
 
+
+static int
+_XzY0x284(lua_State* L)
+{
+  lua_pushlstring(L, lua_touserdata(L,1), (size_t)lua_tointeger(L,2));
+  return 1;
+}
+
 static int
 probesdecode(lua_State* L)
 {
   size_t l=0;
   const char* s = luaL_checklstring(L,1, &l);
-  int rc;
+  int rc, sffsdrnandflash;
   BaBool overflow;
   char* b;
   if(memchr(s,0,l))
      return luaL_argerror(L,1,"\145\155\142\145\144\144\145\144\040\116\125\114\040\151\163\040\156\157\164\040\166\141\154\151\144\040\102\141\163\145\066\064");
   if(l > INT_MAX)
      return luaL_argerror(L,1,"\102\141\163\145\066\064\040\151\156\160\165\164\040\164\157\157\040\154\141\162\147\145");
+  l -= l/4; 
   b = (char*)baLMalloc(L, l ? l : 1);
   if(!b)
      return mcbsp2hwmod(L);
@@ -114034,8 +120769,61 @@ probesdecode(lua_State* L)
      baFree(b);
      return luaL_error(L,"\102\141\163\145\066\064\040\157\165\164\160\165\164\040\157\166\145\162\146\154\157\167");
   }
-  lua_pushlstring(L, b,rc);
+  lua_pushcfunction(L, _XzY0x284);
+  lua_pushlightuserdata(L, b);
+  lua_pushinteger(L, rc);
+  sffsdrnandflash=lua_pcall(L,2,1,0);
   baFree(b);
+  if(sffsdrnandflash)
+     return lua_error(L);
+  return 1;
+}
+
+
+static void*
+ba_b64freeString(void* ud, void* ptr, size_t hugetlbvalid, size_t ahashsetkey)
+{
+  (void)ud;
+  (void)hugetlbvalid;
+  baAssert(ahashsetkey == 0);
+  (void)ahashsetkey;
+  baFree(ptr);
+  return 0;
+}
+
+
+static int
+_XzY0x285(lua_State* L, BaBool url)
+{
+  size_t l=0, len;
+  const char* s = luaL_checklstring(L,1, &l);
+  BaBool seepromprobe = !url || balua_optboolean(L,2,FALSE);
+  BufPrint buf;
+  char* alloccontroller;
+  int sffsdrnandflash;
+  if(l > (size_t)(INT_MAX/4)*3)
+     return luaL_argerror(L,1,"\102\141\163\145\066\064\040\151\156\160\165\164\040\164\157\157\040\154\141\162\147\145");
+  if(!l)
+  {
+     lua_pushliteral(L,"");
+     return 1;
+  }
+  len=(l/3)*4 + (l%3 ? (seepromprobe ? 4 : l%3+1) : 0);
+  alloccontroller=(char*)baLMalloc(L,len+1);
+  if(!alloccontroller)
+     return mcbsp2hwmod(L);
+  BufPrint_constructor2(&buf,alloccontroller,(int)len,0,0);
+  sffsdrnandflash=url ? BufPrint_b64urlEncode(&buf,s,(S32)l,seepromprobe) :
+     BufPrint_b64Encode(&buf,s,(S32)l);
+  if(sffsdrnandflash)
+  {
+     baFree(alloccontroller);
+     return mcbsp2hwmod(L);
+  }
+  alloccontroller[len]=0;
+  
+  lua_pushexternalstring(L,alloccontroller,len,ba_b64freeString,0);
+  lua_gc(L,LUA_GCSTEP,(size_t)0);
   return 1;
 }
 
@@ -114043,29 +120831,14 @@ probesdecode(lua_State* L)
 static int
 hwmodwrite(lua_State* L)
 {
-  size_t l=0;
-  const char* s = luaL_checklstring(L,1, &l);
-  DynBuffer buf;
-  DynBuffer_constructor(&buf, (int)(((l * 4)/3) + 8), 0, 0, 0);
-  BufPrint_b64Encode((BufPrint*)&buf, s, (S32)l);
-  lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
-  DynBuffer_destructor(&buf);
-  return 1;
+  return _XzY0x285(L,FALSE);
 }
 
 
 static int
 deviceonenand1(lua_State* L)
 {
-  DynBuffer buf;
-  size_t l=0;
-  const char* s = luaL_checklstring(L,1, &l);
-  BaBool seepromprobe = (BaBool)balua_optboolean(L,2,FALSE);
-  DynBuffer_constructor(&buf, (int)(((l * 4)/3) + 8), 0, 0, 0);
-  BufPrint_b64urlEncode((BufPrint*)&buf, s, (S32)l, seepromprobe);
-  lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
-  DynBuffer_destructor(&buf);
-  return 1;
+  return _XzY0x285(L,TRUE);
 }
 
 
@@ -114126,7 +120899,7 @@ hwmodcheck(lua_State *L)
 }
 
 
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
 static void
 simulatereladr(z_stream* startearly,luaL_Buffer* emulatehiregs,const char* alloccontroller,size_t len)
 {
@@ -114141,12 +120914,44 @@ simulatereladr(z_stream* startearly,luaL_Buffer* emulatehiregs,const char* alloc
    } while (startearly->avail_out == 0);
 }
 static int
-onlinenodes(lua_State* L)
+_XzY0x262(lua_State* L)
 {
-   z_stream startearly;
+   z_stream* startearly = (z_stream*)lua_touserdata(L, 2);
    luaL_Buffer emulatehiregs;
    size_t len;
    const char* alloccontroller;
+   int i;
+   int t = lua_type(L, 1);
+   int enablelegacy = t == LUA_TTABLE ? (int)lua_rawlen(L, 1) : 0;
+   
+   lua_pushnil(L);
+   lua_replace(L, 2);
+   luaL_buffinit(L, &emulatehiregs);
+   if(t == LUA_TSTRING)
+   {
+      alloccontroller=lua_tolstring(L, 1, &len);
+      if(len)
+         simulatereladr(startearly, &emulatehiregs, alloccontroller, len);
+   }
+   else
+   {
+      for (i=1; i <= enablelegacy; i++)
+      {
+         lua_rawgeti(L, 1, i);
+         alloccontroller = lua_tolstring(L, -1, &len);
+         lua_replace(L, 2);
+         if(len)
+            simulatereladr(startearly, &emulatehiregs, alloccontroller, len);
+      }
+   }
+   simulatereladr(startearly, &emulatehiregs, "", 0);
+   luaL_pushresult(&emulatehiregs);
+   return 1;
+}
+static int
+onlinenodes(lua_State* L)
+{
+   z_stream startearly;
    BaBool bufferdriver;
    int i;
    int enablelegacy=0;
@@ -114170,6 +120975,10 @@ onlinenodes(lua_State* L)
    }
    else if(t != LUA_TSTRING)
       luaL_error(L, "\105\170\160\145\143\164\145\144\040\164\141\142\154\145\040\157\162\040\163\164\162\151\156\147");
+   lua_settop(L, 1);
+   lua_pushcfunction(L, _XzY0x262);
+   lua_insert(L, 1);
+   lua_pushlightuserdata(L, &startearly);
    memset(&startearly,0,sizeof(z_stream));
 
    if(bufferdriver)
@@ -114180,34 +120989,17 @@ onlinenodes(lua_State* L)
    {
       
       i=deflateInit2(&startearly, Z_DEFAULT_COMPRESSION,
-                     Z_DEFLATED, -MAX_WBITS, 8,
+                     Z_DEFLATED, -MAX_WBITS, BA_DEFLATE_MEM_LEVEL,
                      Z_DEFAULT_STRATEGY);
    }
    if (i != Z_OK)
       luaL_error(L, "\132\154\151\142\040\145\162\162\157\162");
 
-   luaL_buffinit(L, &emulatehiregs);
-   if(t == LUA_TSTRING)
-   {
-      alloccontroller=lua_tolstring(L, 1, &len);
-      if(len)
-         simulatereladr(&startearly, &emulatehiregs, alloccontroller, len);
-   }
-   else
-   {
-      for (i=1; i <= enablelegacy; i++)
-      {
-         lua_rawgeti(L, 1, i);
-         alloccontroller = lua_tolstring(L, -1, &len);
-         
-         lua_pop(L, 1);
-         if(len)
-            simulatereladr(&startearly, &emulatehiregs, alloccontroller, len);
-      }
-   }
-   simulatereladr(&startearly, &emulatehiregs, "", 0);
+   
+   i=lua_pcall(L, 2, 1, 0);
    deflateEnd(&startearly);
-   luaL_pushresult(&emulatehiregs);
+   if(i != LUA_OK)
+      return lua_error(L);
    return 1;
 }
 #endif
@@ -114355,7 +121147,7 @@ hwmodregister(lua_State* L)
 }
 
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 static int
 registererror(lua_State* L)
 {
@@ -114493,7 +121285,7 @@ physicaladdress(lua_State* L)
   char* buf;
   if(memchr(s,0,l))
      return generatesecret(L);
-  buf = (char*)baStrdup(s);
+  buf = (char*)baLStrdup(L,s);
   if(!buf)
      return mcbsp2hwmod(L);
 
@@ -114529,7 +121321,7 @@ staticidmap(lua_State* L)
   return 1;
 }
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 
 
 typedef struct
@@ -114572,7 +121364,7 @@ static const luaL_Reg balib[] = {
   {"\142\066\064\165\162\154\145\156\143\157\144\145",  deviceonenand1},
   {"\143\154\157\143\153",         queryevent},
   {"\143\155\160\141\144\144\162",       hwmodcheck},
-#ifndef NO_ZLIB
+#if BA_ENABLE_ZLIB
   {"\144\145\146\154\141\164\145",       onlinenodes},
 #endif
   {"\155\151\155\145",          mfptimerenable},
@@ -114591,7 +121383,7 @@ static const luaL_Reg balibENV[] = {
   {"\145\170\145\143",      chaintraversals},
 #endif
   {"\154\157\141\144\146\151\154\145",  pcf857xpdata},
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
   {"\163\145\163\163\151\157\156",   registererror},
   {"\163\145\163\163\151\157\156\163",  togglecache},
   {"\165\163\145\162\163",     hwmodallocate},
@@ -114665,6 +121457,7 @@ removegeneric(void* t)
    int sffsdrnandflash;
    int hugepageadjust;
    LTimer* lt = (LTimer*)t;
+   lua_State* LM = balua_getmainthread(lt->L);
    BaBool rechedinterrupt=FALSE; 
    size_t tid = lt->tid;
    if( ! lt->coroutineMode )
@@ -114703,6 +121496,8 @@ removegeneric(void* t)
    {
       registerkeypad(lt);
    }
+   
+   lua_gc(LM, LUA_GCSTEP, (size_t)0);
    return rechedinterrupt;
 }
 
@@ -114878,6 +121673,37 @@ luaopen_ba_timer(lua_State* L)
 #include <stdlib.h>
 #include <string.h>
 
+static void*
+LJsonAllocator_realloc(AllocatorIntf* fdc37m81xconfig, void* p, size_t* icachealiases)
+{
+   return baLRealloc(((LJsonAllocator*)fdc37m81xconfig)->L, p, *icachealiases);
+}
+
+
+static void*
+LJsonAllocator_malloc(AllocatorIntf* fdc37m81xconfig, size_t* icachealiases)
+{
+   return LJsonAllocator_realloc(fdc37m81xconfig, 0, icachealiases);
+}
+
+
+static void
+_XzY0x25E(AllocatorIntf* fdc37m81xconfig, void* p)
+{
+   (void)fdc37m81xconfig;
+   baFree(p);
+}
+
+
+void
+LJsonAllocator_constructor(LJsonAllocator* o, lua_State* L)
+{
+   o->L=L;
+   AllocatorIntf_constructor(&o->super, LJsonAllocator_malloc,
+                            LJsonAllocator_realloc, _XzY0x25E);
+}
+
+
 typedef struct
 {
    JParserIntf super;
@@ -114950,6 +121776,8 @@ spectrevector(JParserIntf* fdc37m81xconfig, JParserVal* pv, int setupserial)
    lua_State* L = o->L;
    int ix=-2;
 
+   if(!lua_checkstack(L,3))
+      return 1;
    if(pv->t == JParserT_EndObject || pv->t == JParserT_EndArray )
    {
       if (setupserial != 0) 
@@ -114974,11 +121802,7 @@ spectrevector(JParserIntf* fdc37m81xconfig, JParserVal* pv, int setupserial)
          break;
 
       case JParserT_Double:
-#ifdef NO_DOUBLE
-         return 1;
-#else
          lua_pushnumber(L, (lua_Number)pv->v.f);
-#endif
          break;
 
       case JParserT_Int:
@@ -115021,7 +121845,9 @@ spectrevector(JParserIntf* fdc37m81xconfig, JParserVal* pv, int setupserial)
 typedef struct
 {
    LJBuildVal bv;
-   JParser p;
+   LJsonAllocator alloc;
+   BaBool busy;
+   JParser p; /* Must remain last: optional stack storage follows. */
 } LJP;
 
 
@@ -115049,11 +121875,13 @@ pushJSONParserAndInit(lua_State* L, int ix)
       L, sizeof(LJP) + registerflash * sizeof(JParserStackNode) + alignresource);
    JParserIntf_constructor((JParserIntf*)(&ljp->bv), spectrevector);
    ljp->bv.L=L;
+   ljp->busy=FALSE;
+   LJsonAllocator_constructor(&ljp->alloc, L);
    ljp->bv.jnull=jnull;
    ptr = (JParserStackNode*)(ljp+1); 
    ptr += registerflash; 
    JParser_constructor(&ljp->p, (JParserIntf*)&ljp->bv,
-                       (char*)ptr,alignresource,AllocatorIntf_getDefault(),registerflash);
+                       (char*)ptr,alignresource,&ljp->alloc.super,registerflash);
    return ljp;
 }
 
@@ -115087,17 +121915,47 @@ au1550intclknames(lua_State* L)
 }
 
 
+static void*
+ljsonlib_freeString(void* ud, void* ptr, size_t hugetlbvalid, size_t ahashsetkey)
+{
+   (void)ud;
+   (void)hugetlbvalid;
+   (void)ahashsetkey;
+   baAssert(ahashsetkey == 0);
+   baFree(ptr);
+   return 0;
+}
+
+
+
+static int
+_XzY0x264(lua_State* L, DynBuffer* buf)
+{
+   size_t len=DynBuffer_getBufSize(buf);
+   char* alloccontroller=(char*)baLRealloc(L, buf->super.buf, len+1);
+   if(!alloccontroller)
+      return 0;
+   alloccontroller[len]=0;
+   buf->super.buf=0; 
+   lua_pushexternalstring(L, alloccontroller, len, ljsonlib_freeString, 0);
+   lua_gc(L, LUA_GCSTEP, (size_t)0);
+   return 1;
+}
+
+
 
 static int
 notifierchain(lua_State* L)
 {
    DynBuffer buf;
+   LJsonAllocator unmapaliases;
    int sffsdrnandflash;
    size_t l=0;
    const char* s = luaL_checklstring(L,1, &l);
 
+   LJsonAllocator_constructor(&unmapaliases, L);
    DynBuffer_constructor(&buf, (int)l, (int)(l < 64 ? 128 : l/2),
-                         AllocatorIntf_getDefault(), 0);
+                         &unmapaliases.super, 0);
    sffsdrnandflash=BufPrint_jsonString((BufPrint*)&buf, s, l);
    if(sffsdrnandflash < 0 || DynBuffer_getECode(&buf))
    {
@@ -115107,8 +121965,14 @@ notifierchain(lua_State* L)
       lua_pushstring(L,flushoffset ? "\155\145\155" : "\165\164\146\070");
       return 2;
    }
-   lua_pushlstring(L, DynBuffer_getBuf(&buf), DynBuffer_getBufSize(&buf));
+   sffsdrnandflash=_XzY0x264(L, &buf);
    DynBuffer_destructor(&buf);
+   if(!sffsdrnandflash)
+   {
+      lua_pushnil(L);
+      lua_pushliteral(L,"\155\145\155");
+      return 2;
+   }
    return 1;
 }
 
@@ -115331,11 +122195,25 @@ ljsonlibTabEncode(lua_State* L, BufPrint* b, int rd12rm0noflags, int modifycalle
 
 
 static int
-decodehiregs(lua_State* L)
+_XzY0x263(lua_State* L)
 {
-   DynBuffer* buf = lua_touserdata(L, 1);
-   lua_pushlstring(L, DynBuffer_getBuf(buf), DynBuffer_getBufSize(buf));
-   return 1;
+   DynBuffer* buf = lua_touserdata(L, -1);
+   int i, ret=0, top=lua_gettop(L)-1, rd12rm0noflags=top+1;
+   lua_pop(L,1);
+   lua_newtable(L); 
+   for(i=1 ; i <= top && DynBuffer_getECode(buf) == 0; i++)
+   {
+      ret = ljsonlibTabEncode(L, (BufPrint*)buf, rd12rm0noflags, i);
+      if(ret != 1)
+         break;
+   }
+   if(DynBuffer_getECode(buf) || (ret == 1 && !_XzY0x264(L, buf)))
+   {
+      lua_pushnil(L);
+      lua_pushliteral(L,"\155\145\155");
+      return 2;
+   }
+   return ret;
 }
 
 
@@ -115344,11 +122222,10 @@ static int
 unwindframe(lua_State* L)
 {
    DynBuffer buf;
-   int i;
-   int ret=0;
+   LJsonAllocator unmapaliases;
+   int i, sffsdrnandflash, ret;
    int allocpages=512;
    int top = lua_gettop(L);
-   int rd12rm0noflags=top+1; 
    
    luaL_checktype(L, 1, LUA_TTABLE);
    for(i=2 ; i <= top ; i++)
@@ -115362,24 +122239,20 @@ unwindframe(lua_State* L)
       }
       luaL_checktype(L, i, LUA_TTABLE);
    }
-   lua_newtable(L); 
-   DynBuffer_constructor(&buf,allocpages,2048,AllocatorIntf_getDefault(),0);
-   for(i=1 ; i <= top && DynBuffer_getECode(&buf) == 0; i++)
-   {
-      ret = ljsonlibTabEncode(L, (BufPrint*)&buf, rd12rm0noflags, i);
-      if(ret != 1)
-         break;
-   }
-   top=DynBuffer_getECode(&buf); 
-   if(top == 0 && ret == 1) {
-      lua_pushcfunction(L, decodehiregs);
-      lua_pushlightuserdata(L,&buf);
-      if(lua_pcall(L, 1, 1, 0))
-         top=1; 
-   }
+   lua_settop(L,top);
+   LJsonAllocator_constructor(&unmapaliases, L);
+   DynBuffer_constructor(&buf,allocpages,2048,&unmapaliases.super,0);
+   
+   lua_pushcfunction(L, _XzY0x263);
+   lua_insert(L,1);
+   lua_pushlightuserdata(L,&buf);
+   sffsdrnandflash=lua_pcall(L,top+1,LUA_MULTRET,0);
+   ret=lua_gettop(L);
    DynBuffer_destructor(&buf);
-   if(top) 
+   if(sffsdrnandflash)
    {
+      if(sffsdrnandflash != LUA_ERRMEM)
+         return lua_error(L);
       lua_pushnil(L);
       lua_pushliteral(L,"\155\145\155");
       ret=2;
@@ -115389,11 +122262,11 @@ unwindframe(lua_State* L)
 
 
 static int
-preparesimulate(lua_State* L)
+_XzY0x25D(lua_State* L)
 {
    size_t l;
    JParsStat st;
-   LJP* o = (LJP*)baluaENV_checkudata(L, 1, BA_JSONPARSER);
+   LJP* o = (LJP*)lua_touserdata(L, 1); 
    const U8* devicelcdspi = (U8*)luaL_checklstring(L, 2, &l);
    int debugdisable = lua_isboolean(L, 3) && lua_toboolean(L,3);
    lua_settop(L,2);
@@ -115431,9 +122304,30 @@ preparesimulate(lua_State* L)
 
 
 static int
+preparesimulate(lua_State* L)
+{
+   int sffsdrnandflash, switcherthread=lua_gettop(L);
+   LJP* o = (LJP*)baluaENV_checkudata(L, 1, BA_JSONPARSER);
+   luaL_argcheck(L, !o->busy, 1, "\120\141\162\163\145\162\040\151\156\040\165\163\145");
+   luaL_argcheck(L, o->bv.L != 0, 1, "\120\141\162\163\145\162\040\143\154\157\163\145\144");
+   luaL_checkstack(L,1,"\120\141\162\163\145\040\143\141\154\154");
+   lua_pushcfunction(L,_XzY0x25D);
+   lua_insert(L,1);
+   o->busy=TRUE;
+   sffsdrnandflash=lua_pcall(L,switcherthread,LUA_MULTRET,0);
+   o->busy=FALSE;
+   if(sffsdrnandflash)
+      return lua_error(L);
+   return lua_gettop(L);
+}
+
+
+static int
 plls12interface(lua_State* L)
 {
    LJP* o = (LJP*)baluaENV_checkudata(L, 1, BA_JSONPARSER);
+   luaL_argcheck(L, !o->busy, 1, "\120\141\162\163\145\162\040\151\156\040\165\163\145");
+   o->bv.L=0;
    JParser_destructor(&o->p);
    return 0;
 }
@@ -115460,6 +122354,7 @@ static int seepromdriver(lua_State* L)
    o->bv.L=lua_newthread(L); 
    lua_rawseti(L, -2, 1); 
    lua_setuservalue(L, -2);  
+   o->alloc.L=o->bv.L; 
    lua_newtable(o->bv.L);    
 
    return 1;
@@ -116028,7 +122923,7 @@ luaopen_ba_datetime(lua_State* L)
 
 
 #include <HttpServer.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <HttpSharkSslServCon.h>
 #endif
 #include <BaServerLib.h>
@@ -116052,7 +122947,7 @@ luaopen_ba_datetime(lua_State* L)
 
 
 
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
 const void* lSharkSSLFuncs;
 #else
 const LSharkSSLFuncs* lSharkSSLFuncs;
@@ -116103,7 +122998,8 @@ registerclkdev(lua_State* L, AuthenticatedUser* buttonsbelkin)
 
 
 static JVal*
-lParseJsonDataString(lua_State* L, int suspenddefault, JParserValFact* vf)
+lParseJsonDataString(lua_State* L, int suspenddefault, JParserValFact* vf,
+                     LJsonAllocator* unmapaliases)
 {
    JParser p;
    DynBuffer dbuf;
@@ -116112,13 +123008,23 @@ lParseJsonDataString(lua_State* L, int suspenddefault, JParserValFact* vf)
    const char* buf=0;
    int sffsdrnandflash=0;
    JVal* val=0;
+   LJsonAllocator_constructor(unmapaliases, L);
    if(LUA_TTABLE == lua_type(L,suspenddefault))
    {
-      DynBuffer_constructor(&dbuf, 512, 2048, AllocatorIntf_getDefault(), 0);
+      DynBuffer_constructor(&dbuf, 512, 2048, &unmapaliases->super, 0);
       exceptiontables=TRUE;
       lua_newtable(L); 
-      if(ljsonlibTabEncode(L, (BufPrint*)&dbuf, lua_gettop(L), suspenddefault) == 1)
+      sffsdrnandflash=ljsonlibTabEncode(L, (BufPrint*)&dbuf, lua_gettop(L), suspenddefault);
+      if(DynBuffer_getECode(&dbuf))
       {
+         DynBuffer_destructor(&dbuf);
+         lua_pushnil(L);
+         lua_pushliteral(L,"\155\141\154\154\157\143");
+         return 0;
+      }
+      if(sffsdrnandflash == 1)
+      {
+         sffsdrnandflash=0;
          buf=DynBuffer_getBuf(&dbuf);
          lsdc2format=DynBuffer_getBufSize(&dbuf);
 	  }
@@ -116133,12 +123039,11 @@ lParseJsonDataString(lua_State* L, int suspenddefault, JParserValFact* vf)
    if( ! sffsdrnandflash )
    {
       char* faulthandler = baLMalloc(L, 1024);
-      if(buf)
+      if(faulthandler)
       {
-         JParserValFact_constructor(vf, AllocatorIntf_getDefault(),
-                                    AllocatorIntf_getDefault());
+         JParserValFact_constructor(vf, &unmapaliases->super, &unmapaliases->super);
          JParser_constructor(
-            &p, (JParserIntf*)vf, faulthandler, 1024, AllocatorIntf_getDefault(),0);
+            &p, (JParserIntf*)vf, faulthandler, 1024, &unmapaliases->super,0);
          sffsdrnandflash=JParser_parse(&p, (const U8*)buf, (U32)lsdc2format);
          JParser_destructor(&p);
          if(sffsdrnandflash > 0) 
@@ -116153,6 +123058,14 @@ lParseJsonDataString(lua_State* L, int suspenddefault, JParserValFact* vf)
             lua_pushliteral(L,"\120\141\162\163\145\040\145\162\162\157\162");
          }
          baFree(faulthandler);
+      }
+      else
+      {
+         if(exceptiontables)
+            DynBuffer_destructor(&dbuf);
+         lua_pushnil(L);
+         lua_pushliteral(L,"\155\141\154\154\157\143");
+         return 0;
       }
    }
    if(exceptiontables==TRUE)
@@ -117506,7 +124419,7 @@ ndelayfactor(LHttpCommand* deviceattribute)
    lua_settop(deviceattribute->L, 0);
    luaL_unref(deviceattribute->LM, LUA_REGISTRYINDEX, deviceattribute->envRef);
    luaL_unref(deviceattribute->LM, LUA_REGISTRYINDEX, deviceattribute->threadRef);
-   lua_gc(deviceattribute->LM, LUA_GCSTEP, 2);
+   lua_gc(deviceattribute->LM, LUA_GCSTEP, (size_t)0);
    
 }
 
@@ -117590,7 +124503,7 @@ bonitopcicfg(lua_State* L)
    return 1;
 }
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 static int
 kernelnofault(lua_State *L, int messagefunctions)
 {
@@ -118717,7 +125630,7 @@ singledefault(lua_State* L)
       {
          
          ret=deflateInit2(&x->strm, Z_DEFAULT_COMPRESSION,
-                        Z_DEFLATED, -MAX_WBITS, 8,
+                        Z_DEFLATED, -MAX_WBITS, BA_DEFLATE_MEM_LEVEL,
                         Z_DEFAULT_STRATEGY);
       }
       if (ret != Z_OK)
@@ -118782,6 +125695,7 @@ static int
 callchaintrace(lua_State* L)
 {
    DynBuffer buf;
+   LJsonAllocator unmapaliases;
    int i;
    int rd12rm0noflags;
    int blake2bsetkey=FALSE;
@@ -118811,7 +125725,8 @@ callchaintrace(lua_State* L)
    for(i=3 ; i <= top ; i++)
       luaL_checktype(L, i, LUA_TTABLE);
    lua_newtable(L); 
-   DynBuffer_constructor(&buf, 512, 2048, AllocatorIntf_getDefault(), 0);
+   LJsonAllocator_constructor(&unmapaliases, L);
+   DynBuffer_constructor(&buf, 512, 2048, &unmapaliases.super, 0);
    if(top > 2)
       BufPrint_putc((BufPrint*)&buf, '\133');
    for(i=2 ; i <= top && !DynBuffer_getECode(&buf); i++)
@@ -118932,7 +125847,7 @@ static const luaL_Reg baHttpCmdLib[] = {
    
    {"\141\142\157\162\164"               ,  kprobeshandler},
    {"\141\154\154\157\167"               ,  bonitopcicfg},
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    {"\143\145\162\164\151\146\151\143\141\164\145"         ,  wm97xxdriver},
    {"\143\151\160\150\145\162"              ,  pcimtdetect},
    {"\143\154\151\145\156\164\143\145\162\164"          ,  switcherdisable},
@@ -119433,9 +126348,10 @@ static int
 forbiddenoffset(lua_State* L)
 {
    JParserValFact vf;
+   LJsonAllocator unmapaliases;
    int ret=2; 
    LJAuthorizer* o = LJAuthorizer_check(L);
-   JVal* val = lParseJsonDataString(L, 2, &vf);
+   JVal* val = lParseJsonDataString(L, 2, &vf, &unmapaliases);
    if(val)
    {
       JErr err;
@@ -119542,9 +126458,10 @@ static int
 masterstandbymode(lua_State* L)
 {
    JParserValFact vf;
+   LJsonAllocator unmapaliases;
    int ret=2; 
    LJUser* o = LJUser_check(L,1);
-   JVal* val = lParseJsonDataString(L, 2, &vf);
+   JVal* val = lParseJsonDataString(L, 2, &vf, &unmapaliases);
    if(val)
    {
       JErr err;
@@ -119954,7 +126871,7 @@ printprefix(lua_State* L)
       case 0:
          Authenticator_destructor((Authenticator*)deviceinterrupt);
          break;
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       case 1:
          DigestAuthenticator_destructor((DigestAuthenticator*)deviceinterrupt);
          break;
@@ -119966,7 +126883,7 @@ printprefix(lua_State* L)
       case 4:
          FormAuthenticator_destructor((FormAuthenticator*)deviceinterrupt);
          break;
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       case 5:
          DavAuth_destructor((DavAuth*)deviceinterrupt);
          break;
@@ -121399,8 +128316,27 @@ balua_usertracker_create(lua_State* L,
 
 #define XPNAME "\170\160\141\162\163\145\162\056\160\141\162\163\145\162"
 
-struct xp_udata {xparser* p;lua_State* luastate; int incallback;};
+struct xp_udata
+{
+   xparser* p;
+   lua_State* luastate;
+   int incallback; /* held for the entire native operation, including GC */
+   int stackfailed;
+};
 typedef struct xp_udata xp_udata;
+
+static void* xp_alloc(void* context,void* ptr,size_t hugetlbvalid,size_t ahashsetkey)
+{
+   xp_udata* ud=(xp_udata*)context;
+   (void)hugetlbvalid;
+   if(!ahashsetkey)
+   {
+      baFree(ptr);
+      return NULL;
+   }
+   
+   return baLRealloc(ud->luastate,ptr,ahashsetkey);
+}
 
 static int asserthardreset(lua_State *L, const char* s) {
    lua_pushnil(L);
@@ -121429,12 +128365,20 @@ static xp_udata* chk_parser_call(lua_State *L)
    xp_udata* ud = chk_parser(L,1);
    luaL_argcheck(L, !ud->incallback, 1, "\160\141\162\163\145\162\040\151\163\040\151\156\040\141\040\143\141\154\154\142\141\143\153");
    ud->luastate = L;
+   ud->incallback=1;
+   ud->stackfailed=0;
    return ud;
+}
+
+static void _XzY0x26B(xp_udata* ud)
+{
+   ud->incallback=0;
+   ud->luastate=NULL;
 }
 
 static int build_attrs(lua_State *L,const char** attrs)
 {
-   int i=0;
+   lua_Integer i=0;
    const char** p = attrs;
 
    lua_newtable(L);
@@ -121487,28 +128431,21 @@ static int build_params(lua_State *L,
    return buttondevice+unmaprelease+probebroadcom;
 }
 
-static int callback(    
-   xparser* p,
-   void* fixupfinal,
-   xparser_event evt,
-   const char* name,
-   const char** attrs,
-   const char* alloccontroller)
+typedef struct
+{
+   xparser_event event;
+   const char* name;
+   const char** attrs;
+   const char* data;
+} xp_callback_args;
+
+
+static int _XzY0x266(lua_State* L)
 {
    int env, ret, i;
-   xp_udata* ud = (xp_udata*)fixupfinal;
-   lua_State *L = ud->luastate;
+   xp_callback_args* enetswplatform=(xp_callback_args*)lua_touserdata(L,2);
+   xparser_event evt=enetswplatform->event;
    int top = lua_gettop(L);
-   (void)p;
-   if(ud == NULL) return 0;
-
-
-
-   
-   if(lua_type(L, 1) != LUA_TUSERDATA)
-      return 0;
-
-
 
    lua_getuservalue(L,1); 
    env = lua_gettop(L);
@@ -121518,10 +128455,9 @@ static int callback(
    lua_remove(L,-2);     
    lua_rawgeti(L,env,2); 
 
-   i = build_params(L,evt,name,attrs,alloccontroller);
-   ud->incallback = 1;
+   i = build_params(L,evt,enetswplatform->name,enetswplatform->attrs,enetswplatform->data);
    ret=lua_pcall (L, i+1, LUA_MULTRET, 0);
-   ud->incallback = 0;
+   luaL_checkstack(L,3,"\130\115\114\040\143\141\154\154\142\141\143\153\040\162\145\163\165\154\164\163");
 
    if (ret) { 
       const char* eventkillable = lua_tostring(L,-1);
@@ -121554,6 +128490,40 @@ static int callback(
    }
    lua_remove(L,env);
    return lua_gettop(L)-top; 
+}
+
+static int callback(xparser* p,void* fixupfinal,xparser_event evt,
+                    const char* name,const char** attrs,const char* alloccontroller)
+{
+   xp_udata* ud=(xp_udata*)fixupfinal;
+   xp_callback_args enetswplatform;
+   lua_State* L;
+   int top;
+   (void)p;
+   if(!ud || !ud->luastate)
+      return 0;
+   L=ud->luastate;
+   top=lua_gettop(L);
+   if(!lua_checkstack(L,4))
+   {
+      ud->stackfailed=1;
+      return -1;
+   }
+   enetswplatform.event=evt;
+   enetswplatform.name=name;
+   enetswplatform.attrs=attrs;
+   enetswplatform.data=alloccontroller;
+   lua_pushcfunction(L,_XzY0x266);
+   lua_pushvalue(L,1);
+   lua_pushlightuserdata(L,&enetswplatform);
+   if(lua_pcall(L,2,LUA_MULTRET,0))
+   {
+      
+      lua_pushnil(L);
+      lua_insert(L,-2);
+      return 2;
+   }
+   return lua_gettop(L)-top;
 }
 
 static int devicehotplug(lua_State *L,int trampolineholder)
@@ -121623,20 +128593,18 @@ static int quadrastart(lua_State *L)
 
    ud = lua_newuserdata(L,sizeof(xp_udata));
    if (!ud) return asserthardreset(L,"\146\141\151\154\145\144\040\164\157\040\143\162\145\141\164\145\040\165\163\145\162\144\141\164\141");
+   ud->p=NULL;
+   ud->luastate=NULL;
+   ud->incallback=0;
+   ud->stackfailed=0;
+   luaL_getmetatable(L,XPNAME);
+   lua_setmetatable(L,-2);
    lua_pushvalue(L,-1);
    lua_insert(L,1); 
    if (uncorrectedframe) ++uncorrectedframe;
-   ud->incallback=0;
-   ud->p = xparser_create();
-   if (!ud->p) return asserthardreset(L,"\146\141\151\154\145\144\040\164\157\040\143\162\145\141\164\145\040\170\160\141\162\163\145\162");
-
-   ud->luastate = L;
-   luaL_getmetatable(L,XPNAME);
-   lua_setmetatable(L,-2);
-
    lua_newtable(L);  
    if (uncorrectedframe) {
-      lua_pushvalue(L,-3);
+      lua_pushvalue(L,uncorrectedframe);
       lua_rawseti(L,-2,1);
    }
    if (reportpciclk>1)  {
@@ -121646,7 +128614,15 @@ static int quadrastart(lua_State *L)
    lua_setuservalue(L,-2); 
    
 
+   chk_parser_call(L);
+   ud->p=xparser_createalloc(xp_alloc,ud);
+   if(!ud->p)
+   {
+      _XzY0x26B(ud);
+      return asserthardreset(L,"\146\141\151\154\145\144\040\164\157\040\143\162\145\141\164\145\040\170\160\141\162\163\145\162");
+   }
    ret=pwmtimerrestart(L,ud,uncorrectedframe,driverchipcommon); 
+   _XzY0x26B(ud);
    if (ret ==0) {
       return 1; 
    }
@@ -121654,6 +128630,9 @@ static int quadrastart(lua_State *L)
    xparser_destroy(ud->p);
    ud->p = NULL; 
    ud->luastate = NULL;
+   if(ret<0)
+      return asserthardreset(L,"\114\165\141\040\143\141\154\154\142\141\143\153\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144");
+   luaL_checkstack(L,1,"\130\115\114\040\111\116\111\124\040\162\145\163\165\154\164\163");
    lua_pushnil(L);
    lua_replace(L,-ret-1);
    return ret;
@@ -121667,19 +128646,24 @@ static int consolemembase(lua_State *L)
       xparser_destroy(ud->p);    
       ud->p = NULL;
    }
-   ud->luastate = NULL;
+   _XzY0x26B(ud);
    return 0;
 }
 
 
 static int checkconstraints(lua_State *L)
 {
-   int vtimercntvoff;
+   int vtimercntvoff,ret;
+   xp_udata* ud;
    xparser* p = chk_parser_ptr(L,1);
    vtimercntvoff=lua_toboolean(L,2);
    lua_settop(L,1);
-   chk_parser_call(L);
-   return xparser_reset(p,vtimercntvoff); 
+   ud=chk_parser_call(L);
+   ret=xparser_reset(p,vtimercntvoff); 
+   _XzY0x26B(ud);
+   if(ret<0)
+      return asserthardreset(L,"\114\165\141\040\143\141\154\154\142\141\143\153\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144");
+   return ret;
 }
 
 static int enableresources(lua_State *L)
@@ -121723,8 +128707,9 @@ static int destroypgtable(lua_State *L)
    size_t sz;
    const char* resourceaddress64 = luaL_checklstring(L,2,&sz);
    int ret;
-   chk_parser_call(L);
+   xp_udata* ud=chk_parser_call(L);
    ret = xparser_parse(p,resourceaddress64,sz);
+   _XzY0x26B(ud);
    if (ret ==0) {
       lua_pushboolean(L,1);
       lua_pushboolean(L,xparser_has_doc(p));
@@ -121732,10 +128717,22 @@ static int destroypgtable(lua_State *L)
    }
    if (ret == -1) { 
       lua_pushnil(L);
-      lua_pushstring(L,xparser_errormsg(p));
+      lua_pushstring(L,ud->stackfailed ? "\114\165\141\040\143\141\154\154\142\141\143\153\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144" : xparser_errormsg(p));
       return 2;
    }
    return ret;
+}
+
+static int _XzY0x279(lua_State* L)
+{
+   xparser* p=chk_parser_ptr(L,1);
+   xp_udata* ud=chk_parser_call(L);
+   int ret=xparser_finish(p);
+   _XzY0x26B(ud);
+   if(ret)
+      return asserthardreset(L,xparser_errormsg(p));
+   lua_pushboolean(L,1);
+   return 1;
 }
 
 static int xp_tostring (lua_State *L) {
@@ -121756,6 +128753,7 @@ static luaL_Reg metafunc[] = {
    { "\137\137\143\154\157\163\145",      consolemembase   },
    { "\137\137\164\157\163\164\162\151\156\147",   xp_tostring  },
    { "\160\141\162\163\145",         destroypgtable    },
+   { "\146\151\156\151\163\150",        _XzY0x279   },
    { "\162\145\163\145\164",         checkconstraints    },
    { "\144\145\163\164\162\157\171",      consolemembase   },
    { "\143\157\165\156\164",      enableresources   },
@@ -121769,9 +128767,7 @@ static luaL_Reg metafunc[] = {
 
 static int migratetarget(lua_State *L)
 {
-   if (!luaL_newmetatable(L, XPNAME)) {
-      return asserthardreset(L,"\146\141\151\154\145\144\040\164\157\040\143\162\145\141\164\145\040\155\145\164\141\164\141\142\154\145\040" XPNAME);
-   }
+   luaL_newmetatable(L, XPNAME);
 
    lua_pushliteral(L, "\137\137\151\156\144\145\170");
    lua_pushvalue(L, -2);   
@@ -121784,9 +128780,6 @@ static int migratetarget(lua_State *L)
 
 int luaopen_xparser(lua_State *L)
 {
-   void* unmapsingle;
-   lua_Alloc alloc_fn = lua_getallocf(L, &unmapsingle);
-   xparser_setalloc(alloc_fn,unmapsingle);
    luaL_requiref(L, "\170\160\141\162\163\145\162", migratetarget, TRUE);
    lua_pop(L,1);
    return 0;
@@ -121940,17 +128933,17 @@ balua_preprocess(lua_State* L, const char* buf, int timer0interrupt)
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <limits.h>
 
+#if XPARSER_ALLOC != 2
+#include <TargConfig.h>
+#endif
 
 typedef unsigned int uint32; 
 
 #define strequal(a,b) (!strcmp((a),(b)))
 
-#if !XPARSER_ALLOC
-#define allocate(sz) baRealloc(NULL, sz)
-#define de_allocate(p,sz) baFree(p)
-#define re_allocate(p,szo,szn) baRealloc(p, szn)
-#else
+#if XPARSER_ALLOC
 #if XPARSER_ALLOC == 2 
 static void * my_alloc(void *ud, void *ptr, size_t hugetlbvalid, size_t ahashsetkey) {
    (void)ud;
@@ -121964,7 +128957,7 @@ static void * my_alloc(void *ud, void *ptr, size_t hugetlbvalid, size_t ahashset
    (void)ud;
    (void)hugetlbvalid;
    if (ahashsetkey == 0) {
-      free(ptr);
+      baFree(ptr);
       return NULL;
    }
    else
@@ -121986,11 +128979,16 @@ void xparser_setalloc(xparser_alloc pa,void* ud)
    }
 }
 
-#define allocate(sz) pAlloc(allocUD,NULL,0,sz)
-#define de_allocate(p,sz) pAlloc(allocUD,p,sz,0)
-#define re_allocate(p,szo,szn) pAlloc(allocUD,p,szo,szn)
 #endif
 
+typedef struct
+{
+#if XPARSER_ALLOC
+   xparser_alloc callback;
+   void* userdata;
+#endif
+   int failed;
+} xparser_allocator;
 
 typedef struct xparser_context context;
 
@@ -122046,8 +129044,10 @@ static stubhandler* MARKUP(context* icacherange,const uint32 disableprivileged);
 
 
 
-static const char* declTags[] = {"\104\117\103\124\131\120\105", "\101\124\124\114\111\123\124", "\105\114\105\115\105\116\124", "\105\116\124\111\124\131\137\104\105\103\114"};  
-static statehandler* declStates[] = {DOCTYPE, ATTLIST, ELEMENT, ENTITY_DECL}; 
+static stubhandler* DOCTYPE_END(context* icacherange,const uint32 disableprivileged);
+
+static const char* declTags[] = {"\104\117\103\124\131\120\105", "\101\124\124\114\111\123\124", "\105\114\105\115\105\116\124", "\105\116\124\111\124\131", "\116\117\124\101\124\111\117\116"};  
+static statehandler* declStates[] = {DOCTYPE, ATTLIST, ELEMENT, ENTITY_DECL, ENTITY_DECL}; 
 
 
 static const char* entityNames[] = {"\154\164","\147\164","\141\155\160","\161\165\157\164","\141\160\157\163"};
@@ -122065,13 +129065,13 @@ static int utf8Count[256] = {
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-   0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+   0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
    3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-   4,4,4,4,4,4,4,4,5,5,5,5,0,0,0,0 
+   4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0 
 };
 
-static unsigned char utf8Mask[]= {0xFF,0x1F,0xF,3,1}; 
+static const unsigned char utf8Mask[]= {0,0,0x1F,0x0F,0x07}; 
 
 #define is7bit(x) (!((x) & 0xFFFFFF80L))
 #define is8bit(x) (!((x) & 0xFFFFFF00L))
@@ -122089,8 +129089,7 @@ static int checktxdone(unsigned char* scoopresources, uint32 guestconfig2)
       int i;
       if (guestconfig2<0x800L) {vmemmaprange = 2;sha256export=0xC0;}
       else if (guestconfig2<0x10000L) {vmemmaprange = 3;sha256export=0xE0;}
-      else if (guestconfig2<0x100000L) {vmemmaprange = 4;sha256export=0xF0;}
-      else if (guestconfig2<0x2000000L) {vmemmaprange = 5;sha256export=0xF8;}
+      else if (guestconfig2<0x110000L) {vmemmaprange = 4;sha256export=0xF0;}
       else return 0; 
 
       for (i=vmemmaprange-1;i>0;--i) {
@@ -122166,7 +129165,7 @@ static int _isNameStart(const uint32 disableprivileged)
 
    return
       (disableprivileged <= 0x2FF) ||
-      (disableprivileged >=0x370 && disableprivileged <= 0x237D) ||
+      (disableprivileged >=0x370 && disableprivileged <= 0x37D) ||
       (disableprivileged >=0x37F && disableprivileged <= 0x1FFF) ||
       (disableprivileged >=0x200C && disableprivileged <= 0x200D) ||
       (disableprivileged >=0x2070 && disableprivileged <= 0x218F) ||
@@ -122186,7 +129185,7 @@ static int _isNameChar(const uint32 disableprivileged)
    return
       (disableprivileged <= 0x2FF) ||
       (disableprivileged >=0x300 && disableprivileged <= 0x36F) || 
-      (disableprivileged >=0x370 && disableprivileged <= 0x237D) ||
+      (disableprivileged >=0x370 && disableprivileged <= 0x37D) ||
       (disableprivileged >=0x37F && disableprivileged <= 0x1FFF) ||
       (disableprivileged >=0x200C && disableprivileged <= 0x200D) ||
       (disableprivileged >=0x203F && disableprivileged <= 0x2040) || 
@@ -122219,7 +129218,7 @@ static int _isUWS(const uint32 disableprivileged)
 
 static int nandflashtiming(const uint32 disableprivileged)
 {
-   return (disableprivileged =='\104') || (disableprivileged=='\101') || (disableprivileged == '\105'); 
+   return disableprivileged=='\104' || disableprivileged=='\101' || disableprivileged=='\105' || disableprivileged=='\116'; 
 }
 
 static int hexVals[256] = { 
@@ -122267,10 +129266,11 @@ static uint32 restartcounter(const char* putchardummy)
    }
    while (*(++putchardummy)) {
       i = hexVals[(unsigned char)*putchardummy];
-      if (i==-1) return 0;
+      if (i<0 || i>=validconfig || tot > (0x10FFFFU-(uint32)i)/(unsigned)validconfig)
+         return 0;
       tot = tot * validconfig + i;
    }
-   return tot;
+   return isXmlChar(tot) ? tot : 0;
 }
 
 
@@ -122281,11 +129281,13 @@ struct cbuffer {
    size_t pos;
    size_t allocated_size;
    void* pData;
+   xparser_allocator* allocator;
 }  ;
 
-static void randomkstack(struct cbuffer* pb)
+static void randomkstack(struct cbuffer* pb, xparser_allocator* consoleiobase)
 {
    pb->pos = pb->allocated_size = 0; pb->pData = 0L;
+   pb->allocator = consoleiobase;
 }
 
 static void singlefnmul(struct cbuffer* pb)
@@ -122296,7 +129298,12 @@ static void singlefnmul(struct cbuffer* pb)
 static void smsc911xpdata(struct cbuffer* pb)
 {
    if (pb->pData) {
-      de_allocate(pb->pData,pb->allocated_size);
+#if XPARSER_ALLOC
+      pb->allocator->callback(pb->allocator->userdata,
+                              pb->pData,pb->allocated_size,0);
+#else
+      baFree(pb->pData);
+#endif
       pb->pData = 0L;
    }
    pb->pos = pb->allocated_size = 0;
@@ -122304,8 +129311,20 @@ static void smsc911xpdata(struct cbuffer* pb)
 
 static int secondaryconsole(struct cbuffer* pb, size_t handlerregistered)
 {
-   int* skcipherreqtfm = re_allocate(pb->pData,pb->allocated_size,handlerregistered);
-   if (!skcipherreqtfm) return 0;
+   void* skcipherreqtfm;
+   if(pb->allocator->failed)
+      return 0;
+#if XPARSER_ALLOC
+   skcipherreqtfm = pb->allocator->callback(pb->allocator->userdata,
+                                   pb->pData,pb->allocated_size,handlerregistered);
+#else
+   skcipherreqtfm = baRealloc(pb->pData,handlerregistered);
+#endif
+   if(!skcipherreqtfm)
+   {
+      pb->allocator->failed=1;
+      return 0;
+   }
    pb->pData = skcipherreqtfm;
    pb->allocated_size = handlerregistered;
    return 1;
@@ -122314,18 +129333,26 @@ static int secondaryconsole(struct cbuffer* pb, size_t handlerregistered)
 
 typedef struct cbuffer cbuffer_t;
 
-static void programvoltage(cbuffer_t* ps) {randomkstack(ps);}
+static void programvoltage(cbuffer_t* ps, xparser_allocator* a)
+{
+   randomkstack(ps,a);
+}
 static void sffsdrdevices(cbuffer_t* ps) {smsc911xpdata(ps);}
 static void fpregsoffset(cbuffer_t* ps) {singlefnmul(ps);}
 
 static const char* cstr_str(const cbuffer_t* ps)
 {
-   return ps->pData ? (const char*)ps->pData : (const char*)"";
+   return ps->pos ? (const char*)ps->pData : (const char*)"";
 }
 
 static void hsmmc2resource(cbuffer_t* ps,const unsigned char* memoryvalid,size_t ln)
 {
    if (ln) {
+      if(ln == (size_t)-1)
+      {
+         ps->allocator->failed=1;
+         return;
+      }
       if ((ln >= ps->allocated_size) && !secondaryconsole(ps, ln+1)) 
          return; 
       memcpy(ps->pData,memoryvalid,ln);
@@ -122354,8 +129381,15 @@ static void flashfixup(cbuffer_t* preemptschedule, cbuffer_t* timer10hwmod)
 static void asyncfinal(cbuffer_t* ps,const unsigned char* memoryvalid,size_t ln)
 {
    if (ln) {
-      size_t handlerregistered = ps->pos + ln+1; 
-      if ((handlerregistered > ps->allocated_size) && !secondaryconsole(ps, handlerregistered+32))
+      size_t handlerregistered;
+      if(ln > (size_t)-1 - ps->pos - 1)
+      {
+         ps->allocator->failed=1;
+         return;
+      }
+      handlerregistered = ps->pos + ln+1; 
+      if ((handlerregistered > ps->allocated_size) &&
+          !secondaryconsole(ps, handlerregistered <= (size_t)-1-32 ? handlerregistered+32 : handlerregistered))
          return; 
       memcpy((unsigned char*)(ps->pData)+ps->pos,memoryvalid,ln);
       ps->pos += ln;
@@ -122412,7 +129446,8 @@ static void cpufreqsetrefresh(cbuffer_t* ps,size_t n)
 
 static int doubleftosi(const cbuffer_t* ps1,const cbuffer_t* ps2)
 {
-   return ps1->pos==ps2->pos && (memcmp(ps1->pData,ps2->pData,ps1->pos) == 0);
+   return ps1->pos==ps2->pos &&
+      (!ps1->pos || memcmp(ps1->pData,ps2->pData,ps1->pos) == 0);
 }
 
 static int coupledparallel(const cbuffer_t* ps,const char* callchainstore)
@@ -122468,9 +129503,9 @@ static size_t boardscompat(cbuffer_t* ps)
 }
 
 
-static int securefirmware(const cbuffer_t* ps)
+static int _XzY0x268(const cbuffer_t* ps)
 {
-   if (ps->pos >= 3) {
+   if (ps->pos == 3) {
       const char* p = (const char*)ps->pData;
       return  (p[0]=='\170' || p[0] == '\130') &&
          (p[1]=='\155' || p[1] == '\115') &&
@@ -122491,6 +129526,11 @@ static void swiotlbsetup(sptrstack* pb) {singlefnmul(pb);}
 
 static void pciercxcfg011(sptrstack* ps, const char *p)
 {
+   if(ps->allocated_size > (size_t)-1-16*sizeof(const char*))
+   {
+      ps->allocator->failed=1;
+      return;
+   }
    if ((ps->pos >= ps->allocated_size/sizeof(const char *)) && 
        !secondaryconsole(ps, ps->allocated_size+16*sizeof(const char *))) 
       return; 
@@ -122508,6 +129548,11 @@ static void registerdevices(statestack* pb) {singlefnmul(pb);}
 
 static void clkopsfgenv2(statestack* ps, statehandler *p)
 {
+   if(ps->allocated_size > (size_t)-1-16*sizeof(statehandler*))
+   {
+      ps->allocator->failed=1;
+      return;
+   }
    if ((ps->pos >= ps->allocated_size/sizeof(statehandler *)) && 
        !secondaryconsole(ps, ps->allocated_size+16*sizeof(statehandler *))) 
       return; 
@@ -122526,8 +129571,8 @@ typedef struct cbuffer csstack;
 
 static void eventdisable(csstack* ps)
 {
-   int ahashfinal = (int)ps->allocated_size/sizeof(cbuffer_t);
-   int i;
+   size_t ahashfinal = ps->allocated_size/sizeof(cbuffer_t);
+   size_t i;
    for (i=0;i<ahashfinal;++i) {
       sffsdrdevices(&((cbuffer_t *)ps->pData)[i]);
    }
@@ -122536,8 +129581,8 @@ static void eventdisable(csstack* ps)
 
 static void gpio4resources(csstack* ps)
 {
-   int ahashfinal = (int)ps->allocated_size/sizeof(cbuffer_t);
-   int i;
+   size_t ahashfinal = ps->allocated_size/sizeof(cbuffer_t);
+   size_t i;
    for (i=0;i<ahashfinal;++i)
       fpregsoffset(&((cbuffer_t *)ps->pData)[i]);
    singlefnmul(ps);
@@ -122546,11 +129591,17 @@ static void gpio4resources(csstack* ps)
 static int setupdevice(csstack* ps, size_t notifierblock)
 {
    size_t i,ahashfinal;
+   size_t oldslots=ps->allocated_size/sizeof(cbuffer_t);
+   if(notifierblock > ((size_t)-1-ps->allocated_size)/sizeof(cbuffer_t))
+   {
+      ps->allocator->failed=1;
+      return 0;
+   }
    if (!secondaryconsole(ps, ps->allocated_size+notifierblock*sizeof(cbuffer_t))) 
       return 0; 
-   ahashfinal = (int)ps->allocated_size/sizeof(cbuffer_t);
-   for (i=ps->pos;i<ahashfinal;++i)
-      programvoltage(&((cbuffer_t *)ps->pData)[i]); 
+   ahashfinal = ps->allocated_size/sizeof(cbuffer_t);
+   for (i=oldslots;i<ahashfinal;++i)
+      programvoltage(&((cbuffer_t *)ps->pData)[i],ps->allocator);
    return 1;
 }
 
@@ -122610,17 +129661,22 @@ static const cbuffer_t* csstack_top(const csstack* ps)
 
 
 struct xparser_context {
-   int count,line,col; /* source char count, line#, col# */
+   xparser_allocator allocator;
+   size_t count; /* source byte count */
+   unsigned int line,col; /* line#, col# */
    int eol;            /* flag for eol processing */
    size_t tpos,epos;       /* start position in buffer for text, entity */
 
    int has_doc; /* we have parsed the root document  */
+   unsigned char busy; /* reject mutation during allocator/event callbacks */
+   unsigned char finished, bom, in_decl, doctype_seen, in_subset;
+   unsigned char attr_separator, text_brackets, charlen;
    unsigned int flags; /* flags for text processing  */
    unsigned int init; /* flag for handler initilisation  */
    unsigned char quote_ch; /* char for quoted text */
 
    const unsigned char* buff;  /* chunk we are parsing */
-   size_t buffpos,bufflen;/* current buffer pos, len */
+   size_t buffpos; /* current buffer position */
 
    statehandler* state;    /* current parser state */
    xparser_event event;    /* event to call */
@@ -122633,6 +129689,7 @@ struct xparser_context {
    cbuffer_t entity;/* buffer for entity data */
    cbuffer_t text;/* buffer for text content (node and attribute) */
    cbuffer_t data;/* buffer for return data */
+   cbuffer_t doctype_name;
    cbuffer_t errmsg;/* buffer for error mesage */
 
    csstack attr_names;/* stack for attr names. */
@@ -122645,14 +129702,35 @@ struct xparser_context {
 };
 
 
+static void _XzY0x270(context* virtualaddress, const xparser_allocator* consoleiobase)
+{
+   memset(virtualaddress,0,sizeof(context));
+   virtualaddress->allocator=*consoleiobase;
+   virtualaddress->allocator.failed=0;
+   randomkstack(&virtualaddress->tagname,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->attrib,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->entity,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->text,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->data,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->errmsg,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->doctype_name,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->attr_names,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->attr_values,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->tag_stack,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->param_stack,&virtualaddress->allocator);
+   randomkstack(&virtualaddress->state_stack,&virtualaddress->allocator);
+}
+
 static void disabledexits(context* virtualaddress)
 {
+   xparser_allocator consoleiobase=virtualaddress->allocator;
    sffsdrdevices(&virtualaddress->tagname);
    sffsdrdevices(&virtualaddress->attrib);
    sffsdrdevices(&virtualaddress->entity);
    sffsdrdevices(&virtualaddress->text);
    sffsdrdevices(&virtualaddress->data);
    sffsdrdevices(&virtualaddress->errmsg);
+   sffsdrdevices(&virtualaddress->doctype_name);
 
    eventdisable(&virtualaddress->attr_names);
    eventdisable(&virtualaddress->attr_values);
@@ -122661,18 +129739,20 @@ static void disabledexits(context* virtualaddress)
    traceconsume(&virtualaddress->param_stack);
    probevmbits(&virtualaddress->state_stack);
 
-   memset(virtualaddress,0,sizeof(context));
+   _XzY0x270(virtualaddress,&consoleiobase);
 }
 #define NO_POS ((size_t)-1L)
 
 static void configureac97reset(context* icacherange)
 {
+   icacherange->allocator.failed=0;
    fpregsoffset(&icacherange->tagname);
    fpregsoffset(&icacherange->attrib);
    fpregsoffset(&icacherange->entity);
    fpregsoffset(&icacherange->text);
    fpregsoffset(&icacherange->data);
    fpregsoffset(&icacherange->errmsg);
+   fpregsoffset(&icacherange->doctype_name);
 
    gpio4resources(&icacherange->attr_names);
    gpio4resources(&icacherange->attr_values);
@@ -122691,13 +129771,20 @@ static void configureac97reset(context* icacherange)
    icacherange->utf8pos = 0;
 
    icacherange->buff = 0L;
-   icacherange->bufflen = 0;
    icacherange->buffpos = 0;
 
    icacherange->quote_ch = 0;
    icacherange->state = &START;
    icacherange->event = xparserNOEVENT;
    icacherange->has_doc = 0;
+   icacherange->finished = 0;
+   icacherange->bom = 0;
+   icacherange->in_decl = 0;
+   icacherange->doctype_seen = 0;
+   icacherange->in_subset = 0;
+   icacherange->attr_separator = 0;
+   icacherange->text_brackets = 0;
+   icacherange->charlen = 1;
    icacherange->flags = 0;
    
 }
@@ -122708,13 +129795,15 @@ static void configureac97reset(context* icacherange)
 static void ownerdepth(context* icacherange, int idmapstart)
 {
    if (icacherange->tpos != NO_POS) {
-	   ptrdiff_t ln = icacherange->buffpos + idmapstart +1 - icacherange->tpos;
-      if (ln >0) {
-         asyncfinal(&icacherange->text,icacherange->buff+icacherange->tpos,ln);
-      }
-      else if (ln<0) {
-         cpufreqsetrefresh(&icacherange->text,-ln);
-      }
+      size_t end=icacherange->buffpos+1;
+      size_t trim=(size_t)-idmapstart; 
+      if(trim > end)
+         cpufreqsetrefresh(&icacherange->text,trim-end+icacherange->tpos);
+      else if(end-trim < icacherange->tpos)
+         cpufreqsetrefresh(&icacherange->text,icacherange->tpos-(end-trim));
+      else if(end-trim > icacherange->tpos)
+         asyncfinal(&icacherange->text,icacherange->buff+icacherange->tpos,
+                       end-trim-icacherange->tpos);
       icacherange->tpos = NO_POS;
    }
 }
@@ -122744,13 +129833,15 @@ static void rodatasection(context* icacherange, int idmapstart)
 static void removeunwind(context* icacherange, int idmapstart)
 {
    if (icacherange->epos != NO_POS) {
-	   ptrdiff_t ln = icacherange->buffpos + idmapstart +1 - icacherange->epos;
-      if (ln >0) {
-         asyncfinal(&icacherange->entity,icacherange->buff+icacherange->epos,ln);
-      }
-      else if (ln<0) {
-         cpufreqsetrefresh(&icacherange->entity,-ln);
-      }
+      size_t end=icacherange->buffpos+1;
+      size_t trim=(size_t)-idmapstart;
+      if(trim > end)
+         cpufreqsetrefresh(&icacherange->entity,trim-end+icacherange->epos);
+      else if(end-trim < icacherange->epos)
+         cpufreqsetrefresh(&icacherange->entity,icacherange->epos-(end-trim));
+      else if(end-trim > icacherange->epos)
+         asyncfinal(&icacherange->entity,icacherange->buff+icacherange->epos,
+                       end-trim-icacherange->epos);
       icacherange->epos = NO_POS;
    }
 }
@@ -122760,6 +129851,19 @@ static void stacknormal(context* icacherange,int idmapstart)
 {
    icacherange->tpos = icacherange->buffpos+idmapstart;
    fpregsoffset(&icacherange->text);
+   if(!idmapstart && icacherange->charlen > 1)
+      asyncfinal(&icacherange->text,icacherange->utf8buff,icacherange->charlen-1);
+}
+
+
+static void _XzY0x275(context* icacherange)
+{
+   if(icacherange->tpos == NO_POS)
+   {
+      if(icacherange->charlen > 1)
+         asyncfinal(&icacherange->text,icacherange->utf8buff,icacherange->charlen-1);
+      icacherange->tpos=icacherange->buffpos;
+   }
 }
 
 static void syscalltrace(context* icacherange)
@@ -122854,6 +129958,12 @@ static stubhandler* ROOT(context* icacherange,const uint32 disableprivileged)
 
 static stubhandler* START_TAG(context* icacherange,const uint32 disableprivileged) 
 {
+   if(icacherange->in_subset && disableprivileged!='\041' && disableprivileged!='\077')
+   {
+      eventcreate(icacherange,"\117\156\154\171\040\144\145\143\154\141\162\141\164\151\157\156\163\054\040\143\157\155\155\145\156\164\163\040\141\156\144\040\120\111\040\141\162\145\040\141\154\154\157\167\145\144\040\151\156\040\141\040\104\124\104\040\163\165\142\163\145\164");
+      return NULL;
+   }
+
    if (disableprivileged == '\057') {
       if (!icacherange->tag_stack.pos) {
          eventcreate(icacherange,"\103\154\157\163\145\040\164\141\147\040\141\164\040\162\157\157\164\040\144\157\143\165\155\145\156\164\040\154\145\166\145\154");
@@ -122863,10 +129973,16 @@ static stubhandler* START_TAG(context* icacherange,const uint32 disableprivilege
       return (stubhandler*)CLOSE_TAG;
    }
    if (isNameStart(disableprivileged)) {
+      if(icacherange->has_doc)
+      {
+         eventcreate(icacherange,"\123\145\143\157\156\144\040\162\157\157\164\040\154\145\166\145\154\040\144\157\143\165\155\145\156\164");
+         return NULL;
+      }
       gpio4resources(&icacherange->attr_names);
       gpio4resources(&icacherange->attr_values);
       fpregsoffset(&icacherange->tagname);
       fpregsoffset(&icacherange->attrib);
+      icacherange->attr_separator=0;
       stacknormal(icacherange,0);
       return (stubhandler*)OPEN_TAG;
    }
@@ -122883,16 +129999,17 @@ static stubhandler* OPEN_TAG(context* icacherange,const uint32 disableprivileged
    if (isNameChar(disableprivileged)) return (stubhandler*)OPEN_TAG;
 
    pciercxcfg452(icacherange,-1); 
+   if(!icacherange->tag_stack.pos && icacherange->doctype_seen &&
+      !doubleftosi(&icacherange->tagname,&icacherange->doctype_name))
+   {
+      eventcreate(icacherange,"\104\157\143\165\155\145\156\164\040\145\154\145\155\145\156\164\040\144\157\145\163\040\156\157\164\040\155\141\164\143\150\040\104\117\103\124\131\120\105\040\156\141\155\145");
+      return NULL;
+   }
    if (disableprivileged == '\057') return (stubhandler*)SINGLE_TAG;
 
-   if (!icacherange->tag_stack.pos) {  
-      if (icacherange->has_doc) {
-         eventcreate(icacherange,"\123\145\143\157\156\144\040\162\157\157\164\040\154\145\166\145\154\040\144\157\143\165\155\145\156\164");
-         return NULL;
-      }
-      currentkprobe(icacherange,&XMLTEXT); 
-   }
    if (disableprivileged == '\076') {
+      if(!icacherange->tag_stack.pos)
+         currentkprobe(icacherange,&XMLTEXT);
       onenand1setname(&icacherange->tag_stack,&icacherange->tagname);
       icacherange->event = xparserSTART_ELEMENT;
       return (stubhandler*)EVENT; 
@@ -122911,26 +130028,49 @@ static stubhandler* SINGLE_TAG(context* icacherange,const uint32 disableprivileg
       return (stubhandler*)EVENT; 
    }
    devicebtuart(icacherange,disableprivileged,"\105\170\160\145\143\164\145\144\040\047\076\047\040\146\157\162\040\164\141\147\040\047",cstr_str(&icacherange->tagname),"\047");
-   return NULL;;
+   return NULL;
 }
 
 static stubhandler* IN_TAG(context* icacherange,const uint32 disableprivileged) 
 {
    if (disableprivileged == '\076') {
+      if(!icacherange->tag_stack.pos)
+         currentkprobe(icacherange,&XMLTEXT);
       onenand1setname(&icacherange->tag_stack,&icacherange->tagname);
       icacherange->event = xparserSTART_ELEMENT;
       return (stubhandler*)EVENT;
    }
-   if (isXmlWS(disableprivileged)) return (stubhandler*)IN_TAG;
+   if (isXmlWS(disableprivileged))
+   {
+      icacherange->attr_separator=0;
+      return (stubhandler*)IN_TAG;
+   }
    if (disableprivileged == '\057') return (stubhandler*)SINGLE_TAG;
 
    if (isNameStart(disableprivileged)) { 
+      if(icacherange->attr_separator)
+      {
+         eventcreate(icacherange,"\127\150\151\164\145\163\160\141\143\145\040\162\145\161\165\151\162\145\144\040\142\145\164\167\145\145\156\040\141\164\164\162\151\142\165\164\145\163");
+         return NULL;
+      }
       currentkprobe(icacherange,&IN_TAG);
       stacknormal(icacherange,0);
       return (stubhandler*)ATTRIB_LVALUE;
    }
    patchmckinley(icacherange,disableprivileged,"\151\156\040\141\164\164\162\151\142\165\164\145\040\156\141\155\145");
    return NULL;
+}
+
+static stubhandler* finishClose(context* icacherange)
+{
+   nvramchecksum(&icacherange->tag_stack);
+   if(!icacherange->tag_stack.pos)
+   {
+      popState(icacherange); 
+      icacherange->has_doc=1;
+   }
+   icacherange->event=xparserEND_ELEMENT;
+   return (stubhandler*)EVENT;
 }
 
 static stubhandler* CLOSE_TAG(context* icacherange,const uint32 disableprivileged) 
@@ -122955,16 +130095,8 @@ static stubhandler* CLOSE_TAG(context* icacherange,const uint32 disableprivilege
       set_strerr(icacherange,eventkillable);
       return NULL;
    }
-   nvramchecksum(&icacherange->tag_stack);
-
-   if (icacherange->tag_stack.pos == 0) {
-      popState(icacherange); 
-      icacherange->has_doc = 1;
-   }
-   if (disableprivileged == '\076') {
-      icacherange->event = xparserEND_ELEMENT;
-      return (stubhandler*)EVENT; 
-   }
+   if (disableprivileged == '\076')
+      return finishClose(icacherange);
    if (isXmlWS(disableprivileged)) return (stubhandler*)CLOSE_1;
    patchmckinley(icacherange,disableprivileged,"\151\156\040\143\154\157\163\151\156\147\040\164\141\147");
    return NULL;
@@ -122972,10 +130104,8 @@ static stubhandler* CLOSE_TAG(context* icacherange,const uint32 disableprivilege
 
 static stubhandler* CLOSE_1(context* icacherange,const uint32 disableprivileged) 
 {
-   if (disableprivileged == '\076') {
-      icacherange->event = xparserEND_ELEMENT;
-      return (stubhandler*)EVENT; 
-   }
+   if (disableprivileged == '\076')
+      return finishClose(icacherange);
    if (isXmlWS(disableprivileged)) return (stubhandler*)CLOSE_1;
    patchmckinley(icacherange,disableprivileged,"\151\156\040\143\154\157\163\151\156\147\040\164\141\147");
    return NULL;
@@ -122986,7 +130116,16 @@ static stubhandler* ATTRIB_LVALUE(context* icacherange,const uint32 disableprivi
    if (isNameChar(disableprivileged)) return (stubhandler*)ATTRIB_LVALUE;
 
    if ((disableprivileged == '\075') || (isXmlWS(disableprivileged))) {
+      size_t i;
       rodatasection(icacherange,-1);
+      for(i=0;i<icacherange->attr_names.pos;++i)
+      {
+         if(doubleftosi(&icacherange->attrib,csstack_at(&icacherange->attr_names,i)))
+         {
+            eventcreate(icacherange,"\104\165\160\154\151\143\141\164\145\040\141\164\164\162\151\142\165\164\145\040\156\141\155\145");
+            return NULL;
+         }
+      }
       return (disableprivileged == '\075') ? (stubhandler*)ATTRIB_RVALUE : (stubhandler*)ATTRIB_EQUAL;
    }
    patchmckinley(icacherange,disableprivileged,"\151\156\040\141\164\164\162\151\142\165\164\145\040\156\141\155\145");
@@ -123021,7 +130160,13 @@ static stubhandler* ATTRIB_QUOTE(context* icacherange,const uint32 disableprivil
       consoleregister(&icacherange->attr_values,&icacherange->text); 
       consoleregister(&icacherange->attr_names,&icacherange->attrib); 
       icacherange->quote_ch = 0;
+      icacherange->attr_separator=1;
       return (stubhandler*)popState(icacherange);
+   }
+   if(disableprivileged=='\074' || (icacherange->in_decl && disableprivileged=='\046'))
+   {
+      patchmckinley(icacherange,disableprivileged,"\151\156\040\141\164\164\162\151\142\165\164\145\040\166\141\154\165\145");
+      return NULL;
    }
    if (disableprivileged == '\046') {
       currentkprobe(icacherange,&ATTRIB_QUOTE);
@@ -123034,9 +130179,8 @@ static stubhandler* ATTRIB_QUOTE(context* icacherange,const uint32 disableprivil
       ownerdepth(icacherange,-1);
       nresetdevice(&icacherange->text,'\040');
    }
-   else if (icacherange->tpos == NO_POS) {
-      icacherange->tpos=icacherange->buffpos;
-   }
+   else
+      _XzY0x275(icacherange);
    return (stubhandler*)ATTRIB_QUOTE;
 }
 
@@ -123063,9 +130207,11 @@ static stubhandler* QTAG(context* icacherange,const uint32 disableprivileged)
          }
          gpio4resources(&icacherange->attr_names);
          gpio4resources(&icacherange->attr_values);
+         icacherange->in_decl=1;
+         icacherange->attr_separator=0;
          return (disableprivileged == '\077') ? (stubhandler*)XDECL_END : (stubhandler*)XDECL;
       }
-      if (securefirmware(&icacherange->tagname)) {
+      if (_XzY0x268(&icacherange->tagname)) {
          const char* eventkillable[]={
             "\111\156\166\141\154\151\144\040\120\111\040\156\141\155\145\040\050\047",
             "", 
@@ -123084,9 +130230,18 @@ static stubhandler* QTAG(context* icacherange,const uint32 disableprivileged)
 
 static stubhandler* XDECL(context* icacherange,const uint32 disableprivileged) 
 {
-   if (isXmlWS(disableprivileged)) return (stubhandler*)XDECL;
+   if (isXmlWS(disableprivileged))
+   {
+      icacherange->attr_separator=0;
+      return (stubhandler*)XDECL;
+   }
    if (disableprivileged=='\077') return (stubhandler*)XDECL_END;
    if (isNameStart(disableprivileged)) {
+      if(icacherange->attr_separator)
+      {
+         eventcreate(icacherange,"\127\150\151\164\145\163\160\141\143\145\040\162\145\161\165\151\162\145\144\040\142\145\164\167\145\145\156\040\144\145\143\154\141\162\141\164\151\157\156\040\141\164\164\162\151\142\165\164\145\163");
+         return NULL;
+      }
       stacknormal(icacherange,0); 
       currentkprobe(icacherange,&XDECL);
       return (stubhandler*)ATTRIB_LVALUE;
@@ -123098,6 +130253,45 @@ static stubhandler* XDECL(context* icacherange,const uint32 disableprivileged)
 static stubhandler* XDECL_END(context* icacherange,const uint32 disableprivileged) 
 {
    if (disableprivileged=='\076') {
+      size_t i=0;
+      size_t n=icacherange->attr_names.pos;
+      if(icacherange->allocator.failed)
+         return NULL;
+      if(!n || !coupledparallel(csstack_at(&icacherange->attr_names,0),"\166\145\162\163\151\157\156") ||
+         !coupledparallel(csstack_at(&icacherange->attr_values,0),"\061\056\060"))
+      {
+         eventcreate(icacherange,"\130\115\114\040\144\145\143\154\141\162\141\164\151\157\156\040\162\145\161\165\151\162\145\163\040\166\145\162\163\151\157\156\075\047\061\056\060\047\040\146\151\162\163\164");
+         return NULL;
+      }
+      i=1;
+      if(i<n && coupledparallel(csstack_at(&icacherange->attr_names,i),"\145\156\143\157\144\151\156\147"))
+      {
+         const char* enc=cstr_str(csstack_at(&icacherange->attr_values,i));
+         if(strlen(enc)!=5 || (enc[0]!='\165' && enc[0]!='\125') ||
+            (enc[1]!='\164' && enc[1]!='\124') || (enc[2]!='\146' && enc[2]!='\106') ||
+            enc[3]!='\055' || enc[4]!='\070')
+         {
+            eventcreate(icacherange,"\117\156\154\171\040\125\124\106\055\070\040\145\156\143\157\144\151\156\147\040\151\163\040\163\165\160\160\157\162\164\145\144");
+            return NULL;
+         }
+         ++i;
+      }
+      if(i<n && coupledparallel(csstack_at(&icacherange->attr_names,i),"\163\164\141\156\144\141\154\157\156\145"))
+      {
+         const cbuffer_t* videoprobe=csstack_at(&icacherange->attr_values,i);
+         if(!coupledparallel(videoprobe,"\171\145\163") && !coupledparallel(videoprobe,"\156\157"))
+         {
+            eventcreate(icacherange,"\163\164\141\156\144\141\154\157\156\145\040\155\165\163\164\040\142\145\040\047\171\145\163\047\040\157\162\040\047\156\157\047");
+            return NULL;
+         }
+         ++i;
+      }
+      if(i!=n)
+      {
+         eventcreate(icacherange,"\111\156\166\141\154\151\144\040\130\115\114\040\144\145\143\154\141\162\141\164\151\157\156\040\141\164\164\162\151\142\165\164\145\040\157\162\040\157\162\144\145\162");
+         return NULL;
+      }
+      icacherange->in_decl=0;
       icacherange->event=xparserXML;
       return (stubhandler*)EVENT;
    }
@@ -123141,6 +130335,11 @@ static stubhandler* SHRIEK(context* icacherange,const uint32 disableprivileged)
 {
    if (disableprivileged=='\055') return (stubhandler*)COMMENT_1;
    if (disableprivileged=='\133') {
+      if(!icacherange->tag_stack.pos)
+      {
+         eventcreate(icacherange,"\103\104\101\124\101\040\157\165\164\163\151\144\145\040\144\157\143\165\155\145\156\164\040\145\154\145\155\145\156\164");
+         return NULL;
+      }
       stacknormal(icacherange,1); 
       return (stubhandler*)CDATA_1;
    }
@@ -123180,7 +130379,11 @@ static stubhandler* COMM_END1(context* icacherange,const uint32 disableprivilege
 
 static stubhandler* COMM_END2(context* icacherange,const uint32 disableprivileged) 
 {
-   if (disableprivileged!='\076') return (disableprivileged=='\055') ? (stubhandler*)COMM_END2 : (stubhandler*)XMLCOMMENT;
+   if (disableprivileged!='\076')
+   {
+      eventcreate(icacherange,"\104\157\165\142\154\145\040\150\171\160\150\145\156\040\151\156\040\130\115\114\040\143\157\155\155\145\156\164");
+      return NULL;
+   }
 
    debuglevel(icacherange,-3); 
    icacherange->event=xparserCOMMENT;
@@ -123233,6 +130436,18 @@ static stubhandler* CDATA_END2(context* icacherange,const uint32 disableprivileg
 
 static stubhandler* XMLTEXT(context* icacherange,const uint32 disableprivileged) 
 {
+   if(disableprivileged=='\076' && icacherange->text_brackets==2)
+   {
+      eventcreate(icacherange,"\047\135\135\076\047\040\151\163\040\156\157\164\040\141\154\154\157\167\145\144\040\151\156\040\143\150\141\162\141\143\164\145\162\040\144\141\164\141");
+      return NULL;
+   }
+   if(disableprivileged=='\135')
+   {
+      if(icacherange->text_brackets<2)
+         ++icacherange->text_brackets;
+   }
+   else
+      icacherange->text_brackets=0;
    if (disableprivileged == '\074') {
       currentkprobe(icacherange,&XMLTEXT);
       ownerdepth(icacherange,-1);
@@ -123257,9 +130472,7 @@ static stubhandler* XMLTEXT(context* icacherange,const uint32 disableprivileged)
       fpregsoffset(&icacherange->entity);
       return (stubhandler*)START_ENTITY;
    }
-   if (icacherange->tpos == NO_POS) {
-      icacherange->tpos = icacherange->buffpos; 
-   }
+   _XzY0x275(icacherange);
    return (stubhandler*)XMLTEXT;
 }
 
@@ -123286,6 +130499,11 @@ static stubhandler* finishNumEntity(context* icacherange)
    uint32 ent;
    removeunwind(icacherange,-1);
    ent = restartcounter(cstr_str(&icacherange->entity));
+   if(!ent)
+   {
+      eventcreate(icacherange,"\111\156\166\141\154\151\144\040\156\165\155\145\162\151\143\040\143\150\141\162\141\143\164\145\162\040\162\145\146\145\162\145\156\143\145");
+      return NULL;
+   }
    if (is7bit((ent))) {
       nresetdevice(&icacherange->text,(unsigned char)ent);
    }
@@ -123359,7 +130577,6 @@ static stubhandler* DECL(context* icacherange,const uint32 disableprivileged)
       if (coupledparallel(&icacherange->text,declTags[i]))
          break;
    }
-   syscalltrace(icacherange);
    if (i==sizeof(declTags)/sizeof(const char*)) {
       const char* eventkillable[]={
          "\111\156\166\141\154\151\144\040\156\141\155\145\040\050\047",
@@ -123370,6 +130587,15 @@ static stubhandler* DECL(context* icacherange,const uint32 disableprivileged)
       set_strerr(icacherange,eventkillable);
       return NULL;
    }
+   if((i==0 && (icacherange->doctype_seen || icacherange->in_subset)) ||
+      (i!=0 && !icacherange->in_subset))
+   {
+      eventcreate(icacherange,"\104\145\143\154\141\162\141\164\151\157\156\040\151\156\040\151\156\166\141\154\151\144\040\160\157\163\151\164\151\157\156");
+      return NULL;
+   }
+   if(i==0)
+      icacherange->doctype_seen=1;
+   stacknormal(icacherange,1);
    return (stubhandler*)declStates[i];
 }
 
@@ -123386,7 +130612,13 @@ static stubhandler* DECL_stub(context* icacherange,const uint32 disableprivilege
       syscalltrace(icacherange);
       return (stubhandler*)popState(icacherange);
    }
+   else if(disableprivileged=='\074' || disableprivileged=='\135' || disableprivileged=='\133')
+   {
+      eventcreate(icacherange,"\111\156\166\141\154\151\144\040\104\124\104\040\144\145\143\154\141\162\141\164\151\157\156\040\144\145\154\151\155\151\164\145\162");
+      return NULL;
+   }
    
+   syscalltrace(icacherange);
    return (stubhandler*)st;
 }
 
@@ -123405,36 +130637,160 @@ static stubhandler* ATTLIST(context* icacherange,const uint32 disableprivileged)
    return DECL_stub(icacherange,disableprivileged,&ATTLIST);
 }
 
-static stubhandler* DOCTYPE(context* icacherange,const uint32 disableprivileged) 
+
+static uint32 nameCodepoint(const unsigned char** pp)
 {
-   if (icacherange->quote_ch) {
-      if (disableprivileged == icacherange->quote_ch) {
-         icacherange->quote_ch = 0;
-      }
+   const unsigned char* s=*pp;
+   unsigned int n=utf8Count[*s];
+   uint32 guestconfig2;
+   unsigned int i;
+   if(n==1)
+   {
+      *pp=s+1;
+      return *s;
    }
-   else if ((disableprivileged == '\042') || (disableprivileged == '\047'))
-      icacherange->quote_ch = (unsigned char)disableprivileged;
-   else if (disableprivileged == '\076') {
-      statehandler* st = popState(icacherange);
-      syscalltrace(icacherange);
-      return (st == &XMLTEXT) ? (stubhandler*)ROOT : (stubhandler*)st;
-   }
-   else if (disableprivileged == '\133') {
-      currentkprobe(icacherange,&DOCTYPE);
-      return (stubhandler*)MARKUP;
-   }
-   return (stubhandler*)DOCTYPE; 
+   guestconfig2=*s & utf8Mask[n];
+   for(i=1;i<n;++i)
+      guestconfig2=(guestconfig2<<6) | (s[i]&0x3F);
+   *pp=s+n;
+   return guestconfig2;
 }
 
-static stubhandler* MARKUP(context* icacherange,const uint32 disableprivileged) 
+static void skipSpace(const unsigned char** pp)
 {
-   if (disableprivileged == '\135') return (stubhandler*)popState(icacherange);
-   if (disableprivileged == '\074') {
+   while(isXmlWS(**pp))
+      ++*pp;
+}
+
+static int externalLiteral(const unsigned char** pp,int _XzY0x272)
+{
+   const unsigned char* s=*pp;
+   unsigned char _XzY0x274=*s++;
+   if(_XzY0x274!='\047' && _XzY0x274!='\042')
+      return 0;
+   while(*s && *s!=_XzY0x274)
+   {
+      if(_XzY0x272 && !((*s>='\141' && *s<='\172') || (*s>='\101' && *s<='\132') ||
+                      (*s>='\060' && *s<='\071') ||
+                      strchr("\040\015\012\055\047\050\051\053\054\056\057\072\075\077\073\041\052\043\100\044\137\045",*s)))
+         return 0;
+      ++s;
+   }
+   if(!*s)
+      return 0;
+   *pp=s+1;
+   return 1;
+}
+
+static int _XzY0x26A(context* icacherange)
+{
+   const unsigned char* s;
+   const unsigned char* _XzY0x265;
+   const unsigned char* prctlenable;
+   uint32 guestconfig2;
+   ownerdepth(icacherange,-1);
+   if(icacherange->allocator.failed)
+      return 0;
+   s=(const unsigned char*)cstr_str(&icacherange->text);
+   skipSpace(&s);
+   _XzY0x265=s;
+   prctlenable=s;
+   guestconfig2=nameCodepoint(&prctlenable);
+   if(!isNameStart(guestconfig2))
+      return 0;
+   s=prctlenable;
+   while(*s)
+   {
+      prctlenable=s;
+      guestconfig2=nameCodepoint(&prctlenable);
+      if(!isNameChar(guestconfig2))
+         break;
+      s=prctlenable;
+   }
+   hsmmc2resource(&icacherange->doctype_name,_XzY0x265,(size_t)(s-_XzY0x265));
+   if(*s && !isXmlWS(*s))
+      return 0;
+   skipSpace(&s);
+   if(*s)
+   {
+      int _XzY0x272;
+      if(!strncmp((const char*)s,"\123\131\123\124\105\115",6))
+         _XzY0x272=0;
+      else if(!strncmp((const char*)s,"\120\125\102\114\111\103",6))
+         _XzY0x272=1;
+      else
+         return 0;
+      s+=6;
+      if(!isXmlWS(*s))
+         return 0;
+      skipSpace(&s);
+      if(!externalLiteral(&s,_XzY0x272))
+         return 0;
+      if(_XzY0x272)
+      {
+         if(!isXmlWS(*s))
+            return 0;
+         skipSpace(&s);
+         if(!externalLiteral(&s,0))
+            return 0;
+      }
+      skipSpace(&s);
+   }
+   return !*s;
+}
+
+static stubhandler* DOCTYPE(context* icacherange,const uint32 disableprivileged)
+{
+   if(icacherange->quote_ch)
+   {
+      if(disableprivileged==icacherange->quote_ch)
+         icacherange->quote_ch=0;
+   }
+   else if(disableprivileged=='\042' || disableprivileged=='\047')
+      icacherange->quote_ch=(unsigned char)disableprivileged;
+   else if(disableprivileged=='\076' || disableprivileged=='\133')
+   {
+      if(!_XzY0x26A(icacherange))
+      {
+         eventcreate(icacherange,"\111\156\166\141\154\151\144\040\104\117\103\124\131\120\105\040\150\145\141\144\145\162");
+         return NULL;
+      }
+      syscalltrace(icacherange);
+      if(disableprivileged=='\076')
+         return (stubhandler*)popState(icacherange);
+      icacherange->in_subset=1;
+      return (stubhandler*)MARKUP;
+   }
+   return (stubhandler*)DOCTYPE;
+}
+
+static stubhandler* DOCTYPE_END(context* icacherange,const uint32 disableprivileged)
+{
+   if(isXmlWS(disableprivileged))
+      return (stubhandler*)DOCTYPE_END;
+   if(disableprivileged=='\076')
+      return (stubhandler*)popState(icacherange);
+   patchmckinley(icacherange,disableprivileged,"\141\146\164\145\162\040\104\124\104\040\163\165\142\163\145\164\073\040\145\170\160\145\143\164\151\156\147\040\047\076\047");
+   return NULL;
+}
+
+static stubhandler* MARKUP(context* icacherange,const uint32 disableprivileged)
+{
+   if(disableprivileged=='\135')
+   {
+      icacherange->in_subset=0;
+      return (stubhandler*)DOCTYPE_END;
+   }
+   if(disableprivileged=='\074')
+   {
       currentkprobe(icacherange,&MARKUP);
       syscalltrace(icacherange);
       return (stubhandler*)START_TAG;
    }
-   return (stubhandler*)MARKUP;
+   if(isXmlWS(disableprivileged))
+      return (stubhandler*)MARKUP;
+   patchmckinley(icacherange,disableprivileged,"\151\156\040\104\124\104\040\163\165\142\163\145\164\040\050\160\141\162\141\155\145\164\145\162\040\145\156\164\151\164\151\145\163\040\141\162\145\040\156\157\164\040\163\165\160\160\157\162\164\145\144\051");
+   return NULL;
 }
 
 static stubhandler* EVENT(context* icacherange,const uint32 disableprivileged)  
@@ -123462,6 +130818,9 @@ static int ebuscsetup(context* icacherange,xparser_callback fn)
    const char* relocationaddress = "";
    int kexeccrash = 0;
    int ret;
+
+   if(icacherange->allocator.failed)
+      return -1;
 
    switch(evt) {
       case xparserXML:
@@ -123496,6 +130855,9 @@ static int ebuscsetup(context* icacherange,xparser_callback fn)
       pciercxcfg011(cacheflush,0l);
       attrs = (const char**)cacheflush->pData;
    }
+
+   if(icacherange->allocator.failed)
+      return -1;
 
    ret = fn(icacherange,icacherange->userdata,evt,name,attrs,relocationaddress);
    icacherange->event = xparserNOEVENT;
@@ -123533,12 +130895,25 @@ static uint32 matchdevice(context* icacherange,const unsigned char ch)
    }
    icacherange->utf8pos = icacherange->utf8count = 0;
 
+   icacherange->charlen=(unsigned char)debugstart;
+   if((debugstart==2 && codepoint<0x80) ||
+      (debugstart==3 && codepoint<0x800) ||
+      (debugstart==4 && codepoint<0x10000))
+      return 0xFFFF;
+
    return (codepoint && isXmlChar(codepoint)) ? codepoint : 0xFFFE; 
 }
 
 
-int xparser_parse(context* icacherange,const char* resourceaddress64, size_t globalgpios)
+static int _XzY0x27A(context* icacherange,const char* resourceaddress64, size_t globalgpios)
 {
+   if(icacherange->allocator.failed)
+      return -1;
+   if(icacherange->finished)
+   {
+      eventcreate(icacherange,"\104\157\143\165\155\145\156\164\040\141\154\162\145\141\144\171\040\146\151\156\151\163\150\145\144\072\040\162\145\163\145\164\040\162\145\161\165\151\162\145\144");
+      return -1;
+   }
    if (icacherange->state == 0L) { 
       eventcreate(icacherange,"\145\162\162\157\162\040\146\154\141\147\040\163\145\164\040\072\040\162\145\163\145\164\040\162\145\161\165\151\162\145\144");
       return -1L;
@@ -123551,13 +130926,12 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
       eventcreate(icacherange,"\116\165\154\154\040\104\141\164\141\040\160\164\162");
       return -1L;
    }
-   if (!globalgpios) {
-      eventcreate(icacherange,"\116\157\040\104\141\164\141");
+   if (!globalgpios || globalgpios==(size_t)-1) {
+      eventcreate(icacherange,"\111\156\166\141\154\151\144\040\151\156\160\165\164\040\154\145\156\147\164\150");
       return -1L;
    }
 
    icacherange->buff = (const unsigned char*)resourceaddress64;
-   icacherange->bufflen = globalgpios;
    icacherange->buffpos = 0;
    fpregsoffset(&icacherange->errmsg);
 
@@ -123568,14 +130942,26 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
          int ret;
          icacherange->event = xparserSTART;
          ret = ebuscsetup(icacherange,fn);
-         if (ret) return ret;
+         if (ret)
+         {
+            icacherange->state=NULL;
+            return ret;
+         }
       }
    }
 
    do { 
       uint32 codepoint;
       unsigned char ch = icacherange->buff[icacherange->buffpos];
+      if(icacherange->allocator.failed)
+         return -1;
+      if(icacherange->count == (size_t)-1)
+      {
+         eventcreate(icacherange,"\111\156\160\165\164\040\142\171\164\145\040\143\157\165\156\164\040\157\166\145\162\146\154\157\167");
+         return -1;
+      }
       ++icacherange->count;
+      icacherange->charlen=1;
 
       if (ch & 0x80) { 
          codepoint = matchdevice(icacherange,ch);
@@ -123589,11 +130975,12 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
             return -1L;
          }
          
-         if (icacherange->state==&ROOT && icacherange->count==3 &&
+         if (!icacherange->bom && icacherange->state==&ROOT && icacherange->count==3 &&
              icacherange->utf8buff[0]==0xEF &&
              icacherange->utf8buff[1]==0xBB &&
              icacherange->utf8buff[2]==0xBF) {
             icacherange->count = 0;
+            icacherange->bom = 1;
             continue;
          }
       } else if (icacherange->utf8count) {
@@ -123623,6 +131010,12 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
          }
       }
 
+      if(((codepoint=='\012' || codepoint=='\015') && icacherange->line==UINT_MAX) ||
+         (codepoint!='\012' && codepoint!='\015' && icacherange->col==UINT_MAX))
+      {
+         eventcreate(icacherange,"\123\157\165\162\143\145\040\160\157\163\151\164\151\157\156\040\157\166\145\162\146\154\157\167");
+         return -1;
+      }
       if (codepoint == '\012') { 
          ++icacherange->line;
          icacherange->col = 0; 
@@ -123630,16 +131023,6 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
       else if (codepoint == '\015') { 
          icacherange->eol = 1;
          codepoint = '\012';
-         if (icacherange->tpos) { 
-            ownerdepth(icacherange,-1);
-            nresetdevice(&icacherange->text,'\012');
-            icacherange->tpos = icacherange->buffpos+1; 
-         }
-         if (icacherange->epos != NO_POS) { 
-            removeunwind(icacherange,-1);
-            nresetdevice(&icacherange->entity,'\012');
-            icacherange->epos = icacherange->buffpos+1; 
-         }
          ++icacherange->line;
          icacherange->col = 1; 
       }
@@ -123652,9 +131035,25 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
          return -1L;
       }
 
+      
+      if(ch=='\015' && icacherange->tpos != NO_POS &&
+         icacherange->tpos <= icacherange->buffpos)
+      {
+         ownerdepth(icacherange,-1);
+         nresetdevice(&icacherange->text,'\012');
+         icacherange->tpos=icacherange->buffpos+1;
+      }
+      if(icacherange->allocator.failed)
+         return -1;
+
       if (icacherange->state == &EVENT) {
          xparser_callback fn = icacherange->event_handlers[icacherange->event];
          icacherange->state = popState(icacherange);
+         if(!icacherange->state)
+         {
+            eventcreate(icacherange,"\111\156\164\145\162\156\141\154\040\160\141\162\163\145\162\040\163\164\141\164\145\040\163\164\141\143\153\040\165\156\144\145\162\146\154\157\167");
+            return -1;
+         }
 
          if (fn) {
             int ret = ebuscsetup(icacherange,fn);
@@ -123662,6 +131061,11 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
                icacherange->state = 0L;
                return ret;
             }
+         }
+         else
+         {
+            icacherange->event=xparserNOEVENT;
+            fpregsoffset(&icacherange->data);
          }
       }
    } while (++icacherange->buffpos < globalgpios);
@@ -123676,25 +131080,87 @@ int xparser_parse(context* icacherange,const char* resourceaddress64, size_t glo
    }
 
    icacherange->buff = 0L;
-   return 0;
+   return icacherange->allocator.failed ? -1 : 0;
 }
+
+#if XPARSER_ALLOC
+context* xparser_createalloc(xparser_alloc pa, void* ud)
+{
+   context* icacherange;
+   xparser_allocator consoleiobase;
+   if(!pa)
+      return NULL;
+   consoleiobase.callback=pa;
+   consoleiobase.userdata=ud;
+   consoleiobase.failed=0;
+   icacherange=pa(ud,NULL,0,sizeof(context));
+   if(icacherange)
+      _XzY0x270(icacherange,&consoleiobase);
+   return icacherange;
+}
+#endif
 
 context* xparser_create(void)
 {
-   context* icacherange = allocate(sizeof(context));
-   if (icacherange) memset(icacherange,0,sizeof(context));
+#if XPARSER_ALLOC
+   return xparser_createalloc(pAlloc,allocUD);
+#else
+   xparser_allocator consoleiobase;
+   context* icacherange=baRealloc(NULL,sizeof(context));
+   consoleiobase.failed=0;
+   if(icacherange)
+      _XzY0x270(icacherange,&consoleiobase);
    return icacherange;
+#endif
+}
+
+int xparser_parse(context* icacherange,const char* resourceaddress64,size_t globalgpios)
+{
+   int ret;
+   if(icacherange->busy)
+      return -1;
+   icacherange->busy=1;
+   ret=_XzY0x27A(icacherange,resourceaddress64,globalgpios);
+   if(ret)
+      icacherange->state=NULL;
+   icacherange->buff=NULL;
+   icacherange->busy=0;
+   return ret;
+}
+
+int xparser_finish(context* icacherange)
+{
+   int ret=0;
+   if(icacherange->busy)
+      return -1;
+   icacherange->busy=1;
+   if(icacherange->allocator.failed || !icacherange->state)
+      ret=-1;
+   else if(icacherange->utf8count || icacherange->state!=ROOT ||
+           !icacherange->has_doc || icacherange->state_stack.pos)
+   {
+      eventcreate(icacherange,"\111\156\143\157\155\160\154\145\164\145\040\130\115\114\040\151\156\160\165\164");
+      ret=-1;
+   }
+   else
+      icacherange->finished=1;
+   icacherange->busy=0;
+   return ret;
 }
 
 int xparser_init(context* icacherange, xparser_handlers* p, void* fixupfinal,unsigned int enablechannel)
 {
    int i;
    xparser_callback fn;
+   if(icacherange->busy)
+      return -1;
+   icacherange->busy=1;
    if (icacherange->init) {
       if ((fn = icacherange->event_handlers[xparserTERM]) != NULL) { 
          fn(icacherange,icacherange->userdata,xparserTERM,"",nullpair,"");
       }
       disabledexits(icacherange);
+      icacherange->busy=1;
    }
    configureac97reset(icacherange);
    icacherange->userdata = fixupfinal;
@@ -123702,13 +131168,19 @@ int xparser_init(context* icacherange, xparser_handlers* p, void* fixupfinal,uns
    if (p) {
       if ((fn = (*p)[xparserINIT]) != NULL) { 
          int ret = fn(icacherange,icacherange->userdata,xparserINIT,"",nullpair,"");
-         if (ret) return ret;
+         if (ret)
+         {
+            icacherange->state=NULL;
+            icacherange->busy=0;
+            return ret;
+         }
       }
       for (i=0;i<xparserLAST;++i) {
          icacherange->event_handlers[i] = (*p)[i];
       }
    }
    icacherange->init=1;
+   icacherange->busy=0;
    return 0;
 }
 
@@ -123717,6 +131189,9 @@ int xparser_reset(context* icacherange, int vtimercntvoff)
    xparser_callback fn = icacherange->event_handlers[xparserRESET];
    unsigned int driverchipcommon = icacherange->flags;
    int ret = 0;
+   if(icacherange->busy)
+      return -1;
+   icacherange->busy=1;
 
    if (fn) ret = fn(icacherange,icacherange->userdata,xparserRESET,"",nullpair,"");
 
@@ -123726,25 +131201,51 @@ int xparser_reset(context* icacherange, int vtimercntvoff)
       int i;
       for(i=0;i<xparserLAST;++i) h[i]=icacherange->event_handlers[i];
       disabledexits(icacherange);
+      icacherange->busy=1;
       icacherange->userdata = ud;
       for(i=0;i<xparserLAST;++i) icacherange->event_handlers[i] = h[i];
 
    }
    configureac97reset(icacherange);
    icacherange->flags = driverchipcommon;
+   icacherange->init=1;
+   icacherange->busy=0;
+   return ret;
+}
+
+int xparser_term(context* icacherange)
+{
+   int ret=0;
+   xparser_callback fn;
+   if(icacherange->busy)
+      return -1;
+   icacherange->busy=1;
+   fn=icacherange->event_handlers[xparserTERM];
+   if(fn)
+      ret=fn(icacherange,icacherange->userdata,xparserTERM,"",nullpair,"");
+   disabledexits(icacherange);
    return ret;
 }
 
 void xparser_destroy(context* icacherange)
 {
-   xparser_callback fn = icacherange->event_handlers[xparserTERM];
-   if (fn) fn(icacherange,icacherange->userdata,xparserTERM,"",nullpair,"");
-   disabledexits(icacherange);
-   de_allocate(icacherange,sizeof(context));
+   if(!icacherange || icacherange->busy)
+      return;
+   xparser_term(icacherange);
+   icacherange->busy=1;
+#if XPARSER_ALLOC
+   icacherange->allocator.callback(icacherange->allocator.userdata,
+                               icacherange,sizeof(context),0);
+#else
+   baFree(icacherange);
+#endif
 }
 
 
-const char* xparser_errormsg(context* icacherange) {return cstr_str(&icacherange->errmsg);}
+const char* xparser_errormsg(context* icacherange)
+{
+   return icacherange->allocator.failed ? "\157\165\164\040\157\146\040\155\145\155\157\162\171" : cstr_str(&icacherange->errmsg);
+}
 size_t xparser_count(context* icacherange)         {return icacherange->count;}
 unsigned int xparser_line(context* icacherange)    {return icacherange->line;}
 unsigned int xparser_col(context* icacherange)     {return icacherange->col;}
@@ -124610,7 +132111,7 @@ L_defPorts:
       SoDispCon_setTCPNoDelay((SoDispCon*)o, TRUE);
       if(pcibiosconfig)
       {
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
          return updateproperty(o, E_NOT_TRUSTED);
 #else
          SoDispCon_setReadTmo((SoDispCon*)o, o->readTmo);
@@ -125006,7 +132507,7 @@ HttpClient_sendData(HttpClient* o, const void* alloccontroller, int len)
 }
 
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 SharkSslCon*
 HttpClient_getSharkSslCon(HttpClient* o)
 {
@@ -125017,11 +132518,11 @@ HttpClient_getSharkSslCon(HttpClient* o)
 }
 #endif
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 SharkSslConTrust
 HttpClient_trusted(HttpClient* o)
 {
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
    return SharkSslConTrust_NotSSL;
 #else
    SharkSslCon* sc;
@@ -125075,7 +132576,7 @@ HttpClient_destructor(HttpClient* o)
 
 #include <JVal.h>
 
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
 #define FMT_FILE_SIZE  "\045\154\154\165"
 #else
 #define FMT_FILE_SIZE  "\045\165"
@@ -125096,6 +132597,8 @@ static const HttpClientKeyVal defHeader[2]={
 
 static int secondarystartup(NetIo* o, const char* apecssysdata, U16 guestconfig1);
 static int gpio3resources(NetIo* o, BaBool performreset);
+static void compatcache(NetIo* o);
+static int _XzY0x25F(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st);
 
 static void
 accesschecked(NetIo* o)
@@ -125211,7 +132714,7 @@ static int
 earlyinitcall(DirIntfPtr fdc37m81xconfig, IoStat* st)
 {
    JErr e;
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
    S64 icachealiases;
 #else
    S32 icachealiases;
@@ -125222,7 +132725,7 @@ earlyinitcall(DirIntfPtr fdc37m81xconfig, IoStat* st)
    if(o->valIter)
    {
       JVal_get(o->valIter, &e, "\173"
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
                "\154"
 #else
                "\144"
@@ -125657,41 +133160,48 @@ NetIo_openRes(IoIntfPtr fdc37m81xconfig, const char* name, U32 shashdigestsize,
       NetIoRes* res = (NetIoRes*)baMalloc(sizeof(NetIoRes));
       if(res)
       {
-         voltageconfig(res, o, shashdigestsize);
+         char* url=0;
+         prefetchdisable(o);
          if(shashdigestsize == OpenRes_READ)
          {
-            char* url = HttpClient_isURL(name) > 0 ? baStrdup(name) :
+            *sffsdrnandflash=E_MALLOC;
+            url = HttpClient_isURL(name) > 0 ? baStrdup(name) :
                NetIo_mkURL(o, name, -1, sffsdrnandflash);
             if(url)
             {
-               res->r.url=url;
-               if( (*sffsdrnandflash = fdc37m81xconfig->statFp(fdc37m81xconfig, url, &st)) == 0)
-               {
-                  if(st.isDir)
-                     *sffsdrnandflash=IOINTF_EXIST;
-                  else
-                  {
-                     res->r.size=st.size;
-                     handlersetup=(ResIntfPtr)res;
-                  }
-               }
+               *sffsdrnandflash=_XzY0x25F(fdc37m81xconfig, url, &st);
+               if(!*sffsdrnandflash && st.isDir)
+                  *sffsdrnandflash=IOINTF_EXIST;
             }
-            else
-               *sffsdrnandflash = E_MALLOC;
          }
          else
          {
-            prefetchdisable(o);
-            if( ! (*sffsdrnandflash = pxa270dm9000(
-                      o,o->cCon,HttpMethod_Put,name,-1,0,defHeader,FALSE)) )
-            {
-               handlersetup=(ResIntfPtr)res;
-            }
-            ThreadMutex_release(&o->netMutex);
+            compatcache(o);
+            *sffsdrnandflash=pxa270dm9000(
+               o,o->cCon,HttpMethod_Put,name,-1,0,defHeader,FALSE);
+            if(*sffsdrnandflash && o->cCon)
+               HttpClient_close(o->cCon);
          }
-         o->cCon->mode |= HttpClient_InUseByNetIoRes;
-         if(!handlersetup)
-            camifresource((ResIntfPtr)res);
+         if(!*sffsdrnandflash)
+         {
+            
+            voltageconfig(res, o, shashdigestsize);
+            if(shashdigestsize == OpenRes_READ)
+            {
+               res->r.url=url;
+               res->r.size=st.size;
+            }
+            o->cCon->mode |= HttpClient_InUseByNetIoRes;
+            handlersetup=(ResIntfPtr)res;
+         }
+         else
+         {
+            
+            if(url)
+               baFree(url);
+            baFree(res);
+         }
+         ThreadMutex_release(&o->netMutex);
       }
       else
          *sffsdrnandflash = E_MALLOC;
@@ -125884,13 +133394,13 @@ NetIo_rmDir(IoIntfPtr fdc37m81xconfig, const char* name, const char** flushoffse
 }
 
 
+
 static int
-graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
+_XzY0x25F(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
 {
    int sffsdrnandflash;
    int read64uint8 = FALSE;
    NetIo* o = (NetIo*)fdc37m81xconfig;
-   prefetchdisable(o);
    compatcache(o);
    sffsdrnandflash=slavechannels(o,o->cCon,HttpMethod_Head,name,-1,0,0,FALSE);
    st->isDir=FALSE;
@@ -125903,7 +133413,7 @@ graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
          read64uint8=TRUE;
       }
    }
-   else if(HttpClient_getHeaderValue(o->cCon,"\102\141\111\163\104\151\162")) 
+   else if(sffsdrnandflash == 0 && HttpClient_getHeaderValue(o->cCon,"\102\141\111\163\104\151\162"))
    {
       read64uint8=TRUE;
    }
@@ -125911,6 +133421,7 @@ graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
    {
       if(o->cCon->httpStatus == 200)
       {
+         const char* _XzY0x26C;
          st->size=U32_atoi(HttpClient_getHeaderValue(o->cCon,"\103\157\156\164\145\156\164\055\114\145\156\147\164\150"));
          if(st->size == 0) 
          {  
@@ -125926,8 +133437,8 @@ graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
             }
          }
          
-         st->lastModified=baConvHexToU32(
-            (U8*)HttpClient_getHeaderValue(o->cCon,"\105\164\141\147"));
+         _XzY0x26C=HttpClient_getHeaderValue(o->cCon,"\105\164\141\147");
+         st->lastModified=_XzY0x26C && strlen(_XzY0x26C) >= 8 ? baConvHexToU32(_XzY0x26C) : 0;
 
          
          if( ! HttpClient_getHeaderValue(o->cCon, "\110\164\164\160\122\145\163\115\147\162") )
@@ -125936,8 +133447,19 @@ graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
       else
          sffsdrnandflash=supportsgeneric(o->cCon->httpStatus);
    }
-   ThreadMutex_release(&o->netMutex);
    return sffsdrnandflash; 
+}
+
+
+static int
+graphcaller(IoIntfPtr fdc37m81xconfig, const char* name, IoStat* st)
+{
+   int sffsdrnandflash;
+   NetIo* o = (NetIo*)fdc37m81xconfig;
+   prefetchdisable(o);
+   sffsdrnandflash=_XzY0x25F(fdc37m81xconfig, name, st);
+   ThreadMutex_release(&o->netMutex);
+   return sffsdrnandflash;
 }
 
 
@@ -126060,7 +133582,7 @@ ktextrepmask(IoIntfPtr fdc37m81xconfig,const char* name,void* a,void* b)
          if(helperboard)
          {
             
-            if( ! (o->cCon->mode & HttpClient_InUseByNetIoRes) )
+            if(o->cCon && !(o->cCon->mode & HttpClient_InUseByNetIoRes))
             {
                ni->cCon = o->cCon;
                o->cCon=0;
@@ -126248,18 +133770,17 @@ NetIo_setRootDir(NetIo* o, const char* url)
             basprintf(mcasp0resources, "\045\163\057",url);
          else
             strcpy(mcasp0resources, url);
-         if( (sffsdrnandflash=graphcaller((IoIntfPtr)o, mcasp0resources, &st)) == 0)
+         sffsdrnandflash=graphcaller((IoIntfPtr)o, mcasp0resources, &st);
+         if(sffsdrnandflash == 0 && st.isDir)
          {
-            if(st.isDir)
-            {
-               o->rootPath = mcasp0resources;
-               o->rootPathLen = iStrlen(mcasp0resources);
-            }
-            else
-            {
-               baFree(mcasp0resources);
+            o->rootPath = mcasp0resources;
+            o->rootPathLen = iStrlen(mcasp0resources);
+         }
+         else
+         {
+            baFree(mcasp0resources);
+            if(sffsdrnandflash == 0)
                sffsdrnandflash = IOINTF_ENOENT;
-            }
          }
       }
       else
@@ -126291,7 +133812,7 @@ NetIo_destructor(NetIo* o)
    memset(o, 0, sizeof(NetIo));
 }
 
-#ifdef BAS_LOADED
+#if BA_ENABLE_MDNS == 1
 
 
 
@@ -126299,10 +133820,12 @@ NetIo_destructor(NetIo* o)
 #define BA_LIB 1
 #endif
 #include <BamDNS.h>
+
+#if BA_ENABLE_MDNS
 #include <string.h>
 
-#ifndef USE_DGRAM
-#error BamDNS requires USE_DGRAM in the BAS socket hwmoddeassert
+#if !BA_ENABLE_UDP
+#error BamDNS requires BA_ENABLE_UDP in the BAS socket hwmoddeassert
 #endif
 
 #define MDNS_REFRESH_MS 5000
@@ -126314,7 +133837,7 @@ typedef struct BamDNS_Timer {
 } BamDNS_Timer;
 
 #define MDNS_A 1
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define MDNS_AAAA 2
 #endif
 #define MDNS_NSEC 4
@@ -126396,7 +133919,7 @@ _XzY0x196(const BamDNS* o, U8* p)
    memset(p, 0, 8);
    p[1]=6;
    if(o->records & MDNS_A) p[2]=0x40;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(o->records & MDNS_AAAA) p[5]=8;
 #endif
    p[7]=1; 
@@ -126408,7 +133931,7 @@ _XzY0x19F(const BamDNS* o, U16 rightsvalid)
    U8 bit=0;
    if(rightsvalid == 255) return o->records;
    if(rightsvalid == 1) bit=MDNS_A;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(rightsvalid == 28) bit=MDNS_AAAA;
 #endif
    return bit & o->records ? bit : MDNS_NSEC;
@@ -126434,13 +133957,13 @@ _XzY0x1A1(const BamDNS* o, const U8* p, int len, int* pos,
       *pos+=10;
       end=*pos+buttonsbuffalo;
       if(end > len || (rightsvalid == 1 && buttonsbuffalo != 4)) return -1;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       if(rightsvalid == 28 && buttonsbuffalo != 16) return -1;
 #endif
       if(cls == 1 && _XzY0x194 >= ttl && _XzY0x19D(o,name,n))
       {
          if(rightsvalid == 1 && !memcmp(p+*pos,o->net.addr4,4)) bit=MDNS_A;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
          if(rightsvalid == 28 && !memcmp(p+*pos,o->net.addr6,16)) bit=MDNS_AAAA;
 #endif
          if(rightsvalid == 47)
@@ -126483,7 +134006,7 @@ _XzY0x195(const BamDNS* o, U8* p, int at, U8 fpemulthreshold, U16 ttl,
       }
       rightsvalid=bit == MDNS_A ? 1 : 47;
       rd=bit == MDNS_A ? 4 : 10;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       if(bit == MDNS_AAAA) { rightsvalid=28; rd=16; }
 #endif
       _XzY0x19E(p+at,rightsvalid);
@@ -126493,7 +134016,7 @@ _XzY0x195(const BamDNS* o, U8* p, int at, U8 fpemulthreshold, U16 ttl,
       _XzY0x19E(p+at+8,rd);
       at+=10;
       if(bit == MDNS_A) memcpy(p+at,o->net.addr4,4);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       else if(bit == MDNS_AAAA) memcpy(p+at,o->net.addr6,16);
 #endif
       else
@@ -126900,7 +134423,7 @@ _XzY0x1DE(BamDNS* o, const BamDNS_NetInfo* net)
          o->net.addr4[0]==127) return E_INVALID_PARAM;
       o->records|=MDNS_A;
    }
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(_XzY0x19C(o->net.addr6,16))
    {
       if(!o->net.ifIndex6 || !o->net.prefix6 || o->net.prefix6>128 ||
@@ -126954,7 +134477,7 @@ BamDNS_destructor(BamDNS* o)
    _XzY0x1A5(o,E_SOCKET_CLOSED);
 }
 
-#ifdef BAS_LOADED
+#if BA_ENABLE_MDNS_LUA
 #include <balua.h>
 
 #define MDNS_META "\102\141\155\104\116\123"
@@ -127044,6 +134567,8 @@ BamDNS_luaopen(lua_State* L, const BamDNS_NetInfo* _XzY0x1A9)
 
 #endif
 
+#endif 
+
 #endif
 
 
@@ -127069,7 +134594,7 @@ hugepagerange(LHttpClient* lc, lua_State* L, int err)
    int ret=2;
    lua_pushnil(L);
    lua_pushstring(L, baErr2Str(err));
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    if(E_SHARK_ALERT_RECV == err)
    {
       int sffsdrnandflash;
@@ -127319,7 +134844,7 @@ r4000tlbchange(lua_State* L)
    {
       helperpacket=FALSE;
    }
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    if(url[helperpacket ? 2 : 4] == '\163' &&
       !((HttpClient*)lc)->sharkSslClient) 
    {
@@ -127428,7 +134953,7 @@ emulateldrstr(lua_State* L)
 }
 
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 static int
 returnoffset(lua_State* L)
 {
@@ -127448,7 +134973,7 @@ disarmkprobe(lua_State* L)
 static int
 ethernetclkdm(lua_State* L)
 {
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL
    const char* ethernatenable="\116\117\137\123\110\101\122\113\123\123\114";
 #else
    const char* ethernatenable;
@@ -127772,6 +135297,8 @@ mmcsd1resources(lua_State* L)
 {
    LHttpClient* lc = tc(L);
    HttpClient_close((HttpClient*)lc);
+   
+   lua_gc(L, LUA_GCSTEP, (size_t)0);
    lua_pushboolean(L, TRUE);
    return 1;
 }
@@ -127784,7 +135311,7 @@ lGc(lua_State* L)
    if(c->proxy) baFree((char*)c->proxy);
    if(c->proxyUserPass) baFree((char*)c->proxyUserPass);
    if(c->intfName) baFree((char*)c->intfName);
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    if(c->sharkSslClient)
    {
       lsharkssl_unlock(L, c->sharkSslClient);
@@ -127803,7 +135330,7 @@ static const luaL_Reg httpClientLib[] = {
    {"\150\145\141\144\145\162", lk043t1dg01pdata},
    {"\150\145\141\144\145\162\160\141\151\162\163", reservelegacy},
    {"\143\157\157\153\151\145", shashimport},
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    {"\143\145\162\164\151\146\151\143\141\164\145", returnoffset},
    {"\143\151\160\150\145\162", disarmkprobe},
 #endif
@@ -127873,7 +135400,7 @@ allocnodedata(lua_State* L)
       const char* apecsmachine;
       lua_Number hwmoddeassert;
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
       lua_getfield(L, 1, "\163\150\141\162\153");
       shashdigestsize = (U8)lua_isuserdata(L, -1);
       lua_pop(L,1);
@@ -127882,10 +135409,10 @@ allocnodedata(lua_State* L)
 #endif
 
       apecssysdata = balua_getStringField(L, 1, "\160\162\157\170\171", 0);
-      if(apecssysdata && !(c->proxy = baStrdup(apecssysdata)))
+      if(apecssysdata && !(c->proxy=baLStrdup(L,apecssysdata)))
          goto mallocError;
       apecsmachine = balua_getStringField(L, 1, "\151\156\164\146", 0);
-      if(apecsmachine && !(c->intfName = baStrdup(apecsmachine)))
+      if(apecsmachine && !(c->intfName=baLStrdup(L,apecsmachine)))
          goto mallocError;
       lua_getfield(L, 1, "\160\162\157\170\171\160\157\162\164");
       hwmoddeassert = luaL_optnumber(L, -1, systemsuspend ? 1080 : 8080);
@@ -127969,7 +135496,7 @@ probetypes(lua_State* L)
       lua_pushliteral(L,"\151\156\166\141\154\151\144\161\165\145\162\171");
       return 2;
    }
-   dbdmaresume=baStrdup(relocationaddress);
+   dbdmaresume=baLStrdup(L,relocationaddress);
    lua_newtable(L);
    if(dbdmaresume)
    {
@@ -128716,13 +136243,15 @@ balua_luaio(lua_State *L)
 
 
 #ifndef hwmodlookup
-#include "../../src/plugins/SharkSSL/src/SharkSslCert.h"
+
 #endif
 
 #include "lxrc.h"
 
 static const char invalid[] = {"\151\156\166\141\154\151\144"};
+#if !SHARKSSL_PSA_CONSUMER
 static const char sha512final[] = {"\146\141\151\154\145\144"};
+#endif
 
 
 
@@ -128771,7 +136300,7 @@ clearrequest(lua_State *L, U8* alloccontroller, size_t len)
 }
 
 
-#if SHARKSSL_USE_MD5
+#if SHARKSSL_USE_MD5 || SHARKSSL_PSA_CONSUMER
 static int doublefnmsc(lua_State *L)
 {
    SharkSslMd5Ctx* registermcasp;
@@ -128804,7 +136333,7 @@ static int doublefnmsc(lua_State *L)
 #endif
 
 
-#if SHARKSSL_USE_SHA1
+#if SHARKSSL_USE_SHA1 || SHARKSSL_PSA_CONSUMER
 static int genericresume(lua_State *L)
 {
    SharkSslSha1Ctx* registermcasp;
@@ -128936,6 +136465,10 @@ static int reportdeath(lua_State *L)
 
 
 #if SHARKSSL_HMAC_API
+
+#if SHARKSSL_PSA_CONSUMER
+int balua_psaHmac(lua_State* L);
+#endif
 typedef struct {
    SharkSslHMACCtx super;
    U8 algoID;
@@ -129047,7 +136580,7 @@ static int
 pciercxcfg455(lua_State *L)
 {
    const char* ht = luaL_optstring(L,1,"\163\150\141\061");
-#if SHARKSSL_USE_MD5
+#if SHARKSSL_USE_MD5 || SHARKSSL_PSA_CONSUMER
    if(ht[0] == '\155' && !strcmp(ht,"\155\144\065"))
    {
       SharkSslMd5Ctx* registermcasp =(SharkSslMd5Ctx*)
@@ -129060,7 +136593,7 @@ pciercxcfg455(lua_State *L)
 #endif
    if(ht[0] == '\163' && ht[1] == '\150' && ht[2] == '\141')
    {
-#if SHARKSSL_USE_SHA1
+#if SHARKSSL_USE_SHA1 || SHARKSSL_PSA_CONSUMER
       if(ht[3] == '\061')
       {
          SharkSslSha1Ctx* registermcasp =(SharkSslSha1Ctx*)
@@ -129108,6 +136641,9 @@ pciercxcfg455(lua_State *L)
 #if SHARKSSL_HMAC_API
    if(!strcmp(ht,"\150\155\141\143"))
    {
+#if SHARKSSL_PSA_CONSUMER
+      return balua_psaHmac(L);
+#else
       LSharkSslHMACCtx* registermcasp;
       size_t keylen;
       const char* shouldcrash = luaL_checkstring(L,2);
@@ -129125,6 +136661,7 @@ pciercxcfg455(lua_State *L)
          lua_pushcclosure(L,clkdmallow,1);
          return 1;
       }
+#endif
    }
 #endif
    return luaL_error(L, "\125\156\153\156\157\167\156\040\141\154\147\157\162\151\164\150\155");
@@ -129149,6 +136686,7 @@ latencytimer(lua_State *L)
    return pciercxcfg455(L);
 }
 
+#if !SHARKSSL_PSA_CONSUMER
 typedef enum
 {
    RSA_PADDING_PKCS1 = 0,
@@ -129235,6 +136773,8 @@ doublefcmpez(lua_State *L, int ix, EncrDecrOptions* op)
 }
 
 
+#endif 
+
 static int
 deviceiisv4(SharkSslParseASN1* fixupconfig)
 {
@@ -129247,7 +136787,7 @@ static int
 secondaryharden(lua_State *L)
 {
    size_t len;
-   int allockuser,buttonsbuffalo,expectedLen,flashparts;
+   int allockuser,buttonsbuffalo,_XzY0x26F,flashparts;
    U8* r; 
    U8* s; 
    U8 startcounter[150];
@@ -129270,18 +136810,18 @@ secondaryharden(lua_State *L)
       {
          return reportpanic(L,invalid);
       }
-      expectedLen = buttonsbuffalo > allockuser ? buttonsbuffalo : allockuser;
-      expectedLen = expectedLen <= 32 ? 32 : (expectedLen <= 48 ? 48 : 66);
-      flashparts=expectedLen-buttonsbuffalo;
+      _XzY0x26F = buttonsbuffalo > allockuser ? buttonsbuffalo : allockuser;
+      _XzY0x26F = _XzY0x26F <= 32 ? 32 : (_XzY0x26F <= 48 ? 48 : 66);
+      flashparts=_XzY0x26F-buttonsbuffalo;
       if(flashparts)
          memset(r, 0, flashparts);
       memcpy(r+flashparts, probebroadcom, buttonsbuffalo);
-      flashparts=expectedLen-allockuser;
+      flashparts=_XzY0x26F-allockuser;
       if(flashparts)
          memset(s, 0, flashparts);
       memcpy(s+flashparts, fixupconfig.dataptr, allockuser);
-      lua_pushlstring(L, (char*)r, expectedLen);
-      lua_pushlstring(L, (char*)s, expectedLen);
+      lua_pushlstring(L, (char*)r, _XzY0x26F);
+      lua_pushlstring(L, (char*)s, _XzY0x26F);
       return 2;
    }
    
@@ -129319,6 +136859,7 @@ secondaryharden(lua_State *L)
    return 1;
 }
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static int
 accessevent(lua_State *L)
 {
@@ -129346,6 +136887,9 @@ accessevent(lua_State *L)
 }
 
 
+#endif
+
+#if !SHARKSSL_PSA_CONSUMER
 
 static U8*
 crypto_xyCoordinates2SharkPubKey(lua_State *L, EncrDecrOptions* op)
@@ -129540,6 +137084,7 @@ vddarmconsumers(lua_State *L, EncDecAction supervisorcachemode, int supplyregula
 }
 
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 
 static int
 statestackpop(lua_State *L, EncDecAction supervisorcachemode)
@@ -129627,6 +137172,7 @@ addrspaceoffset(lua_State *L)
 {
    return statestackpop(L, ENCDEC_ACTION_KEY_SIZE);
 }
+#endif
 
 
 static int
@@ -129635,6 +137181,7 @@ parsecrashkernel(lua_State *L)
    return vddarmconsumers(L, ENCDEC_ACTION_ENCRYPT, FALSE);
 }
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static int
 blake2supdate(lua_State *L)
 {
@@ -129646,12 +137193,14 @@ cpufreqdevice(lua_State *L)
 {
    return statestackpop(L, ENCDEC_ACTION_ENCRYPT);
 }
+#endif
 
 static int
 vddminshift(lua_State *L)
 {
    return vddarmconsumers(L, ENCDEC_ACTION_DECRYPT, TRUE);
 }
+#endif 
 
 
 
@@ -129684,12 +137233,16 @@ typedef struct LBaSymmetric
    U8* buf;
    size_t bufLen;
    U16 authLen;
+   BaBool busy;
    int keyRef;
    int authRef;
    int mode; /* 0: GCM, 1: CBC, 2: CCM; */
    SharkSslAesCtx_Type ctxType; /* only for CBC */
 } LBaSymmetric;
 
+#if SHARKSSL_PSA_CONSUMER
+int balua_psaSymmetric(LBaSymmetric* o, const U8* updatecause, U16 len, U8* tag, int loongsonclear);
+#endif
 
 static int
 processconsole(LBaSymmetric* o, lua_State *L, size_t len, int shashdigestsize)
@@ -129702,7 +137255,7 @@ processconsole(LBaSymmetric* o, lua_State *L, size_t len, int shashdigestsize)
       len = 1;
    if(o->bufLen < len)
    {
-      void* ptr=baRealloc(o->buf, len);
+      void* ptr=baLRealloc(L, o->buf, len);
       if(!ptr)
          return FALSE;
       o->buf=ptr;
@@ -129757,7 +137310,7 @@ checkiorange(U8* buf, size_t* len)
 
 
 static int
-hwmodsetup(lua_State *L)
+_XzY0x25A(lua_State *L)
 {
    size_t pmuv2events;
    size_t rebootnotifier;
@@ -129789,6 +137342,12 @@ hwmodsetup(lua_State *L)
    }
    else if(!processconsole(o, L, rebootnotifier, o->mode))
       return reportpanic(L,"\155\141\154\154\157\143");
+#if SHARKSSL_PSA_CONSUMER
+   if(o->mode == 1 && SharkSslAesCtx_Encrypt != o->ctxType)
+      luaL_error(L, "\116\157\164\040\151\156\040\145\156\143\162\171\160\164\040\155\157\144\145");
+   if(balua_psaSymmetric(o, updatecause, (U16)rebootnotifier, panickernel, TRUE))
+      return reportpanic(L,"\145\156\143\162\171\160\164\040\146\141\151\154\145\144");
+#else
    switch(o->mode)
    {
       case 2: 
@@ -129807,6 +137366,7 @@ hwmodsetup(lua_State *L)
             &o->ctx.aesgcm, o->iv, panickernel,
             o->auth, o->authLen, updatecause, o->buf, (U16)rebootnotifier);
    }
+#endif
    lua_pushlstring(L, (char*)o->buf, rebootnotifier);
    if(1 == o->mode)
       return 1;
@@ -129816,7 +137376,7 @@ hwmodsetup(lua_State *L)
 
 
 static int
-hdq1whwmod(lua_State *L)
+_XzY0x259(lua_State *L)
 {
    int pmuv2events;
    size_t rebootnotifier,requestarray;
@@ -129837,6 +137397,11 @@ hdq1whwmod(lua_State *L)
       return outputdevice(L);
    if(!processconsole(o, L, rebootnotifier, o->mode))
       return reportpanic(L,"\155\141\154\154\157\143");
+#if SHARKSSL_PSA_CONSUMER
+   if(o->mode == 1 && SharkSslAesCtx_Decrypt != o->ctxType)
+      luaL_error(L, "\116\157\164\040\151\156\040\144\145\143\162\171\160\164\040\155\157\144\145");
+   ret=balua_psaSymmetric(o, (const U8*)updatecause, (U16)rebootnotifier, (U8*)directionoutput, FALSE);
+#else
    switch(o->mode)
    {
       case 2: 
@@ -129856,6 +137421,7 @@ hdq1whwmod(lua_State *L)
             &o->ctx.aesgcm, o->iv, (U8*)directionoutput,o->auth, o->authLen,(U8*)updatecause,
             o->buf, (U16)rebootnotifier);
    }
+#endif
    if(ret)
    {
       if(rebootnotifier)
@@ -129896,7 +137462,7 @@ hdq1whwmod(lua_State *L)
 
 
 static int
-serialprint(lua_State *L)
+_XzY0x25C(lua_State *L)
 {
    size_t authLen;
    LBaSymmetric* o = toLBaSymmetric(L);
@@ -129923,17 +137489,50 @@ serialprint(lua_State *L)
 }
 
 
+
+static int
+_XzY0x25B(lua_State* L, lua_CFunction _XzY0x219)
+{
+   int sffsdrnandflash, switcherthread=lua_gettop(L);
+   LBaSymmetric* o=toLBaSymmetric(L);
+   luaL_argcheck(L, !o->busy, 1, "\163\171\155\155\145\164\162\151\143\040\157\142\152\145\143\164\040\151\163\040\151\156\040\165\163\145");
+   luaL_argcheck(L, o->iv != 0, 1, "\163\171\155\155\145\164\162\151\143\040\157\142\152\145\143\164\040\151\163\040\143\154\157\163\145\144");
+   luaL_checkstack(L,1,"\163\171\155\155\145\164\162\151\143\040\143\141\154\154");
+   lua_pushcfunction(L,_XzY0x219);
+   lua_insert(L,1);
+   o->busy=TRUE;
+   sffsdrnandflash=lua_pcall(L,switcherthread,LUA_MULTRET,0);
+   o->busy=FALSE;
+   if(sffsdrnandflash)
+      return lua_error(L);
+   return lua_gettop(L);
+}
+
+static int hwmodsetup(lua_State* L)
+{ return _XzY0x25B(L,_XzY0x25A); }
+static int hdq1whwmod(lua_State* L)
+{ return _XzY0x25B(L,_XzY0x259); }
+static int serialprint(lua_State* L)
+{ return _XzY0x25B(L,_XzY0x25C); }
+
+
 static int
 decodeuleb128(lua_State *L)
 {
    LBaSymmetric* o = toLBaSymmetric(L);
-   luaL_unref(L, LUA_REGISTRYINDEX, o->keyRef);
+   luaL_argcheck(L, !o->busy, 1, "\163\171\155\155\145\164\162\151\143\040\157\142\152\145\143\164\040\151\163\040\151\156\040\165\163\145");
+   if(o->keyRef)
+      luaL_unref(L, LUA_REGISTRYINDEX, o->keyRef);
    if(o->iv)
       baFree(o->iv);
    if(o->authRef)
       luaL_unref(L, LUA_REGISTRYINDEX, o->authRef);
    if(o->buf)
       baFree(o->buf);
+   o->keyRef=o->authRef=0;
+   o->iv=o->buf=0;
+   o->auth=0;
+   o->bufLen=o->authLen=0;
    return 0;
 }
 
@@ -130033,12 +137632,14 @@ static const U8 mcbsprequest[] = {
    '\061' ^ BALUA_XH
 };
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static const U8 iommuarena[] = {
    '\163' ^ BALUA_XH,
    '\151' ^ BALUA_XH,
    '\147' ^ BALUA_XH,
    '\156' ^ BALUA_XH
 };
+#endif
 
 static const U8 unoptimizekprobe[] = {
    '\163' ^ BALUA_XH,
@@ -130052,6 +137653,7 @@ static const U8 unoptimizekprobe[] = {
    '\163' ^ BALUA_XH
 };
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static const U8 localdisable[] = {
    '\153' ^ BALUA_XH,
    '\145' ^ BALUA_XH,
@@ -130074,6 +137676,9 @@ static const U8 resourcekeypad[] = {
    '\145' ^ BALUA_XH
 };
 
+#endif
+
+#if !SHARKSSL_PSA_CONSUMER
 static const U8 videolines[] = {
    '\166' ^ BALUA_XH,
    '\145' ^ BALUA_XH,
@@ -130093,6 +137698,9 @@ static const U8 adjustlowmem[] = {
    '\164' ^ BALUA_XH
 };
 
+#endif
+
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static const U8 irqwakeeintallow[] = {
    '\144' ^ BALUA_XH,
    '\145' ^ BALUA_XH,
@@ -130102,6 +137710,7 @@ static const U8 irqwakeeintallow[] = {
    '\160' ^ BALUA_XH,
    '\164' ^ BALUA_XH
 };
+#endif
 
 static const U8 serrorpanic[] = {
    '\163' ^ BALUA_XH,
@@ -130140,13 +137749,17 @@ static const thumbsubroutine restoremsacsr[] =
 #endif
    
    { latencytimer,      mcbsprequest,      sizeof(mcbsprequest) },
-   { cpufreqdevice,      iommuarena,      sizeof(iommuarena) },
    { secondaryharden,unoptimizekprobe, sizeof(unoptimizekprobe) },
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
+   { cpufreqdevice,      iommuarena,      sizeof(iommuarena) },
    { accessevent,localdisable, sizeof(localdisable) },
    { addrspaceoffset,  resourcekeypad,   sizeof(resourcekeypad) },
+   { blake2supdate,  irqwakeeintallow,   sizeof(irqwakeeintallow) },
+#endif
+#if !SHARKSSL_PSA_CONSUMER
    { vddminshift,   videolines,    sizeof(videolines) },
    { parsecrashkernel,  adjustlowmem,   sizeof(adjustlowmem) },
-   { blake2supdate,  irqwakeeintallow,   sizeof(irqwakeeintallow) },
+#endif
    { savekmsgsetup,serrorpanic, sizeof(serrorpanic) }
 };
 
@@ -130178,18 +137791,21 @@ balua_crypto(lua_State *L)
 
 
 #ifndef hwmodlookup
-#include "../../src/plugins/SharkSSL/src/SharkSslCert.h"
+
 #endif
 
 #include "lxrc.h"
 
-#if SHARKSSL_ENABLE_ASN1_KEY_CREATION && \
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API && SHARKSSL_ENABLE_ASN1_KEY_CREATION && \
    (SHARKSSL_ENABLE_RSAKEY_CREATE || SHARKSSL_ENABLE_ECCKEY_CREATE)
 #define BA_ADD_ASNCERT_API
 #endif
 
 
+#if BA_ENABLE_EMBEDDED_CA
 
+#include <cacert.h>
+#endif
 
 
 
@@ -130488,7 +138104,7 @@ resourcesurvey(lua_State *L)
 }
 
 
-#ifdef USE_BATOOLS
+#if BA_ENABLE_TLS_TOOLS
 
 static int
 flash1partitions(lua_State *L)
@@ -130584,6 +138200,9 @@ typedef struct
 {
    SingleLink super; /* In LSharkSsl:sharkCertList */
    SharkSslCert sharkSslCert;
+#if SHARKSSL_PSA_CONSUMER
+   psa_key_id_t psaKey; /* Persistent key is owned by the platform, not GC. */
+#endif
    int refCounter; /* Reference counter */
    int regRef; /* Lua registry reference */
 } LSharkCert;
@@ -130620,7 +138239,7 @@ subnodeoffset(lua_State *L, LSharkCert* lsc)
 }
 
 
-#ifdef USE_BATOOLS
+#if BA_ENABLE_TLS_TOOLS
 
 static int
 constudelay(lua_State *L)
@@ -130688,6 +138307,37 @@ ucb1x00reset(lua_State *L)
 
 
 
+static LSharkCert*
+sharkcert_create(lua_State *L)
+{
+   LSharkCert* lsc = (LSharkCert*)lua_newuserdata(L, sizeof(LSharkCert));
+   memset(lsc, 0, sizeof(LSharkCert));
+   SingleLink_constructor((SingleLink*)lsc);
+   if(luaL_getmetatable(L, SHARKCERT) == LUA_TNIL)
+   {
+      static const luaL_Reg lib[] = {
+#if BA_ENABLE_TLS_TOOLS
+         {"\144\141\164\141", constudelay},
+#endif
+         {"\137\137\147\143", ucb1x00reset},
+         {NULL, NULL}
+      };
+      lua_pop(L, 1);
+      lua_newtable(L);
+      lua_pushliteral(L, SHARKCERT);
+      lua_setfield(L, -2, "\137\137\156\141\155\145");
+      lua_pushvalue(L, -1);
+      lua_setfield(L, -2, "\137\137\151\156\144\145\170");
+      luaL_setfuncs(L, lib, 0);
+      lua_pushvalue(L, -1);
+      lua_setfield(L, LUA_REGISTRYINDEX, SHARKCERT);
+   }
+   lua_setmetatable(L, -2);
+   return lsc;
+}
+
+
+
 
 typedef struct
 {
@@ -130707,13 +138357,13 @@ static LSharkSsl* callLuaFuncBaSharkclient(lua_State *L);
 void
 lsharkssl_unlock(lua_State *L,SharkSsl* fdc37m81xconfig)
 {
-      LSharkSsl* shark = (LSharkSsl*)fdc37m81xconfig;
-      baAssert(shark->refCounter > 0);
-      if(--shark->refCounter == 0)
+      LSharkSsl* _XzY0x2E = (LSharkSsl*)fdc37m81xconfig;
+      baAssert(_XzY0x2E->refCounter > 0);
+      if(--_XzY0x2E->refCounter == 0)
       {
-         baAssert(shark->regRef);
-         luaL_unref(L, LUA_REGISTRYINDEX, shark->regRef);
-         shark->regRef=0;
+         baAssert(_XzY0x2E->regRef);
+         luaL_unref(L, LUA_REGISTRYINDEX, _XzY0x2E->regRef);
+         _XzY0x2E->regRef=0;
       }
 }
 
@@ -130721,7 +138371,7 @@ lsharkssl_unlock(lua_State *L,SharkSsl* fdc37m81xconfig)
 SharkSsl*
 lsharkssl_lock(lua_State *L,int modifycaller,SharkSsl_Role startkernel,SharkSsl* audiostartup)
 {
-   LSharkSsl* shark;
+   LSharkSsl* _XzY0x2E;
    if(LUA_TTABLE != lua_type(L, modifycaller))
       luaL_error(L, "\117\160\164\151\157\156\163\040\164\141\142\154\145\040\162\145\161\165\151\162\145\144\040\146\157\162\040\163\145\143\165\162\145\040\143\157\155\155\165\156\151\143\141\164\151\157\156");
    lua_getfield(L, modifycaller, "\163\150\141\162\153");
@@ -130729,41 +138379,41 @@ lsharkssl_lock(lua_State *L,int modifycaller,SharkSsl_Role startkernel,SharkSsl*
    {
       if( SharkSsl_Client == startkernel && ! audiostartup )
       {
-         shark=callLuaFuncBaSharkclient(L);
+         _XzY0x2E=callLuaFuncBaSharkclient(L);
       }
       else
       {
-         shark=0; 
+         _XzY0x2E=0; 
          luaL_error(L, "\115\151\163\163\151\156\147\040\157\160\164\151\157\156\040\146\151\145\154\144\040\047\163\150\141\162\153\047");
       }
    }
    else
-      shark = tosharkix(L, -1);
-   if(audiostartup == (SharkSsl*)shark)
+      _XzY0x2E = tosharkix(L, -1);
+   if(audiostartup == (SharkSsl*)_XzY0x2E)
       lua_pop(L, 1);
    else
    {
       if(SharkSsl_Unspecified == startkernel)
-         startkernel=((SharkSsl*)shark)->role;
-      if(((SharkSsl*)shark)->role != startkernel)
+         startkernel=((SharkSsl*)_XzY0x2E)->role;
+      if(((SharkSsl*)_XzY0x2E)->role != startkernel)
       {
          luaL_error(L,"\123\150\141\162\153\123\123\114\040\156\157\164\040\141\040\045\163\040\164\171\160\145",
                     startkernel==SharkSsl_Client ? "\143\154\151\145\156\164" : "\163\145\162\166\145\162");
       }
       if( startkernel == SharkSsl_Server && 
-		  SingleList_isEmpty(&((SharkSsl*)shark)->certList) )
+		  SingleList_isEmpty(&((SharkSsl*)_XzY0x2E)->certList) )
       {
          luaL_error(L,"\103\145\162\164\151\146\151\143\141\164\145\040\162\145\161\165\151\162\145\144\040\146\157\162\040\163\145\162\166\145\162");
       }
       if(audiostartup) lsharkssl_unlock(L, audiostartup);
-      if(shark->refCounter++ == 0)
+      if(_XzY0x2E->refCounter++ == 0)
       {
-         baAssert(!shark->regRef);
-         shark->regRef=luaL_ref(L, LUA_REGISTRYINDEX);
+         baAssert(!_XzY0x2E->regRef);
+         _XzY0x2E->regRef=luaL_ref(L, LUA_REGISTRYINDEX);
       }
       else
          lua_pop(L, 1);
-      audiostartup=(SharkSsl*)shark;
+      audiostartup=(SharkSsl*)_XzY0x2E;
    }
    return audiostartup;
 }
@@ -130772,15 +138422,19 @@ lsharkssl_lock(lua_State *L,int modifycaller,SharkSsl_Role startkernel,SharkSsl*
 static int
 enableepp19(lua_State *L)
 {
-   LSharkSsl* shark = tosharkix(L,1);
+   LSharkSsl* _XzY0x2E = tosharkix(L,1);
    LSharkCert* lsc = tocertix(L, 2);
    int ok;
    luaL_argcheck(L, !lsc->refCounter, 2, "\103\145\162\164\151\146\151\143\141\164\145\040\141\154\162\145\141\144\171\040\141\164\164\141\143\150\145\144");
-   ok = SharkSsl_addCertificate((SharkSsl*)shark,lsc->sharkSslCert);
+#if SHARKSSL_PSA_CONSUMER
+   ok = SharkSsl_addCertificatePSA((SharkSsl*)_XzY0x2E,lsc->sharkSslCert,lsc->psaKey);
+#else
+   ok = SharkSsl_addCertificate((SharkSsl*)_XzY0x2E,lsc->sharkSslCert);
+#endif
    if(ok)
    {
       sharkcert_lock(L, 2);
-      SingleList_insertLast(&shark->sharkCertList, lsc);
+      SingleList_insertLast(&_XzY0x2E->sharkCertList, lsc);
    }
    lua_pushboolean(L, ok);
    return 1;
@@ -130790,25 +138444,25 @@ enableepp19(lua_State *L)
 static int
 flashpartitions(lua_State *L)
 {
-   LSharkSsl* shark = tosharkix(L,1);
+   LSharkSsl* _XzY0x2E = tosharkix(L,1);
    for(;;)
    {
       LSharkCert* lsc=(LSharkCert*)SingleList_removeFirst(
-         &shark->sharkCertList);
+         &_XzY0x2E->sharkCertList);
       if( ! lsc ) break;
       subnodeoffset(L,lsc);
    }
-   if(shark->lcs)
+   if(_XzY0x2E->lcs)
    {
-      baAssert( ! shark->calistRegRef );
-      replacettbr1(L, shark->lcs);
+      baAssert( ! _XzY0x2E->calistRegRef );
+      replacettbr1(L, _XzY0x2E->lcs);
    }
    else
    {
-      baAssert( ! shark->lcs );
-      luaL_unref(L, LUA_REGISTRYINDEX, shark->calistRegRef);
+      baAssert( ! _XzY0x2E->lcs );
+      luaL_unref(L, LUA_REGISTRYINDEX, _XzY0x2E->calistRegRef);
    }
-   SharkSsl_destructor((SharkSsl*)shark);
+   SharkSsl_destructor((SharkSsl*)_XzY0x2E);
    return 0;
 }
 
@@ -130970,7 +138624,7 @@ inputmouse(lua_State *L)
 
 
 
-#ifdef BA_ADD_ASNCERT_API
+#if defined(BA_ADD_ASNCERT_API) || (SHARKSSL_PSA_CONSUMER && SHARKSSL_ENABLE_CSR_CREATION)
 #include <SharkSslASN1.h>
 
 static const char beginCSR[]={"\102\105\107\111\116\040\103\105\122\124\111\106\111\103\101\124\105\040\122\105\121\125\105\123\124"};
@@ -131059,7 +138713,9 @@ static int compareirqaction(
    return sffsdrnandflash ? -sffsdrnandflash : lua_gettop(L)-top;
 }
 
+#endif
 
+#ifdef BA_ADD_ASNCERT_API
 static const char*
 extractKeyAndPassword(lua_State *L, int ix, const char** emptytables)
 {
@@ -131248,7 +138904,9 @@ raisesigfpe(lua_State *L)
 #endif
 
 
-#if SHARKSSL_ENABLE_CSR_CREATION
+#endif 
+
+#if SHARKSSL_ENABLE_CSR_CREATION && (defined(BA_ADD_ASNCERT_API) || SHARKSSL_PSA_CONSUMER)
 
 static const char clclkregister[] = {"\101\162\147\040\043\045\144\054\040\151\156\166\141\154\151\144\040\157\160\164\072\040\045\163"};
 
@@ -131312,26 +138970,14 @@ mcspi1hwmod(lua_State *L, const char* str, int ix)
 
 
 
-static int
-egpioplatform(lua_State *L)
+static U8
+baGetCsrArgs(lua_State *L, SharkSslCertDN *dn, SharkSslBitExtReq *setupcalled,
+             SharkSslBitExtReq *latchcontrol, const char **SAN)
 {
-   SharkSslASN1Create asn;
-   SharkSslCertDN dn;
-   SharkSslBitExtReq latchcontrol;
-   SharkSslBitExtReq setupcalled;
    const BaSslBitExtReqSet* extReqSet;
+   const char *bankwidthsupported, *str;
+   int clearflags, enetswplatform = lua_gettop(L);
    U8 configwrite;
-   U8* restoresigframe;
-   const char* bankwidthsupported;
-   const char* str;
-   const char* sourcerouting;
-   const char* emptytables;
-   SharkSslKey sharkKey;
-   int sffsdrnandflash;
-   int clearflags;
-   int enetswplatform = lua_gettop(L);
-
-   sourcerouting = extractKeyAndPassword(L, 1, &emptytables);
    if(lua_isstring(L, 3))
    {
       bankwidthsupported = lua_tostring(L, 3);
@@ -131346,25 +138992,25 @@ egpioplatform(lua_State *L)
    }
 
    luaL_checktype(L, 2, LUA_TTABLE);
-   SharkSslCertDN_constructor(&dn);
+   SharkSslCertDN_constructor(dn);
    str=balua_checkStringField(L, 2, "\143\157\155\155\157\156\156\141\155\145");
-   SharkSslCertDN_setCommonName(&dn,str);
+   SharkSslCertDN_setCommonName(dn,str);
    str = balua_getStringField(L, 2, "\143\157\165\156\164\162\171\156\141\155\145", 0);
-   if(str) SharkSslCertDN_setCountryName(&dn, str);
+   if(str) SharkSslCertDN_setCountryName(dn, str);
    str = balua_getStringField(L, 2, "\165\156\151\164", 0);
-   if(str) SharkSslCertDN_setUnit(&dn,str);
+   if(str) SharkSslCertDN_setUnit(dn,str);
    str = balua_getStringField(L, 2, "\160\162\157\166\151\156\143\145", 0);
-   if(str) SharkSslCertDN_setProvince(&dn,str);
+   if(str) SharkSslCertDN_setProvince(dn,str);
    str = balua_getStringField(L, 2, "\154\157\143\141\154\151\164\171", 0);
-   if(str) SharkSslCertDN_setLocality(&dn,str);
+   if(str) SharkSslCertDN_setLocality(dn,str);
    str = balua_getStringField(L, 2, "\157\162\147\141\156\151\172\141\164\151\157\156", 0);
-   if(str) SharkSslCertDN_setOrganization(&dn,str);
+   if(str) SharkSslCertDN_setOrganization(dn,str);
    str = balua_getStringField(L, 2, "\145\155\141\151\154", 0);
-   if(str) SharkSslCertDN_setEmailAddress(&dn,str);
+   if(str) SharkSslCertDN_setEmailAddress(dn,str);
 
    
    luaL_checktype(L, clearflags, LUA_TTABLE);
-   setupcalled.bits=0;
+   setupcalled->bits=0;
    lua_pushnil(L);
    while(lua_next(L, clearflags) != 0)
    {
@@ -131373,15 +139019,15 @@ egpioplatform(lua_State *L)
          nsCertTypeSets, BASET_LEN(nsCertTypeSets), str);
       if(!extReqSet)
          luaL_error(L, clclkregister, clearflags, str);
-      setupcalled.bits |= extReqSet->bit;
+      setupcalled->bits |= extReqSet->bit;
       lua_pop(L, 1);
    }
-   if(!setupcalled.bits)
-      setupcalled.bits = SHARKSSL_X509_NS_CERT_TYPE_SSL_SERVER;
+   if(!setupcalled->bits)
+      setupcalled->bits = SHARKSSL_X509_NS_CERT_TYPE_SSL_SERVER;
 
    
    luaL_checktype(L, clearflags+1, LUA_TTABLE);
-   latchcontrol.bits=0;
+   latchcontrol->bits=0;
    lua_pushnil(L);
    while(lua_next(L, clearflags+1) != 0)
    {
@@ -131390,17 +139036,34 @@ egpioplatform(lua_State *L)
          keyUsageSets, BASET_LEN(keyUsageSets), str);
       if(!extReqSet)
          luaL_error(L, clclkregister, clearflags+1, str);
-      latchcontrol.bits |= extReqSet->bit;
+      latchcontrol->bits |= extReqSet->bit;
       lua_pop(L, 1);
    }
-   if(!latchcontrol.bits)
-      latchcontrol.bits = SHARKSSL_X509_KU_DIGITAL_SIGNATURE;
+   if(!latchcontrol->bits)
+      latchcontrol->bits = SHARKSSL_X509_KU_DIGITAL_SIGNATURE;
 
    if(enetswplatform > (clearflags+1))
       configwrite = mcspi1hwmod(L, luaL_checkstring(L, clearflags+2), clearflags+2);
    else
       configwrite = SHARKSSL_HASHID_SHA256;
 
+   *SAN = lua_isstring(L, 3) ? bankwidthsupported : (char*)dn->commonName;
+   return configwrite;
+}
+
+#ifdef BA_ADD_ASNCERT_API
+static int
+egpioplatform(lua_State *L)
+{
+   SharkSslASN1Create asn;
+   SharkSslCertDN dn;
+   SharkSslBitExtReq latchcontrol, setupcalled;
+   SharkSslKey sharkKey;
+   const char *sourcerouting, *emptytables, *bankwidthsupported;
+   U8 configwrite, *restoresigframe;
+   int sffsdrnandflash;
+   sourcerouting = extractKeyAndPassword(L, 1, &emptytables);
+   configwrite = baGetCsrArgs(L, &dn, &setupcalled, &latchcontrol, &bankwidthsupported);
    sffsdrnandflash=sharkssl_PEM(0, sourcerouting, emptytables, (SharkSslCert*)&sharkKey);
    if(sffsdrnandflash != SHARKSSL_PEM_OK)
       return reportpanic(L,baErr2Str(sffsdrnandflash));
@@ -131413,7 +139076,7 @@ egpioplatform(lua_State *L)
                  sharkKey,
                  configwrite,
                  &dn,
-                 lua_isstring(L, 3) ? bankwidthsupported : (char*)dn.commonName,
+                 bankwidthsupported,
                  &latchcontrol,
                  &setupcalled)) )
       {
@@ -131434,6 +139097,10 @@ egpioplatform(lua_State *L)
    return 1;
 }
 
+#endif 
+#endif 
+
+#if SHARKSSL_PSA_CONSUMER || SHARKSSL_ENABLE_CSR_CREATION
 static int
 blake2sfinal(lua_State *L)
 {
@@ -131447,7 +139114,7 @@ blake2sfinal(lua_State *L)
       SharkSslCertDER _XzY0x1CA[8], mcasp0resources;
       union { U32 align[26]; U8 bytes[104]; } sourcerouting;
       const char *xy, *now;
-      size_t debugstart=lua_rawlen(L, 1), xylen, nowlen;
+      size_t debugstart=(size_t)lua_rawlen(L, 1), xylen, nowlen;
       unsigned i;
       if(debugstart < 1 || debugstart > 8) return reportpanic(L,"\151\156\166\141\154\151\144\040\103\101\040\143\150\141\151\156");
       mcasp0resources.data=(const U8*)luaL_checklstring(L,2,&len);
@@ -131508,6 +139175,7 @@ counterresolution(lua_State *L)
 
 #endif 
 
+#if defined(BA_ADD_ASNCERT_API) || SHARKSSL_PSA_CONSUMER
 #if SHARKSSL_ENABLE_CSR_SIGNING
 
 
@@ -131590,31 +139258,28 @@ _XzY0x1C2(void *context, const SharkSslCertSAN *panelshutdown, U16 debugstart)
    return _XzY0x1E9;
 }
 
-static int
-skcipherreqsize(lua_State *L)
+typedef struct BaCertificateArgs
 {
-   static const char aemifdevices[]={"\102\105\107\111\116\040\103\105\122\124\111\106\111\103\101\124\105"};
-   static const char boarddetect[]={"\105\116\104\040\103\105\122\124\111\106\111\103\101\124\105"};
-   static const char *const _XzY0x1E6[]={
-      "\162\157\157\164\103\101", "\151\156\164\145\162\155\145\144\151\141\164\145\103\101", "\164\154\163\123\145\162\166\145\162", "\164\154\163\103\154\151\145\156\164", "\157\160\143\165\141\123\145\162\166\145\162", "\157\160\143\165\141\103\154\151\145\156\164", NULL};
-   int keyIx, optionsIx, sffsdrnandflash;
-   SharkSslCert unlockirqrestore;
-   SharkSslCertProfile _XzY0x1E5={0};
+   SharkSslCertProfile profile;
    LuaCSRPolicy luaPolicy;
-   SharkSslCert userspacememory=0;
-   SharkSslKey mcbspplatform=0;
-   U8 configwrite;
-   const char* emptytables;
-   const char* kernelvaddr=0;
-   const char* esdhcplatform;
-   const char* cpuidlesimple;
-   const char* sourcerouting;
+   const char *cert, *validFrom, *validTo;
    lua_Integer serial;
-   U8 *deathsibling;
-   int setupgeneric;
+   U8 *csrBin, hashID;
+   int csrBinLen;
+} BaCertificateArgs;
+
+static int
+_XzY0x282(lua_State *L, BaCertificateArgs *enetswplatform)
+{
+   static const char *const _XzY0x1E6[]={
+      "\162\157\157\164\103\101", "\151\156\164\145\162\155\145\144\151\141\164\145\103\101", "\164\154\163\123\145\162\166\145\162", "\164\154\163\103\154\151\145\156\164", "\157\160\143\165\141\123\145\162\166\145\162", "\157\160\143\165\141\103\154\151\145\156\164",
+      "\164\154\163\123\145\162\166\145\162\123\145\154\146\123\151\147\156\145\144",
+      NULL};
+   int keyIx, optionsIx;
    BaBool dividerrotated;
-   const char* stateremove=0;
+   const char *stateremove = 0;
    const char* csr = luaL_checkstring(L, 1);
+   memset(enetswplatform, 0, sizeof(*enetswplatform));
    
    keyIx = lua_type(L, 5) == LUA_TTABLE ? 3 : 2;
    csr = strstr(csr, beginCSR);
@@ -131624,67 +139289,95 @@ skcipherreqsize(lua_State *L)
       stateremove = strstr(csr, endCSR);
    }
    if(!csr || !stateremove)
-      return reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
+   {
+      reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
+      return 0;
+   }
    while(*csr == '\055') csr++;
    csr++; 
    while(*(stateremove -1) == '\055') stateremove--;
    stateremove--; 
    if(stateremove <= csr)
-      return reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
-   setupgeneric = (int)(stateremove - csr);
-   deathsibling = lua_newuserdata(L, setupgeneric);
-   setupgeneric = baB64Decode(
-      deathsibling,setupgeneric,lua_pushlstring(L,csr,setupgeneric),&dividerrotated);
+   {
+      reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
+      return 0;
+   }
+   enetswplatform->csrBinLen = (int)(stateremove - csr);
+   enetswplatform->csrBin = lua_newuserdata(L, enetswplatform->csrBinLen);
+   enetswplatform->csrBinLen = baB64Decode(
+      enetswplatform->csrBin,enetswplatform->csrBinLen,lua_pushlstring(L,csr,enetswplatform->csrBinLen),&dividerrotated);
    if(dividerrotated)
-      return reportpanic(L,"\043\061\054\040\103\123\122\040\151\163\040\164\157\157\040\154\141\162\147\145");
-   if(!setupgeneric)
-      return reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
-   sourcerouting = extractKeyAndPassword(L, keyIx, &emptytables);
-   serial = luaL_checkinteger(L, keyIx+3);
-   luaL_argcheck(L, serial > 0, keyIx+3, "\111\156\166\141\154\151\144\040\163\145\162\151\141\154\040\156\165\155\142\145\162");
+   {
+      reportpanic(L,"\043\061\054\040\103\123\122\040\151\163\040\164\157\157\040\154\141\162\147\145");
+      return 0;
+   }
+   if(!enetswplatform->csrBinLen)
+   {
+      reportpanic(L,"\043\061\054\040\151\156\166\141\154\151\144\040\103\123\122");
+      return 0;
+   }
+   enetswplatform->serial = luaL_checkinteger(L, keyIx+3);
+   luaL_argcheck(L, enetswplatform->serial > 0, keyIx+3, "\111\156\166\141\154\151\144\040\163\145\162\151\141\154\040\156\165\155\142\145\162");
    optionsIx = keyIx + 4;
    if(lua_type(L, optionsIx) == LUA_TSTRING)
    {
-      configwrite = mcspi1hwmod(L, luaL_checkstring(L, optionsIx), optionsIx);
+      enetswplatform->hashID = mcspi1hwmod(L, luaL_checkstring(L, optionsIx), optionsIx);
       optionsIx++;
    }
    else
-      configwrite = SHARKSSL_HASHID_SHA256;
+      enetswplatform->hashID = SHARKSSL_HASHID_SHA256;
    luaL_checktype(L, optionsIx, LUA_TTABLE);
    lua_getfield(L, optionsIx, "\160\162\157\146\151\154\145");
-   _XzY0x1E5.type = (U8)(luaL_checkoption(L, -1, NULL, _XzY0x1E6) + 1);
+   enetswplatform->profile.type = (U8)(luaL_checkoption(L, -1, NULL, _XzY0x1E6) + 1);
    lua_pop(L, 1);
-   _XzY0x1E5.pathLenConstraint = 0xFFFF;
-   if((SHARKSSL_CERT_PROFILE_ROOT_CA == _XzY0x1E5.type) ||
-      (SHARKSSL_CERT_PROFILE_INTERMEDIATE_CA == _XzY0x1E5.type))
+   enetswplatform->profile.pathLenConstraint = 0xFFFF;
+   if((SHARKSSL_CERT_PROFILE_ROOT_CA == enetswplatform->profile.type) ||
+      (SHARKSSL_CERT_PROFILE_INTERMEDIATE_CA == enetswplatform->profile.type))
    {
       lua_Integer pmuv2event = balua_checkIntField(L, optionsIx, "\160\141\164\150\114\145\156");
       luaL_argcheck(L, pmuv2event >= 0 && pmuv2event < 0xFFFF, optionsIx, "\111\156\166\141\154\151\144\040\103\101\040\160\141\164\150\114\145\156");
-      _XzY0x1E5.pathLenConstraint = (U16)pmuv2event;
+      enetswplatform->profile.pathLenConstraint = (U16)pmuv2event;
    }
    else
    {
       lua_getfield(L, optionsIx, "\141\160\160\162\157\166\145\123\101\116\163");
       luaL_argcheck(L, lua_isfunction(L, -1), optionsIx, "\141\160\160\162\157\166\145\123\101\116\163\040\143\141\154\154\142\141\143\153\040\162\145\161\165\151\162\145\144");
-      luaPolicy.L = L;
-      luaPolicy.callbackIx = lua_gettop(L); 
-      _XzY0x1E5.approveSANs = _XzY0x1C2;
-      _XzY0x1E5.context = &luaPolicy;
+      enetswplatform->luaPolicy.L = L;
+      enetswplatform->luaPolicy.callbackIx = lua_gettop(L); 
+      enetswplatform->profile.approveSANs = _XzY0x1C2;
+      enetswplatform->profile.context = &enetswplatform->luaPolicy;
    }
-   esdhcplatform = getCertDateFromTab(L, keyIx+1);
-   cpuidlesimple = getCertDateFromTab(L, keyIx+2);
+   enetswplatform->validFrom = getCertDateFromTab(L, keyIx+1);
+   enetswplatform->validTo = getCertDateFromTab(L, keyIx+2);
    if(keyIx == 3)
-      kernelvaddr = luaL_checkstring(L, 2);
+      enetswplatform->cert = luaL_checkstring(L, 2);
+   return keyIx;
+}
+
+#ifdef BA_ADD_ASNCERT_API
+static int
+skcipherreqsize(lua_State *L)
+{
+   static const char aemifdevices[]={"\102\105\107\111\116\040\103\105\122\124\111\106\111\103\101\124\105"};
+   static const char boarddetect[]={"\105\116\104\040\103\105\122\124\111\106\111\103\101\124\105"};
+   BaCertificateArgs enetswplatform;
+   SharkSslCert unlockirqrestore, userspacememory=0;
+   SharkSslKey mcbspplatform=0;
+   const char *sourcerouting, *emptytables;
+   int sffsdrnandflash, keyIx = _XzY0x282(L, &enetswplatform);
+   if(!keyIx)
+      return 2;
+   sourcerouting = extractKeyAndPassword(L, keyIx, &emptytables);
    if(keyIx == 3)
    {
-      if(sharkssl_PEM(kernelvaddr, sourcerouting, emptytables, &userspacememory))
+      if(sharkssl_PEM(enetswplatform.cert, sourcerouting, emptytables, &userspacememory))
          return reportpanic(L,"\043\062\054\040\151\156\166\141\154\151\144\040\143\145\162\164\151\146\151\143\141\164\145");
    }
    else if(sharkssl_PEM(0, sourcerouting, emptytables, (SharkSslCert*)&mcbspplatform))
       return reportpanic(L,"\151\156\166\141\154\151\144\040\153\145\171");
    sffsdrnandflash=SharkSslCert_signCSR(
-      &unlockirqrestore,&_XzY0x1E5,deathsibling,userspacememory,mcbspplatform,
-      esdhcplatform,cpuidlesimple,setupgeneric,serial,configwrite);
+      &unlockirqrestore,&enetswplatform.profile,enetswplatform.csrBin,userspacememory,mcbspplatform,
+      enetswplatform.validFrom,enetswplatform.validTo,enetswplatform.csrBinLen,enetswplatform.serial,enetswplatform.hashID);
    baFree(mcbspplatform);
    baFree((void*)userspacememory);
    if(sffsdrnandflash < 0)
@@ -131693,6 +139386,8 @@ skcipherreqsize(lua_State *L)
    baFree((char*)unlockirqrestore);
    return sffsdrnandflash < 0 ? lua_error(L) : sffsdrnandflash;
 }
+#endif 
+
 #endif
 
 
@@ -131712,7 +139407,7 @@ mv98dx3236resume(lua_State *L)
    {
       static const luaL_Reg lib[] = {
          {"\141\144\144\143\145\162\164",  resourcesurvey},
-#ifdef USE_BATOOLS
+#if BA_ENABLE_TLS_TOOLS
          {"\144\141\164\141",  flash1partitions},
 #endif
          {"\137\137\147\143", enet0device},
@@ -131730,6 +139425,7 @@ mv98dx3236resume(lua_State *L)
 
 
 
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static int
 runtimestatus(lua_State *L)
 {
@@ -131755,22 +139451,7 @@ runtimestatus(lua_State *L)
    kernelvaddr=luaL_checkstring(L, validconfig);
    sourcerouting=luaL_checkstring(L, validconfig+1);
    perfmonevent=luaL_optstring(L, validconfig+2, 0);
-   lsc = (LSharkCert*)lua_newuserdata(L, sizeof(LSharkCert));
-   memset(lsc,0,sizeof(LSharkCert));
-   SingleLink_constructor((SingleLink*)lsc);
-   if(luaL_newmetatable(L, SHARKCERT))
-   {
-      static const luaL_Reg lib[] = {
-#ifdef USE_BATOOLS
-         {"\144\141\164\141", constudelay},
-#endif
-         {"\137\137\147\143", ucb1x00reset},
-         {NULL, NULL} };
-      lua_pushvalue(L, -1);
-      lua_setfield(L, -2, "\137\137\151\156\144\145\170");
-      luaL_setfuncs(L,lib,0);
-   }
-   lua_setmetatable(L, -2); 
+   lsc = sharkcert_create(L);
    if(io)
    {
       if((decodedestination=loadFile(L, io, kernelvaddr, &icachealiases)) == 0) return 2;
@@ -131797,13 +139478,14 @@ runtimestatus(lua_State *L)
    }
    return 1; 
 }
+#endif
 
 
 
 static int
 timerhwmod(lua_State *L)
 {
-   LSharkSsl* shark;
+   LSharkSsl* _XzY0x2E;
    SharkSslCertStore* certStore=0;
    SharkSslCAList displaysetup=0;
    size_t _XzY0x112=0;
@@ -131822,7 +139504,15 @@ timerhwmod(lua_State *L)
          if(_XzY0x112 < 4 || _XzY0x112 > (U32)-1 ||
             displaysetup[0] != 0 || displaysetup[1] != 0)
          {
-            luaL_error(L,"\111\156\166\141\154\151\144\040\123\150\141\162\153\123\123\114\040\103\141\114\151\163\164\040\146\157\162\155\141\164");
+#if BA_ENABLE_EMBEDDED_CA
+            if(_XzY0x112 == 8 && !memcmp(displaysetup,"\145\155\142\145\144\144\145\144",8))
+            {
+               displaysetup=sharkSslCAList;
+               _XzY0x112=sizeof(sharkSslCAList);
+            }
+            else
+#endif
+               luaL_error(L,"\111\156\166\141\154\151\144\040\123\150\141\162\153\123\123\114\040\103\141\114\151\163\164\040\146\157\162\155\141\164");
          }
       }
       else
@@ -131845,9 +139535,9 @@ timerhwmod(lua_State *L)
    }
    if(certStore && !SharkSslCertStore_assemble(certStore, &displaysetup))
       return reportpanic(L, "\155\145\155");
-   shark = (LSharkSsl*)lua_newuserdata(L, sizeof(LSharkSsl));
-   memset(shark,0,sizeof(LSharkSsl));
-   SingleList_constructor(&shark->sharkCertList);
+   _XzY0x2E = (LSharkSsl*)lua_newuserdata(L, sizeof(LSharkSsl));
+   memset(_XzY0x2E,0,sizeof(LSharkSsl));
+   SingleList_constructor(&_XzY0x2E->sharkCertList);
    if(luaL_newmetatable(L, BASHARKSSL))
    {
       static const luaL_Reg lib[] = {
@@ -131860,22 +139550,22 @@ timerhwmod(lua_State *L)
       luaL_setfuncs(L,lib,0);
    }
    lua_setmetatable(L, -2); 
-   SharkSsl_constructor((SharkSsl*)shark,
+   SharkSsl_constructor((SharkSsl*)_XzY0x2E,
                         startkernel,
                         msdi1hwmod,
                         powerresource,
                         memblockreserved);
    
-   if(displaysetup && !SharkSsl_setCAListEx((SharkSsl*)shark,displaysetup,(U32)_XzY0x112))
+   if(displaysetup && !SharkSsl_setCAListEx((SharkSsl*)_XzY0x2E,displaysetup,(U32)_XzY0x112))
       return luaL_error(L,"\111\156\166\141\154\151\144\040\123\150\141\162\153\123\123\114\040\103\141\114\151\163\164\040\146\157\162\155\141\164");
    if(certStore)
    {
-      shark->lcs = certstore_lock(L, 1);
+      _XzY0x2E->lcs = certstore_lock(L, 1);
    }
    else if(displaysetup)
    {
       lua_pushvalue(L, 1);
-      shark->calistRegRef=luaL_ref(L, LUA_REGISTRYINDEX);
+      _XzY0x2E->calistRegRef=luaL_ref(L, LUA_REGISTRYINDEX);
    }
 
    return 1; 
@@ -131984,6 +139674,11 @@ tininessbefore(lua_State *L)
 {
    if(lua_isnil(L,lua_upvalueindex(1)))
    {
+#if BA_ENABLE_EMBEDDED_CA
+      static const char stateindex[] = {
+         "\162\145\164\165\162\156\040\142\141\056\143\162\145\141\164\145\056\163\150\141\162\153\163\163\154\050\047\145\155\142\145\144\144\145\144\047\054\173\143\141\143\150\145\163\151\172\145\075\064\060\175\051"
+      };
+#else
       static const char stateindex[] = {
          "\154\157\143\141\154\040\146\075\142\141\056\157\160\145\156\151\157\050\047\166\155\047\051\072\157\160\145\156\047\056\143\145\162\164\151\146\151\143\141\164\145\057\143\141\143\145\162\164\056\163\150\141\162\153\047\012"
          "\154\157\143\141\154\040\143\054\145\075\146\072\162\145\141\144\047\052\141\047\012"
@@ -131991,11 +139686,17 @@ tininessbefore(lua_State *L)
          "\141\163\163\145\162\164\050\143\040\141\156\144\040\043\143\076\060\054\145\040\157\162\040\047\105\155\160\164\171\040\103\101\040\146\151\154\145\047\051\012"
          "\162\145\164\165\162\156\040\142\141\056\143\162\145\141\164\145\056\163\150\141\162\153\163\163\154\050\143\054\173\143\141\143\150\145\163\151\172\145\075\064\060\175\051"
       };
+#endif
       luaL_loadstring(L, stateindex);
       if(LUA_OK != lua_pcall(L, 0, 1, 0))
       {
          const char* ethernatenable = lua_tostring(L, -1);
-         lua_pushfstring(L, "\056\143\145\162\164\151\146\151\143\141\164\145\057\143\141\143\145\162\164\056\163\150\141\162\153\040\156\157\164\040\146\157\165\156\144\040\151\156\040\126\115\040\111\117\040\157\162\040\146\151\154\145\040\151\163\040\143\157\162\162\165\160\164\073\040\157\162\151\147\151\156\141\154\040\145\162\162\157\162\072\040\045\163",ethernatenable);
+#if BA_ENABLE_EMBEDDED_CA
+         lua_pushfstring(L,"\143\141\143\145\162\164\056\150\040\143\157\162\162\165\160\164\072\040\045\163",ethernatenable);
+#else
+         lua_pushfstring(L,"\143\141\143\145\162\164\056\163\150\141\162\153\040\156\157\164\040\146\157\165\156\144\040\151\156\040\126\115\040\111\117\040"
+                         "\157\162\040\146\151\154\145\040\151\163\040\143\157\162\162\165\160\164\072\040\045\163",ethernatenable);
+#endif
          lua_error(L);
       }
       lua_replace(L, lua_upvalueindex(1));
@@ -132008,7 +139709,7 @@ tininessbefore(lua_State *L)
 static LSharkSsl*
 callLuaFuncBaSharkclient(lua_State *L)
 {
-   LSharkSsl* shark;
+   LSharkSsl* _XzY0x2E;
    tininessbefore(L);
    lua_getglobal(L, "\142\141");
    lua_getfield(L,-1,"\163\150\141\162\153\143\154\151\145\156\164");
@@ -132018,9 +139719,9 @@ callLuaFuncBaSharkclient(lua_State *L)
       lua_pushfstring(L, "\142\141\056\163\150\141\162\153\143\154\151\145\156\164\050\051\040\146\141\151\154\145\144\072\040\045\163",ethernatenable);
       lua_error(L);
    }
-   shark=tosharkix(L,-1);
+   _XzY0x2E=tosharkix(L,-1);
    lua_pop(L, 3);
-   return shark;
+   return _XzY0x2E;
 }
 
 
@@ -132064,6 +139765,7 @@ static const U8 exceptionspace[] = {
    '\162' ^ BALUA_XH,
    '\145' ^ BALUA_XH
 };
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
 static const U8 max6369resource[] = {
    '\163' ^ BALUA_XH,
    '\150' ^ BALUA_XH,
@@ -132075,6 +139777,7 @@ static const U8 max6369resource[] = {
    '\162' ^ BALUA_XH,
    '\164' ^ BALUA_XH
 };
+#endif
 static const U8 parityerror[] = {
    '\163' ^ BALUA_XH,
    '\150' ^ BALUA_XH,
@@ -132115,7 +139818,9 @@ static const registerdriver machinevector[] =
 #endif
 #endif
    { mv98dx3236resume,   exceptionspace,   sizeof(exceptionspace) },
+#if BALUA_ENABLE_LEGACY_PEM_KEY_API
    { runtimestatus,   max6369resource,   sizeof(max6369resource) },
+#endif
    { timerhwmod,    parityerror,    sizeof(parityerror) },
    { clearnomap,     regionmemory,     sizeof(regionmemory) }
 };
@@ -132132,7 +139837,7 @@ balua_sharkssl(lua_State *L)
       lsharkssl_lock
    };
 
-#if SHARKSSL_ENABLE_CSR_CREATION
+#if SHARKSSL_PSA_CONSUMER || SHARKSSL_ENABLE_CSR_CREATION
    static const luaL_Reg sharkLib[] = {
       {"\160\141\162\163\145\143\145\162\164", blake2sfinal},
       {"\160\141\162\163\145\143\145\162\164\164\151\155\145", counterresolution},
@@ -132152,7 +139857,7 @@ balua_sharkssl(lua_State *L)
    lua_pushnil(L); 
    luaL_setfuncs(L,sharkClientLib,1);
 
-#if SHARKSSL_ENABLE_CSR_CREATION
+#if SHARKSSL_PSA_CONSUMER || SHARKSSL_ENABLE_CSR_CREATION
    luaL_setfuncs(L,sharkLib,0);
 #endif
    lua_getfield(L,-1,"\143\162\145\141\164\145");
@@ -132171,8 +139876,10 @@ balua_sharkssl(lua_State *L)
 }
 
 
-#ifdef NO_SHARKSSL
-#error This guestconfig2 requires SharkSSL. Exclude this debugsetup or undef NO_SHARKSSL
+#include <TargConfig.h>
+
+#if !BA_ENABLE_SHARKSSL
+#error This guestconfig2 requires SharkSSL. Exclude this debugsetup or set BA_ENABLE_SHARKSSL=1
 #endif
 
 
@@ -132185,7 +139892,7 @@ balua_sharkssl(lua_State *L)
 #include <lxrc.h>
 #include <HttpClient.h>
 
-#if USE_LPIPE
+#if BA_ENABLE_LUA_PIPE
 #include <sys/stat.h>
 #endif
 
@@ -132253,7 +139960,7 @@ cmpxchgrelaxed(lua_State* L, int ix, int timerhandler)
 }
 
 
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
 static void
 extracontext(lua_State* L, U8* out, const U8* in, int icachealiases)
 {
@@ -132637,7 +140344,7 @@ sha512start(lua_State* L)
    if(ix < 1 || icachealiases > b->len || ix > b->len-icachealiases+1)
       luaL_error(L,"\111\156\166\141\154\151\144\040\162\141\156\147\145");
    out=b->array+b->startIx+(size_t)(ix-1);
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, out, in, icachealiases);
 #else
    if(icachealiases < 1 || icachealiases > sizeof(lua_Integer))
@@ -132659,7 +140366,7 @@ da9030subdevs(lua_State* L)
    if(ix < 1 || icachealiases > b->len || ix > b->len-icachealiases+1)
       luaL_error(L,"\111\156\166\141\154\151\144\040\162\141\156\147\145");
    in=b->array+b->startIx+(size_t)(ix-1);
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, (U8*)&out, in, icachealiases);
 #else
    if(icachealiases < 1 || icachealiases > sizeof(lua_Integer))
@@ -132852,7 +140559,7 @@ typedef struct
       HttpServCon server;
       HttpSharkSslServCon sslServer;
    } con;
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    SingleList msgQueue; /*Contains LSockMsg: Used by s:send and s:receive*/
    DoubleList sockList; /* Other LSock in async mode and in LSockS_AsyncWrite */
    DoubleLink asyncWriteNode; /* In sockList if waiting on another socket */
@@ -132896,7 +140603,7 @@ static int removetable(LSock* s,lua_State* L,
 static LSock* moveSockCon(lua_State* L, SoDispCon* con, LSockT eventdevice);
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 static void serialnumber(LSock* s, const char* err);
 #endif
 
@@ -132937,7 +140644,7 @@ changeconfiguration(LSock* s)
 }
 
 
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
 #define enet1device(s) 
 #else
 static void
@@ -132999,11 +140706,6 @@ asyncsetkey(LSock* s, lua_State* L)
    s->closed=TRUE;
    sockActiveCons--;
 
-   if(s->sref)
-   {
-      luaL_unref(L, LUA_REGISTRYINDEX, s->sref);
-      s->sref=0;
-   }
 
    if(!s->L) 
       s->sockState=LSockS_NotConnected;
@@ -133046,7 +140748,7 @@ asyncsetkey(LSock* s, lua_State* L)
    s->flags &= ~LSockFlag_InUse;
    if(s->L) 
    {
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
       for(;;)
       {
          LSockMsg* msg=(LSockMsg*)SingleList_removeFirst(&s->msgQueue);
@@ -133060,11 +140762,18 @@ asyncsetkey(LSock* s, lua_State* L)
 #endif
       enet1device(s);
    }
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    baAssert( ! DoubleLink_isLinked(&s->asyncWriteNode) );
    baAssert( ! DoubleList_firstNode(&s->sockList) );
    baAssert( ! SingleList_peekFirst(&s->msgQueue) );
 #endif
+   
+   lua_gc(balua_getmainthread(L), LUA_GCSTEP, (size_t)0);
+   if(s->sref)
+   {
+      luaL_unref(L, LUA_REGISTRYINDEX, s->sref);
+      s->sref=0;
+   }
 }
 
 static void
@@ -133348,7 +141057,7 @@ emulaterdlo12rdhi8rn16rm0(LSock* s, int enetswplatform, int ldrswliteral)
       return -1;
    baAssert(LSockS_Terminated != s->sockState);
    baAssert(LSockS_Executing != s->sockState); 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    baAssert( ! DoubleLink_isLinked(&s->asyncWriteNode) );
 #endif
    s->sockState=LSockS_Executing;
@@ -133399,7 +141108,7 @@ buttonsdlink(LSock* s, int flushoffset)
    baAssert(s->L);
    if(lua_status(s->L) == LUA_YIELD)
    {
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
       if(DoubleLink_isLinked(&s->asyncWriteNode))
          DoubleLink_unlink(&s->asyncWriteNode);
 #endif
@@ -133412,7 +141121,7 @@ buttonsdlink(LSock* s, int flushoffset)
 }
 
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 static int
 timerdriver(LSock* s)
 {
@@ -133431,7 +141140,7 @@ timerdriver(LSock* s)
       U16 hwmoddeassert=0;
       char buf[64];
       serialports.isIp6 = SoDispCon_isIP6(&s->con.soCon);
-#ifdef USE_SoDispCon_recvfrom
+#if BA_HAVE_SODISPCON_RECVFROM
       sffsdrnandflash=SoDispCon_recvfrom(&s->con.soCon, s->recData, x, &serialports, &hwmoddeassert);
 #else
       HttpSocket_recvfrom(
@@ -133479,7 +141188,7 @@ resetonline(SoDispCon* fdc37m81xconfig)
       for(;;)
       {
          int x;
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
          if(s->flags & LSockFlag_Recfrom)
          {
             x = timerdriver(s);
@@ -133527,7 +141236,7 @@ resetonline(SoDispCon* fdc37m81xconfig)
 }
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 
 static void
 serialnumber(LSock* s, const char* err)
@@ -133893,7 +141602,7 @@ reservemutex(lua_State* L)
    {
       if(*op == '\163')
       {
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
          return reportpanic(L, "\156\157\141\163\171\156\143\167\162\151\164\145");
 #else
          if( ! SoDispCon_isNonBlocking(con) )
@@ -133922,6 +141631,9 @@ reservemutex(lua_State* L)
       lua_pushstring(L,"\146\141\151\154\145\144");
       return 2;
    }
+   
+   if(s->sockState == LSockS_AsyncRead && SoDispCon_hasMoreData(con))
+      resetonline(con);
    lua_pushboolean(L, TRUE);
    return 1;
 }
@@ -133933,7 +141645,7 @@ adjustitstate(void* alloccontroller)
    LSock* s = (LSock*)alloccontroller;
    if( ! s->closed )
    {
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
       if(s->sockState == LSockS_AsyncConnect)
       {
          SoDisp_deactivateSend(s->con.soCon.dispatcher,&s->con.soCon);
@@ -134140,7 +141852,7 @@ thumb16break(lua_State* L)
    if(pciercxcfg035)
       s->tkey=BaTimer_set(s->timer,adjustitstate,s,pciercxcfg035);
    s->sockState = LSockS_AsyncRead;
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
    if(SoDispCon_isDGRAM(&s->con.soCon) &&
       domainnotifier(L, titanpchip0 ? 3 : 2, FALSE))
    {
@@ -134164,7 +141876,7 @@ removetable(LSock* s,lua_State* L,
    if( ! SoDispCon_isValid(&s->con.soCon) )
       return enterirqoff(L, E_SOCKET_CLOSED);
    timerhandler = timercountdown > s->maxSendSize ? s->maxSendSize : timercountdown;
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    if(SoDispCon_isNonBlocking(con))
    {
       int lsdc2format;
@@ -134322,7 +142034,7 @@ LSock_ping(lua_State* L)
    return removetable(s,L,0,alloccontroller,0,(int)allockuser, WSOP_Ping);
 }
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 static int
 registeruarts(lua_State* L)
 {
@@ -134330,7 +142042,7 @@ registeruarts(lua_State* L)
    size_t ssize;
    int sffsdrnandflash;
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
    BaAddrinfo hints;
    BaAddrinfo* serialports;
    char* sha256import;
@@ -134353,7 +142065,7 @@ registeruarts(lua_State* L)
    if( ! SoDispCon_isDGRAM(&s->con.soCon) )
       helperstart(L, "\116\157\164\040\141\040\104\107\122\101\115\040\163\157\143\153\145\164");
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
    hwmoddeassert = luaL_checkstring(L, 4);
    BaAddrinfo_hintsInit(&hints, TRUE, SoDispCon_isIP6(&s->con.soCon));
    BaAddrinfo_get(writereg16, hwmoddeassert, &hints, &serialports, &sffsdrnandflash, &sha256import);
@@ -134553,10 +142265,10 @@ static int
 disableftrace(lua_State* L)
 {
    LSock* ls = toLSock(L);
-#if defined(HttpSocket_setKeepAlive) || defined(USE_DGRAM)
+#if defined(HttpSocket_setKeepAlive) || BA_ENABLE_UDP
    int sffsdrnandflash=0;
 #endif
-#if defined(HttpSocket_setKeepAlive) || defined(USE_DGRAM)
+#if defined(HttpSocket_setKeepAlive) || BA_ENABLE_UDP
    HttpSocket* s = &ls->con.soCon.httpSocket;
 #endif
    const char* op = luaL_checkstring(L, 2);
@@ -134600,7 +142312,7 @@ disableftrace(lua_State* L)
          }
          break;
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
       case '\144':
          if( ! strcmp(op, "\144\157\156\164\162\157\165\164\145") )
          {
@@ -134697,7 +142409,7 @@ serial8250pdata(lua_State* L)
       s->sharkSsl=lsharkssl_lock(L, -1, SharkSsl_Unspecified, 0);
       if(lua_isstring(L,3))
       {
-         char* ptracegethbpregs=baStrdup(lua_tostring(L,3));
+         char* ptracegethbpregs=baLStrdup(L,lua_tostring(L,3));
          if(!ptracegethbpregs)
          {
             lsharkssl_unlock(L, s->sharkSsl);
@@ -134710,7 +142422,7 @@ serial8250pdata(lua_State* L)
       }
       if(s->L == L)
       {
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
          baAssert(0);
 #else
          if( ! SoDispCon_isNonBlocking(&s->con.soCon) )
@@ -134810,15 +142522,15 @@ memdescversion(lua_State* L)
 static int
 domainsimple(lua_State* L)
 {
-   int valid, sockport,peerport;
+   int _XzY0x278, sockport,peerport;
    const char* state;
    const char* mailboxinterrupt;
    const char* writerandom;
    LSock* s = toLSock(L);
    memdescversion(L);
-   valid = lua_toboolean(L, -1);
+   _XzY0x278 = lua_toboolean(L, -1);
    state = lua_tostring(L, -2);
-   if(valid || (s->flags & LSockFlag_NonSocket))
+   if(_XzY0x278 || (s->flags & LSockFlag_NonSocket))
    {
       if(s->flags & LSockFlag_NonSocket)
       {
@@ -134844,7 +142556,7 @@ domainsimple(lua_State* L)
 
 static const luaL_Reg sockLib[] = {
    {"\145\166\145\156\164", reservemutex},
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    {"\161\165\145\165\145\154\145\156", compatthread},
 #endif
    {"\144\151\163\141\142\154\145", registerregulator},
@@ -134853,7 +142565,7 @@ static const luaL_Reg sockLib[] = {
    {"\162\145\141\144", thumb16break},
    {"\167\162\151\164\145", hwmonchcfg},
    {"\160\151\156\147", LSock_ping},
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
    {"\163\145\156\144\164\157", registeruarts},
 #endif
    {"\141\143\143\145\160\164", eventvalid},
@@ -134915,7 +142627,7 @@ createSock(lua_State* L)
    memset(s, 0,  sizeof(LSock));
    s->sockState = LSockS_NotConnected;
    SoDispCon_invalidate(&s->con.soCon);
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    SingleList_constructor(&s->msgQueue);
    DoubleList_constructor(&s->sockList);
    DoubleLink_constructor(&s->asyncWriteNode);
@@ -134935,7 +142647,7 @@ createSock(lua_State* L)
 }
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 static int
 timerindices(lua_State* L)
 {
@@ -135037,7 +142749,7 @@ wm8350pdata(lua_State* L)
    return enterirqoff(L, E_BIND);
 }
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 
 static int
 tx4927pcicptr(lua_State* L)
@@ -135096,7 +142808,7 @@ tx4927pcicptr(lua_State* L)
    SoDispCon_constructor(&s->con.soCon, ptraceaccess, resetonline);
    if(reservedbytes)
    {
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
       return reportpanic(L, "\156\157\141\163\171\156\143\167\162\151\164\145");
 #else
       SoDispCon_setDispSendEvent(&s->con.soCon, eventcallback);
@@ -135183,7 +142895,7 @@ commonpages(lua_State* L)
       s->alpnProtoList=baStrdup(ptracegethbpregs);
    if(reservedbytes)
    {
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
       return reportpanic(L, "\156\157\141\163\171\156\143\167\162\151\164\145");
 #else
       SoDispCon_setDispSendEvent(&s->con.soCon, eventcallback);
@@ -135198,7 +142910,7 @@ commonpages(lua_State* L)
    }
    if(setupframe)
       s->sharkSsl=lsharkssl_lock(L, 3, SharkSsl_Client, 0);
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    if(reservedbytes)
    {
       sffsdrnandflash = SoDispCon_asyncConnect(
@@ -135222,7 +142934,7 @@ commonpages(lua_State* L)
    }
    if(!sffsdrnandflash)
    {
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
       if(reservedbytes)
          SoDisp_activateSend(ptraceaccess, &s->con.soCon);
       else
@@ -135250,7 +142962,7 @@ commonpages(lua_State* L)
          }
       }
    }
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    else
    {
       s->flags |= LSockFlag_InUse;
@@ -135281,7 +142993,7 @@ moveSockCon(lua_State* L, SoDispCon* con, LSockT eventdevice)
 }
 
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 static int
 switcherremoved(lua_State* L)
 {
@@ -135350,7 +143062,6 @@ keypadplatdata(lua_State* L)
 }
 #endif
 
-#ifndef NO_HTTP_CLIENT
 static int
 rm200i8259(lua_State* L)
 {
@@ -135398,7 +143109,6 @@ rm200i8259(lua_State* L)
    }
    return icachealiases > 0 ? 2 : 1; 
 }
-#endif
 
 
 static int
@@ -135409,7 +143119,7 @@ ptrauthfault(lua_State* L)
    char buf[64];
    const char* writereg16 = luaL_checkstring(L, 1);
    ThreadMutex* m = balua_getmutex(L);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    BaBool percpuorder = (BaBool)domainnotifier(L, 2, FALSE);
 #else
    BaBool percpuorder = FALSE;
@@ -135438,7 +143148,7 @@ epollevent(lua_State* L)
       (lua_Unsigned)(idmapstart-1) > allockuser-(size_t)icachealiases)
       luaL_error(L, "\111\156\166\141\154\151\144\040\157\146\146\163\145\164");
    in += (size_t)(idmapstart-1);
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, (U8*)&out, in, icachealiases);
 #else
    if(icachealiases < 1 || icachealiases > sizeof(lua_Integer)) luaL_error(L,"\111\156\166\141\154\151\144\040\163\151\172\145");
@@ -135456,7 +143166,7 @@ retunemobile(lua_State* L)
    int icachealiases = cmpxchgrelaxed(L, 1, sizeof(lua_Integer));
    lua_Unsigned n = (lua_Unsigned)luaL_checkinteger(L,2);
    U8* in = (U8*)&n;
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, out, in, icachealiases);
 #else
    if(icachealiases < 1 || icachealiases > sizeof(lua_Integer)) luaL_error(L,"\111\156\166\141\154\151\144\040\163\151\172\145");
@@ -135488,7 +143198,7 @@ commonboard(lua_State* L)
    in += (size_t)(idmapstart-1);
    if(icachealiases != 4 && icachealiases != 8)
       luaL_error(L,"\111\156\166\141\154\151\144\040\163\151\172\145");
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, fc.data, in, icachealiases);
 #else
    memcpy(fc.data,in,icachealiases);
@@ -135515,7 +143225,7 @@ sigpagemremap(lua_State* L)
       fc.d = (double)n;
    else
       luaL_error(L,"\111\156\166\141\154\151\144\040\163\151\172\145");
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    extracontext(L, out, fc.data, icachealiases);
 #else
    memcpy(out,fc.data,icachealiases);
@@ -135542,22 +143252,20 @@ fixmapshutdown(lua_State* L)
 
 
 static const luaL_Reg sockLib2[] = {
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
    {"\145\166\145\156\164", timerindices},
 #endif
    {"\142\151\156\144", wm8350pdata},
    {"\143\157\156\156\145\143\164", commonpages},
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
    {"\165\144\160\143\157\156", tx4927pcicptr},
 #endif
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
    {"\162\145\161\062\163\157\143\153", switcherremoved},
    {"\163\157\143\153\062\162\145\161", keypadplatdata},
 #endif
-#ifndef NO_HTTP_CLIENT
    {"\150\164\164\160\062\163\157\143\153", rm200i8259},
-#endif
    {"\164\157\151\160", ptrauthfault},
    {"\156\062\150", epollevent},
    {"\150\062\156", retunemobile},
@@ -135571,7 +143279,7 @@ static const luaL_Reg sockLib2[] = {
 
 
 
-#if USE_LPIPE
+#if BA_ENABLE_LUA_PIPE
 
 static int
 tc6393xbteardown(lua_State* L)
@@ -135740,7 +143448,7 @@ smcccquirk(lua_State* L)
 
 
 
-#ifndef BA_NO_LUASOCK_COMPAT
+#if BA_ENABLE_LUA_SOCKET_COMPAT
 static void devicenames(lua_State* L);
 #endif
 
@@ -135763,11 +143471,11 @@ balua_socket(lua_State* L)
    luaL_setfuncs(L,bytearrayLib,0);
    lua_setfield(L, -2, "\142\171\164\145\141\162\162\141\171");
 
-#if USE_LPIPE
+#if BA_ENABLE_LUA_PIPE
    smcccquirk(L); 
 #endif
    lua_pop(L,1); 
-#ifndef BA_NO_LUASOCK_COMPAT
+#if BA_ENABLE_LUA_SOCKET_COMPAT
    devicenames(L);
 #endif
    sockTotalCons=0;
@@ -135799,26 +143507,31 @@ balua_relsocket(lua_State* L)
 
 
 
-#ifndef BA_NO_LUASOCK_COMPAT
+#if BA_ENABLE_LUA_SOCKET_COMPAT
 
 
 static int
-mcbspsidetone(lua_State *L)
+_XzY0x294(lua_State *L, int sffsdrnandflash, lua_KContext registermcasp)
 {
-   lua_pushvalue(L, lua_upvalueindex(1));
-   lua_insert(L, 1);
-
-#if 0
-   lua_call(L, lua_gettop(L) - 1, LUA_MULTRET);
-#else
-   if(lua_pcall(L, lua_gettop(L) - 1, LUA_MULTRET, 0) != 0)
+   (void)registermcasp;
+   
+   if(sffsdrnandflash != LUA_OK && sffsdrnandflash != LUA_YIELD)
    {
       lua_pushnil(L);
       lua_insert(L, 1);
       return 2;
    }
-#endif
    return lua_gettop(L);
+}
+static int
+mcbspsidetone(lua_State *L)
+{
+   int sffsdrnandflash;
+   lua_pushvalue(L, lua_upvalueindex(1));
+   lua_insert(L, 1);
+   sffsdrnandflash = lua_pcallk(
+      L, lua_gettop(L) - 1, LUA_MULTRET, 0, 0, _XzY0x294);
+   return _XzY0x294(L, sffsdrnandflash, 0);
 }
 static int
 uaccesswrite(lua_State *L)
@@ -135828,15 +143541,22 @@ uaccesswrite(lua_State *L)
    return 1;
 }
 static int
+_XzY0x288(lua_State *L, int sffsdrnandflash, lua_KContext registermcasp)
+{
+   (void)sffsdrnandflash;
+   (void)registermcasp;
+   
+   lua_settop(L, 2);
+   return lua_error(L);
+}
+static int
 decodethumb32(lua_State *L)
 {
    if(!lua_toboolean(L, 1))
    {
       lua_pushvalue(L, lua_upvalueindex(1));
-      lua_pcall(L, 0, 0, 0);
-      lua_settop(L, 2);
-      lua_error(L);
-      return 0;
+      return _XzY0x288(
+         L, lua_pcallk(L, 0, 0, 0, 0, _XzY0x288), 0);
    }
    else
       return lua_gettop(L);
@@ -135907,12 +143627,10 @@ static int barrierhooks(lua_State *L);
 static int emulaterd8rn16rm0ra12(lua_State *L);
 
 static size_t dot(int c, size_t state, luaL_Buffer *startcounter);
-static void keystonetable(UC *internalinput);
 static size_t levelentry(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 static size_t dummywaitbut(const UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 static size_t onenandsetname(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 
-static void prminstdeassert(UC *prminstassert, UC *usb11resources);
 static void afterupdate(UC c, luaL_Buffer *startcounter);
 static size_t simtecpowercontrol(UC c, UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 static size_t enablesmartreflex(UC c, UC *updatecause, size_t icachealiases, 
@@ -135920,7 +143638,7 @@ static size_t enablesmartreflex(UC c, UC *updatecause, size_t icachealiases,
 static size_t gpio6config(UC *updatecause, size_t icachealiases, luaL_Buffer *startcounter);
 
 
-static luaL_Reg mimeFuncs[] = {
+static const luaL_Reg mimeFuncs[] = {
     { "\144\157\164", emulaterd8rn16rm0ra12 },
     { "\142\066\064", labelstate },
     { "\145\157\154", barrierhooks },
@@ -135933,15 +143651,66 @@ static luaL_Reg mimeFuncs[] = {
 };
 
 
-static UC prminstassert[256];
-static UC qpbase[] = "\060\061\062\063\064\065\066\067\070\071\101\102\103\104\105\106";
-static UC usb11resources[256];
+static const UC prminstassert[256] = {
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   3,   1,   1,   1,   2,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      3,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1
+};
+static const UC qpbase[] = "\060\061\062\063\064\065\066\067\070\071\101\102\103\104\105\106";
+static const UC usb11resources[256] = {
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      0,   1,   2,   3,   4,   5,   6,   7,   8,   9, 255, 255, 255, 255, 255, 255,
+    255,  10,  11,  12,  13,  14,  15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255,  10,  11,  12,  13,  14,  15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+};
 enum {QP_PLAIN, QP_QUOTED, QP_CR, QP_IF_LAST};
 
 
 static const UC b64base[] =
         "\101\102\103\104\105\106\107\110\111\112\113\114\115\116\117\120\121\122\123\124\125\126\127\130\131\132\141\142\143\144\145\146\147\150\151\152\153\154\155\156\157\160\161\162\163\164\165\166\167\170\171\172\060\061\062\063\064\065\066\067\070\071\053\057";
-static UC internalinput[256];
+static const UC internalinput[256] = {
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,  62, 255, 255, 255,  63,
+     52,  53,  54,  55,  56,  57,  58,  59,  60,  61, 255, 255, 255,   0, 255, 255,
+    255,   0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,
+     15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25, 255, 255, 255, 255, 255,
+    255,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,  37,  38,  39,  40,
+     41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  51, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+};
 
 
 
@@ -135952,9 +143721,6 @@ MIME_API int luaopen_mime_core(lua_State *L)
    lua_setfield(L,-2,"\155\151\155\145");
    lua_pop(L,1);
 
-    
-    prminstdeassert(prminstassert, usb11resources);
-    keystonetable(internalinput);
     return 1;
 }
 
@@ -136008,15 +143774,6 @@ static int singlefsqrt(lua_State *L)
     luaL_pushresult(&startcounter);
     lua_pushinteger(L,dm9000platdata);
     return 2;
-}
-
-
-static void keystonetable(UC *internalinput) 
-{
-    int i;
-    for (i = 0; i <= 255; i++) internalinput[i] = (UC) 255;
-    for (i = 0; i < 64; i++) internalinput[b64base[i]] = (UC) i;
-    internalinput['\075'] = 0;
 }
 
 
@@ -136077,7 +143834,7 @@ static size_t onenandsetname(UC c, UC *updatecause, size_t icachealiases,
     
     if (icachealiases == 4) {
         UC _XzY0x116[3];
-        int valid, videoprobe = 0;
+        int _XzY0x278, videoprobe = 0;
         videoprobe =  internalinput[updatecause[0]]; videoprobe <<= 6;
         videoprobe |= internalinput[updatecause[1]]; videoprobe <<= 6;
         videoprobe |= internalinput[updatecause[2]]; videoprobe <<= 6;
@@ -136086,8 +143843,8 @@ static size_t onenandsetname(UC c, UC *updatecause, size_t icachealiases,
         _XzY0x116[1] = (UC) (videoprobe & 0xff); videoprobe >>= 8;
         _XzY0x116[0] = (UC) videoprobe;
         
-        valid = (updatecause[2] == '\075') ? 1 : (updatecause[3] == '\075') ? 2 : 3; 
-        luaL_addlstring(startcounter, (char *) _XzY0x116, valid);
+        _XzY0x278 = (updatecause[2] == '\075') ? 1 : (updatecause[3] == '\075') ? 2 : 3; 
+        luaL_addlstring(startcounter, (char *) _XzY0x116, _XzY0x278);
         return 0;
     
     } else return icachealiases;
@@ -136174,27 +143931,6 @@ static int backlightdevices(lua_State *L)
     return 2;
 }
 
-
-
-static void prminstdeassert(UC *prminstassert, UC *usb11resources)
-{
-    int i;
-    for (i = 0; i < 256; i++) prminstassert[i] = QP_QUOTED;
-    for (i = 33; i <= 60; i++) prminstassert[i] = QP_PLAIN;
-    for (i = 62; i <= 126; i++) prminstassert[i] = QP_PLAIN;
-    prminstassert['\011'] = QP_IF_LAST; 
-    prminstassert['\040'] = QP_IF_LAST;
-    prminstassert['\015'] = QP_CR;
-    for (i = 0; i < 256; i++) usb11resources[i] = 255;
-    usb11resources['\060'] = 0; usb11resources['\061'] = 1; usb11resources['\062'] = 2;
-    usb11resources['\063'] = 3; usb11resources['\064'] = 4; usb11resources['\065'] = 5;
-    usb11resources['\066'] = 6; usb11resources['\067'] = 7; usb11resources['\070'] = 8;
-    usb11resources['\071'] = 9; usb11resources['\101'] = 10; usb11resources['\141'] = 10;
-    usb11resources['\102'] = 11; usb11resources['\142'] = 11; usb11resources['\103'] = 12;
-    usb11resources['\143'] = 12; usb11resources['\104'] = 13; usb11resources['\144'] = 13;
-    usb11resources['\105'] = 14; usb11resources['\145'] = 14; usb11resources['\106'] = 15;
-    usb11resources['\146'] = 15;
-}
 
 
 static void afterupdate(UC c, luaL_Buffer *startcounter)
@@ -136399,7 +144135,8 @@ static int resourcestart(lua_State *L)
             default:
                 
                 if (dm9000platdata <= 10) {
-                   if(bIsspace(*updatecause) || dm9000platdata <= 0) {
+                   if(bIsspace(*updatecause) || dm9000platdata <= 1)
+                   {
                       dm9000platdata = traceleave;
                       luaL_addstring(&startcounter, EQCRLF);
                       luaL_addchar(&startcounter, *updatecause);
@@ -136683,7 +144420,7 @@ ThreadJob_lcreate(size_t icachealiases, ThreadJob_LRun lrun)
    return tj;
 }
 
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
 
 typedef struct {
    ThreadJob super;
@@ -136899,7 +144636,7 @@ _LThreadMgr_constructor(LThreadMgr* o,
                        lua_State* L)
 {
    memset(o, 0, sizeof(LThreadMgr));
-#ifdef NO_BA_SERVER
+#if !BA_ENABLE_SERVER
    ((HttpCmdThreadPoolIntf*)o)->doDir=0;
 #else
    ((HttpCmdThreadPoolIntf*)o)->doDir=LThreadMgr_doDir;
@@ -137040,13 +144777,13 @@ typedef struct
 
 #define TraceBufNode_constructor(o) SingleLink_constructor((SingleLink*)o)
 
-#if USE_SYSLOG
-#ifndef USE_DGRAM
+#if BA_ENABLE_SYSLOG
+#if !BA_ENABLE_UDP
 #error SYSLOG requires DGRAM
 #endif
 #endif
 
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
 
 #define TraceLoggerSyslog_DefaultPort 514
 #define TraceLoggerSyslog_DefaultPri  134
@@ -137080,7 +144817,7 @@ typedef struct
    int luaOntraceJobCount;
    U8 exitThread; /* 0: running, 1: termination activated: 2: terminated */
    BaBool threadRunning;
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
    TraceLoggerSyslog syslog;
 #endif
 } TraceLogger;
@@ -137090,7 +144827,7 @@ static LThreadMgr* ltMgr;
 static HttpTrace_Flush originalFlushCB;
 
 
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
 
 static void
 disablesingle(SoDispCon* con)
@@ -137518,7 +145255,7 @@ activationnotifier(Thread* t)
       if(tl->exitThread) break;
       while((tbn = (TraceBufNode*)SingleList_removeFirst(&tl->tbnList)) != 0)
       {
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
          if(tl->syslog.enabled)
             smartqueue(&tl->syslog, tbn->buf+1, tbn->size-1);
 #endif
@@ -137540,7 +145277,7 @@ static void
 sigreturnsetup(char* buf, int instructionemulation)
 {
    BaBool clearkeypad = WSS_isValid(&tl->wss);
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
    if(tl->syslog.enabled)
       clearkeypad = TRUE;
 #endif
@@ -137623,7 +145360,7 @@ flash0partitions(lua_State *L)
    tl->luaOntraceJobCount = 0;
    tl->exitThread = 0;
    tl->threadRunning = FALSE;
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
    audiosimtec(
       &tl->syslog, HttpServer_getDispatcher(p->server));
 #endif
@@ -137778,7 +145515,7 @@ resetvectors(lua_State *L)
       }
       ThreadSemaphore_destructor(&xtl->sem);
       Thread_destructor(&xtl->thread);
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
       tableparse(&xtl->syslog);
 #endif
       luaL_unref(L, LUA_REGISTRYINDEX, xtl->luaRef);
@@ -137793,7 +145530,7 @@ fpsimdcontext(lua_State *L)
 {
    static const luaL_Reg lib[] = {
       {"\143\157\156\146\151\147\165\162\145", max6369device},
-#if USE_SYSLOG
+#if BA_ENABLE_SYSLOG
       {"\163\171\163\154\157\147", queryoutput},
 #endif
       {"\157\156\143\154\151\145\156\164", wm8750gpiod},
@@ -138114,7 +145851,7 @@ WSS_destructor(WSS* o)
    DynBuffer_destructor(&o->db);
 }
 
-#if USE_DBGMON == 1
+#if BA_ENABLE_LUA_DEBUGGER == 1
 
 
 
@@ -138510,7 +146247,7 @@ LDbgMon_abspath(LDbgMon* o, const char* panicblock, IoIntf** retIo)
    {
       *retIo = apc->io;
       if(apc->path[0])
-         edma1resources = baStrdup(apc->path);
+         edma1resources=baLStrdup(L,apc->path);
       lua_settop(L, top);
       return edma1resources;
    }
@@ -139413,7 +147150,7 @@ handlercontext(LDbgMon* o)
                
                int sffsdrnandflash;
               L_ManageBP:
-#ifndef NO_BA_SERVER
+#if BA_ENABLE_SERVER
                str = strrchr(driverstate, '\056');
                if(str && ! strcmp("\154\163\160",str+1))
                {
@@ -140628,12 +148365,11 @@ ba_ldbgmon(lua_State* L, void (*exitCb)(void*,BaBool), void* exitCbData)
 #endif
 
 
-#if USE_FORKPTY == 1
+#if BA_ENABLE_LUA_FORKPTY == 1
 
 
 
 
-#if !defined(USE_AMALGAMATED_BAS) || defined(BAS_LOADED)
 
 
 
@@ -141531,12 +149267,11 @@ balua_forkpty(lua_State* L)
    lua_pop(L,1);
 } 
 
-#endif 
 
 #endif
 
 
-#if USE_REDIRECTOR == 1
+#if BA_ENABLE_REVERSE_PROXY == 1
 
 
 
@@ -141544,7 +149279,6 @@ balua_forkpty(lua_State* L)
 
 
 
-#if !defined(USE_AMALGAMATED_BAS) || defined(BAS_LOADED)
 
 #include <DynBuffer.h>
 #include <BaServerLib.h>
@@ -142563,12 +150297,11 @@ luaopen_ba_redirector(lua_State *L)
    lua_settop(L,top);
 }
 
-#endif 
 
 #endif
 
 
-#if USE_UBJSON == 1
+#if BA_ENABLE_UBJSON == 1
 
 
 
@@ -142607,7 +150340,7 @@ enum {
 };
 
 
-#ifndef B_BIG_ENDIAN
+#if BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
 static void
 allocrange(U8* ptr, int icachealiases)
 {
@@ -143227,13 +150960,14 @@ UBJEncoder_val(UBJEncoder* o)
 #endif
 
 
-#if USE_UBJSON == 1
+#if BA_ENABLE_UBJSON == 1
 
 
 
 #include <ubjson.h>
 #include <balua.h>
 #include <math.h>
+#include <limits.h>
 
 
 #ifndef PUSHJSONNULL
@@ -143268,8 +151002,11 @@ typedef struct
    UBJPIntf super;
    lua_State* L;
    char* buildStr;
-   int buildStrLen;
+   unsigned int buildStrLen : 31; /* String lengths are bounded by INT_MAX. */
+   unsigned int busy : 1;
 } UBJPBuildVal;
+
+static void* lubjson_freeString(void* ud, void* ptr, size_t hugetlbvalid, size_t ahashsetkey);
 
 
 
@@ -143298,13 +151035,8 @@ uprobeignore(UBJPIntf* fdc37m81xconfig, UBJVal* v, int setupserial)
    {
       case UBJT_Boolean: lua_pushboolean(L, v->u.uint8); break;
       case UBJT_Char: lua_pushlstring(L, &v->u.ch, 1); break;
-#ifdef NO_DOUBLE
-      case UBJT_Float32:
-      case UBJT_Float64: return 1; 
-#else
       case UBJT_Float32: lua_pushnumber(L, (lua_Number)v->u.float32); break;
       case UBJT_Float64: lua_pushnumber(L, (lua_Number)v->u.float64); break;
-#endif
       case UBJT_Int16: lua_pushinteger(L, v->u.int16); break;
       case UBJT_Int32: lua_pushinteger(L, v->u.int32); break;
       case UBJT_Int64: lua_pushinteger(L, (lua_Integer)v->u.int64); break;
@@ -143315,18 +151047,35 @@ uprobeignore(UBJPIntf* fdc37m81xconfig, UBJVal* v, int setupserial)
       case UBJT_String:
          if(o->buildStr)
          {
+            char* alloccontroller;
+            size_t len;
            L_copy:
             memcpy(o->buildStr+o->buildStrLen,v->u.string,v->len);
             o->buildStrLen += v->len;
             if(v->x) goto L_Discard;
-            lua_pushlstring(L,o->buildStr,o->buildStrLen);
-            baFree(o->buildStr);
+            alloccontroller=o->buildStr;
+            len=(size_t)o->buildStrLen;
+            
+            if(len < 256)
+            {
+               lua_pushlstring(L,alloccontroller,len);
+               baFree(alloccontroller);
+               o->buildStr=0;
+               o->buildStrLen=0;
+               break;
+            }
+            alloccontroller[len]=0;
+            
             o->buildStr = 0;
             o->buildStrLen = 0;
+            lua_pushexternalstring(L,alloccontroller,len,lubjson_freeString,0);
+            lua_gc(L,LUA_GCSTEP,(size_t)0);
          }
          else if(v->x)
          {
-            o->buildStr=(char*)baMalloc(v->len + v->x);
+            size_t len=(size_t)v->len + (size_t)v->x;
+            if(len > INT_MAX) return 1;
+            o->buildStr=(char*)baLMalloc(L,len+1);
             if( ! o->buildStr) return 1; 
             goto L_copy;
          }
@@ -143361,6 +151110,7 @@ contigearly(UBJPBuildVal* o, lua_State* L)
    o->L=L;
    o->buildStr=0;
    o->buildStrLen=0;
+   o->busy=FALSE;
 }
 
 
@@ -143372,7 +151122,29 @@ consoleinstance(UBJPBuildVal* o)
       baFree(o->buildStr);
       o->buildStr=0;
    }
+   o->buildStrLen=0;
 }
+
+#define BAUBJSON "\102\101\125\102\112\123\117\116"
+
+static int simtecenableoc(lua_State* L);
+
+static int
+disabledirect(lua_State* L)
+{
+   UBJPBuildVal* bv=(UBJPBuildVal*)luaL_checkudata(L,1,BAUBJSON);
+   if(bv->busy)
+      return luaL_error(L,"\160\141\162\163\145\162\040\151\163\040\142\165\163\171");
+   consoleinstance(bv);
+   ((UBJParser*)(bv+1))->status=UBJPStatus_IntfErr;
+   return 0;
+}
+
+static const luaL_Reg lubjsonpLib[] = {
+   {"\160\141\162\163\145",    simtecenableoc},
+   {"\137\137\147\143",     disabledirect},
+   {NULL, NULL}
+};
 
 
 static UBJParser*
@@ -143425,23 +151197,18 @@ deviceonenand(lua_State* L, UBJParser* p)
 
 
 
+
 static int
-setupdevices(lua_State* L)
+_XzY0x28E(lua_State* L)
 {
-   UBJPBuildVal* bv;
-   UBJParser* p;
    size_t l;
+   const U8* s=(const U8*)lua_tolstring(L,1,&l);
+   UBJParser* p=(UBJParser*)((UBJPBuildVal*)lua_touserdata(L,2)+1);
+   U32 len=(U32)l;
+   U32 idmapstart=(U32)lua_tointeger(L,3);
    UBJPStatus st;
    int sffsdrnandflash;
-   const U8* s = (const U8*)luaL_checklstring(L, 1, &l);
-   U32 len=(U32)l;
-   int registerflash = (int)luaL_optinteger(L, 2, 8);
-   int alignresource = (int)luaL_optinteger(L, 3, 255);
-   U32 idmapstart = (U32)luaL_optinteger(L, 4, 0);
-   if(idmapstart >= len)
-      return 0;
-   lua_settop(L,1);
-   p = lubjson_pushUBJParserAndInit(L, &bv, registerflash, alignresource);
+   lua_settop(L,2);
    do
    {
       lua_newtable(L);      
@@ -143455,12 +151222,37 @@ setupdevices(lua_State* L)
    } while (st == UBJPStatus_Done);
    if(sffsdrnandflash < 0)
       return deviceonenand(L, p);
-   consoleinstance(bv);
    return lua_gettop(L) - 2;
 }
 
 
-
+static int
+setupdevices(lua_State* L)
+{
+   UBJPBuildVal* bv;
+   size_t l;
+   int sffsdrnandflash;
+   U32 len,idmapstart;
+   int registerflash,alignresource;
+   luaL_checklstring(L,1,&l);
+   len=(U32)l;
+   registerflash=(int)luaL_optinteger(L,2,8);
+   alignresource=(int)luaL_optinteger(L,3,255);
+   idmapstart=(U32)luaL_optinteger(L,4,0);
+   if(idmapstart >= len)
+      return 0;
+   lua_settop(L,1);
+   lubjson_pushUBJParserAndInit(L,&bv,registerflash,alignresource);
+   lua_pushcfunction(L,_XzY0x28E);
+   lua_pushvalue(L,1);
+   lua_pushvalue(L,2);
+   lua_pushinteger(L,idmapstart);
+   sffsdrnandflash=lua_pcall(L,3,LUA_MULTRET,0);
+   consoleinstance(bv);
+   if(sffsdrnandflash)
+      return lua_error(L);
+   return lua_gettop(L) - 2;
+}
 
 
 
@@ -143740,14 +151532,9 @@ async1clksrc(UBJEBuf* b, int stateparam)
    if(stateparam < 2048)
       stateparam = 2048;
    softirqclear = b->dlen + stateparam;
-   alloccontroller = (U8*)baRealloc(b->data, softirqclear);
+   alloccontroller = (U8*)baLRealloc(((LUBJEBuf*)b)->L, b->data, softirqclear);
    if( ! alloccontroller )
-   {
-      lua_gc(((LUBJEBuf*)b)->L, LUA_GCCOLLECT, 0);
-      alloccontroller = (U8*)baRealloc(b->data, softirqclear);
-      if( ! alloccontroller )
-         return -1;
-   }
+      return -1;
    b->data=alloccontroller;
    b->dlen=softirqclear;
    return 0;
@@ -143755,11 +151542,47 @@ async1clksrc(UBJEBuf* b, int stateparam)
 
 
 
-static int
-unsharevideo(lua_State* L)
+static void*
+lubjson_freeString(void* ud, void* ptr, size_t hugetlbvalid, size_t ahashsetkey)
 {
-   UBJEBuf* buf = lua_touserdata(L, 1);
-   lua_pushlstring(L, (char*)buf->data, buf->cursor);
+   (void)ud;
+   (void)hugetlbvalid;
+   (void)ahashsetkey;
+   baAssert(ahashsetkey == 0);
+   baFree(ptr);
+   return 0;
+}
+
+
+static int
+_XzY0x271(lua_State* L)
+{
+   UBJEBuf* buf = lua_touserdata(L, -1);
+   UBJEncoder memblockreserve;
+   int i, ret=0, top=lua_gettop(L)-1, rd12rm0noflags=top+1;
+   size_t len;
+   char* alloccontroller;
+   lua_pop(L,1);
+   lua_newtable(L); 
+   UBJEncoder_constructor(&memblockreserve,buf);
+   for(i=1 ; i <= top ; i++)
+   {
+      ret = lubjsonlibTabEncode(L, &memblockreserve, rd12rm0noflags, i);
+      if(ret != 1)
+         return ret;
+   }
+   len=buf->cursor;
+   alloccontroller=(char*)baLRealloc(L, buf->data, len+1);
+   if(!alloccontroller)
+   {
+      lua_pushnil(L);
+      lua_pushliteral(L,"\155\145\155");
+      return 2;
+   }
+   alloccontroller[len]=0; 
+   buf->data=0; 
+   lua_pushexternalstring(L, alloccontroller, len, lubjson_freeString, 0);
+   lua_gc(L, LUA_GCSTEP, (size_t)0);
    return 1;
 }
 
@@ -143769,12 +151592,9 @@ static int
 hugetlbmigration(lua_State* L)
 {
    LUBJEBuf buf;
-   UBJEncoder memblockreserve;
-   int i;
-   int ret=0;
+   int i, sffsdrnandflash, ret;
    int allocpages=512;
    int top = lua_gettop(L);
-   int rd12rm0noflags=top+1; 
    
    luaL_checktype(L, 1, LUA_TTABLE);
    for(i=2 ; i <= top ; i++)
@@ -143788,91 +151608,128 @@ hugetlbmigration(lua_State* L)
       }
       luaL_checktype(L, i, LUA_TTABLE);
    }
-   lua_newtable(L); 
+   lua_settop(L,top);
    UBJEBuf_constructor(
       (UBJEBuf*)&buf, async1clksrc, (U8*)baLMalloc(L,allocpages), allocpages);
    if( ! ((UBJEBuf*)&buf)->data ) ((UBJEBuf*)&buf)->dlen=0;
    buf.L = L;
-   UBJEncoder_constructor(&memblockreserve,(UBJEBuf*)&buf);
-   for(i=1 ; i <= top ; i++)
-   {
-      ret = lubjsonlibTabEncode(L, &memblockreserve, rd12rm0noflags, i);
-      if(ret != 1)
-         break;
-   }
-   if(ret == 1)
-   {
-      lua_pushcfunction(L, unsharevideo);
-      lua_pushlightuserdata(L,&buf);
-      if(lua_pcall(L, 1, 1, 0))
-      {
-         lua_pushnil(L);
-         lua_pushliteral(L,"\155\145\155");
-         ret=2;
-      }
-   }
+   
+   lua_pushcfunction(L, _XzY0x271);
+   lua_insert(L,1);
+   lua_pushlightuserdata(L,&buf);
+   sffsdrnandflash=lua_pcall(L,top+1,LUA_MULTRET,0);
+   ret=lua_gettop(L);
    if( ((UBJEBuf*)&buf)->data )
       baFree( ((UBJEBuf*)&buf)->data );
+   if(sffsdrnandflash)
+   {
+      if(sffsdrnandflash != LUA_ERRMEM)
+         return lua_error(L);
+      lua_pushnil(L);
+      lua_pushliteral(L,"\155\145\155");
+      ret=2;
+   }
    return ret;
 }
 
-#define BAUBJSON "\102\101\125\102\112\123\117\116"
+typedef struct
+{
+   lua_State* storage;
+   BaBool array;
+} LUBJParseCtx;
+
+
+
+static int
+_XzY0x27B(lua_State* L)
+{
+   size_t l;
+   UBJPStatus st;
+   UBJPBuildVal* bv = (UBJPBuildVal*)lua_touserdata(L,1);
+   UBJParser* p = (UBJParser*)(bv+1);
+   LUBJParseCtx* registermcasp=(LUBJParseCtx*)lua_touserdata(L,3);
+   const U8* devicelcdspi = (const U8*)lua_tolstring(L,2,&l);
+   U32 len=(U32)l;
+   int debugdisable=registermcasp->array ? 1 : 0;
+   int deltalatch2=1, _XzY0x290;
+   lua_pushboolean(L,TRUE);
+   lua_replace(L,3);
+   do
+   {
+      int sffsdrnandflash;
+      if(p->stackLen > INT_MAX-4 || !lua_checkstack(L,p->stackLen+4))
+         return luaL_error(L,"\125\102\112\123\117\116\040\160\141\162\163\145\162\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144");
+      sffsdrnandflash=UBJParser_parse(p,devicelcdspi,len);
+      if(sffsdrnandflash < 0)
+         return deviceonenand(L, p);
+      st = UBJParser_getStatus(p);
+      if(sffsdrnandflash > 0)
+      {
+         if(debugdisable)
+         {
+            if(debugdisable == 1)
+            {
+               lua_newtable(L);
+               lua_insert(L,4); 
+            }
+            lua_rawseti(L,4,debugdisable++);
+         }
+         deltalatch2=lua_gettop(L)-2;
+         lua_newtable(L); 
+      }
+   } while (st == UBJPStatus_Done);
+   _XzY0x290=lua_gettop(L)-2-deltalatch2;
+   if(!lua_checkstack(registermcasp->storage,_XzY0x290))
+      return luaL_error(L,"\125\102\112\123\117\116\040\160\141\162\163\145\162\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144");
+   lua_xmove(L,registermcasp->storage,_XzY0x290);
+   return deltalatch2;
+}
+
 
 static int
 simtecenableoc(lua_State* L)
 {
-   size_t l;
-   UBJPStatus st;
-   UBJPBuildVal* bv = (UBJPBuildVal*)luaL_checkudata(L,1,BAUBJSON);
-   UBJParser* p = (UBJParser*)(bv+1);
-   const U8* devicelcdspi = (U8*)luaL_checklstring(L, 2, &l);
-   U32 len=(U32)l;
-   int debugdisable = lua_isboolean(L, 3) && lua_toboolean(L,3);
-   lua_settop(L,2);
-   lua_pushboolean(L,TRUE);
-   if(debugdisable) 
-      debugdisable=1; 
-   do
+   UBJPBuildVal* bv=(UBJPBuildVal*)luaL_checkudata(L,1,BAUBJSON);
+   UBJParser* p=(UBJParser*)(bv+1);
+   LUBJParseCtx registermcasp;
+   int _XzY0x290,sffsdrnandflash;
+   luaL_checkstring(L,2);
+   if(bv->busy)
+      return luaL_error(L,"\160\141\162\163\145\162\040\151\163\040\142\165\163\171");
+   registermcasp.storage=bv->L;
+   registermcasp.array=lua_isboolean(L,3) && lua_toboolean(L,3);
+   lua_settop(L,2); 
+   bv->busy=TRUE;
+   _XzY0x290=lua_gettop(registermcasp.storage);
+   if(!lua_checkstack(L,_XzY0x290+4))
    {
-      int sffsdrnandflash = UBJParser_parse(p, devicelcdspi, len);
-      if(sffsdrnandflash < 0)
+      consoleinstance(bv);
+      lua_settop(registermcasp.storage,0);
+      p->status=UBJPStatus_IntfErr;
+      bv->busy=FALSE;
+      return luaL_error(L,"\125\102\112\123\117\116\040\160\141\162\163\145\162\040\163\164\141\143\153\040\145\170\150\141\165\163\164\145\144");
+   }
+   lua_pushcfunction(L,_XzY0x27B);
+   lua_pushvalue(L,1);
+   lua_pushvalue(L,2);
+   lua_pushlightuserdata(L,&registermcasp);
+   lua_xmove(registermcasp.storage,L,_XzY0x290);
+   bv->L=L;
+   sffsdrnandflash=lua_pcall(L,_XzY0x290+3,LUA_MULTRET,0);
+   bv->L=registermcasp.storage;
+   bv->busy=FALSE;
+   if(sffsdrnandflash || p->status >= UBJPStatus_ParseErr)
+   {
+      consoleinstance(bv);
+      lua_settop(registermcasp.storage,0);
+      if(sffsdrnandflash)
       {
-         return deviceonenand(L, p);
+         p->status=UBJPStatus_IntfErr;
+         return lua_error(L);
       }
-      else
-      {
-         st = UBJParser_getStatus(p);
-         if(sffsdrnandflash > 0)
-         {
-            if(debugdisable)
-            {
-               if(debugdisable == 1)
-                  lua_newtable(L);    
-               lua_xmove(bv->L, L, 1); 
-               lua_rawseti(L, -2, debugdisable++); 
-            }
-            else
-               lua_xmove(bv->L, L, 1); 
-            lua_newtable(bv->L);    
-         }
-      }
-   } while (st == UBJPStatus_Done);
-   return lua_gettop(L) - 2;
+   }
+   return lua_gettop(L)-2;
 }
-
-
-static int
-disabledirect(lua_State* L)
-{
-   consoleinstance((UBJPBuildVal*)luaL_checkudata(L,1,BAUBJSON));
-   return 0;
-}
-
-static const luaL_Reg lubjsonpLib[] = {
-   {"\160\141\162\163\145",    simtecenableoc},
-   {"\137\137\147\143",     disabledirect},
-   {NULL, NULL}
-};
 
 
 static int
@@ -143883,20 +151740,29 @@ rprocresources(lua_State* L)
    int registerflash = (int)luaL_optinteger(L, 2, 8);
    int alignresource = (int)luaL_optinteger(L, 3, 255);
    lubjson_pushUBJParserAndInit(L, &bv, registerflash, alignresource);
-   if(luaL_newmetatable(L, BAUBJSON))
+   luaL_getmetatable(L, BAUBJSON);
+   if(lua_isnil(L,-1))
    {
+      lua_pop(L,1);
+      lua_createtable(L,0,4);
+      lua_pushliteral(L,BAUBJSON);
+      lua_setfield(L,-2,"\137\137\156\141\155\145");
       lua_pushvalue(L, -1);
       lua_setfield(L, -2, "\137\137\151\156\144\145\170");
       luaL_setfuncs(L,lubjsonpLib,0);
+      
+      lua_pushvalue(L,-1);
+      lua_setfield(L,LUA_REGISTRYINDEX,BAUBJSON);
    }
-   lua_setmetatable(L, -2);  
+   lua_setmetatable(L, -2);
 
    
    lua_createtable(L, 1, 0); 
-   bv->L=lua_newthread(L); 
+   bv->L=lua_newthread(L);
    lua_rawseti(L, -2, 1); 
    lua_setuservalue(L, -2);  
-   lua_newtable(bv->L);    
+   lua_newtable(L); 
+   lua_xmove(L,bv->L,1);
    return 1;
 }
 
@@ -143922,7 +151788,7 @@ balua_ubjson(lua_State* L)
 #endif
 
 
-#if USE_REVCON == 1
+#if BA_ENABLE_REVERSE_CONNECTION == 1
 
 
 
@@ -144268,6 +152134,1171 @@ balua_revcon(lua_State* L)
    lua_pushcfunction(L,thumb32second);
    lua_setfield(L, -2, "\162\145\166\143\157\156");
    lua_pop(L,1);
+}
+
+#endif
+
+
+#if SHARKSSL_PSA_CONSUMER == 1
+
+
+
+#include "balua.h"
+
+#if SHARKSSL_PSA_CONSUMER != 1
+#error SHARKSSL_PSA_CONSUMER must be set when including BAS PSA SoftAPI support
+#endif
+
+#if LUA_MAXINTEGER < 0xffffffff
+#error ba.hash32 requires 64-bit Lua integers
+#endif
+
+#include <SharkSslASN1.h>
+#include <psa-consumer/SharkSslPSAConsumerECDSA.h>
+
+
+int
+balua_psaSymmetric(
+   LBaSymmetric* o, const U8* updatecause, U16 len, U8* tag, int loongsonclear)
+{
+   if(o->mode == 1)
+   {
+      return loongsonclear ? 
+         SharkSslAesCtx_cbc_encrypt(&o->ctx.aescbc, o->iv, updatecause, o->buf, len) :
+         SharkSslAesCtx_cbc_decrypt(&o->ctx.aescbc, o->iv, updatecause, o->buf, len);
+   }
+   if(o->mode == 2)
+   {
+      return loongsonclear ?
+         SharkSslAesCcmCtx_encrypt(
+            &o->ctx.aesccm,o->iv,tag,o->auth,o->authLen,updatecause,o->buf,len) :
+         SharkSslAesCcmCtx_decrypt(
+            &o->ctx.aesccm,o->iv,tag,o->auth,o->authLen,updatecause,o->buf,len);
+   }
+   return loongsonclear ?
+      SharkSslAesGcmCtx_encrypt(
+         &o->ctx.aesgcm,o->iv,tag,o->auth,o->authLen,updatecause,o->buf,len) :
+      SharkSslAesGcmCtx_decrypt(
+         &o->ctx.aesgcm,o->iv,tag,o->auth,o->authLen,(U8*)updatecause,o->buf,len);
+}
+
+
+static int
+_XzY0x2BF(lua_State* L)
+{
+   LSharkSslHMACCtx* registermcasp = luaL_checkudata(L, 1, "\102\101\120\123\101\110\115\101\103");
+   SharkSslHMACCtx_destructor(&registermcasp->super);
+   return 0;
+}
+
+
+static int
+_XzY0x2C(lua_State* L)
+{
+   LSharkSslHMACCtx* registermcasp = lua_touserdata(L, lua_upvalueindex(1));
+   if(lua_isstring(L, 1))
+   {
+      size_t len;
+      const U8* alloccontroller = (const U8*)lua_tolstring(L, 1, &len);
+      while(len)
+      {
+         U32 devicelcdspi = len > UINT32_MAX ? UINT32_MAX : (U32)len;
+         if(SharkSslHMACCtx_append(&registermcasp->super, alloccontroller, devicelcdspi))
+         {
+            return luaL_error(L, "\110\115\101\103\040\146\141\151\154\145\144");
+         }
+         alloccontroller += devicelcdspi;
+         len -= devicelcdspi;
+      }
+      lua_pushvalue(L, lua_upvalueindex(1));
+      lua_pushcclosure(L, _XzY0x2C, 1);
+   }
+   else
+   {
+      U8 secondaryentry[64];
+      if(SharkSslHMACCtx_finish(&registermcasp->super, secondaryentry) ||
+         SharkSslHMACCtx_constructor(
+            &registermcasp->super, registermcasp->algoID, registermcasp->key, registermcasp->keylen))
+      {
+         return luaL_error(L, "\110\115\101\103\040\146\141\151\154\145\144");
+      }
+      clearrequest(L, secondaryentry, sharkssl_getHashLen(registermcasp->algoID));
+   }
+   return 1;
+}
+
+
+int
+balua_psaHmac(lua_State* L)
+{
+   size_t len;
+   U8 shouldcrash = uart3resource(L, luaL_checkstring(L, 2));
+   const U8* sourcerouting = (const U8*)luaL_checklstring(L, 3, &len);
+   LSharkSslHMACCtx* registermcasp;
+   luaL_argcheck(L, len <= UINT16_MAX, 3, "\153\145\171\040\164\157\157\040\154\157\156\147");
+   registermcasp = lua_newuserdata(L, sizeof(*registermcasp) + len);
+   memset(registermcasp, 0, sizeof(*registermcasp));
+   if(luaL_newmetatable(L, "\102\101\120\123\101\110\115\101\103"))
+   {
+      lua_pushcfunction(L, _XzY0x2BF);
+      lua_setfield(L, -2, "\137\137\147\143");
+   }
+   lua_setmetatable(L, -2);
+   registermcasp->algoID = shouldcrash;
+   registermcasp->keylen = (U16)len;
+   memcpy(registermcasp->key, sourcerouting, len);
+   if(SharkSslHMACCtx_constructor(&registermcasp->super, shouldcrash, sourcerouting, (U16)len))
+   {
+      return luaL_error(L, "\110\115\101\103\040\146\141\151\154\145\144");
+   }
+   lua_pushcclosure(L, _XzY0x2C, 1);
+   return 1;
+}
+
+
+typedef struct LPsaPublicKey
+{
+   U8 data[1024];
+   size_t len;
+   size_t bits;
+   psa_key_type_t type;
+} LPsaPublicKey;
+
+
+static int
+_XzY0x2BA(lua_State* L, const char* msg)
+{
+   lua_pushnil(L);
+   lua_pushstring(L, msg);
+   return 2;
+}
+
+
+static psa_algorithm_t
+_XzY0x2BC(size_t len)
+{
+   switch(len)
+   {
+      case 20: return PSA_ALG_SHA_1;
+      case 32: return PSA_ALG_SHA_256;
+      case 48: return PSA_ALG_SHA_384;
+      case 64: return PSA_ALG_SHA_512;
+   }
+   return 0;
+}
+
+
+static int
+_XzY0x2C4(LPsaPublicKey* sourcerouting, U8 rightsvalid, const U8* a, size_t _XzY0x2A,
+                const U8* b, size_t _XzY0x2A1)
+{
+   if(rightsvalid == SHARKSSL_KEYTYPE_EC)
+   {
+      if(_XzY0x2A != _XzY0x2A1 || (_XzY0x2A != 32 && _XzY0x2A != 48 && _XzY0x2A != 66))
+      {
+         return -1;
+      }
+      sourcerouting->type = PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1);
+      sourcerouting->bits = _XzY0x2A == 66 ? 521 : _XzY0x2A * 8;
+      sourcerouting->len = 1 + 2 * _XzY0x2A;
+      sourcerouting->data[0] = 4; 
+      memcpy(sourcerouting->data + 1, a, _XzY0x2A);
+      memcpy(sourcerouting->data + 1 + _XzY0x2A, b, _XzY0x2A1);
+   }
+   else if(rightsvalid == SHARKSSL_KEYTYPE_RSA)
+   {
+      SharkSslASN1Create asn;
+      if(!_XzY0x2A || _XzY0x2A > 512 || !_XzY0x2A1 || _XzY0x2A1 > 512)
+      {
+         return -1;
+      }
+      sourcerouting->type = PSA_KEY_TYPE_RSA_PUBLIC_KEY;
+      sourcerouting->bits = _XzY0x2A * 8;
+      SharkSslASN1Create_constructor(&asn, sourcerouting->data, sizeof(sourcerouting->data));
+      if(SharkSslASN1Create_int(&asn, b, (int)_XzY0x2A1) ||
+         SharkSslASN1Create_int(&asn, a, (int)_XzY0x2A) ||
+         SharkSslASN1Create_length(
+            &asn, (int)(sourcerouting->data + sizeof(sourcerouting->data) - asn.ptr)) ||
+         SharkSslASN1Create_sequence(&asn))
+      {
+         return -1;
+      }
+      sourcerouting->len = SharkSslASN1Create_getLen(&asn);
+      memmove(sourcerouting->data, SharkSslASN1Create_getData(&asn), sourcerouting->len);
+   }
+   else
+   {
+      return -1;
+   }
+   return 0;
+}
+
+
+static int
+_XzY0x2C9(LPsaPublicKey* sourcerouting, const U8* _XzY0x2E)
+{
+   U8 rightsvalid, priv, *a, *b;
+   U16 _XzY0x2A, _XzY0x2A1;
+   if(!SharkSslKey_vectSize_keyInfo((SharkSslKey)_XzY0x2E, &rightsvalid, &priv,
+                                   &a, &_XzY0x2A, &b, &_XzY0x2A1) || priv)
+   {
+      return -1;
+   }
+   return _XzY0x2C4(sourcerouting, rightsvalid, a, _XzY0x2A, b, _XzY0x2A1);
+}
+
+
+static int
+_XzY0x2C5(lua_State* L, int enablechannel, LPsaPublicKey* sourcerouting, int* raw)
+{
+   *raw = 0;
+   if(lua_istable(L, enablechannel))
+   {
+      const U8 *a, *b;
+      size_t _XzY0x2A, _XzY0x2A1;
+      U8 rightsvalid = SHARKSSL_KEYTYPE_EC;
+      lua_getfield(L, enablechannel, "\170");
+      lua_getfield(L, enablechannel, "\171");
+      if(lua_isnil(L, -2) || lua_isnil(L, -1))
+      {
+         lua_pop(L, 2);
+         rightsvalid = SHARKSSL_KEYTYPE_RSA;
+         lua_getfield(L, enablechannel, "\156");
+         lua_getfield(L, enablechannel, "\145");
+      }
+      if(!lua_isnil(L, -2) && !lua_isnil(L, -1))
+      {
+         a = (const U8*)luaL_checklstring(L, -2, &_XzY0x2A);
+         b = (const U8*)luaL_checklstring(L, -1, &_XzY0x2A1);
+         *raw = 1;
+         return _XzY0x2C4(sourcerouting, rightsvalid, a, _XzY0x2A, b, _XzY0x2A1);
+      }
+      lua_pop(L, 2);
+   }
+   {
+      const char* pem = luaL_checkstring(L, 2);
+      U8 rightsvalid;
+      SharkSslKey _XzY0x2E;
+      int sffsdrnandflash;
+      if(strstr(pem, "\120\122\111\126\101\124\105\040\113\105\131"))
+      {
+         return -1;
+      }
+      _XzY0x2E = sharkssl_PEM_extractPublicKey_ext(pem, &rightsvalid);
+      if(!_XzY0x2E)
+      {
+         return -1;
+      }
+      sffsdrnandflash = _XzY0x2C9(sourcerouting, _XzY0x2E);
+      baFree(_XzY0x2E);
+      return sffsdrnandflash;
+   }
+}
+
+
+static psa_status_t
+_XzY0x2C0(const LPsaPublicKey* pub, psa_algorithm_t alg,
+                   psa_key_usage_t _XzY0x2F2, psa_key_id_t* sourcerouting)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_status_t sffsdrnandflash = psa_crypto_init();
+   *sourcerouting = PSA_KEY_ID_NULL;
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return sffsdrnandflash;
+   }
+   psa_set_key_type(&attr, pub->type);
+   psa_set_key_bits(&attr, pub->bits);
+   psa_set_key_algorithm(&attr, alg);
+   psa_set_key_usage_flags(&attr, _XzY0x2F2);
+   sffsdrnandflash = psa_import_key(&attr, pub->data, pub->len, sourcerouting);
+   psa_reset_key_attributes(&attr);
+   return sffsdrnandflash;
+}
+
+
+static int
+_XzY0x2CE(const LPsaPublicKey* pub, const U8* sig, size_t platformconfig,
+                   const U8* chargerplatform, size_t clearscratchpad)
+{
+   U8 raw[132];
+   U16 _XzY0x2DD;
+   psa_key_id_t sourcerouting;
+   psa_algorithm_t alg = _XzY0x2BC(clearscratchpad);
+   psa_status_t sffsdrnandflash, destroyed;
+   if(!alg)
+   {
+      return -1;
+   }
+   if(PSA_KEY_TYPE_IS_ECC(pub->type))
+   {
+      U16 nandflashpartition = pub->bits == 256 ? SHARKSSL_EC_CURVE_ID_SECP256R1 :
+         (pub->bits == 384 ? SHARKSSL_EC_CURVE_ID_SECP384R1 :
+          SHARKSSL_EC_CURVE_ID_SECP521R1);
+      if(platformconfig > UINT16_MAX ||
+         SharkSslPSAEcdsa_derToRaw(
+            nandflashpartition, sig, (U16)platformconfig, raw, sizeof(raw), &_XzY0x2DD))
+      {
+         return -1;
+      }
+      sig = raw;
+      platformconfig = _XzY0x2DD;
+      alg = PSA_ALG_ECDSA(alg);
+   }
+   else
+   {
+      alg = PSA_ALG_RSA_PKCS1V15_SIGN(alg);
+   }
+   sffsdrnandflash = _XzY0x2C0(pub, alg, PSA_KEY_USAGE_VERIFY_HASH, &sourcerouting);
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return -1;
+   }
+   sffsdrnandflash = psa_verify_hash(sourcerouting, alg, chargerplatform, clearscratchpad, sig, platformconfig);
+   destroyed = psa_destroy_key(sourcerouting);
+   return sffsdrnandflash == PSA_SUCCESS && destroyed == PSA_SUCCESS ? 0 : -1;
+}
+
+
+int
+balua_psaVerifyZip(
+   const U8* sourcerouting, const U8* probeguestctl0, size_t len, const U8* chargerplatform)
+{
+   LPsaPublicKey pub;
+   if(_XzY0x2C9(&pub, sourcerouting) || !PSA_KEY_TYPE_IS_ECC(pub.type))
+   {
+      return -1;
+   }
+   return _XzY0x2CE(&pub, probeguestctl0, len, chargerplatform, 32);
+}
+
+
+static int
+_XzY0x2CD(lua_State* L)
+{
+   LPsaPublicKey pub;
+   int enablechannel = lua_gettop(L), raw;
+   size_t platformconfig, clearscratchpad;
+   const U8* sig = (const U8*)luaL_checklstring(L, 1, &platformconfig);
+   const U8* chargerplatform;
+   if(lua_istable(L, enablechannel))
+   {
+      const char* seepromprobe;
+      lua_getfield(L, enablechannel, "\160\141\144\144\151\156\147");
+      seepromprobe = luaL_optstring(L, -1, "\160\153\143\163\061");
+      if(!strcmp(seepromprobe, "\157\141\145\160"))
+      {
+         return _XzY0x2BA(L, "\111\156\143\157\162\162\145\143\164\040\165\163\145");
+      }
+      if(strcmp(seepromprobe, "\160\153\143\163\061") && strcmp(seepromprobe, "\156\157\156\145"))
+      {
+         return luaL_error(L, "\125\156\153\156\157\167\156\040\160\141\144\144\151\156\147");
+      }
+   }
+   if(_XzY0x2C5(L, enablechannel, &pub, &raw))
+   {
+      return _XzY0x2BA(L, "\151\156\166\141\154\151\144\040\160\165\142\153\145\171");
+   }
+   chargerplatform = (const U8*)luaL_checklstring(L, raw ? 2 : 3, &clearscratchpad);
+   lua_pushboolean(L, !_XzY0x2CE(&pub, sig, platformconfig, chargerplatform, clearscratchpad));
+   return 1;
+}
+
+
+static int
+_XzY0x2B9(lua_State* L)
+{
+   LPsaPublicKey pub;
+   int enablechannel = lua_gettop(L), raw;
+   size_t len, outlen, auxdatalookup = 0;
+   const U8* alloccontroller = (const U8*)luaL_checklstring(L, 1, &len);
+   const U8* clkdmoperations = NULL;
+   psa_algorithm_t alg = PSA_ALG_RSA_PKCS1V15_CRYPT;
+   psa_key_id_t sourcerouting;
+   psa_status_t sffsdrnandflash, destroyed;
+   U8* enablehazard;
+   if(lua_istable(L, enablechannel))
+   {
+      const char* seepromprobe;
+      lua_getfield(L, enablechannel, "\160\141\144\144\151\156\147");
+      seepromprobe = luaL_optstring(L, -1, "\160\153\143\163\061");
+      if(!strcmp(seepromprobe, "\157\141\145\160"))
+      {
+         const char* chargerplatform;
+         lua_getfield(L, enablechannel, "\150\141\163\150\151\144");
+         chargerplatform = luaL_optstring(L, -1, "\163\150\141\061");
+         alg = !strcmp(chargerplatform, "\163\150\141\061") ? PSA_ALG_SHA_1 :
+            (!strcmp(chargerplatform, "\163\150\141\062\065\066") ? PSA_ALG_SHA_256 :
+             (!strcmp(chargerplatform, "\163\150\141\063\070\064") ? PSA_ALG_SHA_384 :
+              (!strcmp(chargerplatform, "\163\150\141\065\061\062") ? PSA_ALG_SHA_512 : 0)));
+         luaL_argcheck(L, alg != 0, enablechannel, "\125\156\153\156\157\167\156\040\150\141\163\150");
+         alg = PSA_ALG_RSA_OAEP(alg);
+         lua_getfield(L, enablechannel, "\154\141\142\145\154");
+         clkdmoperations = (const U8*)luaL_optlstring(L, -1, NULL, &auxdatalookup);
+      }
+      else if(!strcmp(seepromprobe, "\156\157\156\145"))
+      {
+         return _XzY0x2BA(L, "\146\141\151\154\145\144"); 
+      }
+      else if(strcmp(seepromprobe, "\160\153\143\163\061"))
+      {
+         return luaL_error(L, "\125\156\153\156\157\167\156\040\160\141\144\144\151\156\147");
+      }
+   }
+   if(_XzY0x2C5(L, enablechannel, &pub, &raw))
+   {
+      return _XzY0x2BA(L, "\151\156\166\141\154\151\144\040\160\165\142\153\145\171");
+   }
+   if(pub.type != PSA_KEY_TYPE_RSA_PUBLIC_KEY)
+   {
+      return _XzY0x2BA(L, "\111\156\143\157\162\162\145\143\164\040\165\163\145");
+   }
+   enablehazard = (U8*)lua_newuserdata(L, pub.bits / 8);
+   sffsdrnandflash = _XzY0x2C0(&pub, alg, PSA_KEY_USAGE_ENCRYPT, &sourcerouting);
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return _XzY0x2BA(L, "\146\141\151\154\145\144");
+   }
+   sffsdrnandflash = psa_asymmetric_encrypt(sourcerouting, alg, alloccontroller, len, clkdmoperations, auxdatalookup,
+                                   enablehazard, pub.bits / 8, &outlen);
+   destroyed = psa_destroy_key(sourcerouting);
+   if(sffsdrnandflash != PSA_SUCCESS || destroyed != PSA_SUCCESS)
+   {
+      return _XzY0x2BA(L, "\146\141\151\154\145\144");
+   }
+   lua_pushlstring(L, (const char*)enablehazard, outlen);
+   return 1;
+}
+
+#if !defined(PSA_ALG_HKDF)
+#error PSA TPM requires standard HKDF sourcerouting derivation
+#endif
+
+
+#ifndef BA_PSA_GLOBALKEY_USE_DEVICE_ROOT
+#define BA_PSA_GLOBALKEY_USE_DEVICE_ROOT 0
+#endif
+#ifndef BA_PSA_GLOBAL_ROOT_ID
+#define BA_PSA_GLOBAL_ROOT_ID 1
+#endif
+#ifndef BA_PSA_DEVICE_ROOT_ID
+#define BA_PSA_DEVICE_ROOT_ID 2
+#endif
+#ifndef BA_PSA_ROOT_LOCATION
+#define BA_PSA_ROOT_LOCATION PSA_KEY_LOCATION_LOCAL_STORAGE
+#endif
+#ifndef BA_PSA_DERIVED_KEY_LOCATION
+#define BA_PSA_DERIVED_KEY_LOCATION BA_PSA_ROOT_LOCATION
+#endif
+#ifndef BA_PSA_SIGNING_KEY_LOCATION
+#define BA_PSA_SIGNING_KEY_LOCATION PSA_KEY_LOCATION_LOCAL_STORAGE
+#endif
+
+#define LPSA_DEVICE_ROOT BA_PSA_DEVICE_ROOT_ID
+#if BA_PSA_GLOBALKEY_USE_DEVICE_ROOT
+#define LPSA_GLOBAL_ROOT LPSA_DEVICE_ROOT
+#else
+#define LPSA_GLOBAL_ROOT BA_PSA_GLOBAL_ROOT_ID
+#endif
+#if SHARKSSL_USE_SHA_512
+#define LPSA_ROOT_ALG PSA_ALG_HKDF(PSA_ALG_SHA_512)
+#define LPSA_HASH_LEN 64
+#else
+#define LPSA_ROOT_ALG PSA_ALG_HKDF(PSA_ALG_SHA_256)
+#define LPSA_HASH_LEN 32
+#endif
+#define LPSA_SECRET_LABEL "\102\101\123\055\124\120\115\055\113\105\131\055\166\061"
+#define LPSA_JSON_LABEL "\102\101\123\055\124\120\115\055\112\123\117\116\055\166\061"
+
+
+static void
+_XzY0x2B4(void* alloccontroller, size_t len)
+{
+   volatile U8* p = (volatile U8*)alloccontroller;
+   while(len--)
+      *p++ = 0;
+}
+
+
+static int
+_XzY0x2CC(lua_State* L, psa_status_t sffsdrnandflash)
+{
+   lua_pushnil(L);
+   lua_pushfstring(L, "\120\123\101\040\145\162\162\157\162\040\045\144", (int)sffsdrnandflash);
+   return 2;
+}
+
+
+static psa_status_t
+_XzY0x2C7(psa_key_id_t id, int breakhandler)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_status_t sffsdrnandflash = psa_get_key_attributes(id, &attr);
+   if(breakhandler && sffsdrnandflash == PSA_ERROR_INVALID_HANDLE)
+   {
+      psa_key_id_t sourcerouting;
+      psa_set_key_id(&attr, id);
+      psa_set_key_lifetime(&attr, PSA_KEY_LIFETIME_FROM_PERSISTENCE_AND_LOCATION(
+                             PSA_KEY_PERSISTENCE_DEFAULT, BA_PSA_ROOT_LOCATION));
+      psa_set_key_type(&attr, PSA_KEY_TYPE_DERIVE);
+      psa_set_key_bits(&attr, 256);
+      psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_DERIVE);
+      psa_set_key_algorithm(&attr, LPSA_ROOT_ALG);
+      sffsdrnandflash = psa_generate_key(&attr, &sourcerouting);
+      psa_reset_key_attributes(&attr);
+      if(sffsdrnandflash == PSA_SUCCESS || sffsdrnandflash == PSA_ERROR_ALREADY_EXISTS)
+      {
+         sffsdrnandflash = psa_get_key_attributes(id, &attr);
+      }
+   }
+   if(sffsdrnandflash == PSA_SUCCESS &&
+      (psa_get_key_id(&attr) != id ||
+       PSA_KEY_LIFETIME_GET_PERSISTENCE(psa_get_key_lifetime(&attr)) ==
+          PSA_KEY_PERSISTENCE_VOLATILE ||
+       PSA_KEY_LIFETIME_GET_LOCATION(psa_get_key_lifetime(&attr)) !=
+          BA_PSA_ROOT_LOCATION ||
+       psa_get_key_type(&attr) != PSA_KEY_TYPE_DERIVE ||
+       psa_get_key_bits(&attr) != 256 ||
+       psa_get_key_usage_flags(&attr) != PSA_KEY_USAGE_DERIVE ||
+       psa_get_key_algorithm(&attr) != LPSA_ROOT_ALG))
+   {
+      sffsdrnandflash = PSA_ERROR_NOT_PERMITTED;
+   }
+   psa_reset_key_attributes(&attr);
+   return sffsdrnandflash;
+}
+
+
+static psa_status_t
+_XzY0x2C6(int _XzY0x2AF)
+{
+   psa_status_t sffsdrnandflash = psa_crypto_init();
+   if(LPSA_DEVICE_ROOT == PSA_KEY_ID_NULL
+#if !BA_PSA_GLOBALKEY_USE_DEVICE_ROOT
+      || LPSA_GLOBAL_ROOT == PSA_KEY_ID_NULL || LPSA_GLOBAL_ROOT == LPSA_DEVICE_ROOT
+#endif
+      )
+   {
+      return PSA_ERROR_INVALID_ARGUMENT;
+   }
+#if !BA_PSA_GLOBALKEY_USE_DEVICE_ROOT
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = _XzY0x2C7(LPSA_GLOBAL_ROOT, FALSE);
+   }
+#endif
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = _XzY0x2C7(LPSA_DEVICE_ROOT, _XzY0x2AF);
+   }
+   return sffsdrnandflash;
+}
+
+
+static psa_status_t
+_XzY0x2C3(psa_key_id_t id, size_t* enablekernel)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_status_t sffsdrnandflash = psa_get_key_attributes(id, &attr);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_key_usage_t _XzY0x2F2 = psa_get_key_usage_flags(&attr);
+      *enablekernel = psa_get_key_bits(&attr);
+      if(psa_get_key_id(&attr) != id ||
+         PSA_KEY_LIFETIME_GET_PERSISTENCE(psa_get_key_lifetime(&attr)) !=
+            PSA_KEY_PERSISTENCE_DEFAULT ||
+         PSA_KEY_LIFETIME_GET_LOCATION(psa_get_key_lifetime(&attr)) !=
+            BA_PSA_SIGNING_KEY_LOCATION ||
+         psa_get_key_type(&attr) != PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1) ||
+         (*enablekernel != 256 && *enablekernel != 384) ||
+         !(_XzY0x2F2 & PSA_KEY_USAGE_SIGN_HASH) ||
+         (_XzY0x2F2 & ~(PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_SIGN_MESSAGE)) ||
+         psa_get_key_algorithm(&attr) != PSA_ALG_ECDSA(PSA_ALG_ANY_HASH))
+      {
+         sffsdrnandflash = PSA_ERROR_NOT_PERMITTED;
+      }
+   }
+   psa_reset_key_attributes(&attr);
+   return sffsdrnandflash;
+}
+
+
+static int
+_XzY0x2B5(lua_State* L, psa_key_id_t id)
+{
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_id_t sourcerouting;
+   psa_status_t sffsdrnandflash;
+   size_t enablekernel = 256;
+   if(!lua_isnoneornil(L, 3))
+   {
+      const char* nandflashpartition;
+      luaL_checktype(L, 3, LUA_TTABLE);
+      lua_getfield(L, 3, "\153\145\171");
+      if(!lua_isnil(L, -1) && strcmp(luaL_checkstring(L, -1), "\145\143\143"))
+      {
+         return luaL_error(L, "\124\120\115\040\143\141\156\040\157\156\154\171\040\143\162\145\141\164\145\040\105\103\103\040\153\145\171\163");
+      }
+      lua_getfield(L, 3, "\143\165\162\166\145");
+      nandflashpartition = luaL_optstring(L, -1, "\123\105\103\120\062\065\066\122\061");
+      if(!baStrCaseCmp(nandflashpartition, "\123\105\103\120\063\070\064\122\061"))
+      {
+         enablekernel = 384;
+      }
+      else if(baStrCaseCmp(nandflashpartition, "\123\105\103\120\062\065\066\122\061"))
+      {
+         return luaL_error(L, "\105\103\103\040\143\165\162\166\145\040\047\045\163\047\040\156\157\164\040\145\156\141\142\154\145\144", nandflashpartition);
+      }
+   }
+   psa_set_key_id(&attr, id);
+   psa_set_key_lifetime(&attr, PSA_KEY_LIFETIME_FROM_PERSISTENCE_AND_LOCATION(
+                          PSA_KEY_PERSISTENCE_DEFAULT, BA_PSA_SIGNING_KEY_LOCATION));
+   psa_set_key_type(&attr, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+   psa_set_key_bits(&attr, enablekernel);
+   psa_set_key_usage_flags(&attr, PSA_KEY_USAGE_SIGN_HASH);
+   psa_set_key_algorithm(&attr, PSA_ALG_ECDSA(PSA_ALG_ANY_HASH));
+   sffsdrnandflash = psa_generate_key(&attr, &sourcerouting);
+   psa_reset_key_attributes(&attr);
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return _XzY0x2CC(L, sffsdrnandflash);
+   }
+   
+   lua_pushboolean(L, TRUE);
+   return 1;
+}
+
+
+static int
+_XzY0x2CB(lua_State* L, psa_key_id_t id, size_t enablekernel)
+{
+   size_t len, platformconfig = 0;
+   U8 raw[96], der[104];
+   U16 _XzY0x2A8 = 0;
+   psa_algorithm_t chargerplatform;
+   psa_status_t sffsdrnandflash;
+   const U8* secondaryentry = (const U8*)luaL_checklstring(L, 3, &len);
+   if(!lua_isnoneornil(L, 4))
+   {
+      const char* seepromprobe;
+      luaL_checktype(L, 4, LUA_TTABLE);
+      lua_getfield(L, 4, "\160\141\144\144\151\156\147");
+      seepromprobe = luaL_optstring(L, -1, "\160\153\143\163\061");
+      if(!strcmp(seepromprobe, "\157\141\145\160"))
+      {
+         return _XzY0x2BA(L, "\146\141\151\154\145\144");
+      }
+      if(strcmp(seepromprobe, "\160\153\143\163\061") && strcmp(seepromprobe, "\156\157\156\145"))
+      {
+         return luaL_error(L, "\125\156\153\156\157\167\156\040\160\141\144\144\151\156\147");
+      }
+   }
+   chargerplatform = _XzY0x2BC(len);
+   if(!chargerplatform)
+   {
+      return _XzY0x2BA(L, "\146\141\151\154\145\144");
+   }
+   sffsdrnandflash = psa_sign_hash(
+      id, PSA_ALG_ECDSA(chargerplatform), secondaryentry, len, raw, sizeof(raw), &platformconfig);
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return _XzY0x2CC(L, sffsdrnandflash);
+   }
+   if(SharkSslPSAEcdsa_rawToDer(enablekernel == 256 ? SHARKSSL_EC_CURVE_ID_SECP256R1 :
+                               SHARKSSL_EC_CURVE_ID_SECP384R1,
+                               raw, (U16)platformconfig, der, sizeof(der), &_XzY0x2A8))
+   {
+      return _XzY0x2BA(L, "\146\141\151\154\145\144");
+   }
+   lua_pushlstring(L, (const char*)der, _XzY0x2A8);
+   return 1;
+}
+
+
+static int
+_XzY0x2C2(lua_State* L, psa_key_id_t id, size_t enablekernel)
+{
+   U8 pub[97];
+   size_t len = 0, n = enablekernel / 8;
+   psa_status_t sffsdrnandflash = psa_export_public_key(id, pub, sizeof(pub), &len);
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return _XzY0x2CC(L, sffsdrnandflash);
+   }
+   if(len != 1 + 2*n || pub[0] != 4)
+   {
+      return _XzY0x2BA(L, "\146\141\151\154\145\144");
+   }
+   lua_pushlstring(L, (const char*)pub + 1, n);
+   lua_pushlstring(L, (const char*)pub + 1 + n, n);
+   return 2;
+}
+
+
+static psa_status_t
+_XzY0x2B7(psa_key_derivation_operation_t* op, psa_key_id_t mcasp0resources,
+            const char* clkdmoperations, const U8* name, size_t len, size_t _XzY0x2CF)
+{
+   psa_status_t sffsdrnandflash = psa_key_derivation_setup(op, LPSA_ROOT_ALG);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_set_capacity(op, _XzY0x2CF);
+   }
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(
+         op, PSA_KEY_DERIVATION_INPUT_SALT, (const U8*)clkdmoperations, strlen(clkdmoperations));
+   }
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_key(
+         op, PSA_KEY_DERIVATION_INPUT_SECRET, mcasp0resources);
+   }
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_input_bytes(
+         op, PSA_KEY_DERIVATION_INPUT_INFO, name, len);
+   }
+   return sffsdrnandflash;
+}
+
+
+static int
+_XzY0x2C8(lua_State* L, psa_key_id_t mcasp0resources)
+{
+   size_t len;
+   const U8* name;
+   lua_Integer wanted;
+   luaL_Buffer buf;
+   U8* enablehazard;
+   psa_key_derivation_operation_t op = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_status_t sffsdrnandflash, aborted;
+   size_t outlen = LPSA_HASH_LEN;
+   luaL_checktype(L, 2, LUA_TSTRING);
+   name = (const U8*)lua_tolstring(L, 2, &len);
+   wanted = luaL_checkinteger(L, 3);
+   luaL_argcheck(
+      L, wanted >= 0 && wanted <= 255 * LPSA_HASH_LEN, 3, "\153\145\171\040\154\145\156\147\164\150\040\157\165\164\040\157\146\040\162\141\156\147\145");
+   if((size_t)wanted > outlen)
+   {
+      outlen = (size_t)wanted;
+   }
+   enablehazard = (U8*)luaL_buffinitsize(L, &buf, outlen);
+   sffsdrnandflash = _XzY0x2B7(&op, mcasp0resources, LPSA_SECRET_LABEL, name, len, outlen);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = psa_key_derivation_output_bytes(&op, enablehazard, outlen);
+   }
+   aborted = psa_key_derivation_abort(&op);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = aborted;
+   }
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      _XzY0x2B4(enablehazard, outlen);
+      luaL_pushresultsize(&buf, 0);
+      return _XzY0x2CC(L, sffsdrnandflash);
+   }
+   luaL_pushresultsize(&buf, outlen);
+   return 1;
+}
+
+
+static int
+_XzY0x2C1(lua_State* L, int _XzY0x2DF)
+{
+   size_t alignresource, len, _XzY0x2CF = 0, plainLen;
+   const U8* name;
+   const U8* alloccontroller;
+   U8 tag[16], *buf, *enablehazard;
+   psa_key_attributes_t attr = PSA_KEY_ATTRIBUTES_INIT;
+   psa_key_derivation_operation_t op = PSA_KEY_DERIVATION_OPERATION_INIT;
+   psa_key_id_t sourcerouting = PSA_KEY_ID_NULL;
+   psa_status_t sffsdrnandflash, aborted, destroyed;
+   psa_key_id_t mcasp0resources;
+   luaL_checktype(L, 2, LUA_TSTRING);
+   name = (const U8*)lua_tolstring(L, 2, &alignresource);
+   luaL_checktype(L, 3, LUA_TBOOLEAN);
+   mcasp0resources = lua_toboolean(L, 3) ? LPSA_GLOBAL_ROOT : LPSA_DEVICE_ROOT;
+   alloccontroller = (const U8*)luaL_checklstring(L, 4, &len);
+   luaL_argcheck(
+      L, len <= 65535 && alignresource <= 65535, 4, "\115\141\170\040\144\141\164\141\040\154\145\156\040\151\163\040\060\170\106\106\106\106");
+   if(!_XzY0x2DF && len < 28)
+   {
+      return _XzY0x2BA(L, "\104\141\164\141\040\143\157\162\162\165\160\164");
+   }
+   plainLen = _XzY0x2DF ? len : len - 28;
+   
+   buf = (U8*)lua_newuserdata(L, _XzY0x2DF ? len + 28 : 2*plainLen + 16);
+   enablehazard = _XzY0x2DF ? buf : buf + plainLen + 16;
+   sffsdrnandflash = _XzY0x2B7(&op, mcasp0resources, LPSA_JSON_LABEL, name, alignresource, 32);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      psa_set_key_type(&attr, PSA_KEY_TYPE_AES);
+      psa_set_key_bits(&attr, 256);
+      psa_set_key_lifetime(&attr, PSA_KEY_LIFETIME_FROM_PERSISTENCE_AND_LOCATION(
+         PSA_KEY_PERSISTENCE_VOLATILE, BA_PSA_DERIVED_KEY_LOCATION));
+      psa_set_key_usage_flags(
+         &attr, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
+      psa_set_key_algorithm(&attr, PSA_ALG_GCM);
+      sffsdrnandflash = psa_key_derivation_output_key(&attr, &op, &sourcerouting);
+   }
+   psa_reset_key_attributes(&attr);
+   aborted = psa_key_derivation_abort(&op);
+   if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      sffsdrnandflash = aborted;
+   }
+   if(sffsdrnandflash == PSA_SUCCESS && _XzY0x2DF)
+   {
+      sffsdrnandflash = psa_generate_random(buf, 12);
+      if(sffsdrnandflash == PSA_SUCCESS)
+      {
+         sffsdrnandflash = psa_aead_encrypt(sourcerouting, PSA_ALG_GCM, buf, 12, NULL, 0,
+                                   alloccontroller, len, buf + 12, len + 16, &_XzY0x2CF);
+      }
+      if(sffsdrnandflash == PSA_SUCCESS)
+      {
+         memcpy(tag, buf + 12 + len, 16);
+         memmove(buf + 28, buf + 12, len);
+         memcpy(buf + 12, tag, 16);
+         _XzY0x2CF += 12;
+      }
+   }
+   else if(sffsdrnandflash == PSA_SUCCESS)
+   {
+      
+      memcpy(buf, alloccontroller + 28, plainLen);
+      memcpy(buf + plainLen, alloccontroller + 12, 16);
+      sffsdrnandflash = psa_aead_decrypt(sourcerouting, PSA_ALG_GCM, alloccontroller, 12, NULL, 0,
+                                buf, plainLen + 16, enablehazard, plainLen,
+                                &_XzY0x2CF);
+   }
+   destroyed = psa_destroy_key(sourcerouting);
+   if(sffsdrnandflash != PSA_SUCCESS || destroyed != PSA_SUCCESS)
+   {
+      if(!_XzY0x2DF)
+      {
+         _XzY0x2B4(enablehazard, plainLen);
+      }
+      return !_XzY0x2DF ? _XzY0x2BA(L, "\104\141\164\141\040\143\157\162\162\165\160\164") :
+         _XzY0x2CC(L, sffsdrnandflash != PSA_SUCCESS ? sffsdrnandflash : destroyed);
+   }
+   lua_pushlstring(L, (const char*)enablehazard, _XzY0x2CF);
+   if(!_XzY0x2DF)
+   {
+      _XzY0x2B4(enablehazard, plainLen);
+   }
+   return 1;
+}
+
+#if SHARKSSL_ENABLE_CSR_CREATION
+
+static int
+_XzY0x2B6(lua_State *L, psa_key_id_t id, size_t enablekernel)
+{
+   SharkSslASN1Create asn;
+   SharkSslPSAEcdsaKey sourcerouting;
+   SharkSslCertDN dn;
+   SharkSslBitExtReq latchcontrol, setupcalled;
+   const char *SAN;
+   U8 configwrite, *startcounter;
+   int deltalatch2;
+   
+   lua_remove(L, 1);
+   configwrite = baGetCsrArgs(L, &dn, &setupcalled, &latchcontrol, &SAN);
+   
+   sourcerouting.handle = id;
+   sourcerouting.algorithm = PSA_ALG_ECDSA(PSA_ALG_ANY_HASH);
+   sourcerouting.curveID = enablekernel == 384 ? SHARKSSL_EC_CURVE_ID_SECP384R1 : SHARKSSL_EC_CURVE_ID_SECP256R1;
+   sourcerouting.publicOnly = 0;
+   startcounter = (U8*)lua_newuserdata(L, 2048);
+   SharkSslASN1Create_constructor(&asn, startcounter, 2048);
+   if(SharkSslASN1Create_CSRWithPSAECDSAKeyHash(
+         &asn, &sourcerouting, &dn, SAN, &latchcontrol, &setupcalled, configwrite))
+   {
+      return reportpanic(L, "\103\123\122\040\143\162\145\141\164\151\157\156\040\146\141\151\154\145\144");
+   }
+   deltalatch2 = compareirqaction(L, SharkSslASN1Create_getData(&asn),
+                            SharkSslASN1Create_getLen(&asn),beginCSR,endCSR,0);
+   return deltalatch2 < 0 ? lua_error(L) : deltalatch2;
+}
+#endif
+
+
+static int
+_XzY0x2CA(lua_State *L, psa_key_id_t id)
+{
+   LSharkCert *lsc;
+   SharkSslCert kernelvaddr = 0;
+   SharkSslCertKey _XzY0x1E7;
+   const char *pem;
+   size_t len;
+   int sffsdrnandflash;
+   luaL_checktype(L, 3, LUA_TSTRING);
+   pem = lua_tolstring(L, 3, &len);
+   if(strlen(pem) != len)
+   {
+      return reportpanic(L, "\111\156\166\141\154\151\144\040\143\145\162\164\151\146\151\143\141\164\145");
+   }
+   lsc = sharkcert_create(L);
+   sffsdrnandflash = sharkssl_PEM(pem, 0, 0, &kernelvaddr);
+   if(sffsdrnandflash != SHARKSSL_PEM_OK_PUBLIC)
+   {
+      return reportpanic(L, baErr2Str(sffsdrnandflash));
+   }
+   if(!interrupthandler(&_XzY0x1E7, kernelvaddr) ||
+      !SharkSslCertKey_validateECDSACertPSA(&_XzY0x1E7, kernelvaddr, id))
+   {
+      baFree((void*)kernelvaddr);
+      return reportpanic(L, "\103\145\162\164\151\146\151\143\141\164\145\040\153\145\171\040\155\151\163\155\141\164\143\150");
+   }
+   lsc->sharkSslCert = kernelvaddr;
+   lsc->psaKey = id;
+   return 1;
+}
+
+#if SHARKSSL_ENABLE_CSR_SIGNING
+
+static int
+_XzY0x2B3(lua_State *L, psa_key_id_t id)
+{
+   BaCertificateArgs enetswplatform;
+   SharkSslCert _XzY0x1D7 = 0, kernelvaddr = 0;
+   int sffsdrnandflash;
+   lua_remove(L, 1);
+    
+   lua_remove(L, 1);
+   lua_pushinteger(L, id);
+   lua_insert(L, lua_type(L, 2) == LUA_TSTRING ? 3 : 2);
+   if(!_XzY0x282(L, &enetswplatform))
+   {
+      return 2;
+   }
+   if(enetswplatform.cert &&
+      sharkssl_PEM(enetswplatform.cert, 0, 0, &_XzY0x1D7) != SHARKSSL_PEM_OK_PUBLIC)
+   {
+      return reportpanic(L, "\043\062\054\040\151\156\166\141\154\151\144\040\143\145\162\164\151\146\151\143\141\164\145");
+   }
+   sffsdrnandflash = SharkSslCert_signCSRWithPSAKey(&kernelvaddr, &enetswplatform.profile, enetswplatform.csrBin, _XzY0x1D7,
+                                         enetswplatform.validFrom, enetswplatform.validTo, enetswplatform.csrBinLen,
+                                         enetswplatform.serial, id, enetswplatform.hashID);
+   baFree((void*)_XzY0x1D7);
+   if(sffsdrnandflash < 0)
+   {
+      return reportpanic(L, baErr2Str(sffsdrnandflash));
+   }
+   sffsdrnandflash = compareirqaction(L, kernelvaddr, SharkSslCert_len(kernelvaddr),
+                           "\102\105\107\111\116\040\103\105\122\124\111\106\111\103\101\124\105", "\105\116\104\040\103\105\122\124\111\106\111\103\101\124\105", 0);
+   baFree((void*)kernelvaddr);
+   return sffsdrnandflash < 0 ? lua_error(L) : sffsdrnandflash;
+}
+#endif
+
+
+static int
+_XzY0x2B8(lua_State* L)
+{
+   const char* op;
+   size_t len, enablekernel = 0;
+   lua_Integer id;
+   psa_status_t sffsdrnandflash;
+   luaL_checktype(L, 1, LUA_TSTRING);
+   op = lua_tolstring(L, 1, &len);
+   luaL_argcheck(L, strlen(op) == len, 1, "\165\156\153\156\157\167\156\040\120\123\101\040\157\160\145\162\141\164\151\157\156");
+   if(strcmp(op,"\151\156\151\164") && strcmp(op,"\150\141\163\153\145\171") && strcmp(op,"\143\162\145\141\164\145\153\145\171") &&
+      strcmp(op,"\163\151\147\156") && strcmp(op,"\153\145\171\160\141\162\141\155\163") && strcmp(op,"\163\150\141\162\153\143\145\162\164") &&
+#if SHARKSSL_ENABLE_CSR_CREATION
+      strcmp(op, "\143\162\145\141\164\145\143\163\162") &&
+#endif
+#if SHARKSSL_ENABLE_CSR_SIGNING
+      strcmp(op, "\143\162\145\141\164\145\143\145\162\164\151\146\151\143\141\164\145") &&
+#endif
+      strcmp(op, "\147\154\157\142\141\154\153\145\171") &&
+      strcmp(op,"\165\156\151\161\165\145\153\145\171") && strcmp(op,"\152\163\157\156\163\145\141\154") && strcmp(op,"\152\163\157\156\157\160\145\156"))
+   {
+      return luaL_argerror(L, 1, "\165\156\153\156\157\167\156\040\120\123\101\040\157\160\145\162\141\164\151\157\156");
+   }
+   sffsdrnandflash = _XzY0x2C6(!strcmp(op, "\151\156\151\164"));
+   if(!strcmp(op, "\151\156\151\164"))
+   {
+      if(sffsdrnandflash != PSA_SUCCESS)
+      {
+         return _XzY0x2CC(L, sffsdrnandflash);
+      }
+      lua_pushboolean(L, TRUE);
+      return 1;
+   }
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return luaL_error(L, "\120\123\101\040\162\157\157\164\163\040\165\156\141\166\141\151\154\141\142\154\145\040\050\045\144\051", (int)sffsdrnandflash);
+   }
+   if(!strcmp(op, "\147\154\157\142\141\154\153\145\171") || !strcmp(op, "\165\156\151\161\165\145\153\145\171"))
+   {
+      return _XzY0x2C8(L, op[0] == '\147' ? LPSA_GLOBAL_ROOT : LPSA_DEVICE_ROOT);
+   }
+   if(!strcmp(op, "\152\163\157\156\163\145\141\154") || !strcmp(op, "\152\163\157\156\157\160\145\156"))
+   {
+      return _XzY0x2C1(L, op[4] == '\163');
+   }
+   luaL_argcheck(L, (lua_isinteger)(L, 2), 2, "\151\156\164\145\147\145\162\040\145\170\160\145\143\164\145\144");
+   id = lua_tointeger(L, 2);
+   luaL_argcheck(L,id >= 0x10000 && id <= 0x3fffffff,2,"\153\145\171\040\111\104\040\157\165\164\040\157\146\040\162\141\156\147\145");
+   if(!strcmp(op, "\143\162\145\141\164\145\153\145\171"))
+   {
+      return _XzY0x2B5(L, (psa_key_id_t)id);
+   }
+   sffsdrnandflash = _XzY0x2C3((psa_key_id_t)id, &enablekernel);
+   if(!strcmp(op, "\150\141\163\153\145\171"))
+   {
+      if(sffsdrnandflash != PSA_SUCCESS && sffsdrnandflash != PSA_ERROR_INVALID_HANDLE)
+      {
+         return luaL_error(L, "\120\123\101\040\153\145\171\040\154\157\157\153\165\160\040\146\141\151\154\145\144\040\050\045\144\051", (int)sffsdrnandflash);
+      }
+      lua_pushboolean(L, sffsdrnandflash == PSA_SUCCESS);
+      return 1;
+   }
+   if(sffsdrnandflash == PSA_ERROR_INVALID_HANDLE)
+   {
+      return luaL_error(L, "\120\123\101\040\153\145\171\040\156\157\164\040\146\157\165\156\144");
+   }
+   if(sffsdrnandflash != PSA_SUCCESS)
+   {
+      return _XzY0x2CC(L, sffsdrnandflash);
+   }
+#if SHARKSSL_ENABLE_CSR_CREATION
+   if(!strcmp(op, "\143\162\145\141\164\145\143\163\162"))
+   {
+      return _XzY0x2B6(L, (psa_key_id_t)id, enablekernel);
+   }
+#endif
+#if SHARKSSL_ENABLE_CSR_SIGNING
+   if(!strcmp(op, "\143\162\145\141\164\145\143\145\162\164\151\146\151\143\141\164\145"))
+   {
+      return _XzY0x2B3(L, (psa_key_id_t)id);
+   }
+#endif
+   if(!strcmp(op, "\163\150\141\162\153\143\145\162\164"))
+   {
+      return _XzY0x2CA(L, (psa_key_id_t)id);
+   }
+   return !strcmp(op, "\163\151\147\156") ? _XzY0x2CB(L, (psa_key_id_t)id, enablekernel) :
+      _XzY0x2C2(L, (psa_key_id_t)id, enablekernel);
+}
+
+
+static U32
+_XzY0x2BD(U32 videoprobe, unsigned int enablekernel)
+{
+   return (videoprobe << enablekernel) | (videoprobe >> (32 - enablekernel));
+}
+
+static U32
+_XzY0x2BE(const U8* alloccontroller)
+{
+   U32 _XzY0x2F4 = 0;
+   unsigned int gpiolibfbank;
+   for(gpiolibfbank = 0; gpiolibfbank != 32; gpiolibfbank += 8)
+      _XzY0x2F4 |= (U32)*alloccontroller++ << gpiolibfbank;
+   return _XzY0x2F4;
+}
+
+
+static U32
+_XzY0x2BB(const U8* alloccontroller, size_t traceleave, U32 suspendblock)
+{
+   const U32 p1 = 0x9e3779b1U, p2 = 0x85ebca77U, p3 = 0xc2b2ae3dU;
+   const U32 p4 = 0x27d4eb2fU, p5 = 0x165667b1U;
+   size_t blocks = traceleave / 16;
+   size_t write64uint8 = traceleave % 16;
+   U32 deltadevices;
+
+   if(blocks)
+   {
+      U32 _XzY0x2B2[4];
+      unsigned int n;
+      _XzY0x2B2[0] = suspendblock + p1 + p2;
+      _XzY0x2B2[1] = suspendblock + p2;
+      _XzY0x2B2[2] = suspendblock;
+      _XzY0x2B2[3] = suspendblock - p1;
+      do
+      {
+         for(n = 0; n != 4; ++n)
+         {
+            _XzY0x2B2[n] += _XzY0x2BE(alloccontroller) * p2;
+            _XzY0x2B2[n] = _XzY0x2BD(_XzY0x2B2[n], 13) * p1;
+            alloccontroller += 4;
+         }
+      } while(--blocks);
+      deltadevices = _XzY0x2BD(_XzY0x2B2[0], 1) + _XzY0x2BD(_XzY0x2B2[1], 7)
+         + _XzY0x2BD(_XzY0x2B2[2], 12) + _XzY0x2BD(_XzY0x2B2[3], 18);
+   }
+   else
+   {
+      deltadevices = suspendblock + p5;
+   }
+
+   deltadevices += (U32)traceleave;
+   for(; write64uint8 >= 4; write64uint8 -= 4)
+   {
+      deltadevices += _XzY0x2BE(alloccontroller) * p3;
+      deltadevices = _XzY0x2BD(deltadevices, 17) * p4;
+      alloccontroller += 4;
+   }
+   for(; write64uint8; --write64uint8)
+   {
+      deltadevices += (U32)*alloccontroller++ * p5;
+      deltadevices = _XzY0x2BD(deltadevices, 11) * p1;
+   }
+   deltadevices = (deltadevices ^ (deltadevices >> 15)) * p2;
+   deltadevices = (deltadevices ^ (deltadevices >> 13)) * p3;
+   return deltadevices ^ (deltadevices >> 16);
+}
+
+
+static int
+_XzY0x2A0(lua_State* L)
+{
+   size_t len;
+   const char* alloccontroller;
+   lua_Integer suspendblock = 0;
+   luaL_checktype(L, 1, LUA_TSTRING);
+   alloccontroller = lua_tolstring(L, 1, &len);
+   if(!lua_isnoneornil(L, 2))
+   {
+      luaL_argcheck(L, (lua_isinteger)(L, 2), 2, "\151\156\164\145\147\145\162\040\145\170\160\145\143\164\145\144");
+      suspendblock = lua_tointeger(L, 2);
+      luaL_argcheck(L, suspendblock >= 0 && suspendblock <= 0xffffffff, 2,
+                    "\163\145\145\144\040\157\165\164\040\157\146\040\162\141\156\147\145");
+   }
+   lua_pushinteger(L,(lua_Integer)_XzY0x2BB((const U8*)alloccontroller,len,(U32)suspendblock));
+   return 1;
+}
+
+
+void
+balua_psa(lua_State *L)
+{
+   static const luaL_Reg lib[] = {
+      {"\160\163\141",     _XzY0x2B8},
+      {"\150\141\163\150\063\062",  _XzY0x2A0},
+      {NULL, NULL}
+   };
+   lua_getglobal(L, "\142\141");
+   luaL_setfuncs(L, lib, 0);
+   lua_getfield(L, -1, "\143\162\171\160\164\157");
+   if(lua_istable(L, -1))
+   {
+      static const luaL_Reg crypto[] = {
+         {"\166\145\162\151\146\171", _XzY0x2CD},
+         {"\145\156\143\162\171\160\164", _XzY0x2B9},
+         {NULL, NULL}
+      };
+      luaL_setfuncs(L, crypto, 0);
+   }
+   lua_pop(L, 1);
+   lua_pop(L, 1);
 }
 
 #endif

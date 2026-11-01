@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id$
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
@@ -38,6 +38,34 @@
  */
 #ifndef _TargConfig_h
 #define _TargConfig_h
+
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DLMALLOC
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
 
 #ifndef BA_API
 #define BA_API
@@ -68,10 +96,10 @@
 #include <stddef.h>
 
 /* Allocator code below hard-coded for dlmalloc */
-#ifndef USE_DLMALLOC
-#define USE_DLMALLOC
-#endif
 #include <dlmalloc.h>
+#if BA_ALLOCATOR != BA_ALLOCATOR_DLMALLOC && (!defined(baMalloc) || !defined(baRealloc) || !defined(baFree))
+#error This port requires BA_ALLOCATOR_DLMALLOC or all three custom allocation hooks
+#endif
 
 
 /***********************************************************************
@@ -113,15 +141,7 @@ BaTime baGetMsClock(void);
 #endif
 #define HTTP_E_BASE 1 /* Error code base */
 
-#if !defined(B_LITTLE_ENDIAN) &&  !defined(B_BIG_ENDIAN)
-#ifdef __LITTLE_ENDIAN__
-#define B_LITTLE_ENDIAN
-#elif defined(__BIG_ENDIAN__)
-#define B_BIG_ENDIAN
-#else
-#error endian needed 
-#endif
-#endif
+/* Compiler facts or an explicit BA_BYTE_ORDER are validated by BaConfig.h. */
 
 
 
@@ -133,7 +153,7 @@ BaTime baGetMsClock(void);
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
 #define baAssert(exp)

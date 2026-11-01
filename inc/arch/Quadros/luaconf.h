@@ -1,15 +1,14 @@
 
 #ifndef lconfig_h
 
+#include <TargConfig.h>
+
 /* Only a subset of the os lib is available for embedded systems */
-#define BA_MINIOSLIB
-#define LUA_NOIOLIB
 #define LUA_PATH_DEFAULT ""
 #define LUA_CPATH_DEFAULT ""
 
 #ifdef __CODEWARRIOR__
 #define lua_getlocaledecpoint() '.'
-#define NO_TIMEFUNCS
 #ifndef BUFSIZ
 #define BUFSIZ 512
 #endif

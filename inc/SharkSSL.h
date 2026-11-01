@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6407 2026-10-12 21:41:24Z gianluca $
+ *   $Id: SharkSSL.h 6682 2026-10-29 21:14:37Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -67,7 +67,7 @@
     Default serial number type
 */
 typedef U64 SharkCertSerialNumber;
-#ifdef B_BIG_ENDIAN
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 #define sharkCertSerialNumber2NetworkEndian(n)
 #else
 #define sharkCertSerialNumber2NetworkEndian(n)  \
@@ -926,7 +926,7 @@ extern "C" {
     necessary to accommodate the largest installed certificate and the
     compiled key-exchange requirements. Later received records and
     fragmented handshake messages may grow the input buffer when
-    #SHARKSSL_DISABLE_INBUF_EXPANSION is zero.
+    \ref SHARKSSL_DISABLE_INBUF_EXPANSION is zero.
 
     \param outBufSize Output-buffer capacity, in bytes, for each
     #SharkSslCon. The buffer must hold the compiled internal handshake state
@@ -937,7 +937,7 @@ extern "C" {
     There is no configuration-independent minimum for either buffer. If an
     allocation fails, or a required handshake message and its scratch space
     do not fit, the handshake API returns #SharkSslCon_AllocationError. With
-    #SHARKSSL_DISABLE_INBUF_EXPANSION enabled, input which requires a larger
+    \ref SHARKSSL_DISABLE_INBUF_EXPANSION enabled, input which requires a larger
     receive buffer follows the same controlled error path. Terminate the
     connection after this result.
 
@@ -1215,7 +1215,7 @@ U8 *SharkSslCon_getBuf(SharkSslCon *o);
 /** Returns the number of bytes currently available at the pointer returned
     by #SharkSslCon_getBuf. The SharkSslCon input-buffer start size is set with
     parameter inBufStartSize when calling the #SharkSsl_constructor. If
-    #SHARKSSL_DISABLE_INBUF_EXPANSION is zero, SharkSSL may grow this buffer
+    \ref SHARKSSL_DISABLE_INBUF_EXPANSION is zero, SharkSSL may grow this buffer
     to receive a larger record or reassemble a fragmented handshake message.
     The configured #SHARKSSL_MAX_HANDSHAKE_LENGTH and the internal record
     limit bound this growth. This U16 API exposes at most 65535 bytes at a
@@ -1494,12 +1494,24 @@ SHARKSSL_API int SharkSslCertInfo_parseCert(SharkSslCertInfo *o, const U8 *der, 
 SHARKSSL_API U8 SharkSsl_addCertificate(SharkSsl *o, SharkSslCert cert);
 
 #if SHARKSSL_PSA_CONSUMER
-/** Add an RSA or EC certificate with a provider-owned private signing key.
+/** Add an RSA, EC, or EdDSA certificate with a provider-owned private signing key.
     The caller retains ownership of psaKey and must keep it valid until the
     SharkSsl object and all its connections are destroyed. The key must match
-    the certificate and permit signing with the negotiated hash algorithm.
+    the certificate and permit signing with the negotiated algorithm. With
+    SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY=1, every local certificate must be
+    added through this function with a public-only certificate blob.
  */
 SHARKSSL_API U8 SharkSsl_addCertificatePSA(SharkSsl *o, SharkSslCert cert, psa_key_id_t psaKey);
+
+/**
+ * Select one PSA certificate already registered on this connection's SharkSsl
+ * object. Call this before handshake processing. The certificate and its PSA
+ * signing key remain owned by the caller for the existing SharkSsl lifetime.
+ * Passing NULL restores automatic certificate selection.
+ * Returns TRUE on success and FALSE if the certificate is not registered,
+ * has no PSA signing key, or the connection has started processing records.
+ */
+SHARKSSL_API U8 SharkSslCon_selectCertificatePSA(SharkSslCon *o, SharkSslCert cert);
 #endif
 
 #if SHARKSSL_ENABLE_CA_LIST
@@ -1520,9 +1532,12 @@ SHARKSSL_API U8 SharkSsl_addCertificatePSA(SharkSsl *o, SharkSslCert cert, psa_k
  * behavior and requires the application to guarantee the list's lifetime and
  * extent.
  *
- * __Note:__ You can only set one CA list, thus the CA list must include all
- * root certificates required for your system. The CA list must remain valid
- * and unchanged while the SharkSsl object uses it.
+ * The CA list must include all root certificates required for your system.
+ * It must remain valid and unchanged while the SharkSsl object uses it.
+ * Replacing it requires that all connections have been terminated and that
+ * the caller serialize the call with connection creation and session use.
+ * A successful call invalidates cached sessions established with the previous
+ * list; externally held session handles remain releasable but cannot resume.
  *
  * The example program certcheck.c includes code that shows how to perform
  * complete certificate validation of the connected servers.
@@ -1871,8 +1886,13 @@ typedef enum
 } sharkssl_PEM_RetVal;
 
 
-/** Create a SharkSslCert certificate by using a certificate and key
-    * in PEM format.
+/** Create a SharkSslCert from PEM data. In a PSA consumer build, if keyPEM
+    is NULL and certPEM is present, the result contains the public
+    certificate chain and its public key, and SHARKSSL_PEM_OK_PUBLIC is returned.
+    The caller owns the allocated result and must release it after SharkSSL no longer
+    references it. A private key remains required for native TLS signing;
+    a public-only result can be paired with a PSA signing key by using
+    SharkSsl_addCertificatePSA.
 
     example:
 
@@ -2215,7 +2235,7 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_PKCS1V1_5_verify_hash(
     \param in the ciphertext (must be in RAM since ITS CONTENT WILL BE MODIFIED)
 
     \param len is the length/size of parameter 'in'. This length must be
-    exactly #SharkSslRSAKey_size(privkey).
+    exactly \ref SharkSslRSAKey_size "SharkSslRSAKey_size(privkey)".
 
     \param hashID an identifier for the digest function used 
     Allowed values are:
@@ -2244,14 +2264,14 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_private_decrypt_OAEP(
     \param in the cleartext (not required to be in RAM)
 
     \param len is the length/size of parameter 'in'. This length must be
-    not greater than #SharkSslRSAKey_size(pubkey) - (2 * labelLen) - 2.
+    not greater than \ref SharkSslRSAKey_size "SharkSslRSAKey_size(pubkey)" - (2 * labelLen) - 2.
 
     \param hashID an identifier for the digest function used 
     Allowed values are:
         SHARKSSL_HASHID_SHA1
 
     \param out the encrypted cleartext is copied to this buffer. The
-    size of this buffer must be #SharkSslRSAKey_size(pubkey)
+    size of this buffer must be \ref SharkSslRSAKey_size "SharkSslRSAKey_size(pubkey)"
 
     \param label is an optional label per RFC 8017 sec. 7.1.1. Use
     null string when empty.
@@ -2338,16 +2358,21 @@ SHARKSSL_API sharkssl_RSA_RetVal sharkssl_RSA_public_decrypt(
  * BRAINPOOLPxxxR1 - RFC 7027 section 2
  * CURVE25519,448  - RFC 8446 section 4.2.7
  */
-#define SHARKSSL_EC_CURVE_ID_SECP256R1        23
-#define SHARKSSL_EC_CURVE_ID_SECP384R1        24
-#define SHARKSSL_EC_CURVE_ID_SECP521R1        25
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1  26
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1  27
-#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1  28
-#define SHARKSSL_EC_CURVE_ID_CURVE25519       29
-#define SHARKSSL_EC_CURVE_ID_CURVE448         30
+#define SHARKSSL_EC_CURVE_ID_SECP256R1             23
+#define SHARKSSL_EC_CURVE_ID_SECP384R1             24
+#define SHARKSSL_EC_CURVE_ID_SECP521R1             25
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1       26
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1       27
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1       28
+#define SHARKSSL_EC_CURVE_ID_CURVE25519            29
+#define SHARKSSL_EC_CURVE_ID_CURVE448              30
 
-#define SHARKSSL_X25519_KEY_LEN               32
+/* RFC 8734 TLS 1.3 NamedGroup IDs for Brainpool key shares */
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP256R1TLS13  31
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP384R1TLS13  32
+#define SHARKSSL_EC_CURVE_ID_BRAINPOOLP512R1TLS13  33
+
+#define SHARKSSL_X25519_KEY_LEN                    32
 
 
 #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_ENABLE_X25519_API)
@@ -2428,48 +2453,6 @@ SHARKSSL_API SharkSslECCKey sharkssl_PEM_to_ECCKey(
    const char *PEMKey, const char *passphrase);
 #endif  /* SHARKSSL_ENABLE_PEM_API */
 
-
-#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
-/** @ingroup SharkSslCertApi
-    Returns the private or public key's "vector size" in bytes.
-    The "vector size" is the size of the key as represented as
-    an array of bytes in the SharkSSL internal proprietary format.
-    This function is useful for key comparison or saving.
- */
-
-SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
-#define SharkSslCert_vectSize(c) SharkSslKey_vectSize((const SharkSslCert)c)
-#define SharkSslCert_vectSize_keyInfo(c, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)c, t, p, a, b, x, y)
-#if SHARKSSL_ENABLE_RSA
-#define SharkSslRSAKey_vectSize(k) SharkSslKey_vectSize(k)
-#define SharkSslRSAKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
-#endif
-#if SHARKSSL_ENABLE_ECDSA
-#define SharkSslECCKey_vectSize(k) SharkSslKey_vectSize(k)
-#define SharkSslECCKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
-#endif
-
-/* return values of function SharkSslKey_vectSize_keyInfo for the parameter keyType */
-#define SHARKSSL_KEYTYPE_RSA     0x00 
-#define SHARKSSL_KEYTYPE_EC      0x02
-
-/** @ingroup SharkSslCertApi
-    Returns the private or public key's "vector size" in bytes.
-    The "vector size" is the size of the key as represented as
-    an array of bytes in the SharkSSL internal proprietary format.
-    Returns 0 if the key is not valid.
-    keyType: return value, either SHARKSSL_KEYTYPE_RSA or SHARKSSL_KEYTYPE_EC
-    isKeyPrivate: 0 if public key, 1 if private key
-    if the keyType is SHARKSSL_KEYTYPE_RSA:
-     d1: pointer to the modulus, a sequence of bytes in big endian format of length d1Len
-     d2: pointer to the exponent, a sequence of bytes in big endian format of length d2Len
-    if the keyType is SHARKSSL_KEYTYPE_EC:
-     d1: pointer to the X coordinate, a sequence of bytes in big endian format of length d1Len
-     d2: pointer to the Y coordinate, a sequence of bytes in big endian format of length d2Len
-    This function is useful to extract info from a key.
- */
-SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType, U8 *isKeyPrivate, U8 **d1, U16 *d1Len, U8 **d2, U16 *d2Len);
-#endif
 
 #if SHARKSSL_ENABLE_ECCKEY_CREATE
 
@@ -2700,6 +2683,48 @@ SHARKSSL_API sharkssl_ECDSA_RetVal sharkssl_ECDSA_verify_hash(
 #endif  /* SHARKSSL_ENABLE_ECDSA */
 
 /** @} */ /* end group ECC */
+#endif
+
+#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ENABLE_ECDSA)
+/** @ingroup SharkSslCertApi
+    Returns the private or public key's "vector size" in bytes.
+    The "vector size" is the size of the key as represented as
+    an array of bytes in the SharkSSL internal proprietary format.
+    This function is useful for key comparison or saving.
+ */
+
+SHARKSSL_API U16 SharkSslKey_vectSize(const SharkSslKey key);
+#define SharkSslCert_vectSize(c) SharkSslKey_vectSize((const SharkSslCert)c)
+#define SharkSslCert_vectSize_keyInfo(c, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)c, t, p, a, b, x, y)
+#if SHARKSSL_ENABLE_RSA
+#define SharkSslRSAKey_vectSize(k) SharkSslKey_vectSize(k)
+#define SharkSslRSAKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
+#endif
+#if SHARKSSL_ENABLE_ECDSA
+#define SharkSslECCKey_vectSize(k) SharkSslKey_vectSize(k)
+#define SharkSslECCKey_vectSize_keyInfo(k, t, p, a, b, x, y) SharkSslKey_vectSize_keyInfo((const SharkSslKey)k, t, p, a, b, x, y)
+#endif
+
+/* return values of function SharkSslKey_vectSize_keyInfo for the parameter keyType */
+#define SHARKSSL_KEYTYPE_RSA     0x00 
+#define SHARKSSL_KEYTYPE_EC      0x02
+
+/** @ingroup SharkSslCertApi
+    Returns the private or public key's "vector size" in bytes.
+    The "vector size" is the size of the key as represented as
+    an array of bytes in the SharkSSL internal proprietary format.
+    Returns 0 if the key is not valid.
+    keyType: return value, either SHARKSSL_KEYTYPE_RSA or SHARKSSL_KEYTYPE_EC
+    isKeyPrivate: 0 if public key, 1 if private key
+    if the keyType is SHARKSSL_KEYTYPE_RSA:
+     d1: pointer to the modulus, a sequence of bytes in big endian format of length d1Len
+     d2: pointer to the exponent, a sequence of bytes in big endian format of length d2Len
+    if the keyType is SHARKSSL_KEYTYPE_EC:
+     d1: pointer to the X coordinate, a sequence of bytes in big endian format of length d1Len
+     d2: pointer to the Y coordinate, a sequence of bytes in big endian format of length d2Len
+    This function is useful to extract info from a key.
+ */
+SHARKSSL_API U16 SharkSslKey_vectSize_keyInfo(const SharkSslKey key, U8 *keyType, U8 *isKeyPrivate, U8 **d1, U16 *d1Len, U8 **d2, U16 *d2Len);
 #endif
 
 

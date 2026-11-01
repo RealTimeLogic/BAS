@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -38,6 +38,43 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_LOG2
+#define BA_HAVE_LOG2 0
+#endif
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#if BA_HAVE_STDIO
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_FULL
+#endif
+#else
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 1
+#endif
+
+
 /***********************************************************************
  *  Misc settings
  ***********************************************************************/
@@ -59,7 +96,9 @@
 #define SHARKSSL_API BA_API
 #endif
 
-#define ENABLE_REUSE_ADDR 1
+#ifndef BA_ENABLE_SOCKET_REUSE_ADDRESS
+#define BA_ENABLE_SOCKET_REUSE_ADDRESS 1
+#endif
 
 #include <assert.h>
 #include <BaErrorCodes.h>
@@ -69,25 +108,23 @@
 #define baAssert(exp) assert(exp)
 #endif
 
-#if !defined(B_BIG_ENDIAN) && !defined(B_LITTLE_ENDIAN)
-  /* Works with clang/gcc */
-  #if defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN || \
-      defined(__BIG_ENDIAN__) || \
-      defined(__ARMEB__) || \
-      defined(__THUMBEB__) || \
-      defined(__AARCH64EB__) || \
-      defined(_MIBSEB) || defined(__MIBSEB) || defined(__MIBSEB__)
-        #define B_BIG_ENDIAN 
-  #elif defined(__BYTE_ORDER) && __BYTE_ORDER == __LITTLE_ENDIAN || \
-      defined(__LITTLE_ENDIAN__) || \
-      defined(__ARMEL__) || \
-      defined(__THUMBEL__) || \
-      defined(__AARCH64EL__) || \
+/* VxWorks/compiler facts supplement the common GCC/Clang detection. */
+#if (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && __BYTE_ORDER == __BIG_ENDIAN) || \
+    defined(__ARMEB__) || defined(__THUMBEB__) || defined(__AARCH64EB__) || \
+    defined(_MIPSEB) || defined(__MIPSEB) || defined(__MIPSEB__)
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_BIG_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
+#error BA_BYTE_ORDER disagrees with VxWorks
+#endif
+#elif (defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && __BYTE_ORDER == __LITTLE_ENDIAN) || \
+      defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) || \
       defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__)
-        #define B_LITTLE_ENDIAN
-  #else
-    #error Define one of B_BIG_ENDIAN or B_LITTLE_ENDIAN
-  #endif
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
+#error BA_BYTE_ORDER disagrees with VxWorks
+#endif
 #endif
 
 
@@ -112,25 +149,27 @@
 #define BAI_DATA	extern
 #endif
 
-#define NO_IPV6_MEMBERSHIP
+#define BA_HAVE_IPV6_MULTICAST_MEMBERSHIP 0
 
-#include <BaSharkSslOpt.h>
-
-#if defined(__LP64__) && !defined(BA_64BIT)
-#define BA_64BIT
-#ifndef BA_STACKSZ
-#define BA_STACKSZ 30000
+#include <BaConfigTypes.h>
+#ifndef BA_THREAD_STACK_SIZE
+#if BA_ARCH_64BIT
+#define BA_THREAD_STACK_SIZE 30000
+#else
+#define BA_THREAD_STACK_SIZE 15000
 #endif
 #endif
+
+#include <BaConfig.h>
+
+
 
 /* For SharkSSL's buf. align. */
-#ifdef BA_64BIT
+#if BA_ARCH_64BIT
 #define SHARKSSL_64BIT
 #endif 
  
-#ifndef BA_STACKSZ
-#define BA_STACKSZ 15000
-#endif
+
 
 #include <stddef.h>
 
@@ -138,7 +177,7 @@
  *  Memory allocation
  ***********************************************************************/
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #else
 #include <stdlib.h>

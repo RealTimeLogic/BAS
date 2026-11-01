@@ -1,6 +1,42 @@
-/* Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
- * AArch64 Linux/QNX dispatch for the existing SharkSSL assembly hooks.
- * Same license as SharkSslCrypto.c. Compile for baseline armv8-a.
+/**
+ *     ____             _________                __                _
+ *    / __ \___  ____ _/ /_  __(_)___ ___  ___  / /   ____  ____ _(_)____
+ *   / /_/ / _ \/ __ `/ / / / / / __ `__ \/ _ \/ /   / __ \/ __ `/ / ___/
+ *  / _, _/  __/ /_/ / / / / / / / / / / /  __/ /___/ /_/ / /_/ / / /__
+ * /_/ |_|\___/\__,_/_/ /_/ /_/_/ /_/ /_/\___/_____/\____/\__, /_/\___/
+ *                                                       /____/
+ *
+ *                 SharkSSL Embedded SSL/TLS Stack
+ ****************************************************************************
+ *   PROGRAM MODULE
+ *
+ *   $Id: SharkSslCrypto_ARM64.c 6682 2026-10-29 21:14:37Z gianluca $
+ *
+ *   COPYRIGHT:  Real Time Logic LLC, 2026
+ *
+ *   This software is copyrighted by and is the sole property of Real
+ *   Time Logic LLC.  All rights, title, ownership, or other interests in
+ *   the software remain the property of Real Time Logic LLC.  This
+ *   software may only be used in accordance with the terms and
+ *   conditions stipulated in the corresponding license agreement under
+ *   which the software has been supplied.  Any unauthorized use,
+ *   duplication, transmission, distribution, or disclosure of this
+ *   software is expressly forbidden.
+ *
+ *   This Copyright notice may not be removed or modified without prior
+ *   written consent of Real Time Logic LLC.
+ *
+ *   Real Time Logic LLC. reserves the right to modify this software
+ *   without notice.
+ *
+ *               http://www.realtimelogic.com
+ *               http://www.sharkssl.com
+ ****************************************************************************
+ *
+ */
+
+/* AArch64 Linux/QNX dispatch for the existing SharkSSL assembly hooks.
+ * Compile for baseline armv8-a.
  */
 #include "SharkSslCrypto.h"
 #include <stddef.h>
@@ -13,7 +49,7 @@
 
 #if !defined(__aarch64__) || (!defined(__linux__) && !defined(__QNXNTO__)) || defined(__ANDROID__) || !defined(__ELF__) || \
     !defined(__LP64__) || defined(__ILP32__) || defined(__AARCH64EB__) || \
-    !defined(B_LITTLE_ENDIAN) || defined(B_BIG_ENDIAN)
+    (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN)
 #error "ARM64_GCC requires little-endian AArch64 Linux/QNX LP64/ELF"
 #endif
 
@@ -50,6 +86,12 @@ unsigned sharkssl_arm64_capabilities(void)
                 (AARCH64_CPU_FLAG_SIMD | AARCH64_CPU_FLAG_AES | AARCH64_CPU_FLAG_PMULL))
          caps |= 4;
 #endif
+#if defined(AARCH64_CPU_FLAG_SHA2)
+      if (hw & AARCH64_CPU_FLAG_SHA2)
+      {
+         caps |= 8;
+      }
+#endif
 #else
       unsigned long hw = getauxval(AT_HWCAP);
       caps = 1; /* initialized, even when no accelerated instructions exist */
@@ -58,11 +100,22 @@ unsigned sharkssl_arm64_capabilities(void)
       if ((hw & (HWCAP_ASIMD | HWCAP_AES | HWCAP_PMULL)) ==
                 (HWCAP_ASIMD | HWCAP_AES | HWCAP_PMULL))
          caps |= 4;
+      if (hw & HWCAP_SHA2)
+      {
+         caps |= 8;
+      }
 #endif
       __atomic_store_n(&cached, caps, __ATOMIC_RELAXED);
    }
    return caps;
 }
+
+#if (SHARKSSL_USE_SHA_256 && SHARKSSL_ARM64_SHA256_INTRINSICS && (!SHARKSSL_PSA_CONSUMER))
+int sharkssl_arm64_sha2_available(void)
+{
+   return (sharkssl_arm64_capabilities() & 8) != 0;
+}
+#endif
 
 #if SHARKSSL_USE_CHACHA20 && SHARKSSL_OPTIMIZED_CHACHA_ASM
 typedef char arm64_chacha_layout[(offsetof(SharkSslChaChaCtx, state) == 0) ? 1 : -1];

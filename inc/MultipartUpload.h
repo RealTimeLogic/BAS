@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: MultipartUpload.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: MultipartUpload.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
@@ -334,6 +334,7 @@ extern "C" {
     @param onError Required error callback.
     @param bufferSize Initial working-buffer size and growth increment in bytes.
     @param allocator Borrowed allocator, or NULL for the default allocator.
+    @return No value is returned; initialization fills the caller-provided storage.
  */
 void
 BA_API MultipartUpload_constructor(

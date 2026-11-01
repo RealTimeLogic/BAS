@@ -336,11 +336,7 @@ bool RestRequest::getUnsignedParameter(const char* name, U32& value) const
 
 AuthenticatedUser* RestRequest::authenticatedUser() const
 {
-#ifndef NO_HTTP_SESSION
    return HttpRequest_getAuthenticatedUser(request_);
-#else
-   return 0;
-#endif
 }
 
 RestStringView RestRequest::authenticatedUserName() const

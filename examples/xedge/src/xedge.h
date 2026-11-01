@@ -1,5 +1,6 @@
 /*
-  Declarations for xedgeInitDiskIo and xedgeOpenAUX. See details below.
+  Declarations for xedgeInitPsa, xedgeInitDiskIo, and xedgeOpenAUX.
+  See details below.
   In addition:
   API designed to simplify the two following options as detailed in
   the example file led.c:
@@ -8,7 +9,9 @@
     3. Add additional secrets for TPM key generation
   These optional configuration options must be set in the xedgeOpenAUX function.
 */
+#include "XedgeConfig.h"
 #include <barracuda.h>
+
 
 struct XedgeOpenAUX;
 
@@ -22,7 +25,7 @@ typedef int (*XedgeCfgFile)(lua_State* L);
 
 typedef struct XedgeOpenAUX {
    lua_State* L; /* The main Lua state */
-   IoIntfPtr dio; /* The DiskIo instance unless compiled with NO_BAIO_DISK */
+   IoIntfPtr dio; /* The DiskIo instance unless compiled with XEDGE_ENABLE_DISK_IO=0 */
    AddSecret addSecret; /* Callback to addSecret() in xedge.c */
    int initXedgeFuncRef; /* Reference to the init function in Xedge's .config */
    XedgeCfgFile xedgeCfgFile; /* Set this in xedgeOpenAUX() to enable (2) */
@@ -42,8 +45,25 @@ void xedgeWait4Network(void);
  */
 void setDispExit(void);
 
-#ifndef NO_BAIO_DISK
-/* You must create this function unless compiled with NO_BAIO_DISK.
+#if SHARKSSL_PSA_CONSUMER
+/* Required platform hook in PSA builds. No arguments; return int 0 on success
+ * or a nonzero error code to stop startup. Initialize entropy, hardware, and
+ * persistent storage in the provider's required order, including a successful
+ * psa_crypto_init(). Platform prerequisites must be ready here.
+ *
+ * Called once per barracuda() invocation, before cryptography, resource
+ * verification, Lua, or the dispatcher mutex. Not called on a Lua debugger
+ * restart. Keep provider state alive through shutdown and safely reuse it
+ * if barracuda() is invoked again sequentially, never concurrently.
+ * xedgeInitDiskIo() and xedgeOpenAUX() run too late for provider setup.
+ * Do not use Lua/server objects or reset persistent keys here.
+ * See PsaSimInit.c for the Windows simulator implementation.
+ */
+int xedgeInitPsa(void);
+#endif
+
+#if XEDGE_ENABLE_DISK_IO
+/* You must create this function unless compiled with XEDGE_ENABLE_DISK_IO=0.
    Some embedded operating systems require the IO to be configured,
    such as setting the root directory (base path).
 */

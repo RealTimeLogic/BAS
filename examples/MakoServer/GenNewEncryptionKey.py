@@ -5,7 +5,7 @@
 # The generated key is stored in src/NewEncryptionKey.h.
 #
 # To use the generated key in your project, compile with the flag:
-#  -DNewEncryptionKey
+#  -DMAKO_SOFTTPM_KEY_HEADER=\"NewEncryptionKey.h\"
 
 import os
 import random

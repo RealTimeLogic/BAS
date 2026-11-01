@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 6320 2026-10-06 00:03:18Z wini $
+ *   $Id: MakoMain.c 6702 2026-10-31 22:23:48Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2026
  *
@@ -46,14 +46,13 @@
 #include "mako.h"
 
 
-/* Either remove the macro definition below or define macro
-   BA_FILESIZE64 when compiling the code. You probably want to
-   enable 64 bit file system support.
+/* Mako normally requires 64 bit file system support. Legacy Android
+   toolchains may use BA_FILE_OFFSET_BITS=32 for files below 2 GiB.
 
    NOTE: All BAS code must be compiled with this macro.
  */
-#ifndef BA_FILESIZE64
-#error You should probably compile with -DBA_FILESIZE64
+#if BA_FILE_OFFSET_BITS != 64 && !defined(__ANDROID__)
+#error You should probably compile with -DBA_FILE_OFFSET_BITS=64
 #endif
 
 #include <barracuda.h>
@@ -67,10 +66,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
-#ifndef BA_MDNS
-#define BA_MDNS 1
-#endif
-#if BA_MDNS
+#if BA_ENABLE_MDNS && BA_ENABLE_MDNS_LUA
 #include <BamDNS.h>
 #endif
 
@@ -98,6 +94,11 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 #endif
 
 
+#if SHARKSSL_PSA_CONSUMER
+void balua_psa(lua_State *L);
+
+#endif
+
 /* SharkTrustEx
 
    Create your own tokengen.c file as follows:
@@ -113,27 +114,23 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
    6: Download the generated C code, rename to tokengen.h,
       and place generated file in this directory
   
-   The code can be excluded by defining NO_SHARKTRUST or by removing code below
+   The code can be excluded by setting BA_ENABLE_SHARKTRUST=0 or by removing code below
 */
-#ifdef NO_SHARKTRUST
+#if !BA_ENABLE_SHARKTRUST
 #define balua_tokengen(L)
 #else
 #define EMBEDDED_ZONE_KEY
 #include "tokengen.c"
 #endif
 
-#ifndef NO_ENCRYPTIONKEY
+#if BA_ENABLE_SOFTTPM_KEY_MATERIAL
 #define STATIC static
-#ifdef NewEncryptionKey
-#include "NewEncryptionKey.h"
-#else
-#include "EncryptionKey.h"
-#endif
+#include MAKO_SOFTTPM_KEY_HEADER
 #include "tpm.h"
 #endif
 
 
-#ifdef CUSTOM_PLAT
+#if MAKO_USE_CUSTOM_PLATFORM
 
 /* Include custom header files */
 
@@ -155,39 +152,35 @@ static IoIntfZipReader* makoZipReader; /* When using the ZIP file */
 #endif
 #endif
 
-#if USE_LPEG
+#if BA_ENABLE_LUA_LPEG
 /* Parsing Expression Grammars For Lua
    https://www.inf.puc-rio.br/~roberto/lpeg/
 */
 extern int luaopen_lpeg(lua_State *L);
 #endif
-#if USE_PROTOBUF
+#if BA_ENABLE_LUA_PROTOBUF
 /* Google's protobuf for Lua
    https://github.com/starwing/lua-protobuf
 */
 extern int luaopen_pb(lua_State* L);
 #endif
-#if USE_CBOR
+#if BA_ENABLE_LUA_CBOR
 /*  The Concise Binary Object Represenation Lua Modules
     https://github.com/spc476/CBOR
     CBOR requires lpeg
 */
 int luaopen_org_conman_cbor_c(lua_State *L);
-#if USE_LPEG != 1
+#if BA_ENABLE_LUA_LPEG != 1
 #error CBOR requires LPeg
 #endif
 #endif
 
-#if USE_OPCUA
+#if BA_ENABLE_LUA_OPCUA
 #include <opcua_module.h>
 #endif
 
-#ifndef AUX_LUA_BINDINGS
-#ifdef myCustomBindings
-extern void myCustomBindings(lua_State *L);
-#else
-#define myCustomBindings(L)
-#endif
+#ifdef MAKO_OPEN_BINDINGS
+extern void MAKO_OPEN_BINDINGS(lua_State* L);
 #endif
 
 #ifdef __APPLE__
@@ -217,15 +210,15 @@ static BaTimer timer;
 static DiskIo diskIo; /* The IO named "disk" */
 
 
-#if USE_EMBEDDED_ZIP
+#if MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK
 extern ZipReader* getLspZipReader(void); /* ../obj/debug|release/LspZip.c */
 #endif
 
 /* xrc/sql/ */
-#if USE_SQL == 2
+#if MAKO_SQL_BACKEND == MAKO_SQL_ITTIA
 #define luaopen_SQL luaopen_luasql_ittiadb
 extern int luaopen_luasql_ittiadb(lua_State *L);
-#elif USE_SQL == 1
+#elif MAKO_SQL_BACKEND == MAKO_SQL_SQLITE
 #define luaopen_SQL luaopen_luasql_sqlite3
 extern int luaopen_luasql_sqlite3(lua_State *L);
 #else
@@ -240,7 +233,7 @@ setDispExit(void)
    SoDisp_setExit(dispatcher);
 }
 
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
 static BaBool restart;
 static void
 dbgExitRequest(void* na, BaBool rstart)
@@ -326,7 +319,7 @@ makovprintf(int isErr,const char* fmt, va_list argList)
    va_list xList;
    if(daemonMode || logFp)
    {
-#if !defined(_WIN32) && !defined(CUSTOM_PLAT)
+#if !defined(_WIN32) && !MAKO_USE_CUSTOM_PLATFORM
       if(isErr)
       {
          va_copy(xList, argList);
@@ -458,7 +451,7 @@ findFlag(int argc, char** argv, const char flag, const char** data)
    return FALSE;
 }
 
-#ifndef CUSTOM_PLAT
+#if !MAKO_USE_CUSTOM_PLATFORM
 
 /******************************** WIN32 **********************************/
 #ifdef _WIN32
@@ -809,7 +802,7 @@ setUser(int argc, char** argv)
 
 #endif /* #ifdef _WIN32 */
 /***************************** END WIN/LINUX *******************************/
-#endif /* #ifdef CUSTOM_PLAT */
+#endif /* #if MAKO_USE_CUSTOM_PLATFORM */
 
 
 #ifdef NDEBUG
@@ -1269,7 +1262,7 @@ openVmIo(const U8* zipPubKey, IoIntf* rootIo,const char* execpath,
 {
    IoIntf* io=0;
    char* path;
-#ifndef USE_ZIPSIGNATURE
+#if !BA_ENABLE_ZIP_SIGNATURE
    int status;
    path = getenv("MAKO_ZIP");
    if(path)
@@ -1326,7 +1319,7 @@ openVmIo(const U8* zipPubKey, IoIntf* rootIo,const char* execpath,
                  baErr2Str(ecode));
       }
       io=checkMakoIo((IoIntf*)vmIo, dirname);
-#elif USE_EMBEDDED_ZIP && !defined(USE_ZIPSIGNATURE)
+#elif MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK && !BA_ENABLE_ZIP_SIGNATURE
       /* Use embedded ZIP file, which is Created by the the BA tool: bin2c */
       io=(IoIntf*)createAndCheckMakoZipIo(
          getLspZipReader(),
@@ -1386,10 +1379,10 @@ checkEndian()
 {
    U16 endian;
    U8* ptr = (U8*)&endian;
-#ifdef B_LITTLE_ENDIAN
+#if BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN
    ptr[1]=0x11;
    ptr[0]=0x22;
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
    ptr[0]=0x11;
    ptr[1]=0x22;
 #else
@@ -1403,7 +1396,7 @@ checkEndian()
    Supporting C code for the TPM API integration.
    Documentation: https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM
 
-   Compile with NO_ENCRYPTIONKEY to exclude this functionality.
+   Compile with BA_ENABLE_SOFTTPM_KEY_MATERIAL=0 to exclude this functionality.
    When used, make sure to add your key to 'EncryptionKey.h'.
 
    This code operates as follows:
@@ -1431,7 +1424,7 @@ checkEndian()
    Note that all keys must remain persistent across system reboots and
    any modifications to the operating system.
 */
-#ifdef NO_ENCRYPTIONKEY
+#if !BA_ENABLE_SOFTTPM_KEY_MATERIAL
 #define installTPM(L)
 #else
 
@@ -1504,10 +1497,10 @@ static void installTPM(lua_State* L)
    ZipIo_destructor(&io);
    luaL_unref(L, LUA_REGISTRYINDEX, aux.tpmFuncRef);
 }
-#endif /* NO_ENCRYPTIONKEY */
+#endif /* BA_ENABLE_SOFTTPM_KEY_MATERIAL */
 /*******************   End Trusted Platform Module ************************/
 
-#if BA_MDNS
+#if BA_ENABLE_MDNS && BA_ENABLE_MDNS_LUA
 /* Install Lua binding ba.createmdns */ 
 static void bamDNS()
 {
@@ -1536,30 +1529,28 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 #ifdef BA_WIN32
    int sMode;
 #endif
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
    static char poolBuf[4*1024*1024]; /* Set your required size */
+   static BaBool poolInitialized;
 #endif
-   BaBool limitedZip=FALSE;
-
-#if USE_DBGMON
-  L_restart:
-   restart=FALSE;
-#endif
+   BaBool limitedZip;
 
    HttpTrace_setPrio(7); /* block level 8 and 9 */
 
 #ifdef BA_WIN32
    sMode=0; /* 0: nothing, 1: install, 2: installauto, 3: start now */ 
 #endif
-#ifdef USE_DLMALLOC
-   init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf)); 
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
+   /* Provider allocations can outlive a runMako() invocation. */
+   if(!poolInitialized)
+   {
+      init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
+      poolInitialized=TRUE;
+   }
 #endif
 
-   memset(&blp, 0, sizeof(blp));
    checkEndian();
-   seedSharkSSL();
 
-   dispatcher=&disp; /* The global ptr used by the CTRL-C signal handler */
    HttpTrace_setFLushCallback(writeHttpTrace);
    HttpServer_setErrHnd(serverErrHandler);
 #ifdef BA_WIN32
@@ -1684,8 +1675,30 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    else
       disableSignals();
 #endif
-   if( ! isWinService )
-      setCtrlCHandler();
+#if SHARKSSL_PSA_CONSUMER
+   /* Initialize after service/daemon setup, before any cryptographic use.
+    * The provider and its storage stay open across Lua debugger restarts.
+    */
+   {
+      int status=makoInitPsa();
+      if(status)
+      {
+         errQuit("PSA provider initialization failed (%d).\n", status);
+      }
+   }
+#endif
+   seedSharkSSL();
+
+#if BA_ENABLE_LUA_DEBUGGER
+  L_restart:
+   restart=FALSE;
+#endif
+   limitedZip=FALSE;
+   memset(&blp, 0, sizeof(blp));
+   dispatcher=&disp; /* The global ptr used by the CTRL-C signal handler */
+   /* Shutdown closes the trace buffer; restore tracing for the new VM. */
+   HttpTrace_setPrio(7);
+   HttpTrace_setFLushCallback(writeHttpTrace);
 
    /* Create the Socket dispatcher (SoDisp), the SoDisp mutex, and the server.
     */
@@ -1699,20 +1712,22 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
 
    ThreadMutex_constructor(&mutex);
    SoDisp_constructor(&disp, &mutex);
+   if( ! isWinService )
+      setCtrlCHandler();
    cfgfname=createServer(argc,argv,&execpath);
    if(!execpath)
       execpath=findExecPath(argc>0?argv[0]:0);
    if(0 != daemonMode)
       openTraceFile(0);
-#ifdef USE_ZIPSIGNATURE
+#if BA_ENABLE_ZIP_SIGNATURE
    /* Enabled in MakoExt.ch */
    blp.zipPubKey = zipPubKey;
 #endif
-#ifdef USE_ZIPBINPWD
+#if BA_ENABLE_ZIP_PASSWORD
    /* Enabled in MakoExt.ch */
    blp.zipBinPwd = zipBinPwd;
    blp.zipBinPwdLen = sizeof(zipBinPwd);
-   blp.pwdRequired = ZIPBINPWD_REQUIRED;
+   blp.pwdRequired = BA_REQUIRE_ZIP_PASSWORD;
 #endif
    /* Create an LSP virtual machine.
     */
@@ -1721,7 +1736,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    blp.server = &server;           /* pointer to a HttpServer */
    blp.timer = &timer;             /* Pointer to a BaTimer */
    L = balua_create(&blp);        /* create the Lua state */
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
    /* Add Lua debugger */
     ba_ldbgmon(L, dbgExitRequest, 0);
 #endif
@@ -1750,7 +1765,7 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    LThreadMgr_constructor(&ltMgr,  /* Install optional Lua thread library */
       &server,
       ThreadPrioNormal,
-      BA_STACKSZ,
+      BA_THREAD_STACK_SIZE,
       3, /* Number of threads */
       L,
       TRUE); /* allow creating more threads */
@@ -1758,42 +1773,49 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    balua_sharkssl(L);  /* Install optional Lua SharkSSL library */
    balua_crypto(L);  /* Install optional crypto library */
    balua_tracelogger(L,&ltMgr); /* Install optional trace logger  */
-   myCustomBindings(L); /* Deprecated, use MakoExt2.ch -> makoOpenAUX */
+#ifdef MAKO_OPEN_BINDINGS
+   MAKO_OPEN_BINDINGS(L); /* Ordinary bindings, independent of key provisioning. */
+#endif
 
    /* Install optional SQL bindings */
    luaopen_SQL(L);
 
    balua_luaio(L); /* xrc/lua/lio.c */
-#if USE_REDIRECTOR
+#if BA_ENABLE_REVERSE_PROXY
    luaopen_ba_redirector(L); /* a type of reverse proxy */
 #endif
-#if USE_FORKPTY
+#if BA_ENABLE_LUA_FORKPTY
    balua_forkpty(L); /* The optional forkpty Lua bindings for Linux */
 #endif
-#if USE_UBJSON
+#if BA_ENABLE_UBJSON
    balua_ubjson(L);
 #endif
-#if USE_LPEG
+#if BA_ENABLE_LUA_LPEG
    luaL_requiref(L, "lpeg", luaopen_lpeg, FALSE);
    lua_pop(L,1); /* Pop lpeg obj: statically loaded, not dynamically. */
 #endif
-#if USE_CBOR
+#if BA_ENABLE_LUA_CBOR
    luaL_requiref(L, "org.conman.cbor_c", luaopen_org_conman_cbor_c, FALSE);
    lua_pop(L,1);
 #endif
-#if USE_PROTOBUF
+#if BA_ENABLE_LUA_PROTOBUF
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
    balua_tokengen(L); /* See  the "SharkTrustEx" comment above */
-#if USE_REVCON
+#if BA_ENABLE_REVERSE_CONNECTION
    /* Add reverse server connection. This requires SharkTrustEx.
     */
    balua_revcon(L);
 #endif
 
-#if USE_OPCUA
+#if BA_ENABLE_LUA_OPCUA
    luaopen_opcua_ns0_static(L);
+#endif
+
+#if SHARKSSL_PSA_CONSUMER
+   /* Register the binding in each new Lua state, before trusted startup. */
+   balua_psa(L);
 #endif
 
    bamDNS();
@@ -1801,6 +1823,12 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    /* Dispatcher mutex must be locked until the dispatcher starts
     */
    ThreadMutex_set(&mutex);
+
+   /* The default certificate in .openports uses the TPM API. */
+   if( ! limitedZip )
+   {
+      installTPM(L);
+   }
 
    /* (Ref-ports)
       Open web server listen ports by calling the Lua script
@@ -1830,20 +1858,13 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       errQuit("mako.zip version err");
    }
    lua_pop(L, 1); /* Version */
-   if( ! limitedZip )
-   {
-      /* Save func returned by .config */
-      luaFuncRef = luaL_ref(L, LUA_REGISTRYINDEX);
-      installTPM(L);
-      lua_rawgeti(L, LUA_REGISTRYINDEX, luaFuncRef); /* restore */
-   }
    /* Call the .config's init func, which returns the onunload func */
    if(lua_pcall(L, 0, 1, 0))
       goto L_cfgerr;
    if(!lua_isfunction(L, -1))
       errQuit(".config error: no onunload");
    luaFuncRef=luaL_ref(L,LUA_REGISTRYINDEX); /* the .config's onunload func */
-   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
+   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
 
    /*
      The dispatcher object waits for incoming HTTP requests. These
@@ -1903,20 +1924,9 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       fclose(logFp);
       logFp=0;
    }
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
    if(restart)
       goto L_restart;
 #endif
    return;
 }
-
-
-
-#if !defined(_WIN32) && !defined(CUSTOM_PLAT) && !defined(NO_MAIN)
-int
-main(int argc, char* argv[], char* envp[])
-{
-   runMako(FALSE,argc, argv, envp);
-   return 0;
-}
-#endif

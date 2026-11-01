@@ -2,13 +2,9 @@
 
 Experimental backend for GCC/Clang, little-endian AArch64, LP64 ELF targets
 supported by the platform adapter.
-It uses the existing SharkSSL hooks. No changes to SharkSslCrypto.c, public
-headers, context sizes, or the GHASH table representation are required.
-Native Cortex-A72 testing on Raspberry Pi 4 passed with GCC 14.2. AES/PMULL
-hardware validation is still pending: that board exposes neither extension.
-Big-endian and ILP32 targets are not supported. The accompanying adapter must
-support the target operating system's CPU-feature detection interface.
-
+It uses the existing SharkSSL hooks and an optional SHA-256 dispatch in
+SharkSslCrypto.c. Public headers, context sizes and the GHASH table
+representation are unchanged.
 Files to compile alongside SharkSslCrypto.c:
 
 ```text
@@ -17,14 +13,10 @@ SharkSslCrypto_ARM64_Gcm.S         AES-GCM bulk operation, four AES blocks
 SharkSslCrypto_ARM64_Ghash.S       PMULL, NEON PMUL and integer GHASH
 SharkSslCrypto_ARM64_ChaCha.S      Four-block NEON, short/integer scalar path
 SharkSslCrypto_ARM64_Poly1305.S    Integer 5x26-limb multiplication/reduction
+SharkSslCrypto_ARM64_Sha256.c      Optional SHA2 instruction block compressor
 ```
 
-For X25519, compile alongside SharkSslBigInt.c:
-
-```text
-SharkSslX25519_ARM64.S            Integer four-limb X25519 ladder
-SharkSslX25519_ARM64_Adapter.c    Existing generic X25519 hook adapter
-```
+Compile `SharkSslBigInt.c` with `SHARKSSL_X25519_ASM_HOOK=0` for X25519.
 
 Enable the algorithms normally, then set the desired integer options to 1:
 
@@ -39,16 +31,22 @@ Set an option to 0 to retain that C implementation. Normally enable GCM and
 GHASH together. GCM-only and GHASH-only builds are also link-tested.
 VAES is not part of this backend.
 
-For X25519, set SHARKSSL_X25519_ASM_HOOK=1 for C and assembly. This requires
-ECC, Curve25519, SHARKSSL_X25519_DEDICATED=1, 32-bit BigInt words, and the
-Cortex-M SHARKSSL_X25519_ASM option disabled. Set the hook to 0 for C X25519.
-The assembly uses baseline Armv8-A MUL/UMULH; NEON and crypto extensions are
-not required. Its private four-limb format does not change SharkSslBigInt.
-All 256 scalar bits, short-input placement, aliases and coordinate masking
-match the existing C hook. The public API retains clamping and zero-secret
-checks. The kernel uses fixed loops and masked swaps, and clears its local
-scalar/field storage. This is not a formal side-channel certification.
-Do not define SHARKSSL_X25519_TEST in production. It exposes test-only helpers.
+The former GNU X25519 assembly and its adapter were removed after paired,
+CPU-pinned Pi 5 GCC tests measured 126.4 us for C versus 131.0 us for assembly
+per shared-secret operation. Set `SHARKSSL_X25519_ASM_HOOK=0` for this backend.
+The IAR X25519 assembly remains available because it beats IAR-generated C.
+
+To enable hardware SHA-256, set SHARKSSL_ARM64_SHA256_INTRINSICS=1 for
+SharkSslCrypto.c, SharkSslCrypto_ARM64.c and SharkSslCrypto_ARM64_Sha256.c.
+Compile only the SHA-256 file with `-march=armv8-a+crypto`; keep the common C
+and feature adapter at baseline `-march=armv8-a`. GCC 11 declares its SHA
+intrinsics under `+crypto`, so `+sha2` alone does not compile with that
+compiler. The SHA-256 helper uses SHA2 instructions only; this file-specific
+flag does not require AES or PMULL at runtime. The adapter selects the
+SHA2 instructions through the operating system's CPU capability flags and
+retains the existing C compression routine on CPUs without SHA2. The SHA-256
+context layout and public API do not change. Leave the option undefined or
+set it to 0 when the SHA-256 file is not part of the build.
 
 Pass identical SharkSSL configuration definitions to C and .S compilation.
 Use the compiler driver to assemble .S, so preprocessing reads SharkSSL_cfg.h.
@@ -70,6 +68,10 @@ at compile time.
 
 The adapter uses operating-system CPU-feature information to select supported
 instructions at runtime. Hardware AES-GCM requires ASIMD, AES and PMULL.
+For GCM calls of at least 128 bytes, it encrypts four counters in parallel
+and combines four carry-less GHASH products before one polynomial reduction.
+Powers of H are prepared on the stack once per bulk call; no context or table
+layout changes are needed. Short calls retain the single-block path.
 With ASIMD alone, GHASH uses NEON byte-polynomial PMUL and
 AES uses the existing C implementation. ChaCha uses ASIMD/NEON when exposed.
 Without ASIMD, GHASH and ChaCha use integer assembly. Poly1305 remains integer
@@ -79,16 +81,26 @@ instructions are confined to guarded assembly entry points. The C AES key
 schedule, GCM setup and final partial block remain in the existing C code.
 This does not establish that all AES processing is constant-time.
 
-## Performance and benefit
+On a Pi 5, the baseline build selects the AES/PMULL path at runtime when
+Linux reports all three capabilities. A Pi 5-only build may use
+`-mcpu=cortex-a76+crypto` for C and assembly, but measured GCM throughput
+did not improve with that flag. Do not use this whole-library flag for a
+binary intended to run on older ARM64 processors without these extensions.
 
-On Raspberry Pi 4 (Cortex-A72, native 64-bit Linux, GCC 14.2 with `-O2`),
-16 KiB encryption benchmarks achieved about **1.9x the C throughput for
-AES-128-GCM** and **1.7x for complete ChaCha20-Poly1305**. X25519 shared-secret
-calculation improved from **270.78 us in C to 228.62 us with assembly**, about
-**1.18x**. The cipher gains leave more CPU time for application work; X25519
-offers a smaller reduction in key-exchange cost.
+## Build the PSA provider
 
-These operation timings do not predict whole-server speedups
-or results on other ARM cores. The Pi lacks AES/PMULL extensions: the AES-GCM
-result uses C AES with accelerated GHASH, not hardware AES. Performance on
-processors with hardware AES/PMULL requires separate measurement.
+Build the
+optimized provider on AArch64 Linux with:
+
+```sh
+make -C build PSA_CRYPTO=1 PSA_ARM64_GCC=1 ODIR=obj-psa-arm64
+```
+
+This option compiles the adapter and SHA-256 module with the common C, and the
+GCM, GHASH, ChaCha20 and Poly1305 assembly with the same feature definitions.
+Only the SHA-256 module uses `-march=armv8-a+crypto`; the other C sources use
+baseline `-march=armv8-a`. The provider's relocatable link includes all six
+ARM64 objects before section collection. The option assumes the default
+AES-256 context layout (`SHARKSSL_GCM_M0=244`); pass
+`SHARKSSL_GCM_M0=212` or `180` when using the corresponding AES layout and
+rebuild all objects. Use a separate `ODIR` for portable C and ARM64 builds.

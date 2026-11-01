@@ -11,8 +11,8 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 4915 2021-12-01 18:26:55Z wini $
- *   COPYRIGHT:  Real Time Logic, 2009 - 2021
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
+ *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,9 +39,20 @@
 #ifndef _HttpConfig_h
 #define _HttpConfig_h
 
-/* No support for asynchronous response messages in NetX.
-*/
-#define NO_ASYNCH_RESP
+/* Load application input before selecting network defaults. */
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* The NetX port has no socket write-ready events.
+ * Receive events and worker-thread responses remain available. */
+#if defined(BA_HAVE_SOCKET_WRITE_EVENTS) && BA_HAVE_SOCKET_WRITE_EVENTS != 0
+#error This network port does not implement socket write events
+#endif
+#ifndef BA_HAVE_SOCKET_WRITE_EVENTS
+#define BA_HAVE_SOCKET_WRITE_EVENTS 0
+#endif
 
 #include <TargConfig.h>
 #include <NetConv.h>

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: BaFile.c 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2006 - 2026
  *
@@ -362,7 +362,7 @@ DirIter_stat(DirIntfPtr super, IoStat* st)
    st->isDir = o->findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
       TRUE : FALSE;
    st->size = o->findData.nFileSizeLow;
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
    st->size |= ((BaFileSize)o->findData.nFileSizeHigh) << 32;
 #endif
    return 0;
@@ -442,7 +442,7 @@ static int
 DiskRes_seek(ResIntfPtr super, BaFileSize offset)
 {
    DiskRes* o = (DiskRes*)super; /* upcast */
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
    LONG offsHigh = (LONG)(offset >> 32);
    if(SetFilePointer(o->hndl,(DWORD)offset,&offsHigh,FILE_BEGIN) == 0xFFFFFFFF)
 #else
@@ -801,7 +801,7 @@ DiskIo_stat(IoIntfPtr super, const char* name, IoStat* st)
        st->isDir = (wfad.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
       st->lastModified = fileTime2UnixTime(&wfad.ftLastWriteTime);
       st->size = wfad.nFileSizeLow;
-#ifdef BA_FILESIZE64
+#if BA_FILE_OFFSET_BITS == 64
       st->size |= ((BaFileSize)wfad.nFileSizeHigh) << 32;
 #endif
       status=st->isDir ? 0 : DiskIo_checkExt(wname);

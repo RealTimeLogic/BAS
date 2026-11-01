@@ -3,7 +3,7 @@
 ** Author: Tiago Dionizio, Eduardo Quintao
 ** See Copyright Notice in license.html
 
-** $Id: ls_sqlite3.c 6080 2026-09-21 07:06:57Z wini $
+** $Id: ls_sqlite3.c 6657 2026-10-28 18:19:39Z wini $
 */
 
 #ifdef _WIN32
@@ -37,22 +37,9 @@
 
 
 
-/*
-  The BA_BUILD macro, when enabled, releases the BA mutex when calling
-  SQLite functions. This makes it possible to have multiple concurrent
-  BA requests working on the database.
-*/ 
-#ifndef BA_BUILD
-#define BA_BUILD
-#endif
-
-#ifdef BA_BUILD
-#define GET_BAMUTEX ThreadMutex* m = baluaENV_getmutex(L)
-#else
-#define GET_BAMUTEX
-#endif
-
-
+/* BAS database calls release the server mutex around blocking native work.
+ * BA_LUA_DECLARE_MUTEX and the release/reacquire helpers come from balua.h.
+ */
 
 #define LUASQL_ENVIRONMENT_SQLITE "SQLite3 environment"
 #define LUASQL_CONNECTION_SQLITE "SQLite3 connection"
@@ -80,6 +67,7 @@ typedef struct
 typedef struct
 {
       short        closed;
+      short        busy;               /* multi-statement execution in flight */
       int          env;                /* reference to environment */
       short        auto_commit;        /* 0 for manual commit */
       unsigned int cur_counter;
@@ -128,6 +116,7 @@ static connl_data *getconnection(lua_State *L) {
    connl_data *conn = (connl_data *)luaL_checkudata (L, 1, LUASQL_CONNECTION_SQLITE);
    luaL_argcheck(L, conn != NULL, 1, LUASQL_PREFIX"connection expected");
    luaL_argcheck(L, !conn->closed, 1, LUASQL_PREFIX"connection is closed");
+   luaL_argcheck(L, !conn->busy, 1, LUASQL_PREFIX"connection is busy");
    return conn;
 }
 
@@ -212,7 +201,7 @@ doSqliteExec(lua_State *L, connl_data *conn, const char* sql)
    int tryAgain=TRUE;
    int res;
    char *errmsg = 0;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
   L_tryAgain:
    balua_releasemutex(m); 
    res = sqlite3_exec(conn->sql_conn, sql, NULL, NULL, &errmsg);
@@ -281,7 +270,7 @@ static int cur_fetch (lua_State *L) {
    cur_data *cur = getcursor(L);
    sqlite3_stmt *vm = cur->sql_vm;
    int res;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
    if (vm == NULL)
       return 0;
@@ -487,12 +476,13 @@ static int create_cursor(lua_State *L, int o, connl_data *conn,
 static int conn_gc(lua_State *L)
 {
    connl_data *conn=(connl_data *)luaL_checkudata(L,1,LUASQL_CONNECTION_SQLITE);
-   GET_BAMUTEX;
-   if (!conn->closed) {
+   BA_LUA_DECLARE_MUTEX(m, L);
+   if (!conn->closed && !conn->busy)
+   {
+      conn->closed = 1; /* Explicit __gc must not close an in-flight handle twice. */
       balua_releasemutex(m);
       sqlite3_close_v2(conn->sql_conn);
       balua_setmutex(m);
-      conn->closed = 1;
       LUASQL_UNREF(L, conn->env);
    }
    return 0;
@@ -506,13 +496,14 @@ static int conn_close(lua_State *L)
 {
    connl_data *conn=(connl_data *)luaL_checkudata(L,1,LUASQL_CONNECTION_SQLITE);
    int rc,envix;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
    luaL_argcheck (L, conn != NULL, 1, LUASQL_PREFIX"connection expected");
    if (conn->closed) {
       lua_pushboolean(L, 0);
       return 1;
    }
+   luaL_argcheck(L, !conn->busy, 1, LUASQL_PREFIX"connection is busy");
    lua_getuservalue(L, 1); /* env of the userdata */
    envix = lua_gettop(L);
    lua_pushvalue(L,BA_ENV_IX);
@@ -557,7 +548,7 @@ static int conn_prepare(lua_State *L)
    int res;
    sqlite3_stmt *vm;
    const char *tail;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
    balua_releasemutex(m); /* release and pushes the acquire */
    res = sqlite3_prepare_v2(conn->sql_conn, statement, -1, &vm, &tail);
@@ -683,7 +674,7 @@ static int stmt_execute(lua_State *L)
    connl_data *conn;
    int numcols,res;
    const char *errmsg;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
    LUASQL_GETREF(L, cur->conn);
    conn = lua_touserdata (L, -1);
@@ -734,7 +725,7 @@ static int conn_execute(lua_State *L)
    const char *errmsg;
    int numcols;
    const char *tail;
-   GET_BAMUTEX;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
    statement = luaL_checkstring(L, 2);
    balua_releasemutex(m); 
@@ -795,83 +786,162 @@ static int conn_rollback(lua_State *L)
 ** muli statement execute
 */
 
-struct cbdata {
-      lua_State* L;
-      const char* opt;
-      int ix;
-};
-
-static int execcallback(void* vl,int ncols, char** data, char** names)  /* Callback function */
+/* sqlite3_exec invokes its callback with SQLite's mutex held. Acquiring the
+ * BAS mutex there can deadlock against another Lua database call. Collect
+ * native rows in the callback, then construct Lua values after exec returns.
+ * A Lua-owned cleanup object also frees the native rows if Lua allocation fails.
+ */
+typedef struct SqlExecRow
 {
-   struct cbdata* cb = (struct cbdata*)vl;
-   lua_State *L = (lua_State*)cb->L;
-   char opt = cb->opt[0];
+   struct SqlExecRow* next;
+   int ncols;
+   char* fields[1]; /* column names followed by values, then copied text */
+} SqlExecRow;
+
+typedef struct
+{
+   SqlExecRow* first;
+   SqlExecRow* last;
+   char* errmsg;
+   int outOfMemory;
+} SqlExecRows;
+
+static void clearExecRows(SqlExecRows* rows)
+{
+   while(rows->first)
+   {
+      SqlExecRow* row=rows->first;
+      rows->first=row->next;
+      sqlite3_free(row);
+   }
+   sqlite3_free(rows->errmsg);
+   rows->errmsg=0;
+   rows->last=0;
+}
+
+static int freeExecRows(lua_State* L)
+{
+   clearExecRows((SqlExecRows*)lua_touserdata(L,1));
+   return 0;
+}
+
+static int execcallback(void* data, int ncols, char** values, char** names)
+{
+   SqlExecRows* rows=(SqlExecRows*)data;
+   SqlExecRow* row;
+   size_t size;
+   char* text;
    int i;
-   //GET_BAMUTEX;
-
-   //balua_setmutex(m);/* Was released by conn_multiexec */
-
-   lua_newtable(L);
-   for (i=0; i < ncols; i++, names++, data++) {
-      if (opt == 'a') {
-         lua_pushstring(L, *names);
-         lua_pushstring(L, *data);
-         lua_rawset(L, -3);
-      }
-      else {
-         int n = (int)lua_rawlen(L,-1) + 1;
-         lua_pushstring(L, *data);
-         lua_rawseti(L, -2, n);
+   if(ncols < 1 || (size_t)ncols > (INT_MAX-sizeof(SqlExecRow))/(2*sizeof(char*)))
+      goto nomem;
+   size=sizeof(SqlExecRow)+(2*(size_t)ncols-1)*sizeof(char*);
+   for(i=0;i<ncols;i++)
+   {
+      size_t len=strlen(names[i])+1;
+      if(len > INT_MAX-size)
+         goto nomem;
+      size+=len;
+      if(values[i])
+      {
+         len=strlen(values[i])+1;
+         if(len > INT_MAX-size)
+            goto nomem;
+         size+=len;
       }
    }
-   i = (int)lua_rawlen(L,cb->ix) + 1;
-   lua_rawseti(L, cb->ix, i);
-
-   //balua_releasemutex(m); 
-
+   row=(SqlExecRow*)sqlite3_malloc((int)size);
+   if(!row)
+      goto nomem;
+   row->next=0;
+   row->ncols=ncols;
+   text=(char*)(row->fields+2*ncols);
+   for(i=0;i<ncols;i++)
+   {
+      size_t len=strlen(names[i])+1;
+      row->fields[i]=text;
+      memcpy(text,names[i],len);
+      text+=len;
+      row->fields[ncols+i]=0;
+      if(values[i])
+      {
+         len=strlen(values[i])+1;
+         row->fields[ncols+i]=text;
+         memcpy(text,values[i],len);
+         text+=len;
+      }
+   }
+   if(rows->last)
+      rows->last->next=row;
+   else
+      rows->first=row;
+   rows->last=row;
    return 0;
+nomem:
+   rows->outOfMemory=1;
+   return 1;
 }
 
 static int conn_multiexec(lua_State *L)
 {
-   char *errmsg;
    connl_data *conn = getconnection(L);
-   const char* s = luaL_checkstring(L,2);
-   const char* opt = luaL_optstring(L,3,"n");
-   int res;
-   struct cbdata cb;
+   const char* sql = luaL_checkstring(L,2);
+   char opt = luaL_optstring(L,3,"n")[0];
+   SqlExecRows* rows;
+   int res, result;
+   lua_Integer rowNumber=0;
+   BA_LUA_DECLARE_MUTEX(m, L);
 
-   /* Disabled for now: The execcallback must set the BA mutex, but the
-    * internal SQLite mutex is set at this point. This can lead to a
-    * deadlock since not all sqlite3_xxx calls in this file releases
-    * the mutex. The code can be re-enabled if all sqlite3_xxx calls
-    * are designed as: release; sqlite3_xxx; set;
-    */
-   //GET_BAMUTEX;
+   rows=(SqlExecRows*)lua_newuserdatauv(L,sizeof(SqlExecRows),0);
+   memset(rows,0,sizeof(*rows));
+   if(luaL_newmetatable(L,"BAS SQLite exec rows"))
+   {
+      lua_pushcfunction(L,freeExecRows);
+      lua_setfield(L,-2,"__gc");
+   }
+   lua_setmetatable(L,-2);
+   conn->busy=1;
+   balua_releasemutex(m);
+   res=sqlite3_exec(conn->sql_conn,sql,execcallback,rows,&rows->errmsg);
+   balua_setmutex(m);
+   conn->busy=0;
 
-   cb.L = L;
-   cb.opt = opt;
-   lua_settop(L,3);
+   if(res != SQLITE_OK)
+   {
+      int count=pusherr(L,rows->outOfMemory ? SQLITE_NOMEM : res,
+                        rows->outOfMemory ? sqlite3_errstr(SQLITE_NOMEM) : rows->errmsg);
+      clearExecRows(rows);
+      return count;
+   }
    lua_newtable(L);
-   cb.ix=lua_gettop(L);
-
-   //balua_releasemutex(m); 
-   res = sqlite3_exec(conn->sql_conn, s, execcallback, &cb, &errmsg);
-   //balua_setmutex(m);
-
-   if (res != SQLITE_OK) {
-      int ret = pusherr(L, res, errmsg);
-      sqlite3_free(errmsg);
-      return ret;
+   result=lua_gettop(L);
+   while(rows->first)
+   {
+      SqlExecRow* row=rows->first;
+      int i;
+      lua_newtable(L);
+      for(i=0;i<row->ncols;i++)
+      {
+         if(opt=='a')
+         {
+            lua_pushstring(L,row->fields[i]);
+            lua_pushstring(L,row->fields[row->ncols+i]);
+            lua_rawset(L,-3);
+         } else
+         {
+            lua_Integer n=(lua_Integer)lua_rawlen(L,-1)+1;
+            lua_pushstring(L,row->fields[row->ncols+i]);
+            lua_rawseti(L,-2,n);
+         }
+      }
+      lua_rawseti(L,result,++rowNumber);
+      rows->first=row->next;
+      sqlite3_free(row);
    }
-   lua_pushnil(L);  /* first key */
-   if (lua_next(L, cb.ix) == 0) {
-      lua_pushboolean(L,1);
-      return 1;
-   }
-   lua_pop(L,1);
+   rows->last=0;
    lua_pushboolean(L,1);
-   lua_pushvalue(L,cb.ix);
+   if(!rowNumber)
+      return 1;
+   lua_pushvalue(L,result);
    return 2;
 }
 
@@ -1144,6 +1214,7 @@ static int create_connection(lua_State *L, int env, sqlite3 *sql_conn)
 
    /* fill in structure */
    conn->closed = 0;
+   conn->busy = 0;
    conn->env = LUA_NOREF;
    conn->auto_commit = 1;
    conn->sql_conn = sql_conn;

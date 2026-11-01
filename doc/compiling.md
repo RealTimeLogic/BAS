@@ -23,7 +23,7 @@ BAS includes the BWS C APIs and adds Lua, [Lua Server Pages (LSP)](https://realt
 
 > See [Embedded Web Server vs. Embedded Application Server](https://realtimelogic.com/products/web-server-vs-application-server/) if you are new to application server technology.
 
-If you already use a compatible Lua 5.5 build, you can exclude the bundled Lua source by compiling with `-DUSE_BA_LUA=0`. Link BAS with that Lua build and verify that its configuration and application binary interface (ABI) match the BAS headers.
+If you already use a compatible Lua 5.5 build, you can exclude the bundled Lua source by compiling with `-DBA_ENABLE_EMBEDDED_LUA=0`. Link BAS with that Lua build and verify that its configuration and application binary interface (ABI) match the BAS headers.
 
 ## C Code Components
 
@@ -60,7 +60,21 @@ BAS can be used in several deployment models. This guide focuses on:
 
 The amalgamated source can be compiled from the command line or added to an IDE, Makefile, CMake project, or vendor build system.
 
+### POSIX file offsets
+
+On POSIX, `BA_FILE_OFFSET_BITS` is an integer bit width, either `32` (the
+shared default) or `64`. Use the same value throughout the library and host.
+For `64`, the early `BaConfigPosix.h` helper applies the native large-file
+settings before system headers, and DiskIo uses `fseeko()` for 64-bit seeking.
+Include `TargConfig.h` before system headers in application code. If a forced
+include or third-party header must come first, supply `_FILE_OFFSET_BITS=64`
+on the compiler command line for the whole build as well. Do not put system
+header includes in `BaConfigOpts.h`; a 32-bit build with late file-offset
+settings is rejected by the POSIX DiskIo size check.
+
 ## Mako Server (HLOS)
+
+POSIX command-line builds compile `examples/MakoServer/src/MakoPosixMain.c` alongside `MakoMain.c`. The former supplies `main()` and calls `runMako()`. If your application supplies its own entry point, omit `MakoPosixMain.c` and call `runMako()` from your startup code. Windows uses the sources in `examples/MakoServer/src/Windows`.
 
 The [Mako Server example](https://realtimelogic.com/ba/doc/en/Mako.html) is the reference host for high-level operating systems such as Windows, embedded Linux, and QNX. Mako Server can also be adapted to environments such as VxWorks 7, but Xedge is the normal starting point for RTOS and firmware integration.
 
@@ -119,7 +133,7 @@ systems must add their backend files and definitions separately.
 
 Open [mako.sln](../examples/MakoServer/VcMake/mako.sln) and select Debug or Release,
 with Win32 or x64. The project uses the installed Visual Studio C++ toolset and
-Windows 10/11 SDK. All four configurations define `BAS_LOADED` and build SharkSSL
+Windows 10/11 SDK. All four configurations enable `BA_ENABLE_MDNS=1` and `BA_ENABLE_MDNS_LUA=1` and build SharkSSL
 with C implementations only; no assembler setup is needed.
 
 Executables are written to
@@ -128,14 +142,14 @@ intermediate files for each configuration. Debug uses the debug C runtime and
 retains assertions; Release enables optimization.
 
 **SQLite is optional.** When `src/sqlite3.c` and `src/sqlite3.h` are absent,
-all four configurations build without SQLite (`USE_SQL=0`). Mako can run in
+all four configurations build without SQLite (`MAKO_SQL_BACKEND=MAKO_SQL_NONE`). Mako can run in
 this configuration, but applications that require its SQLite binding cannot
 use that binding.
 
 To enable SQLite, copy the SQLite amalgamation files `sqlite3.c` and `sqlite3.h`
 into this repository's `src` directory, reload the solution, and rebuild. The
 project detects the files and includes SQLite and its Lua binding automatically
-(`USE_SQL=1`). No project-file edits are required.
+(`MAKO_SQL_BACKEND=MAKO_SQL_SQLITE`). No project-file edits are required.
 
 The optional MSBuild boolean property `UseSqlite` overrides detection:
 
@@ -187,11 +201,11 @@ The following example builds Mako Server without SQLite for a high-level operati
 
 ```sh
 gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO -DUSE_SQL=0\
+    -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DLUA_USE_LINUX -DMAKO -DMAKO_SQL_BACKEND=MAKO_SQL_NONE\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    examples/MakoServer/src/MakoMain.c\
+    examples/MakoServer/src/MakoMain.c examples/MakoServer/src/MakoPosixMain.c\
     -lpthread -lm -ldl
 ```
 
@@ -207,7 +221,7 @@ See the [current Mako Server for Windows page](https://makoserver.net/download/w
 
 ```bat
 cl /O2^
- /DUSE_EMBEDDED_ZIP=0 /DBA_FILESIZE64 /DMAKO /DUSE_SQL=0^
+ /DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 /DBA_FILE_OFFSET_BITS=64 /DMAKO /DMAKO_SQL_BACKEND=MAKO_SQL_NONE^
  /Iinc /Iinc/arch/Windows /Iinc/arch/NET/Windows^
  src/BAS.c^
  src/arch/Windows/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/windows/BaFile.c^
@@ -225,11 +239,11 @@ Mako Server can optionally be linked with SQLite and the [Lua SQLite bindings](h
 
 ```sh
 gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DLUA_USE_LINUX -DMAKO\
+    -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DLUA_USE_LINUX -DMAKO\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    examples/MakoServer/src/MakoMain.c\
+    examples/MakoServer/src/MakoMain.c examples/MakoServer/src/MakoPosixMain.c\
     src/ls_sqlite3.c src/luasql.c src/sqlite3.c\
     -lpthread -lm -ldl
 ```
@@ -264,8 +278,8 @@ git clone https://github.com/RealTimeLogic/BAS-Resources.git
 cd BAS-Resources/build/
 
 # Run the build script. If on Windows, use Xedge.cmd.
-# When prompted, initially select n for OPC UA, s for small cacert.shark,
-# and n for compressing the files.
+# When prompted, initially select n for OPC UA and n for minification.
+# The native build below supplies the required embedded CA store.
 . Xedge.sh
 
 # The ZIP file is converted to a C array by the build script.
@@ -273,6 +287,8 @@ cd BAS-Resources/build/
 cp XedgeZip.c ../../BAS/examples/xedge/
 cd ../../BAS
 ```
+
+Standalone Xedge requires `BA_ENABLE_EMBEDDED_CA=1` for both `src/BAS.c` and the Xedge host. Keep `inc/cacert.h` on the include path. To select a smaller or private trust set, use the SharkSSL SDK tool `SharkSSLParseCAList your-roots.pem > cacert.h`, replace the header, and rebuild. Updating the compiled roots requires a new native build. Explicit Lua certificate stores remain supported. Ship the executable or firmware and its matching resources together.
 
 `XedgeZip.c` contains the Xedge resources converted to a C file. See the [BAS-Resources repository](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build) for details.
 
@@ -287,7 +303,7 @@ The following example uses Linux to compile Xedge as a standalone application. F
 ```sh
 gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     -DLUA_USE_LINUX\
-    -DUSE_EMBEDDED_CACERT\
+    -DBA_ENABLE_EMBEDDED_CA=1\
     src/BAS.c\
     examples/HostInit/Main.c examples/HostInit/HostInit.c\
     src/arch/Posix/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
@@ -298,10 +314,10 @@ gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
 Integration notes:
 
 - `Main.c` and `HostInit.c` are designed for a non-embedded host build. For an RTOS build, study these files and set up similar startup code for your environment.
-- At minimum, your RTOS build needs a dedicated thread that runs `barracuda(void)`, which does not return. Use stack size `BA_STACKSZ` bytes.
+- At minimum, your RTOS build needs a dedicated thread that runs `barracuda(void)`, which does not return. Use stack size `BA_THREAD_STACK_SIZE` bytes.
 - `xedge.c` is the Xedge C startup code.
-- `led.c` includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP) for device control. If you do not need these examples, define `-DNO_XEDGE_AUX` or remove the `xedgeOpenAUX()` call in `xedge.c`.
-- For embedded builds, consider testing without file system support first. Remove `BaFile.c` from your build and compile with `-DNO_BAIO_DISK`, which is used by `xedge.c`.
+- `led.c` includes example [Lua bindings](https://realtimelogic.com/ba/doc/en/GettingStarted.html#UsingLSP) for device control. If you do not need these examples, define `-DXEDGE_ENABLE_AUX=0` to omit the `xedgeOpenAUX()` call.
+- For embedded builds, consider testing without file system support first. Remove `BaFile.c` from your build and compile with `-DXEDGE_ENABLE_DISK_IO=0`, which is used by `xedge.c`.
 - If the target does not provide a suitable allocator, include `src/dlmalloc.c` and initialize it using the pattern in `examples/HostInit/Main.c`. Use the target's allocator instead when its behavior and integration requirements are known.
 
 These Xedge instructions are excerpted from the [Xedge full SDK build guide](https://realtimelogic.com/ba/examples/xedge/readme.html), which includes additional release-build details. File locations differ slightly in this repository.
@@ -314,28 +330,28 @@ For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if y
 
 ## Enabling and Disabling Features
 
-Feature selection is controlled by the build, the target's `TargConfig.h`, and macros used by `src/BAS.c` and the host sources. Defaults vary by platform, so verify the effective configuration before adding or removing a macro.
+Shared options and validation live in `inc/BaConfig.h`; `inc/BaConfigOpts.h` is a comment-only application override hook. Port capabilities are resolved by `TargConfig.h` and `BaSocketConfig.h`. Host options live in `MakoConfig.h` or `XedgeConfig.h`. Boolean switches use numeric 0/1 values; enum options use the named constants documented in these headers. Apply shared definitions consistently to every translation unit.
 
-- `USE_DBGMON=1`: Include [Lua debugger support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
-- `USE_REVCON=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/).
-- `USE_OPCUA=1`: Enable OPC UA support when the build also includes the required OPC UA Lua resources and C module.
-- `USE_EMBEDDED_CACERT`: Recommended for devices running code and constant data directly from flash. Uses the compiled-in CA bundle without retaining a heap copy. 
-- `USE_FORKPTY=1`: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), available for Linux and QNX. This API is required for the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) and the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
-- `USE_REDIRECTOR=1`: Enable the [reverse proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy).
-- `USE_UBJSON=1`: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson).
-- `NO_LDEBUG`: Exclude the Lua `debug` module.
+- `BA_ENABLE_LUA_DEBUGGER=1`: Include [Lua debugger support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
+- `BA_ENABLE_REVERSE_CONNECTION=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/).
+- `BA_ENABLE_LUA_OPCUA=1`: Enable OPC UA support when the build also includes the required OPC UA Lua resources and C module.
+- `BA_ENABLE_EMBEDDED_CA=1`: Required when compiling both BAS and standalone Xedge. Uses `inc/cacert.h` without retaining a heap copy; the Xedge resource ZIP contains no `.certificate/cacert.shark`. Other BAS hosts select their own CA mode.
+- `BA_ENABLE_LUA_FORKPTY=1`: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), available for Linux and QNX. This API is required for the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) and the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
+- `BA_ENABLE_REVERSE_PROXY=1`: Enable the [reverse proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy).
+- `BA_ENABLE_UBJSON=1`: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson).
+- `BA_ENABLE_LUA_DEBUG_LIBRARY=0`: Exclude the Lua `debug` module.
 
 ### Mako Server Macros
 
-- `NO_SHARKTRUST`: Do not include `tokengen.c`; disables the built-in SharkTrustX key.
-- `USE_LUAINTF`: Enable loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When using source builds, you can alternatively integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly into your build.
+- `BA_ENABLE_SHARKTRUST=0`: Do not include `tokengen.c`; disables the built-in SharkTrustX key.
+- `MAKO_ENABLE_LUA_MODULE_INTERFACE=1`: Enable loading [external Lua modules](https://makoserver.net/documentation/c-modules/). When using source builds, you can alternatively integrate additional [Lua bindings](https://realtimelogic.info/swig/) directly into your build.
 
 ### Xedge Macros
 
-- `NO_SHARKTRUST`: Disable SharkTrustX integration.
-- `NO_ENCRYPTIONKEY`: Exclude the encryption-key support used by the software Trusted Platform Module (softTPM). Without this macro, Xedge includes `EncryptionKey.h` or a generated `NewEncryptionKey.h`, depending on the build configuration.
-- `NO_BAIO_DISK`: Build Xedge without the local file system integration. Use this for targets without a file system or for an initial minimal port.
-- `NO_XEDGE_AUX`: Do not call `xedgeOpenAUX()`, which is where you typically register your own Lua bindings.
+- `BA_ENABLE_SHARKTRUST=0`: Disable SharkTrustX integration.
+- `BA_ENABLE_SOFTTPM_KEY_MATERIAL=0`: Exclude native softTPM key material (the default for a PSA consumer). Native builds default to 1 and include `EncryptionKey.h`; set the string macro `XEDGE_SOFTTPM_KEY_HEADER` to a generated header name to replace it.
+- `XEDGE_ENABLE_DISK_IO=0`: Build without local file-system integration (default: 1). When disk I/O is enabled, `XEDGE_USE_DEFAULT_DISK_IO_INIT` selects the supplied initializer; it defaults to 1 on Windows/POSIX and 0 on embedded targets, where the application supplies `xedgeInitDiskIo()`.
+- `XEDGE_ENABLE_AUX=0`: Do not call `xedgeOpenAUX()`, which is where you typically register your own Lua bindings.
 
 ## Porting Layers
 
@@ -388,7 +404,7 @@ The following example compiles Xedge for Green Hills INTEGRITY. You can also [do
 
 ```sh
 ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
-    -non_shared -DMAXTHREADS=3 -DUSE_EMBEDDED_CACERT\
+    -non_shared -DXEDGE_THREAD_POOL_MODE=XEDGE_THREAD_POOL_SHARED_FIXED -DXEDGE_THREAD_COUNT=3 -DBA_ENABLE_EMBEDDED_CA=1\
     -Iinc -Iinc/arch/INTEGRITY -Iinc/arch/NET/Posix\
     --diag_suppress=111,188,550,549,546,223\
     src/BAS.c\
@@ -409,11 +425,11 @@ Xedge is the recommended starting point for new VxWorks integrations. The follow
 
 ```sh
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -Os\
-    -DUSE_EMBEDDED_ZIP=0 -DBA_FILESIZE64 -DBA_HAS_ANSI_IO -DMAKO -DUSE_SQL=0\
+    -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DBA_HAVE_STDIO=1 -DMAKO -DMAKO_SQL_BACKEND=MAKO_SQL_NONE\
     -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
     src/BAS.c\
     src/arch/VxWorks/ThreadLib.c src/arch/NET/generic/SoDisp.c src/DiskIo/posix/BaFile.c\
-    examples/MakoServer/src/MakoMain.c\
+    examples/MakoServer/src/MakoMain.c examples/MakoServer/src/MakoPosixMain.c\
     -lnet
 ```
 

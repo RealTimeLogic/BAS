@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 5293 2022-10-12 10:34:41Z wini $
+ *   $Id: ThreadLibArch.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -112,23 +112,7 @@ typedef struct ThreadBase
    SemaphoreHandle_t sem;
 } ThreadBase;
 
-#ifdef NDEBUG
-#ifndef BA_THREADNAME
-#define BA_THREADNAME 0
-#endif
-#else
-#ifndef BA_THREADNAME
-#define BA_THREADNAME 1
-#endif
-#endif
-
-#if configUSE_TIMERS
-#ifndef BA_TIMER_EXT_TICK
-#define BA_TIMER_EXT_TICK 1
-#endif
-#endif
-
-#if BA_TIMER_EXT_TICK
+#if BA_TIMER_SOURCE == BA_TIMER_SOURCE_EXTERNAL
 #define BaTimer_installTrigger(callback,ticklenInMs)                    \
    TST_OK(xTimerStart(xTimerCreate("BaTimer",                           \
                                    pdMS_TO_TICKS(ticklenInMs),pdTRUE,   \
@@ -140,7 +124,7 @@ typedef struct ThreadBase
 extern "C" {
 #endif
 
-#if BA_THREADNAME
+#if BA_ENABLE_THREAD_NAMES
 #define Thread_constructor(o, r, priority, stackSize)           \
    _Thread_constructor(o, r, priority, stackSize, __FILE__)
 void _Thread_constructor(ThreadBase* o, Thread_Run r, ThreadPriority priority,

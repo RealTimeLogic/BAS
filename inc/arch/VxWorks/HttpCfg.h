@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 6188 2026-09-29 22:55:46Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -67,9 +67,13 @@
 #include <gBsdDspO.h>
 #include <NetConv.h>
 
-#define USE_DGRAM
+#ifndef BA_ENABLE_UDP
+#define BA_ENABLE_UDP 1
+#endif
 #if _WRS_VXWORKS_MAJOR > 5
-#define USE_ADDRINFO
+#ifndef BA_USE_GETADDRINFO
+#define BA_USE_GETADDRINFO 1
+#endif
 #endif
 
 
@@ -108,7 +112,7 @@ int _socketConnect(int s,  struct sockaddr* name,  int namelen)
 #define socketIoctl(a,b,c) ioctl(a,b,c)
 
 
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define UseVxWorksGethostbyname
 #define HttpSockaddr_gethostbyname HttpSockaddr_gethostbynameF
 #else
@@ -192,7 +196,10 @@ int _socketConnect(int s,  struct sockaddr* name,  int namelen)
 
 #endif /* defined EINTR EAGAIN */
 
-#if !defined(NO_KEEPALIVEEX) && defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL)
+#ifndef BA_HAVE_TCP_KEEPALIVE_TUNING
+#define BA_HAVE_TCP_KEEPALIVE_TUNING 1
+#endif
+#if BA_HAVE_TCP_KEEPALIVE_TUNING && defined(TCP_KEEPIDLE) && defined(TCP_KEEPINTVL)
 #define HttpSocket_getKeepAliveEx(o,enablePtr,timePtr,intervalPtr,statusPtr)\
 do {\
    int _ZoptV=0,_Zidle=0,_Zintv=0;\

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2020
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,8 +39,14 @@
 #ifndef _HttpConfig_h
 #define _HttpConfig_h
 
-#ifndef USE_IPV6
-#define USE_IPV6
+/* Load application input before selecting network defaults. */
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+#ifndef BA_ENABLE_IPV6
+#define BA_ENABLE_IPV6 1
 #endif
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -48,23 +54,29 @@
 #endif
 
 #include <TargConfig.h>
-#ifdef USE_IPV6
-#ifndef NO_KEEPALIVEEX
+#ifndef BA_HAVE_TCP_KEEPALIVE_TUNING
+#define BA_HAVE_TCP_KEEPALIVE_TUNING BA_ENABLE_IPV6
+#endif
+#if BA_ENABLE_IPV6
+#if BA_HAVE_TCP_KEEPALIVE_TUNING
 #include <Mstcpip.h>
 #endif
 #include <WS2tcpip.h>
-#define USE_ADDRINFO
-#else
-#ifndef NO_KEEPALIVEEX
-#define NO_KEEPALIVEEX
+#ifndef BA_USE_GETADDRINFO
+#define BA_USE_GETADDRINFO 1
 #endif
+#else
+#undef BA_HAVE_TCP_KEEPALIVE_TUNING
+#define BA_HAVE_TCP_KEEPALIVE_TUNING 0
 #endif
 #include <gBsdDspO.h>
 #include <NetConv.h>
 
-#define USE_DGRAM
+#ifndef BA_ENABLE_UDP
+#define BA_ENABLE_UDP 1
+#endif
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 /* No good implementation on Windows */
 #define ba_nametoindex(name, resp,status) *(resp)=0
 #endif
@@ -88,7 +100,7 @@
 #endif
 
 
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_getPeerName(o, addrMA, port, isIp6M, status) do {\
    struct sockaddr_storage winaddr;\
    int addrLen = sizeof (winaddr);\
@@ -154,7 +166,7 @@
 #endif
 
 
-#ifndef NO_KEEPALIVEEX
+#if BA_HAVE_TCP_KEEPALIVE_TUNING
 #define HttpSocket_setKeepAliveEx(o,enable,time,interval,statusPtr) do { \
     struct tcp_keepalive x; \
     DWORD notUsed=0; \

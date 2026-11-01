@@ -38,7 +38,7 @@
       <CompileAs>CompileAsC</CompileAs>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>SHARKTRUSTX;BA_JSON=1;TOKENGEN_C_API;SHARKSSL_ENABLE_CERTINFO_PARSE_API=1;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SHARKTRUSTX;BA_ENABLE_JSON=1;TOKENGEN_C_API;SHARKSSL_ENABLE_CERTINFO_PARSE_API=1;WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir)..\src;$(ProjectDir)..\..\..\inc;$(ProjectDir)..\..\..\inc\arch\Windows;$(ProjectDir)..\..\..\inc\arch\NET;$(ProjectDir)..\..\..\inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FunctionLevelLinking>true</FunctionLevelLinking>
     </ClCompile>
@@ -61,7 +61,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(SHARKTRUSTX_PRIVATE_CA)'=='1'">
     <ClCompile>
-      <PreprocessorDefinitions>SHARKTRUSTX_PRIVATE_CA;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SHARKTRUSTX_PRIVATE_CA;BA_ENABLE_MDNS=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -87,7 +87,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\start.h" />
-    <ClInclude Include="..\src\CA_ISRG_Root_X1.h" />
+    <ClInclude Include="..\src\CA_ISRG_Root_X2.h" />
     <ClInclude Include="..\..\..\inc\SharkTrustX.h" />
     <None Include="..\readme.html" />
   </ItemGroup>

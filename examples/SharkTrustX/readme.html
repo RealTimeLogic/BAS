@@ -18,14 +18,16 @@ pre.code { overflow-x: auto; }
 
 <h1>SharkTrustX Native C Example</h1>
 
-<p>This example gives a C web server its own HTTPS certificate and renews it automatically. It uses the Barracuda Web Server (BWS), SharkSSL, and the <a target="_blank" href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> (default) or the <a target="_blank" href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal to obtain a test certificate from Let's Encrypt. A small web page shows whether the certificate is ready, when it expires, and when renewal is due. No Lua runtime is required.</p>
+<p>This example gives a C web server its own HTTPS certificate and renews it automatically. It uses the Barracuda Web Server (BWS) and SharkSSL with either the <a target="_blank" href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> portal for DNS-01 validation with a compatible ACME server, or the <a target="_blank" href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal to issue private certificates. The default build uses SharkTrustX with Let's Encrypt staging. A small web page shows whether the certificate is ready, when it expires, and when renewal is due. No Lua runtime is required.</p>
+
+<p>For protected signing keys, build with the Platform Security Architecture (PSA) Crypto API and a provider backed by a Trusted Platform Module (TPM) or another protected key store. The client can then renew certificates and rotate keys without exporting private keys. The native C build without PSA saves software keys as unencrypted PEM data and has no built-in softTPM protection. Actual key isolation depends on the PSA provider and platform, not the build flag alone.</p>
 
 <blockquote>
-<p><strong>Do not</strong> use this C module if you are using Lua. Instead, use the <a href="https://realtimelogic.com/ba/doc/en/lua/acme.html">Lua ACME plugin</a>.</p>
+<p><strong>Do not</strong> use this C module if you are using Lua. Instead, use the <a href="https://realtimelogic.com/ba/doc/en/lua/acme.html">Lua ACME plugin</a>. The Lua integration can use <a href="https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM">softTPM</a>; it is separate from this C implementation.</p>
 </blockquote>
 
 
-<p>Use this guide to build and run the example on Windows or Linux, then use the same <code>void barracuda(void)</code> entry point with your target port, as in the other BAS examples. For certificate concepts and the C integration contract, read the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html">SharkTrustX C user manual</a>.</p>
+<p>Use this guide to build and run the example on Windows or Linux, then use the same <code>void barracuda(void)</code> entry point with your target port, as in the other BAS examples. For certificate concepts and the C integration contract, read the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html">SharkTrustX C user manual</a>.</p>
 
 <blockquote>
 <p><strong>The default build uses staging certificates.</strong> It exercises real enrollment and certificate issuance, but its issued certificates are for testing and produce browser trust warnings. The device still validates the HTTPS services it connects to. See <a href="https://letsencrypt.org/docs/staging-environment/">Let's Encrypt's staging documentation</a>. After starting, browsing to the example, and accepting the warning, you may click the certificate and its chain in the browser, download the Let's Encrypt root CA staging certificate, and install it in your certificate store. The next time you start the browser, it will trust the connection.</p>
@@ -33,6 +35,7 @@ pre.code { overflow-x: auto; }
 
 <ul>
 <li><a href="#before">Before you build</a></li>
+<li><a href="#psa">Set up PSA key protection</a></li>
 <li><a href="#sharkca">Switch to SharkCA</a></li>
 <li><a href="#windows">Build and run on Windows</a></li>
 <li><a href="#linux">Build and run on Linux</a></li>
@@ -49,12 +52,68 @@ pre.code { overflow-x: auto; }
 
 <ol>
 <li><strong>Use the complete amalgamated BAS package.</strong> The example compiles <code>src/BWS.c</code>, which includes the SharkTrustX client and SharkSSL, with the public headers and target port sources. It does not need a prebuilt BAS library or a resource compiler.</li>
+<li><strong>Choose key protection.</strong> The standard Windows and Linux build commands below use native software keys. For a TPM or another protected key store, follow <a href="#psa">Set up PSA key protection</a> when preparing your target build. Both paths support the public and private CA profiles.</li>
 <li><strong>Prepare portal credentials.</strong> The included <code>src/tokengen.c</code> supplies credentials for <a href="https://x.realtimelogic.com/">x.realtimelogic.com</a>. You can use these credentials to try the example. To use your own credentials, download <code>tokengen.c</code> from your <a href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> or <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal, replace the included file, and rebuild. For SharkCA, follow <a href="#sharkca">Switch to SharkCA</a>; replacing credentials alone does not select the private-CA protocol.</li>
 <li><strong>Set your contact and preferred name.</strong> In <code>src/start.h</code>, replace John Doe's placeholder email, <code>john.doe@example.com</code>, with your own contact email before building. SharkCA does not use a contact email. Set the preferred name to a label such as <code>controller-17</code>; the portal chooses the final full DNS name.</li>
 <li><strong>Check time, network, and ports.</strong> The host needs a correct UTC clock, DNS resolution, outbound HTTPS to the portal and CA, and unused local ports <code>8080</code> and <code>8443</code>. A certificate authority (CA) is the service that signs the certificate.</li>
 </ol>
 
 <p>When using your own portal credentials, keep <code>tokengen.c</code> and the resulting executable or firmware private. If you change credentials after running the example, use a separate <a href="#storage">state directory</a> for the new enrollment.</p>
+
+<h2 id="psa">Set Up PSA Key Protection</h2>
+
+<p><b>Try it on Windows:</b> follow the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXPSAWindows.html">SharkTrustX PSA quick start</a> to build with the supplied development provider and persistent signing keys.</p>
+
+<p>The shared <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/PSAIntegration.html">PSA Crypto integration guide</a> explains provider selection, source ownership, and the Lua TPM integration. This native C example uses the key IDs and lifecycle below; it does not require the two Lua derivation roots.</p>
+
+<p>PSA selects how SharkSSL performs cryptography and stores signing keys. The <code>SharkTrustX_Config</code>, callbacks, and certificate lifecycle remain the same. Use a PSA Crypto provider that supports the client's key policy and the algorithms needed by your TLS connections. A TPM driver alone is not a complete PSA Crypto provider.</p>
+
+<h3>Include the Consumer Adapters and Your Provider</h3>
+
+<p>With <code>SHARKSSL_PSA_CONSUMER=1</code>, <code>src/BWS.c</code> includes these files from <code>src/plugins/SharkSSL/src/psa/</code>:</p>
+
+<ul>
+<li><code>SharkSslPSAConsumerCrypto.c</code></li>
+<li><code>SharkSslPSAConsumerPBKDF2.c</code></li>
+<li><code>SharkSslPSAConsumerECDSAAdapter.c</code></li>
+<li><code>SharkSslPSAConsumerECDSA.c</code></li>
+<li><code>SharkSslPSAConsumerRSA.c</code></li>
+<li><code>SharkSslPSAConsumerAES.c</code></li>
+</ul>
+
+<p>BWS also includes <code>src/plugins/SharkSSL/src/util/SharkSslCSR.c</code> and <code>src/BWS.c (SharkTrustX section)</code>. <strong>Compile BWS once; do not compile these included files separately.</strong> Continue to compile the example sources and target ports described below. No Lua binding source is needed.</p>
+
+<p>Link your target's PSA Crypto provider, hardware/key-storage driver, entropy support, and persistent-storage implementation. Select its matching <code>psa/crypto.h</code> and dependent headers, along with the SharkSSL headers and consumer helper headers under <code>inc/psa-consumer/</code>. The consumer adapters call the provider; they do not supply it.</p>
+
+<h3>Configure the Target Build</h3>
+
+<p>Apply these definitions before including <code>TargConfig.h</code> or SharkSSL headers, consistently across BWS and application sources. Configure the provider library according to its own instructions. Preserve the PSA defaults in <code>inc/BaConfig.h</code> and check the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-psa">manual's complete PSA build requirements</a> when customizing TLS or cryptographic features.</p>
+
+<div class="table-scroll">
+<table cellpadding="4" border="1">
+<tr><th scope="col">Setting</th><th scope="col">Required value or use</th></tr>
+<tr><td><code>SHARKTRUSTX</code>, <code>BA_ENABLE_JSON=1</code></td><td>Define <code>SHARKTRUSTX</code> and set integer <code>BA_ENABLE_JSON=1</code> to include the native client and JSON support.</td></tr>
+<tr><td><code>TOKENGEN_C_API</code></td><td>Define when compiling generated <code>tokengen.c</code> to select its C interface.</td></tr>
+<tr><td><code>SHARKSSL_PSA_CONSUMER</code></td><td>Integer <code>1</code> selects PSA. The default, <code>0</code>, selects native software cryptography.</td></tr>
+<tr><td><code>SHARKSSL_ENABLE_CSR_CREATION</code>, <code>SHARKSSL_ENABLE_PEM_API</code>, <code>SHARKSSL_ENABLE_CERTINFO_PARSE_API</code></td><td>Integer <code>1</code> for each. Certificate signing requests (CSRs) and certificate parsing remain necessary with PSA.</td></tr>
+<tr><td><code>SHARKSSL_ECC_USE_SECP384R1</code>, <code>SHARKSSL_USE_SHA_384</code></td><td>Integer <code>1</code> for each when using the example's ECC ISRG Root X2 trust chain. The provider also needs P-384 verification and SHA-384.</td></tr>
+<tr><td><code>SHARKSSL_PSA_CONSUMER_STANDALONE_AES</code></td><td>Integer <code>1</code> with the standard BAS/BWS configuration; supplied by its PSA defaults.</td></tr>
+<tr><td><code>SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY</code></td><td>Keep integer <code>0</code>, its default. This client uses the <code>ANY_HASH</code> signing policy described below and validates saved key policy and identity itself.</td></tr>
+<tr><td><code>SHARKTRUSTX_PSA_KEY_BASE</code></td><td>Optional integer, default <code>0x23545800</code>, range <code>1</code> through <code>0x3ffffffd</code>. Reserve this ID and the next two IDs exclusively for one state store.</td></tr>
+</table>
+</div>
+
+<p>Keep client and server TLS, P-256/ECDSA, SHA-256, AES-128/GCM, and at least one supported TLS version enabled, as detailed in the manual. Select <code>SHARKTRUSTX_PRIVATE_CA</code> independently: define it for SharkCA and leave it undefined for the public profile. The example uses ECC ISRG Root X2 for outbound trust in either key-storage mode; other service chains may require additional algorithms and trust anchors.</p>
+
+<h3>Initialize the Provider and Reserve Persistent Keys</h3>
+
+<p>In your target startup, initialize the provider, hardware driver, entropy source, and persistent storage in the order required by the provider. Check that <code>psa_crypto_init()</code> returns <code>PSA_SUCCESS</code> before entering <code>barracuda()</code>. Keep the provider and its storage available through signing, renewal, and cleanup.</p>
+
+<p>The client generates persistent 256-bit <code>PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1)</code> keys with <code>PSA_KEY_USAGE_SIGN_HASH</code> and <code>PSA_ALG_ECDSA(PSA_ALG_ANY_HASH)</code>, without private-key export or copy permission. ACME and CSR signatures use SHA-256. The provider must support key generation, signing by ID, attribute lookup, public-key export, and destruction, plus the selected TLS operations and PBKDF2-HMAC used by the generated provisioning code.</p>
+
+<p><strong>Confirm where the keys are stored.</strong> The client requests <code>PSA_KEY_LIFETIME_PERSISTENT</code>, which selects the provider's default storage location. Your provider must map it to the intended protected store. A provider requiring an explicit hardware location or a different key policy needs a corresponding C integration change.</p>
+
+<p>The base ID holds the account key; base + 1 and base + 2 are alternating certificate-key slots. Renewal creates a fresh certificate key while the current certificate serves HTTPS. After replacement closes the old TLS connections, the old key is retired. The account key survives ordinary renewal. Keep the same IDs, <a href="#storage">private journal</a>, and provider store across restarts. Startup validates the saved keys and reports missing or mismatched keys instead of silently replacing the device identity. Use a separate ID range for each separate state store.</p>
 
 <h2 id="sharkca">Switch to SharkCA</h2>
 
@@ -63,7 +122,7 @@ pre.code { overflow-x: auto; }
 <ol>
 <li><strong>Configure your portal.</strong> Create the administrator account and enrollment zone. For a local installation, select local network grouping. Configure the zone's portal hostname and HTTPS certificate before downloading credentials. The hostname must resolve from the device, and the portal must serve HTTPS on port <code>443</code>. If the portal runs on another computer, <code>localhost</code> refers to the device itself.</li>
 <li><strong>Replace the credentials.</strong> Use your portal's <strong>Download C code</strong> page and save the generated file as this example's <code>src/tokengen.c</code>.</li>
-<li><strong>Configure outbound trust.</strong> <code>src/start.c</code> loads ISRG Root X1 into <code>clientSsl</code> with <code>SharkSsl_setCAListEx()</code>. If your portal's HTTPS certificate uses another issuer or a local CA, replace that list with a SharkSSL-format CA list containing the appropriate trusted CA. The portal certificate must cover its hostname. Keep certificate validation enabled.</li>
+<li><strong>Configure outbound trust.</strong> <code>src/start.c</code> loads ECC ISRG Root X2 into <code>clientSsl</code> with <code>SharkSsl_setCAListEx()</code>. If your portal's HTTPS certificate uses another issuer or a local CA, replace that list with a SharkSSL-format CA list containing the appropriate trusted CA. The portal certificate must cover its hostname. Keep certificate validation enabled.</li>
 <li><strong>Select the private profile.</strong> Set the build setting <code>SHARKTRUSTX_PRIVATE_CA</code> to <code>1</code> as described below, and rebuild. The supplied builds then define the C macro for the example and BWS and include the BAS C mDNS responder. Replacing credentials alone does not select the private protocol.</li>
 <li><strong>Choose a separate state directory.</strong> Set <code>EXAMPLE_STATE_DIR</code> to an existing, empty directory for the SharkCA enrollment. Keep your public-profile state separate and retain the new directory for restarts. Set <code>EXAMPLE_NAME</code> to a preferred label without <code>.local</code>; the portal assigns the final name.</li>
 <li><strong>Trust the device certificates.</strong> Import the zone's root CA certificate into the computers or browsers that will access the device. This is separate from the device's trust in the portal configured above.</li>
@@ -99,7 +158,7 @@ make plat=posix build=debug SHARKTRUSTX_PRIVATE_CA=1 exe</pre>
 
 <p>After portal confirmation, the example advertises the assigned <code>.local</code> name through the BAS C mDNS responder. Multicast DNS (mDNS) lets computers on the same local network resolve the name without a DNS server. The browser computer must support mDNS, and the network/firewall must permit multicast traffic on UDP port <code>5353</code>. Use the HTTPS link on the status page after the certificate is ready.</p>
 
-<p>The responder selects the first usable active multicast LAN interface, publishes its IPv4 address and, when available with <code>USE_IPV6</code>, its IPv6 address, and follows address changes. On a computer with multiple adapters, the selected interface can be a virtual adapter. Look for <strong>mDNS advertising</strong> in the trace. If initial setup fails, correct the network/port problem and restart. mDNS normally stays on the local link; it does not provide name resolution across routers or make private certificates trusted. The example uses the portal-assigned name without local conflict detection or renaming.</p>
+<p>The responder selects the first usable active multicast LAN interface, publishes its IPv4 address and, when available with <code>BA_ENABLE_IPV6=1</code>, its IPv6 address, and follows address changes. On a computer with multiple adapters, the selected interface can be a virtual adapter. Look for <strong>mDNS advertising</strong> in the trace. If initial setup fails, correct the network/port problem and restart. mDNS normally stays on the local link; it does not provide name resolution across routers or make private certificates trusted. The example uses the portal-assigned name without local conflict detection or renaming.</p>
 
 <h2 id="windows">Build and Run on Windows</h2>
 
@@ -128,7 +187,7 @@ cd ../obj/debug
 
 <h2 id="storage">Choose a Private State Directory</h2>
 
-<p>The example saves its certificate, private keys, and portal enrollment through a <code>DiskIo</code> instance created in <code>barracuda()</code>. Its root is <code>EXAMPLE_STATE_DIR</code> in <code>src/start.h</code>. The default, <code>"."</code>, stores files directly in the working directory selected by the shared startup; the example does not create a state subdirectory.</p>
+<p>The example saves its certificate, key references or software keys, and portal enrollment through a <code>DiskIo</code> instance created in <code>barracuda()</code>. Its root is <code>EXAMPLE_STATE_DIR</code> in <code>src/start.h</code>. The default, <code>"."</code>, stores files directly in the working directory selected by the shared startup; the example does not create a state subdirectory.</p>
 
 <p>With the Debug run commands above, or when starting Debug from Visual Studio, the files are stored here. Replace <code>BAS</code> with your BAS installation directory:</p>
 
@@ -147,18 +206,20 @@ cd ../obj/debug
 <div class="table-scroll">
 <table cellpadding="4" border="1">
 <tr><th scope="col">Filename</th><th scope="col">Contents</th></tr>
-<tr><td><code>sharktrustx.0</code>, <code>sharktrustx.1</code></td><td>Alternating binary records containing the certificate, private keys, and enrollment data. You may see only one of these files after a successful update.</td></tr>
+<tr><td><code>sharktrustx.0</code>, <code>sharktrustx.1</code></td><td>Alternating binary records containing the certificate and enrollment data. PSA records hold key IDs and public keys; native software records include private keys. You may see only one file after a successful update.</td></tr>
 <tr><td><code>sharktrustx.reset</code></td><td>A marker used to complete an interrupted cleanup. It is normally absent.</td></tr>
 </table>
 </div>
 
-<p>Keep this directory for normal restarts, and run only one instance of the example against it. <strong>The saved private keys and credentials are unencrypted.</strong> Keep the directory private and never serve it over HTTP.</p>
+<p>Keep this directory for normal restarts, and run only one instance of the example against it. <strong>Enrollment credentials are unencrypted in both builds; native software private keys are also unencrypted.</strong> PSA signing keys stay in the provider. Keep the directory private and never serve it over HTTP. PSA does not move the generated tokengen credential or saved enrollment credential into a TPM.</p>
+
+<p>With PSA, retain the provider's persistent key store as well as this directory. Copying the journal alone does not transfer the keys. PSA and native software records have different formats, with no automatic migration. Use the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-cleanup">documented cleanup lifecycle</a> while the original configuration and provider are available before changing key-storage modes. Cleanup destroys owned keys as required by the selected reset level; do not manually delete a PSA journal, which identifies the keys to retire.</p>
 
 <h3>Use a Different Directory</h3>
 
 <p>Set <code>EXAMPLE_STATE_DIR</code> to an existing, writable directory and rebuild. Use forward slashes in the C string, including on Windows. For example, set it to <code>"C:/Users/John/SharkTrustX-state"</code> on Windows, <code>"/home/john/sharktrustx-state"</code> on Linux, or the appropriate persistent-storage path for your device. The example has no command-line options.</p>
 
-<p>A new empty directory creates a separate portal enrollment. Reuse saved state with the same portal credentials, preferred name, and CA settings. To keep an enrollment from the previous example version, set this path to its existing state directory. The makefile's <code>clean</code> target preserves state files.</p>
+<p>A new empty directory creates a separate portal enrollment. With PSA, also reserve a separate three-ID range; an empty journal does not free keys in the provider. Reuse saved state with the same portal credentials, preferred name, CA settings, and key-storage mode. To keep a compatible enrollment from the previous example version, set this path to its existing state directory. The makefile's <code>clean</code> target preserves state files.</p>
 
 <h2 id="observe">Check Enrollment and HTTPS</h2>
 
@@ -187,7 +248,7 @@ cd ../obj/debug
 
 <p>The public profile proves control of the name using a temporary DNS TXT record managed by the portal. The CA reads DNS; it does not need to connect to the example's HTTP or HTTPS port. Your browser still needs to resolve the assigned name and reach the device. Certificate issuance does not set up router forwarding or a remote-access tunnel.</p>
 
-<p>With <code>USE_IPV6</code> enabled, both HTTP and HTTPS try IPv6 first, then IPv4 on their respective ports. Successful sockets are retained. Windows normally opens two sockets per service; Linux normally opens one dual-stack IPv6 socket per service that also accepts IPv4. Platform settings can change this. Both HTTPS listeners share one certificate and TLS context. Without <code>USE_IPV6</code>, only IPv4 is attempted.</p>
+<p>With <code>BA_ENABLE_IPV6=1</code> enabled, both HTTP and HTTPS try IPv6 first, then IPv4 on their respective ports. Successful sockets are retained. Windows normally opens two sockets per service; Linux normally opens one dual-stack IPv6 socket per service that also accepts IPv4. Platform settings can change this. Both HTTPS listeners share one certificate and TLS context. Without <code>BA_ENABLE_IPV6=1</code>, only IPv4 is attempted.</p>
 
 <p>The console identifies the HTTP sockets that opened. <strong>HTTPS is ready</strong> means at least one HTTPS listener has an unexpired certificate.</p>
 
@@ -206,7 +267,7 @@ cd ../obj/debug
 </table>
 </div>
 
-<p>By default, the configuration in <code>src/start.c</code> selects Let's Encrypt's staging service, accepts its terms, and loads the ISRG Root X1 certificate used to verify outbound HTTPS. Review the CA's terms before running the example. For the private-CA variant and its setup, see <a href="#sharkca">Switch to SharkCA</a>.</p>
+<p>By default, the configuration in <code>src/start.c</code> selects Let's Encrypt's staging service, accepts its terms, and loads the ECC ISRG Root X2 certificate used to verify outbound HTTPS. To use another compatible ACME server in the public profile, set <code>config.directoryUrl</code> to its HTTPS directory URL and configure <code>clientSsl</code> to trust both the ACME server and the portal. Review the selected CA's terms before running the example. For the private-CA variant and its setup, see <a href="#sharkca">Switch to SharkCA</a>.</p>
 
 <h2 id="source">How the Example Works</h2>
 
@@ -225,7 +286,7 @@ cd ../obj/debug
 
 <p>Enrollment and renewal run on a timer worker while the server continues handling requests. With <code>SHARKTRUSTX_PRIVATE_CA</code>, mDNS has its own timer sharing the dispatcher mutex, so blocking certificate requests do not delay scheduled name replies. A changed name closes the old responder before advertising the new one; IP-only enrollment stops advertisement. Replacing a certificate closes existing HTTPS connections, so browsers reconnect. The HTTP status page remains available.</p>
 
-<p>The makefile compiles BWS with <code>SHARKTRUSTX</code> and <code>BA_JSON=1</code>, including SharkTrustX and its native HTTP client, timer, and certificate signing request support. It also sets <code>SHARKSSL_ENABLE_CERTINFO_PARSE_API=1</code> to enable SharkSSL's public certificate-info parser. Do not compile <code>SharkTrustX.c</code> separately. It does not compile Lua or <code>BAS.c</code>. In an existing application, use the same integration pattern without starting a second dispatcher or duplicating the BWS runtime.</p>
+<p>The makefile compiles BWS with <code>SHARKTRUSTX</code> and <code>BA_ENABLE_JSON=1</code>, including SharkTrustX and its native HTTP client, timer, and certificate signing request support. It also sets <code>SHARKSSL_ENABLE_CERTINFO_PARSE_API=1</code> to enable SharkSSL's public certificate-info parser. Do not compile <code>SharkTrustX.c</code> separately. It does not compile Lua or <code>BAS.c</code>. In an existing application, use the same integration pattern without starting a second dispatcher or duplicating the BWS runtime.</p>
 
 <h2 id="make">Other Makefile Options</h2>
 
@@ -241,13 +302,13 @@ SharkTrustX-staging.exe</pre>
 
 <p>Makefile outputs use <code>obj/debug/</code> or <code>obj/release/</code>, matching the other examples and the Visual Studio project. <code>ARC</code> selects the Windows linker's target architecture; keep it consistent with the compiler tools prompt. Run <code>clean</code> with the current build settings before changing platform, compiler, architecture, or feature definitions. Use a clean rebuild when switching between the makefile and Visual Studio. You can override <code>ODIR</code> to keep builds for multiple targets.</p>
 
-<p>The Windows BWS port enables <code>USE_IPV6</code>. For Linux, enable it in every compilation unit with the makefile's <code>USE_IPV6=1</code> setting. Clean the previous build before changing this setting:</p>
+<p>The Windows BWS port enables <code>BA_ENABLE_IPV6=1</code>. For Linux, enable it in every compilation unit with the makefile's <code>BA_ENABLE_IPV6=1</code> setting. Clean the previous build before changing this setting:</p>
 
 <pre class="code"># Run from examples/SharkTrustX/make; rebuild with IPv6 enabled.
 make plat=posix build=debug clean
-make plat=posix build=debug USE_IPV6=1 exe</pre>
+make plat=posix build=debug BA_ENABLE_IPV6=1 exe</pre>
 
-<p>An IPv6 build must use a BWS network port that implements IPv6. For example, the existing FreeRTOS/lwIP netconn port supports IPv4 only; <code>USE_IPV6</code> alone does not add IPv6 support to that port. An unsuccessful IPv6 attempt falls back to IPv4, following the same listener sequence.</p>
+<p>An IPv6 build must use a BWS network port that implements IPv6. For example, the existing FreeRTOS/lwIP netconn port supports IPv4 only; <code>BA_ENABLE_IPV6=1</code> alone does not add IPv6 support to that port. An unsuccessful IPv6 attempt falls back to IPv4, following the same listener sequence.</p>
 
 <h2 id="rtos">Integrate with an RTOS</h2>
 
@@ -262,7 +323,7 @@ make plat=posix build=debug USE_IPV6=1 exe</pre>
 <div class="table-scroll">
 <table cellpadding="4" border="1">
 <tr><th scope="col">Example target</th><th scope="col">Port setup in the target build</th></tr>
-<tr><td>FreeRTOS with lwIP</td><td>Compile the FreeRTOS <code>ThreadLib.c</code> and lwIP <code>SoDisp.c</code>. Define <code>BA_FREERTOS</code>. Select matching headers and define <code>BA_LWIP</code>, <code>USE_DLMALLOC</code>, and <code>NO_MALLINFO=1</code> consistently across the build. Compile <code>src/dlmalloc.c</code>, initialize the allocator, and add the filesystem port used by the board.</td></tr>
+<tr><td>FreeRTOS with lwIP</td><td>Compile the FreeRTOS <code>ThreadLib.c</code> and lwIP <code>SoDisp.c</code>. Define <code>BA_FREERTOS</code>. Select matching headers and define <code>BA_LWIP</code>, <code>BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC</code>, and <code>NO_MALLINFO=1</code> consistently across the build. Compile <code>src/dlmalloc.c</code>, initialize the allocator, and add the filesystem port used by the board.</td></tr>
 <tr><td>Zephyr</td><td>Use <code>BA_ZEPHYR</code>, the Zephyr headers and <code>ThreadLib.c</code>, the generic BSD <code>SoDisp.c</code>, and a <code>DiskIo</code> implementation for the mounted filesystem.</td></tr>
 <tr><td>INTEGRITY</td><td>Define <code>BA_INTEGRITY</code> in the build and select the INTEGRITY and BSD socket headers. Compile the INTEGRITY thread and generic BSD dispatcher sources, plus the chosen filesystem port.</td></tr>
 <tr><td>VxWorks</td><td>Define <code>BA_VXWORKS</code> in the build and select the VxWorks headers. Compile the VxWorks thread and generic BSD dispatcher sources, plus the chosen filesystem port.</td></tr>
@@ -278,18 +339,20 @@ make plat=custom tinc=/path/to/Target.mk lib</pre>
 
 <h3>Add mDNS for the Private Profile</h3>
 
-<p>For SharkCA, compile <code>src/BamDNS.c</code> and one mDNS socket/discovery port in addition to the sources above. The supplied Windows/Linux builds select <code>src/arch/NET/BamDNS-Sock.c</code> automatically with <code>SHARKTRUSTX_PRIVATE_CA=1</code>. Windows also links <code>iphlpapi.lib</code>. Keep <code>BAS_LOADED</code> undefined to exclude Lua bindings, and enable <code>USE_DGRAM</code> in the selected BAS socket port.</p>
+<p>For SharkCA, compile <code>src/BamDNS.c</code> and one mDNS socket/discovery port in addition to the sources above. The supplied Windows/Linux builds select <code>src/arch/NET/BamDNS-Sock.c</code> automatically with <code>SHARKTRUSTX_PRIVATE_CA=1</code>. Windows also links <code>iphlpapi.lib</code>. Keep <code>BA_ENABLE_MDNS_LUA=1</code> undefined to exclude Lua bindings, and enable <code>BA_ENABLE_UDP=1</code> in the selected BAS socket port.</p>
 
-<p>The application uses the public <code>BamDNS</code> C APIs without OS-specific calls. The optional make variable <code>MDNSSRC</code> is a space-separated list of C source paths for a replacement socket/discovery implementation; it defaults to the supplied BSD port. Automatic interface selection uses <code>BamDNS_getNetInfo()</code>. See the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/BamDNSGuide.html">BamDNS integration guide</a> for its port contract.</p>
+<p>The application uses the public <code>BamDNS</code> C APIs without OS-specific calls. The optional make variable <code>MDNSSRC</code> is a space-separated list of C source paths for a replacement socket/discovery implementation; it defaults to the supplied BSD port. Automatic interface selection uses <code>BamDNS_getNetInfo()</code>. See the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/BamDNSGuide.html">BamDNS integration guide</a> for its port contract.</p>
 
 <p>A BAS TCP port alone does not guarantee mDNS support. The target stack must supply multicast sockets, interface discovery, and packet metadata. For example, the FreeRTOS/lwIP netconn port cannot use the BSD adapter unchanged. Supply a matching adapter, or adapt the confirmed-name callback to the stack's existing mDNS responder. The public SharkTrustX build does not require mDNS.</p>
 
-<h3>Select Persistent Storage and Seed the Random Generator</h3>
+<h3>Initialize Storage and Cryptography</h3>
 
 <p>Set <code>EXAMPLE_STATE_DIR</code> to an existing directory on the device's persistent filesystem. The example constructs a static <code>DiskIo</code> instance and passes it to SharkTrustX as an <code>IoIntf</code>. If your application uses another persistent <code>IoIntf</code> implementation, replace that storage setup and assign the instance to <code>config.io</code>; keep it alive for the lifetime of the server. The state files go directly in its root, which is never exposed over HTTP.</p>
 
+<p>For PSA, initialize your target provider and its entropy and persistent key storage before <code>barracuda()</code>, as described in <a href="#psa">Set up PSA key protection</a>. Configure secure storage provisioning according to the provider's instructions. The C client generates its signing keys but does not provision provider storage secrets or use the Lua TPM root-secret services.</p>
+
 <blockquote>
-<p><strong>Supply real entropy before using TLS on a device.</strong> The platform section at the top of <code>start.c</code> seeds SharkSSL from the operating system on Windows and Linux. For other targets, <code>seedRandom()</code> contains a predictable function-address placeholder. Replace it with <code>sharkssl_entropy()</code> calls using the board's hardware random generator or another secure entropy source.</p>
+<p><strong>Supply real entropy before using TLS on a device.</strong> In a native software build, the platform section at the top of <code>start.c</code> seeds SharkSSL from the operating system on Windows and Linux. For other targets, <code>seedRandom()</code> contains a predictable function-address placeholder. Replace it with <code>sharkssl_entropy()</code> calls using the board's hardware random generator or another secure entropy source. In a PSA build, randomness comes from the provider; these seeding calls do not replace the provider's required entropy initialization.</p>
 </blockquote>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
@@ -299,10 +362,10 @@ make plat=custom tinc=/path/to/Target.mk lib</pre>
 <tr><th scope="col">Symptom</th><th scope="col">What to check</th></tr>
 <tr><td>Cannot open the status page</td><td>Read startup output. Check that the process is still running, port 8080 is free, and the browser can reach the machine. A remote browser also needs firewall access.</td></tr>
 <tr><td>Trust error <code>-6</code></td><td>Check the device's UTC clock, outbound CA anchors, and portal/service certificate. This error concerns the device's outbound HTTPS, independently of the browser's staging warning.</td></tr>
-<tr><td>Identity error <code>-2</code></td><td>Check whether the build changed tokengen source, preferred label, profile, or CA directory while retaining old state. Restore the original settings or use the documented cleanup lifecycle.</td></tr>
+<tr><td>Identity error <code>-2</code></td><td>Check whether the build changed tokengen source, preferred label, profile, or CA directory while retaining old state. With PSA, also check the saved key IDs, provider store, attributes, and public-key identity. Restore the original settings or use the documented cleanup lifecycle.</td></tr>
 <tr><td>Storage error <code>-3</code></td><td>Check <code>EXAMPLE_STATE_DIR</code>, permissions, capacity, and the selected filesystem port. The directory must already exist. Do not delete files merely to hide an error.</td></tr>
 <tr><td>Portal error <code>-4</code> or CA error <code>-5</code></td><td>Check DNS/outbound connectivity, portal credentials, and CA availability. The worker logs a retry notification and stays active.</td></tr>
-<tr><td>Key or listener error <code>-7</code></td><td>Check available memory, entropy initialization, required SharkSSL features, and whether another server owns port 8443.</td></tr>
+<tr><td>Key or listener error <code>-7</code></td><td>Check available memory, entropy initialization, required SharkSSL features, and whether another server owns port 8443. With PSA, check provider initialization, algorithm/key-policy support, persistent storage, and exclusive ownership of the reserved IDs.</td></tr>
 <tr><td>Name shown but no HTTPS link yet</td><td>Enrollment has confirmed the name; wait for certificate installation and inspect subsequent console events.</td></tr>
 <tr><td>SharkCA .local name does not resolve</td><td>Check the mDNS startup trace, selected LAN adapter, browser OS mDNS support, and multicast/firewall access to UDP 5353. Use the same local network.</td></tr>
 <tr><td>HTTPS ready but browser cannot connect</td><td>Check name resolution and the route/firewall to port 8443. Use the assigned name. Issuance does not create remote access.</td></tr>
@@ -311,7 +374,7 @@ make plat=custom tinc=/path/to/Target.mk lib</pre>
 </table>
 </div>
 
-<p>For all callback values and recovery contracts, see the <a href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-codes">manual's error reference</a>. Return to the <a href="https://realtimelogic.com/ba/examples/readme.html">BAS examples index</a> or <a href="https://realtimelogic.com/ba/examples/introduction.html">shared build introduction</a> for the surrounding example structure.</p>
+<p>For all callback values and recovery contracts, see the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-codes">manual's error reference</a>. Return to the <a href="https://realtimelogic.com/ba/examples/readme.html">BAS examples index</a> or <a href="https://realtimelogic.com/ba/examples/introduction.html">shared build introduction</a> for the surrounding example structure.</p>
 
 </body>
 </html>

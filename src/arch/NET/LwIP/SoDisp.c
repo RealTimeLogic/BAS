@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 5767 2026-04-18 10:47:22Z wini $
+ *   $Id: SoDisp.c 6667 2026-10-28 23:37:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
@@ -77,7 +77,7 @@
 
 /* See builds/FreeRTOS/README.txt for details on construction below:
  */
-#ifdef USE_CALLBACKDATA
+#if BA_LWIP_USE_NETCONN_CALLBACK_DATA
 #define setCallBackData(ncon, httpSock) (ncon)->callbackData=httpSock
 #define getCallBackData(ncon) (HttpSocket*)(ncon)->callbackData
 #elif LWIP_SOCKET != 0
@@ -102,7 +102,7 @@ static SoDisp* disp;
 /* Enable in lwipopt.h (optional: not required) */
 #if SO_REUSE
 #else
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
 #error You may remove this error check but restarting server will result in using other server ports
 #endif
 #endif
@@ -258,7 +258,9 @@ HttpSocket_netconnCB(struct netconn* ncon, enum netconn_evt evt, u16_t len)
             break;
 
          case NETCONN_EVT_RCVMINUS:
-            if(o->recEvent > 0) o->recEvent--;
+            /* A receiver can consume the posted pbuf before RCVPLUS runs.
+               Keep the temporary negative count so both events balance. */
+            o->recEvent--;
             break;
 
          case NETCONN_EVT_SENDPLUS:
@@ -348,7 +350,7 @@ HttpSocket_netconnCB(struct netconn* ncon, enum netconn_evt evt, u16_t len)
 static void
 HttpSocket_checkEvents(HttpSocket* o)
 {
-   if(o->recEvent || o->sendEvent || o->errEvent)
+   if(o->recEvent > 0 || o->sendEvent || o->errEvent)
    {
       /*
         Insert socket into soDispQueue if not already in the queue and
@@ -824,7 +826,7 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
                return E_SOCKET_READ_FAILED;
             HttpSocket_checkEvents(sock);
          }
-         else if(sock->recEvent)
+         else if(sock->recEvent > 0)
          {
             err = isTcp ?
                netconn_recv_tcp_pbuf(sock->ncon, (struct pbuf**)&sock->nbuf) :
@@ -893,7 +895,7 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
          else
            netbuf_delete((struct netbuf*)sock->nbuf);
          sock->nbuf=0;
-         if(sock->recEvent)
+         if(sock->recEvent > 0)
          {
             if(dlen > 0)
                continue;
@@ -1046,14 +1048,14 @@ SoDisp_run(SoDisp* o, S32 msecTimeout)
                {
                   SoDispCon_dispSendEvent(con);
                   if(sock == o->curSock &&
-                     (sock->recEvent || sock->errEvent) &&
+                     (sock->recEvent > 0 || sock->errEvent) &&
                      SoDispCon_recEvActive(con))
                   {
                      SoDispCon_setDispHasRecData(con);
                      SoDispCon_dispRecEvent(con);
                   }
                }
-               else if((sock->recEvent || sock->errEvent) &&
+               else if((sock->recEvent > 0 || sock->errEvent) &&
                        SoDispCon_recEvActive(con))
                {
                   SoDispCon_setDispHasRecData(con);

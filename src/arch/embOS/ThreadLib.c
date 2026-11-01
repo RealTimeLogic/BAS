@@ -13,7 +13,7 @@
  *
  *   $Id: TargConfig.h 2195 2010-09-16 12:26:20Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -61,7 +61,7 @@ Thread_constructor(Thread* o, Thread_Run r, ThreadPriority tp, int stackSize)
       return;
    }
    OS_EnterRegion();
-   OS_CreateTaskEx(&(o)->task, "thread", prio, (void(*)(void*))r, o->stack, stackSize, 0, (void*)o);
+   OS_CreateTaskEx(&(o)->task, "BAS", prio, (void(*)(void*))r, o->stack, stackSize, 0, (void*)o);
    OS_Suspend(&(o)->task);
    OS_LeaveRegion();
 }

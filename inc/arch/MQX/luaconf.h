@@ -1,13 +1,12 @@
 
 #ifndef lconfig_h
 
+#include <TargConfig.h>
+
 /* Only a subset of the os lib is available for embedded systems */
-#define BA_MINIOSLIB
-#define LUA_NOIOLIB
 #define LUA_PATH_DEFAULT ""
 #define LUA_CPATH_DEFAULT ""
 
-#define NO_TIMEFUNCS
 #define lua_getlocaledecpoint() '.'
 typedef unsigned int time_t;
 

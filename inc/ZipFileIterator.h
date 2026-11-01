@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ZipFileIterator.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: ZipFileIterator.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003-2019
+ *   COPYRIGHT:  Real Time Logic LLC, 2003-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -64,7 +64,7 @@ struct ZipFileHeaderData;
 
 /** Abstract interface class for reading a ZipFile.
     See the example code FileZipReader for more information.
-    You can also use the <a href="../../CspTools.html#bin2c">
+    You can also use the <a href="https://realtimelogic.com/ba/doc/en/C/CspTools.html#bin2c">
     bin2c</a> tool if you want to embed the ZIP file in the
     application executable or firmware.
 */
@@ -277,16 +277,16 @@ typedef struct ZipFileInfo
       U8  *AESef; /* AES encrypted ZIP file info */
 } ZipFileInfo;
 
-#if defined(B_LITTLE_ENDIAN)
+#if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
 #define ZipFileInfo_makeLittleEndianU32(x) x
-#elif defined(B_BIG_ENDIAN)
+#elif (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 #define ZipFileInfo_makeLittleEndianU32(x) \
  ((U32)((((U32)(x) & 0x000000ffU) << 24) | \
  (((U32)(x) & 0x0000ff00U) <<  8) | \
  (((U32)(x) & 0x00ff0000U) >>  8) | \
  (((U32)(x) & 0xff000000U) >> 24))) 
 #else
-#error in config/make file, you must define one of B_LITTLE_ENDIAN or B_BIG_ENDIAN
+#error Set BA_BYTE_ORDER to BA_BYTE_ORDER_LITTLE_ENDIAN or BA_BYTE_ORDER_BIG_ENDIAN
 #endif
 
 #define ZipFileInfo_getCrc32LittleEndian(o) \

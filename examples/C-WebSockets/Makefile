@@ -4,7 +4,7 @@
 VPATH+=src:../HostInit:../../src:../../src/arch/Posix:../../src/arch/NET/generic:../../src/DiskIo/posix
 
 CFLAGS += -c -g -Wall
-CFLAGS += -DBA_FILESIZE64 -DLUA_USE_LINUX
+CFLAGS += -DBA_FILE_OFFSET_BITS=64 -DLUA_USE_LINUX
 CFLAGS += -DBAIO_DISK
 CFLAGS += -I../../inc -I../../inc/arch/Posix -I../../inc/arch/NET/Posix
 

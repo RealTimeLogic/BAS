@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: HttpServer.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 6429
+#define BASLIB_VER_NO 6709
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(6429)
+#define BASLIB_VER BASLIB_VER_M(6709)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -90,9 +90,6 @@ from HttpPage or HttpDir.
 #include <stddef.h>
 
 /* Used by examples */
-#ifndef BA_STACKSZ
-#define BA_STACKSZ 24000
-#endif
 
 
 /* This ID must match the ID in LoginKey.java */
@@ -194,7 +191,7 @@ typedef void (*UserDefinedErrHandler)(BaFatalErrorCodes ecode1,
     See the <a href="../../CspTools.html">CSP user manual</a> for more
     information on CSP.
 
-\sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>
+\sa <a href="../../index.html" target="_top"> Barracuda Introduction </a>
 @{
 */
 
@@ -289,14 +286,15 @@ typedef struct HttpInData
 {
 #ifdef __cplusplus
       /** Get pointer to start of PUT/POST data.
-       */
+    @return Pointer to start of PUT/POST data.
+ */
       const char* getBuf();
 
-      /** Get size of internal buffer.  Use
-          HttpStdHeaders::getContentLength to get the length of the
-          PUT/POST message.
-          You must use HttpAsynchRec if getBufSize() < content-length or if
-          chunk encoding.
+      /** Get the number of bytes currently available from getBuf().
+       * @return Buffered byte count, not the allocation capacity or total body length.
+       * Use HttpStdHeaders::getContentLength for a declared body length. If the body
+       * is chunked or larger than the available data, use HttpRecData or the
+       * asynchronous receive API instead of assuming the whole body is buffered.
        */
       S32 getBufSize();
 #endif
@@ -455,12 +453,13 @@ inline const char* HttpParameter::getParameter(const char* paramName) {
 #endif
 
 
-/** @defgroup StdWebServer Standard Web-Server classes
+/** @addtogroup StdWebServer
 
-A collection of common classes typically used working with server side
-scripting.
+Native HTTP request, response, session, and routing interfaces shared by BAS
+and BWS. Start with \ref NativeStart and follow the per-object lifetime and
+locking contracts.
 \sa CSP and HttpResRdr
-\sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>
+\sa <a href="../../index.html" target="_top"> Barracuda Introduction </a>
    @{
  */
 
@@ -487,24 +486,33 @@ typedef struct HttpParameterIterator
 #ifdef __cplusplus
       HttpParameterIterator(){}
       /** This HttpParameterIterator constructor takes a HttpRequest
-          object as argument. */
+          object as argument.
+    @param req Required live request whose form/query parameters are borrowed.
+ */
       HttpParameterIterator(HttpRequest* req);
 
       /** This HttpParameterIterator constructor takes a HttpParameter
           object as argument.
 
           c name: HttpParameterIterator_constructor2
-      */
+    @param param Borrowed parameter list to iterate; retain it through iteration.
+ */
       HttpParameterIterator(HttpParameter* param);
 
       /** Advance to the next element. At the end, name and value become NULL.
           Call hasMoreElements() before accessing the current entry. */
       void nextElement();
-      /** Returns true if more elements. */
+      /** Returns true if more elements.
+    @return True if more elements.
+ */
       bool hasMoreElements();
-      /** Return the borrowed current name, or NULL at the end. */
+      /** Return the borrowed current name, or NULL at the end.
+    @return The borrowed current name, or NULL at the end.
+ */
       const char* getName() const { return name; }
-      /** Return the borrowed current value, or NULL at the end. */
+      /** Return the borrowed current value, or NULL at the end.
+    @return The borrowed current value, or NULL at the end.
+ */
       const char* getValue() const { return value; }
    private:
 #endif
@@ -592,47 +600,64 @@ typedef struct HttpCookie
       ~HttpCookie();
 
       /** Returns the comment set for this cookie or null if the
-       *  cookie comment is not set. */
+       *  cookie comment is not set.
+    @return The comment set for this cookie or null if the cookie comment is not set.
+ */
       const char* getComment() const { return comment; }
 
-      /** Returns the domain name set for this cookie. */
+      /** Returns the domain name set for this cookie.
+    @return The domain name set for this cookie.
+ */
       const char* getDomain()  const { return domain; }
 
-      /** Returns the maximum age of the cookie, specified in seconds;
-       * by default, 0 indicating the cookie will persist until browser
-       * shutdown. */
+      /** Read the stored cookie lifetime in seconds.
+       * @return The configured lifetime. Zero is the default for a newly created
+       * session cookie, but also the value after setMaxAge(0) requests deletion;
+       * this getter alone does not distinguish those states.
+       * @sa setMaxAge
+       */
       BaTime      getMaxAge()  const { return maxAge; }
 
-      /** Returns the name of the cookie. */
+      /** Returns the name of the cookie.
+    @return The name of the cookie.
+ */
       const char* getName()    const { return name; }
 
       /** Returns the path on the server to which the browser returns this
-       * cookie. */
+       * cookie.
+    @return The path on the server to which the browser returns this cookie.
+ */
       const char* getPath()    const { return path; }
 
-      /** Returns true if the browser is sending cookies only over a secure
-       * protocol, or false if the browser can send cookies using
-       * any protocol. */
+      /** Read the cookie's Secure flag.
+       * @return True if the cookie is configured for secure transport only; false
+       * otherwise. This reports the attribute, not the security of the current request.
+       */
       bool        getSecure()  const { return secure ? true : false; }
 
       /** Return the HttpOnly attribute.
           \sa setHttpOnly.
-      */
+    @return The HttpOnly attribute.
+ */
       bool        getHttpOnly()  const { return httpOnly ? true : false; }
 
-      /** Returns the value of the cookie. */
+      /** Returns the value of the cookie.
+    @return The value of the cookie.
+ */
       const char* getValue()   const { return value; }
 
       /** Specifies a comment that describes a cookie's purpose.
        * Returns 0 on success or E_MALLOC on allocation failure, preserving
        * the old comment on failure. NULL clears the comment. @param purpose Purpose text as a NUL-terminated string, or NULL to clear.
-      */
+    @return 0 on success, or E_MALLOC on allocation failure. The old comment is preserved on failure.
+ */
       int setComment(const char* purpose);
 
       /** Specifies the domain within which this cookie should be presented.
        * Returns 0 on success or E_MALLOC on allocation failure, preserving
        * the old domain on failure. NULL clears the domain. @param pattern Domain attribute as a NUL-terminated string, or NULL to clear.
-      */
+    @return 0 on success, or E_MALLOC on allocation failure. The old domain is preserved on failure.
+ */
       int setDomain(const char* pattern);
 
       /** Sets the maximum age of the cookie in seconds.
@@ -659,7 +684,8 @@ typedef struct HttpCookie
       /** Set the cookie path.
        * Returns 0 on success or E_MALLOC on allocation failure, preserving
        * the old path on failure. NULL clears the path. @param uri Path attribute as a NUL-terminated string, or NULL to clear.
-      */
+    @return 0 on success, or E_MALLOC on allocation failure. The old path is preserved on failure.
+ */
       int setPath(const char* uri);
 
       /** Inform the browser whether the cookie should be
@@ -683,7 +709,8 @@ typedef struct HttpCookie
       /** Assigns a new value to a cookie after the cookie is created.
        * Returns 0 on success or E_MALLOC on allocation failure, preserving
        * the old value on failure. NULL clears the value. @param newValue Cookie value as a NUL-terminated string, or NULL to clear.
-      */
+    @return 0 on success, or E_MALLOC on allocation failure. The old value is preserved on failure.
+ */
       int setValue(const char* newValue);
 
 #if 0
@@ -827,33 +854,37 @@ inline void HttpCookie::activate() {
 typedef struct HttpStdHeaders
 {
 #ifdef __cplusplus
-      /** Returns the connection type for HTTP 1.1 connections,
-          returns "Close" or "Keep-Alive.
+      /** Read the request's Connection header.
+       * @return Borrowed header text, or NULL when absent. The text may contain
+       * multiple tokens and is not limited to "close" or "keep-alive".
+       * This getter does not report the connection's current keep-alive state.
        */
       const char* getConnection();
 
-      /** Returns the host header.
-
-         The host header includes the port number if the request is of
-         the form http://myserver.com:8080
-
-          \sa getDomain
+      /** Read the request's Host header.
+       * @return Borrowed header text, including an explicit port if supplied, or
+       * NULL when absent. Retain the request while using the returned pointer.
+       * @sa getDomain
        */
       const char* getHost();
 
-      /** Returns the host header without any port number.
-          Typically used with name-based virtual hosting.
-          The returned value is always lower-case.
-          \sa getHost.
-      */
+      /** Read the lower-case Host value without its port.
+       * IPv6 brackets are retained. The normalized value is allocated lazily.
+       * @return Request-owned text, or NULL if Host is absent or allocation fails.
+       * @sa getHost
+       */
       const char* getDomain();
 
-      /** Returns the content type, for example:
-          "application/x-www-form-urlencoded".
+      /** Read the request's Content-Type header.
+       * @return Borrowed header text, including any parameters, or NULL when absent.
+       * For example, "application/x-www-form-urlencoded".
        */
       const char* getContentType();
 
-      /** Returns the content length if request contains a body.
+      /** Read the request's declared Content-Length in bytes.
+       * @return The parsed length, or zero when no Content-Length was supplied.
+       * A chunked request can contain a body while this getter returns zero; use
+       * the body-reading APIs to handle framing and completion.
        */
       SBaFileSize getContentLength();
 #endif
@@ -951,56 +982,20 @@ typedef struct HttpRequest
 {
 #ifdef __cplusplus
 
-      /** Checks the HTTP method type and sends a response message if
-          condition met.
-
-          RFC 2616 specifies that each resource in a web-server can
-          have its own set of allowed HTTP methods.
-
-          The checkMethod method checks if the requested HTTP method
-          is one of the allowed HTTP methods as specified in the
-          argument list to checkMethod. The function returns 0 if the
-          condition is met; otherwise, status code is set to 405 and a
-          nonzero value is returned.
-
-          The method checkMethod also checks if the requested HTTP
-          method is OPTIONS. If the requested HTTP method is OPTIONS, a
-          nonzero value is returned.
-
-          A response message is automatically sent to the client when
-          method checkMethod returns a nonzero number; thus, the
-          service function should not send a response message.
-
-          This method is typically used by HttpDir and HttpPage
-          objects prior to sending a response message. For example, a
-          service function that only accepts GET requests would do the
-          following:
-
-
-          HttpMethod_Options and HttpMethod_Head should not be added
-          to the argument list since the two HTTP methods are added
-          automatically if 'addDefault' is TRUE. It is assumed that a
-          resource always can accept HEAD and OPTIONS. The OPTIONS
-          request is handled automatically by checkMethod, and HEAD is
-          automatically handled by the HttpResponse write methods;
-          thus, the two methods are transparent to users.
-
-          A CSP page should not use the checkMethod method as the
-          auto generated CSP code automatically sets the HttpMethod_Get,
-          HttpMethod_Post, HttpMethod_Head and HttpMethod_Options.
-
-          <a href="http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html#sec9.2">
-          Se RFC2616 section 9.2</a> for more information.
-
-          \param resp The response object.
-
-          \param methods The methods added. Separate multiple methods
-          by using character |.
-
-          \param addDefault set to true if you would like to add
-          OPTIONS and HEAD.
-
-          \sa HttpRequest::getMethodType
+      /** Check allowed HTTP methods on the original request.
+       * Call before writing the response. Included or forwarded requests bypass
+       * this check. A return of 1 means an automatic OPTIONS or 405 response has
+       * been prepared; do not generate another response. CSP-generated handlers
+       * already configure their supported methods.
+       * 
+       * @param resp Required response associated with this request.
+       * @param methods Allowed HttpMethod bit flags, combined with bitwise OR.
+       * @param addDefault Add HEAD and automatic OPTIONS handling when true (the
+       * C++ default). HEAD body suppression is handled by the response writer.
+       * @return 0 when the method is accepted or the request is an include/forward;
+       * 1 after preparing OPTIONS or 405 output; a negative error for invalid
+       * flags, already committed output, or failure preparing the response.
+       * @sa HttpRequest::getMethodType HttpResponse::initial
        */
       int checkMethods(HttpResponse* resp, U32 methods, bool addDefault=TRUE);
 
@@ -1022,11 +1017,14 @@ typedef struct HttpRequest
       BaBool checkTime(struct HttpResponse* resp, BaTime time);
 
       /** Returns the authenticated user or NULL if user is not authenticated.
-       */
+    @return The authenticated user or NULL if user is not authenticated.
+ */
       AuthenticatedUser* getAuthenticatedUser();
 
       /** Returns the pathname. The pathname will be "/myDir/index.html" if
-       * the URL is "http://myServer.net/myDir/index.html" */
+       * the URL is "http://myServer.net/myDir/index.html"
+    @return The pathname.
+ */
       const char* getRequestURI();
 
       /** Reconstructs the URL the client used to make the
@@ -1049,10 +1047,13 @@ typedef struct HttpRequest
 
       /** Returns an object containing standard HTTP headers.
           \sa HttpStdHeaders HttpRequest::getHeaderValue
-       */
+    @return An object containing standard HTTP headers.
+ */
       HttpStdHeaders* getStdHeaders();
 
-      /** Returns the HTTP version as a string, normally "1.1" */
+      /** Returns the HTTP version as a string, normally "1.1"
+    @return The HTTP version as a string, normally "1.1".
+ */
       const char* getVersion();
 
       /** Returns the value of the specified request header.
@@ -1061,30 +1062,36 @@ typedef struct HttpRequest
           You can use this method with any request header.
           \param name a string specifying the header name.
           \sa HttpRequest::getStdHeaders HttpStdHeaders
-       */
+    @return The value of the specified request header.
+ */
       const char* getHeaderValue(const char* name);
 
       /** Returns the requested cookie or NULL if no cookie matches the name.
        * \param name the name of the cookie.
-       */
+    @return The requested cookie or NULL if no cookie matches the name.
+ */
       HttpCookie* getCookie(const char* name);
 
       /** Returns the method type.
           Common method types are HttpMethod_Get, HttpMethod_Post and
           HttpMethod_Head.
           \sa HttpRequest::getMethod HttpRequest::checkMethods
-       */
+    @return The method type.
+ */
       HttpMethod getMethodType();
 
       /** Returns a string representation of the value returned by
           HttpRequest::getMethodType
           \sa HttpRequest::getMethodType
-       */
+    @return A string representation of the value returned by  HttpRequest::getMethodType .
+ */
       const char* getMethod();
 
       /** Returns a string representation of the argument.
+          @param method HTTP method enum value to convert.
           \sa HttpRequest::getMethodType
-       */
+    @return A string representation of the argument.
+ */
       static const char* getMethod(HttpMethod method);
 
       /** Returns the value of a request parameter as a <i>const char*</i>
@@ -1098,7 +1105,8 @@ typedef struct HttpRequest
           @param paramName Required NUL-terminated, case-sensitive name.
           Returned values are borrowed for the request lifetime.
           \sa HttpParameterIterator HttpParameter
-       */
+    @return The value of a request parameter as a  const char*  or null if the parameter does not exist.
+ */
       const char* getParameter(const char* paramName);
 
       /** Validate and send an HTTP/1.1 WebSocket version-13 handshake.
@@ -1175,26 +1183,30 @@ typedef struct HttpRequest
         }
         \endcode
        */
-#ifndef NO_HTTP_SESSION
       HttpSession* getSession(BaBool create=true);
-#endif
       /** Returns the connection object associated with this request
-       */
+    @return The connection object associated with this request.
+ */
       HttpConnection* getConnection();
 
       /** Returns the web server object.
-       */
+    @return The web server object.
+ */
       HttpServer* getServer();
 
       /** Returns the HttpResponse object.
-       */
+    @return The  HttpResponse  object.
+ */
       HttpResponse* getResponse();
 
       /** Get the HttpCommand object
-       */
+    @return The  HttpCommand  object.
+ */
       HttpCommand* getCommand();
 
-      /** Get the internal rec buffer */
+      /** Get the internal rec buffer
+    @return The internal rec buffer.
+ */
       HttpInData* getBuffer();
 
 
@@ -1286,7 +1298,6 @@ BA_API HttpHeader* HttpRequest_getHeaders(HttpRequest* o, int* len);
 BA_API int HttpRequest_wsUpgrade(HttpRequest* o);
 BA_API BaBool HttpRequest_enableKeepAlive(HttpRequest* o);
 BA_API int HttpRequest_pushBackData(HttpRequest* o);
-#ifndef NO_HTTP_SESSION
 /** @copydoc HttpRequest::getSession
     @param o Required live request.
  */
@@ -1294,7 +1305,6 @@ BA_API struct HttpSession* HttpRequest_getSession(
    HttpRequest* o, BaBool create);
 BA_API struct HttpSession* HttpRequest_session(
    HttpRequest* o, const char* val, size_t len, int set);
-#endif
 #ifdef __cplusplus
 }
 
@@ -1338,10 +1348,8 @@ inline int HttpRequest::setUserObj(void* userObj, bool overwrite) {
    return HttpRequest_setUserObj(this, userObj, overwrite); }
 inline void* HttpRequest::getUserObj() {
    return HttpRequest_getUserObj(this); }
-#ifndef NO_HTTP_SESSION
 inline HttpSession* HttpRequest::getSession(BaBool create) {
    return HttpRequest_getSession(this, create); }
-#endif
 inline bool HttpParameterIterator::hasMoreElements() {
    return HttpParameterIterator_hasMoreElements(this); }
 inline HttpInData* HttpRequest::getBuffer() {
@@ -1381,7 +1389,8 @@ typedef struct HttpResponse
 #ifdef __cplusplus
 
       /** Returns number of bytes sent thus far.
-       */
+    @return Number of bytes sent thus far.
+ */
       U32 byteCount();
 
 
@@ -1389,7 +1398,8 @@ typedef struct HttpResponse
        * \param name the name of the cookie.
        * Returns an existing cookie with the same name, or a new cookie.
        * Returns NULL if the cookie or its name cannot be allocated.
-       */
+    @return The existing or newly allocated cookie, or NULL if cookie/name allocation fails. The response owns the returned cookie.
+ */
       HttpCookie* createCookie(const char* name);
 
       /** Searches the internal response header database for a header
@@ -1401,7 +1411,9 @@ typedef struct HttpResponse
           servlet forwards the request to another servlet. See methods
           HttpResponse::forward and HttpResponse::include for more
           information.
-      */
+    @param name Required NUL-terminated response-header name.
+    @return The borrowed header value, or NULL if the header is absent.
+ */
       const char* containsHeader(const char* name);
 
       /** Encodes the specified URL into an absolute URL, or if
@@ -1425,11 +1437,14 @@ typedef struct HttpResponse
       */
       const char* encodeRedirectURLWithParam(const char* pathName);
 
-      /** Encodes an absolute or relative URL, or if encoding is not needed,
-       * returns the URL unchanged.
-       *  This method escapes all symbols that cannot be in a URL.
-       *  The method differs from encodeRedirectURL in that it only escapes
-       *  non-URL compatible symbols.
+      /** Escape a URL path into a response-owned buffer.
+       * The implementation escapes the portion before the first '?' and removes
+       * parent-directory segments there. It copies the query string unchanged;
+       * encode query parameter values separately. It does not resolve a relative
+       * path against the request URL as encodeRedirectURL does.
+       * @param path Required NUL-terminated absolute or relative URL.
+       * @return Response-owned text, or NULL on allocation failure. Valid until the
+       * next successful encodeUrl call or request completion. Do not free it.
        */
       const char* encodeUrl(const char* path);
 
@@ -1490,10 +1505,12 @@ typedef struct HttpResponse
 
 
       /** Get the HttpRequest object
-       */
+    @return The  HttpRequest  object.
+ */
       HttpRequest* getRequest();
 
-      /** Get the HttpCommand object
+      /** Get the HttpCommand object.
+           @return Borrowed command, valid for the current request.
        */
       HttpCommand* getCommand();
 
@@ -1513,22 +1530,26 @@ typedef struct HttpResponse
           \param path is the path to the resource to include. The path is
           assumed to be an absolute path value on the server if the string
           starts with "/". The path is otherwise assumed to be a relative path.
-      */
+    @return The delegated handler result, or an error such as E_TOO_MANY_INCLUDES. See HttpResponse_incOrForward().
+ */
       int include(const char* path);
 
       /** Returns a boolean indicating if the response has been committed.
           A committed response has already had its status code and headers
           written.
-      */
+    @return A boolean indicating if the response has been committed.
+ */
       bool committed() const;
 
       /** Returns true if this is a forward request from another
        * servlet or CSP file.
-       */
+    @return True if this is a forward request from another servlet or CSP file.
+ */
       bool isForward() const;
 
       /** Returns true if this is an include from another servlet or CSP file.
-       */
+    @return True if this is an include from another servlet or CSP file.
+ */
       bool isInclude() const;
 
       /** Returns true if this is the initial page.
@@ -1538,13 +1559,15 @@ typedef struct HttpResponse
 
       /** Removes all HTTP headers. This method returns a non-zero
           value if the response has been committed.
-      */
+    @return 0 on success, or E_IS_COMMITTED if headers have already been sent.
+ */
       int resetHeaders();
 
       /** Clears the content of the underlying buffer in the response without
           clearing headers or status code. If the response has been committed,
           this method returns a non-zero value.
-      */
+    @return 0 on success, or E_IS_COMMITTED if headers have already been sent.
+ */
       int resetBuffer();
 
       /** Sends an error response as a simple HTML page to the client
@@ -1557,7 +1580,8 @@ typedef struct HttpResponse
           \endcode
 
           \param eCode the error code.
-       */
+    @return 0 on success; otherwise a header/output error or E_IS_COMMITTED. The response may already be partially written on an output failure.
+ */
       int sendError(int eCode);
 
       /** Sends an error response as a simple HTML page to the client
@@ -1572,21 +1596,24 @@ typedef struct HttpResponse
           \param eCode The HTTP error code.
 
           \param msg The error message.
-       */
+    @return 0 on success; otherwise a header/output error or E_IS_COMMITTED. The response may already be partially written on an output failure.
+ */
       int sendError(int eCode, const char* msg);
 
       /** Sends the data formatted into the HttpResponse buffer as an
           error message to the client. The mime type is set to
           'text/html'.
           \param eCode The HTTP error code.
-      */
+    @return 0 on success, or a header/output error. Call before the response is committed.
+ */
       int sendBufAsError(int eCode);
 
       /** Sends the data formatted into the HttpResponse buffer as an
           error message to the client. The mime type is set to
           'text/plain'.
           \param eCode The HTTP error code.
-      */
+    @return 0 on success, or a header/output error, including E_IS_COMMITTED if already committed.
+ */
       int sendBufAsTxtError(int eCode);
 
 
@@ -1595,7 +1622,8 @@ typedef struct HttpResponse
           is sent as plain text to the client.
           \param eCode The HTTP error code.
           \param fmt See BufPrint::printf.
-      */
+    @return 0 on success, or a formatting/output error. A nonzero result terminates the connection.
+ */
       int fmtError(int eCode, const char* fmt, ...);
 
       /** Sends a temporary redirect (302) response to the client
@@ -1660,7 +1688,8 @@ typedef struct HttpResponse
           setting its value.  \param name the name of the header to
           set.  \param time the assigned time value in number of
           seconds elapsed since midnight (00:00:00), January 1, 1970.
-      */
+    @return 0 when the formatted header is stored, or E_MALLOC on header-storage allocation failure.
+ */
       int setDateHeader(const char* name, BaTime time);
 
       /** Sets a
@@ -1688,7 +1717,8 @@ typedef struct HttpResponse
       sending the response after this failure.
       \param replace set to false if you do not want to overwrite any
       previous value, if any.
-      */
+    @return 0 on success; E_INVALID_PARAM for an empty name, E_IS_COMMITTED after commitment, or a storage/output error. Content-Length updates can initialize the body writer.
+ */
       int setHeader(const char* name, const char* value, bool replace=true);
 
       /** Sets header "Cache-Control: max-age=seconds".
@@ -1797,7 +1827,8 @@ typedef struct HttpResponse
          \param useBuffering set this to true if the internal HttpResponse
          object should buffer the data before sending it to the client.
          The buffer will be automatically flushed when full.
-       */
+    @return The selected buffer or connection writer result; 0 on success or a nonzero output/initialization error.
+ */
       int write(const char* data, int useBuffering=TRUE);
 
       /** Used when sending raw data to the client.
@@ -1817,7 +1848,8 @@ typedef struct HttpResponse
           "Cache-Control", "No-Cache".
 
           This method is automatically inserted by the CSP/JSSP compiler.
-      */
+    @return 0 on success (also for an ignored include), E_IS_COMMITTED after commitment, or a header-storage error.
+ */
       int setDefaultHeaders();
 
       /** This is an advanced function that makes it possible to
@@ -1886,7 +1918,6 @@ BA_API HttpCookie* HttpResponse_createCookie(
    struct HttpResponse* o,const char* name);
 /** @copydoc HttpResponse::containsHeader
     @param o Required live response.
-    @param name Required NUL-terminated header name; comparison is case-insensitive.
  */
 BA_API const char* HttpResponse_containsHeader(
    HttpResponse* o, const char* name);
@@ -1905,9 +1936,6 @@ BA_API const char* HttpResponse_encodeRedirectURLWithParamOrSessionURL(
    HttpResponse_encodeRedirectURLWithParamOrSessionURL(o, path, TRUE)
 /** @copydoc HttpResponse::encodeUrl
     @param o Required live response.
-    @param path Required NUL-terminated URL path.
-    @return Borrowed encoded string or NULL on allocation/encoding failure;
-    valid until the next encodeUrl call or request completion.
  */
 BA_API const char* HttpResponse_encodeUrl(HttpResponse* o, const char* path);
 /** @copydoc HttpResponse::flush
@@ -2153,19 +2181,24 @@ typedef struct HttpCommand
 #ifdef __cplusplus
 
       /** Get the request object.
-       */
+    @return The request object.
+ */
       HttpRequest* getRequest();
 
       /** Get the response object.
-       */
+    @return The response object.
+ */
       HttpResponse* getResponse();
 
       /** Get the current connection object that the HttpCommand instance
           is bound with.
-      */
+    @return The current connection object that the  HttpCommand  instance is bound with.
+ */
       struct HttpConnection* getConnection();
 
-      /** Get the web-server object */
+      /** Get the web-server object
+    @return The web-server object.
+ */
       struct HttpServer* getServer();
 
       HttpCommand() {}
@@ -2199,7 +2232,6 @@ inline struct HttpServer* HttpCommand::getServer() {
 #endif
 
 
-#ifndef NO_HTTP_SESSION
 
 #ifndef __DOXYGEN__
 struct HttpSessionAttribute;
@@ -2256,7 +2288,8 @@ typedef struct HttpSessionAttribute
                            HttpSessionAttribute_Destructor terminate);
 
       /** Get the session object.
-       */
+    @return The session object.
+ */
       HttpSession* getSession();
 #endif
       struct HttpSessionAttribute* next;
@@ -2337,21 +2370,26 @@ typedef struct HttpSession
 
       /** Returns the time when this session was created, measured in seconds
        *  since midnight January 1, 1970 GMT.
-       */
+    @return The time when this session was created, measured in seconds since midnight January 1, 1970 GMT.
+ */
       BaTime getCreationTime();
 
       /** Returns the last time the client sent a request associated with this
        * session, as the number of seconds since midnight January 1, 1970 GMT,
        * and marked by the time the container received the request.
-       */
+    @return The last time the client sent a request associated with this session, as the number of seconds since midnight January 1, 1970 GMT, and marked by the time the container received the request.
+ */
       BaTime getLastAccessedTime();
 
       /** Returns the maximum time interval, in seconds, that the session
        * container will keep this session open between client accesses.
-       */
+    @return The maximum time interval, in seconds, that the session container will keep this session open between client accesses.
+ */
       BaTime getMaxInactiveInterval();
 
-      /** Get the server object */
+      /** Get the server object
+    @return The server object.
+ */
       HttpServer* getServer();
 
       /** Removes the object bound with the specified name from this session.
@@ -2394,15 +2432,18 @@ typedef struct HttpSession
 
       /** Returns a unique identifier assigned to this session.
        * See HttpServer::getSession for more information.
-       */
+    @return A unique identifier assigned to this session.
+ */
       U32 getId();
 
       /** Returns the AuthenticatedUser if user is authenticated.
-       */
+    @return The  AuthenticatedUser  if user is authenticated.
+ */
       AuthenticatedUser* getAuthenticatedUser();
 
       /** Get the session usage counter
-       */
+    @return The session usage counter.
+ */
       U32 getUseCounter();
 
 
@@ -2545,6 +2586,7 @@ typedef struct HttpSessionContainer
           HttpServerConfig::setMaxSessions for default value.
           See The <a href="../../authentication.html">
           authentication classes</a> for security considerations.
+           @param max Maximum number of sessions retained by this container.
        */
       void setMaxSessions(int max);
    private:
@@ -2574,7 +2616,6 @@ inline void HttpSessionContainer::setMaxSessions(int max) {
    HttpSessionContainer_setMaxSessions(this, max); }
 #endif
 
-#endif /* NO_HTTP_SESSION */
 
 
 /** The HttpPage service function.
@@ -2676,22 +2717,27 @@ typedef struct HttpPage
       ~HttpPage();
 
       /** Returns the page name.
-       */
+    @return The page name.
+ */
       const char* getName() const { return name; }
 
       /** The virtual service function (C callback function) is
           normally run by the parent directory when delegating the
           request to the page service method.
+          @param request Current request, or NULL for the cleanup notification.
+          @param response Associated response, or NULL during cleanup.
        */
       void service(HttpRequest* request, HttpResponse* response);
 
       /** Returns true if this page node is installed into a
        * parent directory.
-       */
+    @return True if this page node is installed into a parent directory.
+ */
       bool isLinked();
 
       /** Unlinks/removes the page from the parent directory.
-       */
+    @return 0 when unlinked, or -1 when the page is not linked. The page is not destroyed.
+ */
       int unlink();
 #endif
       HttpPageNode super; /* As if inherited */
@@ -2705,6 +2751,7 @@ extern "C" {
 void
 /** @copydoc HttpPage::HttpPage(HttpPage_Service,const char*)
     @param o Required storage to initialize.
+    @return No value.
  */
 BA_API HttpPage_constructor(
    HttpPage* o, HttpPage_Service service, const char* name);
@@ -2827,25 +2874,30 @@ typedef struct HttpDir
       int insertPage(HttpPage* page);
 
       /** Returns the first page.
-       */
+    @return The first page.
+ */
       HttpPage* getFirstPage();
 
       /** Returns the first sub-directory.
-       */
+    @return The first sub-directory.
+ */
       HttpDir* getFirstDir();
 
       /** Returns the first directory with the name given or NULL if not found.
        @param name Required NUL-terminated exact, case-sensitive child name. Result is borrowed.
-      */
+    @return The first directory with the name given or NULL if not found.
+ */
       HttpDir* getDir(const char* name);
 
       /** Returns the page with the name given or NULL if not found.
        @param name Required NUL-terminated exact, case-sensitive page name. Result is borrowed.
-      */
+    @return The page with the name given or NULL if not found.
+ */
       HttpPage* getPage(const char* name);
 
       /** Returns the next dir in the parent list. (next sibling)
-       */
+    @return The next dir in the parent list.
+ */
       HttpDir* getNext();
 
       /** Searches for a page in this directory node.
@@ -2890,11 +2942,13 @@ typedef struct HttpDir
       HttpDir* createOrGet(const char* name);
 
       /** Returns the directory name.
-       */
+    @return The directory name.
+ */
       const char* getName() const { return name; }
 
       /** Returns the parent directory or NULL if no parent.
-       */
+    @return The parent directory or NULL if no parent.
+ */
       HttpDir* getParent() const { return parent; }
 
       /** Makes an absolute path based on where the HttpDir instance is
@@ -2960,12 +3014,14 @@ typedef struct HttpDir
 
       /** Returns true if this directory node is installed into a
        * parent directory.
-       */
+    @return True if this directory node is installed into a parent directory.
+ */
       bool isLinked();
 
       /** Unlinks/removes the directory from the parent directory.
           Returns 0 when unlinked, -1 if it had no parent. Does not destroy/free it.
-       */
+    @return 0 when unlinked, or -1 when it has no parent. The directory is not destroyed.
+ */
       int unlink();
 
       /** Set the optional authenticator and optional AuthorizerIntf.
@@ -2996,7 +3052,7 @@ typedef struct HttpDir
           
       \returns true if:
       \li Both authenticator and authorizer are NULL.
-      \li This is an include or forward request, or NO_HTTP_SESSION is configured.
+      \li This is an include or forward request.
       \li The user is authenticated and the realm argument is NULL.
       \li The user is authenticated and authorized.
       */
@@ -3388,7 +3444,21 @@ typedef DoubleList HttpLinkConList;
 /* Used by LSP plugin */
 typedef void (*LspOnTerminateRequest)(struct LHttpCommand* lcmd);
 
-/** The Web Server
+/** Route and process HTTP requests using a borrowed dispatcher.
+ *
+ * Create the port mutex and SoDisp first, optionally initialize HttpServerConfig,
+ * and then construct the server. Install routes and listeners before dispatching
+ * requests. The server borrows the dispatcher for its lifetime; configuration
+ * is consumed during construction. See the constructor for mutation and failure
+ * behavior.
+ *
+ * Calls from application threads must follow \ref DispatcherMutext. Stop
+ * incoming work and worker activity before destroying the server. Its destructor
+ * cleans owned commands, connections, sessions, and installed routes; retain
+ * callback dependencies through cleanup and release borrowed port objects later.
+ *
+ * C entry point: HttpServer_constructor(). See \ref NativeStart for a complete
+ * supplied project and the <a href="../../introduction.html#oo_c">C/C++ mapping</a>.
  */
 typedef struct HttpServer
 {
@@ -3430,31 +3500,30 @@ typedef struct HttpServer
        */
       int insertRootDir(HttpDir* dir);
 
-      /** Insert a directory node into the virtual file system.  Here
-          are some examples if you insert a directory node with a
-          page, say "start.html":
-
-<table border="1" style="text-align: left">
-<tr><th>virtualDirRootPath</th> <th>HttpDir name</th>
-<th>URL</th></tr> <tr><td>"D1/D2"</td><td>"D3"</td><td>http://{IP
-address}/D1/D2/D3/start.html</td></tr>
-<tr><td>"D1"</td><td>"D3"</td><td>http://{IP
-address}/D1/D3/start.html</td></tr> <tr><td>NULL or
-"/"</td><td>"D3"</td><td>http://{IP address}/D3/start.html</td></tr>
-<tr><td>NULL or "/"</td><td>NULL</td><td>http://{IP
-address}/start.html <b>(*)</b></td></tr>
-<tr><td>"D1"</td><td>NULL</td><td>Invalid</td></tr>
-</table>
-
-          (*) Identical to HttpServer::insertRootDir
-
-          \param virtualDirRootPath start path in the virtual file system.
-          \param dir the directory node to insert.
-      dir must be initialized and unlinked. Missing intermediate directories
-          are allocated; they can remain if a later allocation fails.
-          @return 0 on success, E_ALREADY_INSERTED for linked input detected by
-          HttpDir_insertDir, or E_MALLOC when the parent path cannot be created.
-      */
+      /** Insert a directory node into the virtual file system.
+       * The following paths assume the directory contains a page named start.html.
+       * 
+       * <table border="1" style="text-align: left">
+       * <tr><th>virtualDirRootPath</th> <th>HttpDir name</th>
+       * <th>URL</th></tr> <tr><td>"D1/D2"</td><td>"D3"</td><td>http://{IP
+       * address}/D1/D2/D3/start.html</td></tr>
+       * <tr><td>"D1"</td><td>"D3"</td><td>http://{IP
+       * address}/D1/D3/start.html</td></tr> <tr><td>NULL or
+       * "/"</td><td>"D3"</td><td>http://{IP address}/D3/start.html</td></tr>
+       * <tr><td>NULL or "/"</td><td>NULL</td><td>http://{IP
+       * address}/start.html <b>(*)</b></td></tr>
+       * <tr><td>"D1"</td><td>NULL</td><td>Invalid</td></tr>
+       * </table>
+       * 
+       * (*) Identical to HttpServer::insertRootDir.
+       * 
+       * @param virtualDirRootPath Parent path; NULL, empty, or "/" installs a root.
+       * @param dir Required initialized and unlinked directory. Keep its borrowed
+       * dependencies alive through cleanup. Missing intermediate directories are
+       * allocated; they can remain if a later allocation fails.
+       * @return 0 on success, E_ALREADY_INSERTED for linkage detected by
+       * HttpDir_insertDir, or E_MALLOC when the parent path cannot be created.
+       */
       int insertDir(const char* virtualDirRootPath, HttpDir* dir);
 
       /** Insert and initialize a CSP Virtual Directory.
@@ -3506,34 +3575,41 @@ address}/start.html <b>(*)</b></td></tr>
 
       struct AuthUserList* getAuthUserList(const char* name);
 
-      /** Get the dispatcher mutex */
+      /** Get the dispatcher mutex
+    @return The dispatcher mutex.
+ */
       ThreadMutex* getMutex();
 
-      /** Returns the dispatcher object */
+      /** Returns the dispatcher object
+    @return The dispatcher object.
+ */
       SoDisp* getDispatcher();
 
       /** Returns the first root directory.
           Returns the first root directory or NULL if no root directory is
           installed.
-       */
+    @return The first root directory.
+ */
       HttpDir* getFirstRootDir();
 
       /** Get the HttpSessionContainer
-       */
+    @return The  HttpSessionContainer .
+ */
       HttpSessionContainer* getSessionContainer();
 
-#ifndef NO_HTTP_SESSION
       /** Returns the HttpSession associated with id or NULL if not found.
           See HttpSession::getId for more information.
+          @param id Session identifier returned by HttpSession::getId.
+          Lookup does not acquire an extra session reference.
 
           It can be potentially dangerous to use this method in a
           multithread enabled web-server. See the explanation in the
           HttpSession for more information.
 
           \sa HttpSession::incrRefCntr
-       */
+    @return The  HttpSession  associated with id or NULL if not found.
+ */
       HttpSession* getSession(U32 id);
-#endif
 
       /** Set a more user friendly 404 page. Have you ever noticed
           that some sites give you a nice looking page when you
@@ -3547,7 +3623,9 @@ address}/start.html <b>(*)</b></td></tr>
       */
       void set404Page(const char* page404);
 
-      /** Returns a pointer to the current 404 page, if any. */
+      /** Returns a pointer to the current 404 page, if any.
+    @return A pointer to the current 404 page, if any.
+ */
       const char* get404Page();
 
       int setUserObj(void* userObj, bool overwrite=false);
@@ -3603,9 +3681,7 @@ address}/start.html <b>(*)</b></td></tr>
       int commandPoolSize;
       U16 noOfConnections;
       S16 maxHttpRequestLen;
-#ifndef NO_HTTP_SESSION
       HttpSessionContainer sessionContainer;
-#endif
 } HttpServer;
 
 
@@ -3635,8 +3711,6 @@ BA_API void HttpServer_destructor(HttpServer* o);
 BA_API int HttpServer_insertRootDir(HttpServer* o, HttpDir* dir);
 /** @copydoc HttpServer::insertDir
     @param o Required initialized HttpServer instance.
-    @param virtualDirRootPath NUL-terminated parent path; NULL/empty/slash selects root.
-    @param dir Required initialized, unlinked directory.
  */
 BA_API int HttpServer_insertDir(HttpServer* o,
                                 const char* virtualDirRootPath,
@@ -3664,14 +3738,10 @@ void HttpServer_addCon2ConnectedList(HttpServer* o, HttpConnection* con);
 void HttpServer_doLingeringClose(
    HttpServer* o, HttpConnection* con, BaFileSize contLen);
 
-#ifndef NO_HTTP_SESSION
 /** @copydoc HttpServer::getSession
     @param o Required initialized HttpServer instance.
-    @param id Session identifier returned by HttpSession_getId;
-    lookup does not acquire an extra session reference.
  */
 BA_API HttpSession* HttpServer_getSession(HttpServer* o, U32 id);
-#endif
 BA_API HttpConnection* HttpServer_getFreeCon(HttpServer* o);
 void HttpServer_returnFreeCon(HttpServer* o, HttpConnection* con);
 BA_API void HttpServer_installNewCon(HttpServer* o, HttpConnection* con);
@@ -3714,7 +3784,6 @@ inline HttpDir* HttpServer::getFirstRootDir() {
    return HttpServer_getFirstRootDir(this); }
 inline HttpSessionContainer* HttpServer::getSessionContainer() {
    return HttpServer_getSessionContainer(this); }
-#ifndef NO_HTTP_SESSION
 inline HttpSession* HttpServer::getSession(U32 id) {
    return HttpServer_getSession(this, id); }
 inline void HttpServer::initStatic(void) {
@@ -3730,7 +3799,6 @@ inline int HttpServer::setUserObj(void* userObj, bool overwrite) {
 inline const char* HttpServer::getStatusCode(int code) {
    return HttpServer_getStatusCode(code);
 }
-#endif
 
 
 inline HttpResponse* HttpRequest::getResponse() {
@@ -3751,10 +3819,9 @@ inline struct HttpServer* HttpConnection::getServer() {
 /** @} */ /* end of StdWebServer */
 
 /* Internal use */
-#ifdef NO_SHARKSSL
+#if !BA_ENABLE_SHARKSSL || SHARKSSL_PSA_CONSUMER
 
 #define SHARKSSL_MD5_HASH_LEN       16
-#define SHARKSSL_SHA1_HASH_LEN      20
 
 typedef struct SharkSslMd5Ctx
 {
@@ -3765,8 +3832,12 @@ typedef struct SharkSslMd5Ctx
 
 SHARKSSL_API void  SharkSslMd5Ctx_constructor(SharkSslMd5Ctx* ctx);
 SHARKSSL_API void  SharkSslMd5Ctx_append(SharkSslMd5Ctx* ctx, const U8* data, U32 len);
-SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx* ctx, U8 digest[]);
+SHARKSSL_API void  SharkSslMd5Ctx_finish(SharkSslMd5Ctx* ctx, U8 digest[SHARKSSL_MD5_HASH_LEN]);
 SHARKSSL_API int   sharkssl_md5(const U8*, U16, U8*); 
+#endif
+
+#if !BA_ENABLE_SHARKSSL || SHARKSSL_PSA_CONSUMER
+#define SHARKSSL_SHA1_HASH_LEN      20
 
 typedef struct SharkSslSha1Ctx
 {
@@ -3777,10 +3848,13 @@ typedef struct SharkSslSha1Ctx
 
 SHARKSSL_API void  SharkSslSha1Ctx_constructor(SharkSslSha1Ctx* ctx);
 SHARKSSL_API void  SharkSslSha1Ctx_append(SharkSslSha1Ctx* ctx, const U8* data, U32 len);
-SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[]);
-
+SHARKSSL_API void  SharkSslSha1Ctx_finish(SharkSslSha1Ctx*, U8 digest[SHARKSSL_SHA1_HASH_LEN]);
+#if SHARKSSL_PSA_CONSUMER
+SHARKSSL_API int sharkssl_sha1(const U8* data, U32 len, U8* digest);
+#endif
+#if !BA_ENABLE_SHARKSSL
 typedef void SharkSsl;
-
+#endif
 #endif
 
 #endif /* __httpServer_h */

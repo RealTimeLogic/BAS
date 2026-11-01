@@ -39,6 +39,34 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 
 /* Needed by 7.4.2 or newer. The code will crash if this is not set.
  */
@@ -76,7 +104,7 @@
 
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.

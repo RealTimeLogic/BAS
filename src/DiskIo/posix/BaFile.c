@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 5874 2026-08-25 14:55:54Z wini $
+ *   $Id: BaFile.c 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2006 - 2021
+ *   COPYRIGHT:  Real Time Logic, 2006 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -49,26 +49,7 @@ reference manual for information on the API's that are implemented in
 this file.
 */
 
-#if !defined(BA_VXWORKS) || _WRS_VXWORKS_MAJOR != 5
-#if !defined(__GLIBC__) || (__GLIBC__ < 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 23))
-
-/* Disabled for now, see:
-   https://womble.decadent.org.uk/readdir_r-advisory.html
-#define USE_READDIR_R
-*/
-
-
-#endif
-#endif
-
-#ifdef BA_FILESIZE64
-/* Enable 64 bit support */
-#ifndef _LARGEFILE64_SOURCE
-#define _LARGEFILE64_SOURCE
-#endif
-/* Convert standard functions to 64 bit version */
-#define _FILE_OFFSET_BITS 64
-#endif
+#include <BaConfigPosix.h>
 
 #include <BaDiskIo.h>
 #include <BaFile.h>
@@ -82,6 +63,11 @@ this file.
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
+
+#if defined(BA_POSIX) && BA_FILE_OFFSET_BITS == 64
+/* Catch feature-test settings supplied after system headers were loaded. */
+typedef char BaPosixFileOffsetSizeCheck[sizeof(off_t) >= 8 ? 1 : -1];
+#endif
 
 #ifdef __INTIME__
 /* Use 64 bit version */
@@ -261,13 +247,10 @@ typedef struct
    DirIntf super; /* Implements the abstract DirIntf class */
 
    DIR* dp;
-   struct dirent* ep; /* Current entry: readdir_r() */
+   struct dirent* ep; /* Current entry returned by readdir() */
    char* fname; /* current file name, ref to: ep->d_name */
    char* dname; /* directory name */
    int dnameLen;
-#ifdef USE_READDIR_R
-   char direntbuf[2048];
-#endif
 } DirIter;
 
 
@@ -276,13 +259,9 @@ DirIter_read(DirIntfPtr super)
 {
    DirIter* o = (DirIter*)super;
    int status;
-#ifdef USE_READDIR_R
-   status = readdir_r(o->dp,(struct dirent *)o->direntbuf,&o->ep);
-#else
    errno=0;
    o->ep = readdir(o->dp);
    status=errno;
-#endif
    if( ! status && o->ep)
    {
 #ifdef BA_VXWORKS
@@ -432,7 +411,11 @@ DiskRes_seek(ResIntfPtr super, BaFileSize offset)
 {
    DiskRes* o = (DiskRes*)super; /* upcast */
    int status;
+#if defined(BA_POSIX) && BA_FILE_OFFSET_BITS == 64
+   if(fseeko(o->fp, (off_t)offset, SEEK_SET))
+#else
    if(fseek(o->fp, offset, SEEK_SET))
+#endif
       setErrCode(&status, 0);
    else
       status=0;

@@ -43,7 +43,7 @@ ifeq (,$(wildcard $(BASRESDIR)/build))
 $(error $(BASRESDIR) not found. Set BASRESDIR to the https://github.com/RealTimeLogic/BAS-Resources checkout!)
 endif
 
-USE_OPCUA?=1
+BA_ENABLE_LUA_OPCUA?=1
 DEBUG?=0
 
 
@@ -62,7 +62,7 @@ RELEASE_CFLAGS=/O2 $(D)NDEBUG
 CFLAGS += /nologo /W3
 
 # Add required macros and Windows configuration.
-CFLAGS += $(D)B_LITTLE_ENDIAN $(D)_CRT_SECURE_NO_WARNINGS $(D)WIN32_LEAN_AND_MEAN=1 $(D)WIN32 $(D)_CONSOLE
+CFLAGS += $(D)BA_BYTE_ORDER=BA_BYTE_ORDER_LITTLE_ENDIAN $(D)_CRT_SECURE_NO_WARNINGS $(D)WIN32_LEAN_AND_MEAN=1 $(D)WIN32 $(D)_CONSOLE
 
 CFLAGS += $(I)inc $(I)inc/arch/Windows $(I)inc/arch/NET/Windows
 
@@ -89,7 +89,7 @@ endif
 CFLAGS += -fmerge-all-constants -Wall
 
 # Add required macros and enable large-file support
-CFLAGS += $(D)LUA_USE_LINUX $(D)BA_FILESIZE64
+CFLAGS += $(D)LUA_USE_LINUX $(D)BA_FILE_OFFSET_BITS=64
 
 CFLAGS += $(I)inc $(I)inc/arch/Posix
 ifdef EPOLL
@@ -102,12 +102,12 @@ endif
 
 VPATH = src src/arch/Posix src/arch/NET/$(SODISP) src/DiskIo/posix examples/MakoServer/src
 
-SOURCE = BAS.c ThreadLib.c SoDisp.c BaFile.c MakoMain.c
+SOURCE = BAS.c ThreadLib.c SoDisp.c BaFile.c MakoMain.c MakoPosixMain.c
 
 endif
 
 # Add common macros.
-CFLAGS += $(D)MAKO $(D)BAS_LOADED $(D)USE_EMBEDDED_ZIP=0
+CFLAGS += $(D)MAKO $(D)BA_ENABLE_MDNS=1 $(D)BA_ENABLE_MDNS_LUA=1 $(D)MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0
 
 # The responder core is in BAS.c; its socket adapter is platform-specific.
 SOURCE += BamDNS-Sock.c
@@ -120,13 +120,13 @@ CFLAGS += $(RELEASE_CFLAGS)
 endif
 
 # Add features.
-CFLAGS += $(D)USE_LUAINTF=1
-CFLAGS += $(D)USE_DBGMON=1
+CFLAGS += $(D)MAKO_ENABLE_LUA_MODULE_INTERFACE=1
+CFLAGS += $(D)BA_ENABLE_LUA_DEBUGGER=1
 
-ifeq ($(USE_OPCUA),1)
-CFLAGS += $(D)USE_OPCUA=1
+ifeq ($(BA_ENABLE_LUA_OPCUA),1)
+CFLAGS += $(D)BA_ENABLE_LUA_OPCUA=1
 else
-CFLAGS += $(D)USE_OPCUA=0
+CFLAGS += $(D)BA_ENABLE_LUA_OPCUA=0
 endif
 
 #Do we have SQLite?
@@ -135,14 +135,14 @@ $(info Including SQLite)
 SOURCE += ls_sqlite3.c luasql.c sqlite3.c
 else
 $(info Excluding SQLite)
-CFLAGS += $(D)USE_SQL=0
+CFLAGS += $(D)MAKO_SQL_BACKEND=MAKO_SQL_NONE
 endif
 
 #Do we have LPEG?
 #git clone https://github.com/roberto-ieru/LPeg.git
 ifneq (,$(wildcard $(LPEGDIR)/lpcode.c))
 $(info Including LPEG)
-CFLAGS += $(D)USE_LPEG=1
+CFLAGS += $(D)BA_ENABLE_LUA_LPEG=1
 SOURCE += $(notdir $(wildcard $(LPEGDIR)/*.c))
 VPATH += $(LPEGDIR)
 else
@@ -153,7 +153,7 @@ endif
 #https://github.com/starwing/lua-protobuf
 ifneq (,$(wildcard $(PROTOBUFDIR)/pb.c))
 $(info Including Lua Protobuf)
-CFLAGS += $(D)USE_PROTOBUF=1
+CFLAGS += $(D)BA_ENABLE_LUA_PROTOBUF=1
 SOURCE += pb.c
 VPATH += $(PROTOBUFDIR)
 else
@@ -164,7 +164,7 @@ endif
 #https://github.com/spc476/CBOR
 ifneq (,$(wildcard $(CBORDIR)/cbor_c.c))
 $(info Including CBOR)
-CFLAGS += $(D)USE_CBOR=1
+CFLAGS += $(D)BA_ENABLE_LUA_CBOR=1
 SOURCE += cbor_c.c dnf.c
 VPATH += $(CBORDIR)
 else
@@ -175,7 +175,7 @@ ifneq (,$(wildcard MyCustomBindings.c))
 $(info including the Lua MyCustomBindings example)
 VPATH += .
 SOURCE += MyCustomBindings.c MyCustomBindings_wrap.c
-CFLAGS += $(D)myCustomBindings=luaopen_cpu
+CFLAGS += $(D)MAKO_OPEN_BINDINGS=luaopen_cpu
 else
 $(info Excluding Lua MyCustomBindings example)
 endif
@@ -184,12 +184,12 @@ ENCRYPTION_KEY_HEADER = examples/MakoServer/src/NewEncryptionKey.h
 ifeq ($(WINDOWS),1)
 PYTHON := $(shell cmd /c "where python 2>NUL")
 ifneq ($(PYTHON),)
-CFLAGS += $(D)NewEncryptionKey
+CFLAGS += $(D)MAKO_SOFTTPM_KEY_HEADER=\"NewEncryptionKey.h\"
 endif
 else
 PYTHON := $(shell command -v python3 2>/dev/null)
 ifneq ($(PYTHON),)
-CFLAGS += $(D)NewEncryptionKey
+CFLAGS += $(D)MAKO_SOFTTPM_KEY_HEADER=\"NewEncryptionKey.h\"
 endif
 endif
 

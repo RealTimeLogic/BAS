@@ -8,7 +8,7 @@ void* dlrealloc(void* oldmem, size_t bytes);
 void dlfree(void* mem);
 
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #define baMalloc(size) dlmalloc(size)
 #define baRealloc(ptr, size) dlrealloc(ptr, size)
 #define baFree(ptr) dlfree(ptr)

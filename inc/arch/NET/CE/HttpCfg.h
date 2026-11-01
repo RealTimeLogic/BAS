@@ -13,7 +13,7 @@
  *
  *   $Id: HttpCfg.h 245 2006-10-16 14:07:04Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2017
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -41,7 +41,7 @@
 
 #include <windows.h>
 #include <winsock.h>
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #include <WS2tcpip.h>
 #endif
 #include <TargConfig.h>

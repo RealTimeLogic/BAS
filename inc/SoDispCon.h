@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: SoDispCon.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
@@ -132,7 +132,7 @@ typedef struct SoDispCon
  * used during the call; NULL selects the default.
  * @param[in] bindPort Local port in host byte order; zero lets the OS choose.
  * @param[in] timeout Positive connect timeout in milliseconds, default 1500.
- * The legacy resolver path ignores this value; USE_ADDRINFO applies it to
+ * The legacy resolver path ignores this value; BA_USE_GETADDRINFO applies it to
  * individual address attempts, not the entire DNS-and-connect operation.
  * @param[in] dgram TRUE selects UDP, FALSE TCP (default).
  * @param[in] ipv6 TRUE requests IPv6, FALSE IPv4 (default); resolution depends
@@ -154,7 +154,8 @@ typedef struct SoDispCon
                char** errinfo=0);
 
      /** Deprecated: Use getSharkSslCon(NULL).
-      */
+    @return True if the installed transport reports secure; false otherwise. This does not establish handshake completion or peer trust. Prefer getSharkSslCon(NULL).
+ */
      bool isSecure();
 
       /** Inspect a connected transport's TLS implementation.
@@ -583,9 +584,9 @@ SoDispCon_connect(SoDispCon* o,
                   U32 timeout,
                   BaBool dgram, BaBool ipv6,
                   char** errinfo);
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 /** Begin a TCP connection without waiting for TCP establishment.
- * DNS resolution can still block. Available unless NO_ASYNCH_RESP is defined.
+ * DNS resolution can still block. Available unless BA_HAVE_SOCKET_WRITE_EVENTS is defined.
  * @param[in,out] o Initialized empty connection with no transport buffer/TLS
  * state. Keep it alive until the attempt completes or is cleaned up.
  * @param[in] host Required NUL-terminated hostname or numeric address.
@@ -596,9 +597,9 @@ SoDispCon_connect(SoDispCon* o,
  * @param[out] errinfo Optional borrowed resolver-text output, initially NULL.
  * @return 1 connected immediately, 0 connection pending, negative error.
  * Register send-ready handling and check socket completion before sending.
- * With USE_ADDRINFO, release connect state before TLS upgrade, asynchronous
+ * With BA_USE_GETADDRINFO, release connect state before TLS upgrade, asynchronous
  * buffer allocation, or final socket cleanup. See asyncConnectRelease.
- * @warning The current USE_ADDRINFO allocation-failure path can also return
+ * @warning The current BA_USE_GETADDRINFO allocation-failure path can also return
  * zero without retaining pending state. Do not assume that zero alone
  * establishes that another address attempt is available. */
 BA_API int
@@ -609,12 +610,12 @@ SoDispCon_asyncConnect(SoDispCon* o,
                        BaBool ipv6,
                        char** errinfo);
 /** Try the next resolved address after a failed pending connection.
- * @param[in,out] o Connection with live USE_ADDRINFO pending-connect state.
+ * @param[in,out] o Connection with live BA_USE_GETADDRINFO pending-connect state.
  * Call only after the current attempt fails; do not use as a readiness poll.
- * @return 1 connected, 0 pending, negative error. Without USE_ADDRINFO,
+ * @return 1 connected, 0 pending, negative error. Without BA_USE_GETADDRINFO,
  * returns E_CANNOT_CONNECT because no address-list state is retained. */
 BA_API int SoDispCon_asyncConnectNext(SoDispCon* o);
-#ifdef  USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 /** Release retained resolver state after an asynchronous connect attempt.
  * @param[in,out] o Connection that still holds pending-connect state, or none.
  * Does not close its socket. Call before installing TLS or an async send buffer;

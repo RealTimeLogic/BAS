@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id$
+ *   $Id: BaConfigTypes.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2023
+ *   COPYRIGHT:  Real Time Logic LLC, 2023 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -33,58 +33,36 @@
  *               http://www.realtimelogic.com
  ****************************************************************************
  *
- * This header file, included by all the 'arch' TargConfig.h headers,
- * sets default SharkSSL settings for BAS.
+ * ABI settings shared by the port configuration and primitive types.
  */
+#ifndef _BaConfigTypes_h
+#define _BaConfigTypes_h
+#include <BaConfigDefs.h>
+#include <stdint.h>
 
-#ifndef _TargConfig_h
-#error Only TargConfig.h should include this header file
+#if UINTPTR_MAX == UINT64_MAX
+#ifndef BA_ARCH_64BIT
+#define BA_ARCH_64BIT 1
 #endif
-
-#if 1
-#ifndef SHARKSSL_ENABLE_ASN1_KEY_CREATION
-#define SHARKSSL_ENABLE_ASN1_KEY_CREATION                1
+#if BA_ARCH_64BIT != 1
+#error BA_ARCH_64BIT disagrees with the compiler pointer size
 #endif
-#ifndef SHARKSSL_ENABLE_RSAKEY_CREATE
-#define SHARKSSL_ENABLE_RSAKEY_CREATE                    1
+#elif UINTPTR_MAX == UINT32_MAX
+#ifndef BA_ARCH_64BIT
+#define BA_ARCH_64BIT 0
 #endif
-#ifndef SHARKSSL_ENABLE_ECCKEY_CREATE
-#define SHARKSSL_ENABLE_ECCKEY_CREATE                    1
+#if BA_ARCH_64BIT != 0
+#error BA_ARCH_64BIT disagrees with the compiler pointer size
 #endif
-#ifndef SHARKSSL_ENABLE_CSR_CREATION
-#define SHARKSSL_ENABLE_CSR_CREATION                     1
-#endif
-#ifndef SHARKSSL_ENABLE_CSR_SIGNING
-#define SHARKSSL_ENABLE_CSR_SIGNING                      1
-#endif
-#endif
-
-#ifndef SHARKSSL_USE_SHA_512
-#define SHARKSSL_USE_SHA_512 1
+#else
+#error BAS requires 32-bit or 64-bit pointers
 #endif
 
-#ifndef SHARKSSL_ECC_USE_SECP256R1
-#define SHARKSSL_ECC_USE_SECP256R1 1
+/* A port may choose its file ABI before including this header. */
+#ifndef BA_FILE_OFFSET_BITS
+#define BA_FILE_OFFSET_BITS 32
 #endif
-#ifndef SHARKSSL_ECC_USE_SECP384R1
-#define SHARKSSL_ECC_USE_SECP384R1 1
+#if BA_FILE_OFFSET_BITS != 32 && BA_FILE_OFFSET_BITS != 64
+#error BA_FILE_OFFSET_BITS must be 32 or 64
 #endif
-#ifndef SHARKSSL_ECC_USE_SECP521R1
-#define SHARKSSL_ECC_USE_SECP521R1 1
 #endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP256R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP256R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP384R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP384R1 1
-#endif
-#ifndef SHARKSSL_ECC_USE_BRAINPOOLP512R1
-#define SHARKSSL_ECC_USE_BRAINPOOLP512R1 1
-#endif
-
-#ifndef SHARKSSL_ENABLE_RSA_OAEP
-#define SHARKSSL_ENABLE_RSA_OAEP 1
-#endif
-
-
-

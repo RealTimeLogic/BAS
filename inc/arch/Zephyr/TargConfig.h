@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
@@ -39,6 +39,34 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 #ifdef __cplusplus
 #include <string.h>
 #include <stdlib.h>
@@ -51,13 +79,7 @@
 /*  The default choice for Posix - change by using another arch
  *  or set at compile time.
  */
-#if !defined(B_LITTLE_ENDIAN) && !defined(B_BIG_ENDIAN)
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define B_BIG_ENDIAN 1
-#else
-#define B_LITTLE_ENDIAN 1
-#endif
-#endif
+/* BaConfigEndian.h resolves compiler byte order or validates an explicit selection. */
 
 /* Create dummies for BaFile.c: No F_SETFD macros */
 #ifndef F_SETFD
@@ -82,7 +104,7 @@
 //#include <stddef.h>
 //#include <time.h> /* time_t */
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #ifndef baMalloc
 #error Using incorrect dlmalloc.h
@@ -161,7 +183,7 @@ BaTime baGetUnixTime(void);
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
 #define baAssert(exp)

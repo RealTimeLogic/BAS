@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5971 2026-09-11 10:01:39Z wini $
+ *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -154,7 +154,7 @@ Thread_constructor(
       taskCreate
 #endif
       (
-        "Barracuda",       /* name of new task (stored at pStackBase) */
+        "BAS",       /* name of new task (stored at pStackBase) */
         priority,   /* priority of new task */
         VX_FP_TASK,  /* Required since Lua can use floating point */
         stackSize,  /* size (bytes) of stack needed */

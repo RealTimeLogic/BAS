@@ -26,14 +26,14 @@ Macros:
  Required:
    BA_VXWORKS
  Optional:
-   USE_ADDRINFO -
+   BA_USE_GETADDRINFO -
      Use addrinfo for name translation and enable multi name
      DNS lookups that work with Round Robin DNS clusters.
-   USE_DGRAM -
+   BA_ENABLE_UDP -
      Enable datagram (UDP sockets) in the auxiliary socket API.
-   USE_IPV6 -
+   BA_ENABLE_IPV6 -
      Enable IPv6
-   USE_DLMALLOC -
+   BA_ALLOCATOR -
     Use the dlmalloc library and not the VxWorks heap functions (recommended).
     See below for details.
 
@@ -125,11 +125,11 @@ allocation routines.
 
 To enable dlmalloc:
 
-compile the code with the macro USE_DLMALLOC or modify
+compile the code with the macro BA_ALLOCATOR or modify
 inc/arch/VxWorks/TargConfig.h
 
 Include xrc/malloc/dlmalloc.c in your build.
-Note: BAS.c includes dlmalloc.c if macro USE_DLMALLOC is defined.
+Note: BAS.c includes dlmalloc.c if macro BA_ALLOCATOR is defined.
 
 From your startup code, initiate the allocator as follows:
 
@@ -155,7 +155,7 @@ Note: BAS.c includes BaZlib.c
 --------------------------------------------------------------------
 
 IPv6 is not enabled by default for VxWorks. To enable IPv6 support,
-compile the code with the macro USE_IPV6. This macro is defined in
+compile the code with the macro BA_ENABLE_IPV6. This macro is defined in
 Target.mk for SIMNT
 
 
@@ -166,7 +166,7 @@ Target.mk for SIMNT
 The DiskIo enables BAS to access files on any of your VxWorks file systems.
 
 In additon, you may optionally enable the original Lua IO by compiling with:
--DBA_HAS_ANSI_IO
+-DBA_HAVE_STDIO=1
 See: https://realtimelogic.com/ba/doc/en/lua/man/manual.html#6.8
 
 The VxWorks DiskIo port xrc/DiskIo/posix/BaFile.c is automatically

@@ -11,8 +11,8 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 5284 2022-10-03 09:13:56Z wini $
- *   COPYRIGHT:  Real Time Logic, 2015 - 2022
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -87,7 +87,9 @@ void HttpSockaddr_gethostbyname(HttpSockaddr*, const char*, BaBool, int*);
  *  HttpSocket
  ***********************************************************************/
 
-#define USE_DGRAM
+#ifndef BA_ENABLE_UDP
+#define BA_ENABLE_UDP 1
+#endif
 
 typedef struct HttpSocket
 {
@@ -193,7 +195,7 @@ void HttpSockaddr_addr2String(
 
 #define SoDispCon_newConnectionIsReady(x)
 struct SoDispCon;
-#define USE_SoDispCon_recvfrom
+#define BA_HAVE_SODISPCON_RECVFROM 1
 #define SoDispCon_recvfrom(o,data,len,addr,port) \
    SoDispCon_lwipRec(o,0,0,data,len,addr,port)
 #define SoDispCon_platReadData(o,m,isTerminated, data, len) \

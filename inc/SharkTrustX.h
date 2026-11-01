@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id$
+ *   $Id: SharkTrustX.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -42,6 +42,18 @@
 #include <SharkSSL.h>
 #include <stddef.h>
 
+#if SHARKSSL_PSA_CONSUMER
+/* Reserve three consecutive persistent IDs exclusively for this client's
+ * private IoIntf store: account, certificate A, certificate B. Override for
+ * a platform's key allocation. Do not share this range with another store. */
+#ifndef SHARKTRUSTX_PSA_KEY_BASE
+#define SHARKTRUSTX_PSA_KEY_BASE 0x23545800
+#endif
+#if SHARKTRUSTX_PSA_KEY_BASE < 1 || SHARKTRUSTX_PSA_KEY_BASE > 0x3ffffffd
+#error SharkTrustX requires three application PSA key IDs
+#endif
+#endif
+
 /** @file SharkTrustX.h
  * @brief Automatic certificates for one native BWS HTTPS port.
  *
@@ -49,18 +61,23 @@
  * for certificate basics, a C integration example, build requirements, storage,
  * and cleanup. The runnable example is in examples/SharkTrustX/readme.html.
  *
- * Compile BWS.c with SHARKTRUSTX, BA_JSON=1, and
+ * Compile BWS.c with SHARKTRUSTX, BA_ENABLE_JSON=1, and
  * SHARKSSL_ENABLE_CERTINFO_PARSE_API=1. BWS includes the client and its
  * dependencies; do not compile SharkTrustX.c separately. Compile the portal's
  * generated tokengen.c with TOKENGEN_C_API.
  *
  * One client manages one HTTPS port, using IPv6 first and then IPv4 when
- * USE_IPV6 is enabled. Hold the server dispatcher mutex when
+ * BA_ENABLE_IPV6 is enabled. Hold the server dispatcher mutex when
  * calling this API; never call from an interrupt. Keep configuration and
  * borrowed objects alive and unchanged until successful cleanup completes.
  * start() acceptance is separate from certificate readiness. clean() erases
- * state and is not a normal shutdown operation. Saved keys are UNENCRYPTED:
- * the supplied IoIntf must be private and must never be served over HTTP.
+ * state and is not a normal shutdown operation. Native builds save unencrypted
+ * private keys. PSA builds keep non-exportable persistent keys in the provider
+ * and save only their IDs/public identities. Enrollment credentials remain
+ * unencrypted in either build: the supplied IoIntf must be private and must
+ * never be served over HTTP. Initialize PSA and its persistent storage before
+ * start(); reserve SHARKTRUSTX_PSA_KEY_BASE through KEY_BASE+2 for this store.
+ * PSA and native state formats are distinct; there is no automatic migration.
  */
 
 #ifdef __cplusplus
@@ -153,7 +170,7 @@ typedef struct SharkTrustX_Config
  * Acceptance does not mean HTTPS is ready. Subsequent errors are delivered via
  * onEvent and retried. Saved identity changes require cleanup, never automatic
  * re-enrollment. Provisioning and directory identity are checked before use.
- * With USE_IPV6, certificate installation tries IPv6 first, then IPv4 on the
+ * With BA_ENABLE_IPV6, certificate installation tries IPv6 first, then IPv4 on the
  * same port, sharing one TLS context. Otherwise it tries only IPv4. Successful
  * listeners are retained; installation fails if neither opens. The platform
  * determines whether an IPv6 socket also accepts IPv4 connections.
@@ -209,6 +226,8 @@ BA_API int SharkTrustX_setIpAddress(const char* address);
  * persistence write, or listener install can follow. On failure management
  * stays stopped and start remains blocked until cleanup succeeds. A durable
  * reset marker finishes interrupted cleanup before state can be restored.
+ * PSA cleanup also destroys owned keys, preserving the SharkCA account on
+ * partial cleanup. A provider/policy failure leaves the reset marker for retry.
  * Acceptance does not report storage success; inspect onClean's code.
  * See @ref stx-cleanup for retained state and a clean-then-start example.
  */

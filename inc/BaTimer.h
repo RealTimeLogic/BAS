@@ -10,9 +10,9 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BaTimer.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: BaTimer.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2017
+ *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -76,7 +76,7 @@ typedef struct BaTimer
          \param alloc Borrowed allocator for timer nodes, or NULL to use
          AllocatorIntf_getDefault(). It must outlive the timer manager.
          Platform thread creation has no recoverable return status. With
-         BA_TIMER_EXT_TICK enabled, only one timer manager is supported.
+         BA_TIMER_SOURCE=BA_TIMER_SOURCE_EXTERNAL, only one timer manager is supported.
        */
       BaTimer(ThreadMutex* mutex,int stackSize, U32 ticklen=10,
               ThreadPriority priority=ThreadPrioNormal,

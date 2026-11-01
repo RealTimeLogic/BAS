@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BasicAuthenticator.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: BasicAuthenticator.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003-2026
  *
@@ -140,6 +140,8 @@ BA_API void BasicAuthenticator_destructor(BasicAuthenticator* o);
 /** C form of BasicAuthenticator::setAutHeader. The first argument is the
     required realm string; the second is the required response.
     @return Zero, E_MALLOC, or E_IS_COMMITTED as described by setAutHeader().
+    @param realm Required NUL-terminated authentication realm.
+    @param resp Required live response to receive the challenge.
  */
 BA_API int BasicAuthenticator_setAutHeader(
    const char* realm,HttpResponse* resp);

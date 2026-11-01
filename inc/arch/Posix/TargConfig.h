@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -38,6 +38,40 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+#include <BaConfigPosix.h>
+/* Select the allocator before any port hooks are installed. */
+#ifdef __NuttX__
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DLMALLOC
+#endif
+#endif
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 1
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_FULL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 1
+#endif
+
+
 
 #ifdef __QNX__
 /* Function dirent in xrc/DiskIo/posix/BaFile.c, struct member 
@@ -51,13 +85,7 @@
 /*  The default choice for Posix - change by using another arch
  *  or set at compile time.
  */
-#if !defined(B_LITTLE_ENDIAN) && !defined(B_BIG_ENDIAN)
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define B_BIG_ENDIAN 1
-#else
-#define B_LITTLE_ENDIAN 1
-#endif
-#endif
+/* BaConfigEndian.h resolves compiler byte order or validates an explicit selection. */
 
 /***********************************************************************
  *  Misc settings
@@ -65,32 +93,33 @@
 
 #define BA_POSIX
 
-#define ENABLE_REUSE_ADDR 1
+#ifndef BA_ENABLE_SOCKET_REUSE_ADDRESS
+#define BA_ENABLE_SOCKET_REUSE_ADDRESS 1
+#endif
 
 #ifdef __NuttX__
-#define USE_DLMALLOC 1
 #pragma GCC diagnostic ignored "-Wshadow"
 #pragma GCC diagnostic ignored "-Wundef"
 #pragma GCC diagnostic ignored "-Wstrict-prototypes"
 #else
 /* https://realtimelogic.com/ba/doc/?url=auxlua.html#reverseproxy
  */
-#ifndef USE_REDIRECTOR
-#define USE_REDIRECTOR 1
+#ifndef BA_ENABLE_REVERSE_PROXY
+#define BA_ENABLE_REVERSE_PROXY 1
 #endif
-#ifndef USE_UBJSON
-#define USE_UBJSON 1
+#ifndef BA_ENABLE_UBJSON
+#define BA_ENABLE_UBJSON 1
 #endif
-#ifndef USE_REVCON
-#define USE_REVCON 1
+#ifndef BA_ENABLE_REVERSE_CONNECTION
+#define BA_ENABLE_REVERSE_CONNECTION 1
 #endif
-#ifndef USE_LPIPE
-#define USE_LPIPE 1
+#ifndef BA_ENABLE_LUA_PIPE
+#define BA_ENABLE_LUA_PIPE 1
 #endif
 /* https://realtimelogic.com/ba/doc/?url=auxlua.html#forkptylib
  */
-#ifndef USE_FORKPTY
-#define USE_FORKPTY 1
+#ifndef BA_ENABLE_LUA_FORKPTY
+#define BA_ENABLE_LUA_FORKPTY 1
 #endif
 #endif
 
@@ -136,13 +165,10 @@
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 /* For SharkSSL */
-#if defined(__LP64__) && !defined(BA_64BIT)
-#define BA_64BIT
-#endif
-#ifdef BA_64BIT
+#if BA_ARCH_64BIT
 #define SHARKSSL_64BIT
 #endif 
 
@@ -165,7 +191,7 @@
 #ifdef BA_LEAK_CHECK
 #include <LeakDetect.h>
 #else
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #else
 #define baMalloc(size) malloc(size)

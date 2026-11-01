@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      SOURCE
  *
- *   $Id: ThreadLib.c 5504 2023-12-02 02:02:23Z wini $
+ *   $Id: ThreadLib.c 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2015 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -144,7 +144,7 @@ void Thread_destructor(ThreadBase* o)
 }
 
 
-#if BA_THREADNAME
+#if BA_ENABLE_THREAD_NAMES
 void
 _Thread_constructor(ThreadBase* o, Thread_Run r, ThreadPriority priority,
                     int stackSize, const char* filename)
@@ -156,7 +156,7 @@ Thread_constructor(
 {
    UBaseType_t taskPrio=4;
    
-#if BA_THREADNAME
+#if BA_ENABLE_THREAD_NAMES
    for(;;)
    {
       const char* ptr = strchr(filename, '/');
@@ -185,7 +185,7 @@ Thread_constructor(
 
    TST_OK(xTaskCreate(
              Thread_threadStart, 
-#if BA_THREADNAME
+#if BA_ENABLE_THREAD_NAMES
              filename,
 #else
              "BAS",

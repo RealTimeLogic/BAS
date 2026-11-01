@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2014
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -42,7 +42,7 @@
 #include <mem_prv.h>
 #include <mqx_prv.h>
 
-#ifdef USE_MQX_MALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
 void*
 baRealloc(void* ptr, unsigned long size)
 {
@@ -92,7 +92,7 @@ Thread_constructor(
    tts.TASK_ADDRESS       = Thread_runnable;
    tts.TASK_STACKSIZE     = stackSize;
    tts.TASK_PRIORITY      = mqxPrio;
-   tts.TASK_NAME          = "BT";
+   tts.TASK_NAME          = "BAS";
    tts.TASK_ATTRIBUTES = 0;
    tts.CREATION_PARAMETER = (uint_32)o;
    tts.DEFAULT_TIME_SLICE = 0;

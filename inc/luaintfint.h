@@ -10,12 +10,8 @@
 #define LUAINTF_VER 5
 
 /* If using: https://realtimelogic.info/amalgamator/ */
-#ifdef USE_AMALGAMATED_BAS
-#include <barracuda.h>
-#else
 #include "lua.h"
 #include "lauxlib.h"
-#endif
 
 #ifndef ThreadLib_hpp
 struct ThreadMutex;

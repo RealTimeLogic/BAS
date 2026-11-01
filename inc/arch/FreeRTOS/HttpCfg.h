@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpCfg.h 6686 2026-10-29 23:59:57Z wini $
  *   COPYRIGHT:  Real Time Logic, 2019
  *
  *   This software is copyrighted by and is the sole property of Real
@@ -44,12 +44,28 @@
 #include <FreeRTOS_IP.h>
 #include <FreeRTOS_sockets.h>
 
-#if socketsconfigBYTE_ORDER == pdLITTLE_ENDIAN
-#define B_LITTLE_ENDIAN
+#include <BaConfigDefs.h>
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+#if !defined(socketsconfigBYTE_ORDER) || !defined(pdLITTLE_ENDIAN) || !defined(pdBIG_ENDIAN)
+#error Missing FreeRTOS socket byte-order declaration
+#elif socketsconfigBYTE_ORDER == pdLITTLE_ENDIAN
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
+#error BA_BYTE_ORDER disagrees with FreeRTOS sockets
+#endif
 #elif socketsconfigBYTE_ORDER == pdBIG_ENDIAN
-#define B_BIG_ENDIAN
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_BIG_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
+#error BA_BYTE_ORDER disagrees with FreeRTOS sockets
+#endif
 #else
-#error socketsconfigBYTE_ORDER not defined
+#error Unsupported FreeRTOS socket byte order
 #endif
 
 #include <TargConfig.h>

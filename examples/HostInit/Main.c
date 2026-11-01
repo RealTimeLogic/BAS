@@ -11,7 +11,7 @@
  *
  *   $Id: Main.c 5594 2024-12-12 16:18:11Z wini $
  *
- *   COPYRIGHT:  Real Time Logic
+ *   COPYRIGHT:  Real Time Logic, 2026
  *               https://realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -42,7 +42,7 @@
 
 extern void hostInit(void);
 extern void barracuda(void);
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 extern void init_dlmalloc(char* heapstart, char* heapend);
 #endif
 
@@ -115,7 +115,7 @@ change2ObjDir(const char* argv0)
 #define change2ObjDir(argv) (void)argv
 #endif
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 static void memExhausted(void)
 {
    printf("WARNING: memory low\n");
@@ -125,7 +125,7 @@ static void memExhausted(void)
 int
 main(int argc, char* argv[])
 {
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
    static char poolBuf[3 * 1024 * 1024];
    init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
    dlmalloc_setExhaustedCB(memExhausted);

@@ -214,7 +214,7 @@ static HttpServer* createServer()
    static ThreadMutex mutex;
    static SoDisp dispatcher(&mutex);
    static HttpServer server(&dispatcher, &scfg);
-   static HttpCmdThreadPool pool(&server, ThreadPrioNormal, BA_STACKSZ);
+   static HttpCmdThreadPool pool(&server, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
    scfg.setNoOfHttpCommands(3);
    scfg.setNoOfHttpConnections(12);
    scfg.setRequest(2 * 1024, 8 * 1024);

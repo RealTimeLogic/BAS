@@ -55,7 +55,7 @@ extern void init_dlmalloc(char* heapstart, char* heapend);
 static char poolBuf[1024*1024]; /* 1M, minimum 600K when using LSP */
 init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
 
-In your IDE, define the following: USE_DLMALLOC
+In your IDE, define the following: BA_ALLOCATOR
 BAS uses the default allocator (malloc/free) if this macro is not set.
 
 
@@ -155,5 +155,5 @@ The end of the structure should then look like:
    void* callbackData; /* PATCH needed by BAS */
 };
 
-You must also set the define USE_CALLBACKDATA
+You must also set the define BA_LWIP_USE_NETCONN_CALLBACK_DATA
 See src/arch/bsdSocket/LwIP/SoDisp.c for details.

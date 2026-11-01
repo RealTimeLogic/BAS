@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEx.h 6152 2026-09-26 05:46:51Z gianluca $
+ *   $Id: SharkSslEx.h 6593 2026-10-24 22:09:04Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2013 - 2026
  *
@@ -92,7 +92,11 @@ SHARKSSL_API int sharkStrCaseCmp(
    const char *a, int aLen, const char *b, int bLen);
 
 
-/** Certificate subject name/subject alternative name comparison to "name"
+/**
+ * Compare a length-delimited ASCII reference name with the certificate.
+ * Canonical dotted-decimal IPv4 names match only iPAddress SANs. Ambiguous
+ * numeric spellings, non-ASCII names, embedded NULs, and IPv6 text fail
+ * closed. Convert internationalized names to ASCII A-labels before calling.
  */
 SHARKSSL_API int sharkSubjectSubjectAltCmp(
    const char *cn, U16 cnLen, U8 *subjAltPtr, SharkSslSANLen subjAltLen, const char *name, U16 nameLen);
@@ -158,24 +162,23 @@ typedef enum
 @{
 */
 
-/** Returns the peer's "trust" status and certificate.
-
-    This function extends #SharkSslCon_trustedCA and also checks that
-    the domain name (including any wildcards) matches the domain
-    name. The function also checks the certificate's date if the
-    SharkSSL code is compiled with #SHARKSSL_CHECK_DATE =1.
-
-    \param o the SharkSslCon object
-
-    \param name is the domain name (common name)
-
-    \param cPtr is an optional pointer that will be set to the
-    connections's SharkSslCertInfo object, if provided.
-
-    \returns SharkSslConTrust
-
-    \sa SharkSslConTrust and SharkSslCon_trustedCA
-*/
+/**
+ * Return the peer's trust status and certificate. This function extends
+ * #SharkSslCon_trustedCA with reference-name and optional certificate-date
+ * checks. It accepts DNS names and canonical dotted-decimal IPv4 addresses;
+ * an IP address requires an iPAddress SAN.
+ *
+ * \param o the SharkSslCon object.
+ * \param name the NUL-terminated ASCII reference name used for the connection.
+ * Reject embedded NULs before converting length-delimited input to this C
+ * string. Supply the same canonical identity to the resolver and this
+ * function; SharkSSL does not inspect the connected socket address. IPv6
+ * text is not supported by this comparison API. A NULL name skips identity
+ * matching and must not be used to authenticate a named endpoint.
+ * \param cPtr optional output for the connection's SharkSslCertInfo object.
+ * \returns SharkSslConTrust.
+ * \sa SharkSslConTrust and SharkSslCon_trustedCA.
+ */
 SHARKSSL_API SharkSslConTrust SharkSslCon_trusted(
    SharkSslCon *o, const char *name, SharkSslCertInfo **cPtr);
 

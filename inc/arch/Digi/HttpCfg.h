@@ -13,7 +13,7 @@
  *
  *   $Id: HttpCfg.h 91 2004-12-09 18:08:01Z  $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2018
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,12 +39,18 @@
 #ifndef _HttpConfig_h
 #define _HttpConfig_h
 
-#ifndef USE_IPV6
-#define USE_IPV6
+/* Load application input before selecting network defaults. */
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+#ifndef BA_ENABLE_IPV6
+#define BA_ENABLE_IPV6 1
 #endif
 
  
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define TM_USE_IPV6
 #endif
 

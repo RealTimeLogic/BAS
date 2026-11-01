@@ -71,7 +71,7 @@ gcc -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix \
 
 Add `src/DiskIo/posix/BaFile.c` and the appropriate macro/include settings when using `DiskIo`.
 
-For Linux scale beyond `select`, inspect the `epoll` port and its required includes/macros. Do not merely add `-DUSE_EPOLL` while compiling the generic dispatcher.
+For Linux scale beyond `select`, inspect the `epoll` port and its required includes/macros. Do not merely add `-DBA_USE_EPOLL=1` while compiling the generic dispatcher.
 
 Representative Windows project composition:
 

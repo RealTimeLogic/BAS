@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2012 - 2018
+ *   COPYRIGHT:  Real Time Logic, 2012 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -39,18 +39,24 @@
 #ifndef _HttpConfig_h
 #define _HttpConfig_h
 
-#ifndef USE_IPV6
-#define USE_IPV6
+/* Load application input before selecting network defaults. */
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+#ifndef BA_ENABLE_IPV6
+#define BA_ENABLE_IPV6 1
 #endif
 
  
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #ifndef TM_USE_IPV6
 #define TM_USE_IPV6
 #endif
 #elif defined(TM_USE_IPV6)
-#ifndef USE_IPV6
-#define USE_IPV6
+#ifndef BA_ENABLE_IPV6
+#define BA_ENABLE_IPV6 1
 #endif
 #endif
 

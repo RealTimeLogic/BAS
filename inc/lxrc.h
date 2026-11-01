@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: lxrc.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: lxrc.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *               https://realtimelogic.com
@@ -30,7 +30,9 @@
 #ifndef __lxrc_h
 #define __lxrc_h 
 
-#ifndef NO_SHARKSSL
+#include <TargConfig.h>
+
+#if BA_ENABLE_SHARKSSL
 #include <SharkSSL.h>
 #endif
 #include <balua.h>
@@ -130,9 +132,17 @@ typedef void (*ThreadJob_Run)(struct ThreadJob* tj, struct LThreadMgr* mgr);
 typedef void (*ThreadJob_LRun)(
    struct ThreadJob* tj, int msgh, struct LThreadMgr* mgr);
 
-/** The global instance created by C code or a dynamic instance
- * created by
- * [ba.thread.create](../../../lua/auxlua.html#thread_create)
+/** Run native jobs and protected Lua callbacks on BAS worker threads.
+ * The host creates its global manager after HttpServer and the Lua state;
+ * applications can create dynamic managers with
+ * [ba.thread.create](../../../lua/auxlua.html#thread_create).
+ * The manager borrows the server and Lua state. Keep both alive until
+ * LThreadMgr_destructor returns, and stop submitting work before teardown.
+ *
+ * Submit job-owned input through ThreadJob and LThreadMgr_run. Lua callbacks
+ * execute with the server mutex held; arbitrary OS threads must not call Lua
+ * directly. See ThreadJob_LRun and \ref md_en_C_md_LuaBindings for the callback
+ * pattern, and LThreadMgr_constructor for worker and stack settings.
  */
 typedef struct LThreadMgr
 {
@@ -151,7 +161,13 @@ typedef struct LThreadMgr
 } LThreadMgr;
 
 
-/** A thread job created by #ThreadJob_create or #ThreadJob_lcreate
+/** An owned unit of work created by #ThreadJob_create or #ThreadJob_lcreate.
+ * Copy callback input into job-owned storage before submission. After
+ * LThreadMgr_run queues the job, the manager owns it regardless of the
+ * function's worker-availability return value; do not free
+ * or requeue it from the callback. Lt is borrowed only during that callback.
+ * Pending jobs can be discarded during manager teardown, so stop event
+ * producers before destroying the manager. See \ref md_en_C_md_LuaBindings.
  */
 typedef struct ThreadJob
 {
@@ -194,7 +210,7 @@ BA_API void LThreadMgr_destructor(LThreadMgr* o);
  * \param o The LThreadMgr instance to initialize.
  * \param server The HttpServer instance that owns the pool.
  * \param  priority typically set to ThreadPrioNormal
- * \param stackSize typically set to BA_STACKSZ
+ * \param stackSize typically set to BA_THREAD_STACK_SIZE
  * \param threads Positive initial worker count; zero provides no workers.
  * \param L the Lua state returned by balua_create
  * \param allowCreate set to TRUE to enable the two APIs
@@ -249,7 +265,7 @@ BA_API int LThreadMgr_run(LThreadMgr* o, ThreadJob* tj);
 
 int lGetStdSockOptions(lua_State* L, int tabIx, const char** intf,
                        BaBool* ipv6, BaBool* secure);
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 void lsharkssl_unlock(lua_State *L,SharkSsl* super);
 SharkSsl* lsharkssl_lock(
    lua_State *L,int tabIx,SharkSsl_Role role,SharkSsl* lockedShark);

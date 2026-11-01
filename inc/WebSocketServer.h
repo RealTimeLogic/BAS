@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: WebSocketServer.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: WebSocketServer.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2015 - 2026
  *
@@ -44,7 +44,8 @@
 #include <DynBuffer.h>
 
 
-/** @defgroup WebSockets WebSockets 
+/** @defgroup WebSockets WebSockets
+    @brief Exchange browser messages through native asynchronous WebSocket callbacks.
 
     The Lua socket library (including WebSockets) provides three
     modes: blocking, asynchronous, and non-blocking (cosockets). The C
@@ -60,7 +61,9 @@
     supported. Client frames must be masked. Hold the dispatcher mutex when
     using this API from application threads; callbacks run under that mutex.
 
-    ### Example:
+    \anchor autotoc_md83
+
+    @section group_websockets_example Example
 
     The Barracuda App Server SDK includes one example using this
      WebSocket library and a copy of the example

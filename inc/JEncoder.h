@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JEncoder.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: JEncoder.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
@@ -98,7 +98,6 @@ typedef struct JEncoder
     Inspect getErr(); output may already be partially written.
  */
       int setLong(S64 val);
-#ifndef NO_DOUBLE
 
       /** Write a JSON number.
     @param val finite double value. Uses BufPrint floating formatting (%%f), not a lossless
@@ -107,7 +106,6 @@ typedef struct JEncoder
     Inspect getErr(); output may already be partially written.
  */
       int setDouble(double val);
-#endif
 
       /** Write a quoted JSON string through BufPrint::jsonString.
     @param val Borrowed UTF-8 bytes, or NULL to write JSON null.
@@ -161,6 +159,8 @@ typedef struct JEncoder
  */
       int setNull();
 
+/* Expose the optional API to Doxygen without selecting it in product builds. */
+#if BA_ENABLE_JENCODER_JVAL || defined(__DOXYGEN__)
       /** Serialize a JVal node and its child values.
     @param val Borrowed acyclic node/tree; NULL emits nothing.
     @param iterateNext False (default) handles this node only; true also serializes
@@ -168,9 +168,10 @@ typedef struct JEncoder
     emitted for object-member nodes when needed. No tree storage is taken.
     @return Zero on success, -1 for a stored format/value or output error.
     Inspect getErr(); output may already be partially written.
-    Not available when built with NO_JVAL_DEPENDENCY.
+    Available when BA_ENABLE_JENCODER_JVAL=1.
  */
       int setJV(struct JVal* val, bool iterateNext=false);
+#endif
 
       /** Encode/serialize C structs/data to JSON using formatted output.
 
@@ -326,14 +327,10 @@ BA_API int JEncoder_setInt(JEncoder* o, S32 val);
     @param o Required initialized encoder.
  */
 BA_API int JEncoder_setLong(JEncoder* o, S64 val);
-#ifdef NO_DOUBLE
-#define JEncoder_setDouble JEncoder_setInt
-#else
 /** @copydoc JEncoder::setDouble
     @param o Required initialized encoder.
  */
 BA_API int JEncoder_setDouble(JEncoder* o, double val);
-#endif
 
 /** @copydoc JEncoder::fmtString
     @param o Required initialized encoder.
@@ -360,11 +357,13 @@ BA_API int JEncoder_setBoolean(JEncoder* o, BaBool val);
     @param o Required initialized encoder.
  */
 BA_API int JEncoder_setNull(JEncoder* o);
+#if BA_ENABLE_JENCODER_JVAL || defined(__DOXYGEN__)
 /** @copydoc JEncoder::setJV
     @param o Required initialized encoder.
  */
 BA_API int JEncoder_setJV(
    JEncoder* o, struct JVal* val, BaBool iterateNext);
+#endif
 BA_API int JEncoder_vSetJV(
    JEncoder* o,const char** fmt,va_list* argList);
 /** @copydoc JEncoder::set
@@ -405,10 +404,8 @@ inline int JEncoder::setInt(S32 val) {
    return  JEncoder_setInt(this, val); }
 inline int JEncoder::setLong(S64 val) {
    return  JEncoder_setLong(this, val); }
-#ifndef NO_DOUBLE
 inline int JEncoder::setDouble(double val) {
    return  JEncoder_setDouble(this, val); }
-#endif
 inline int JEncoder::fmtString(const char* fmt,...) {
    int retv; va_list argList;
    va_start(argList, fmt); 
@@ -426,8 +423,10 @@ inline int JEncoder::setBoolean(bool val) {
    return  JEncoder_setBoolean(this, val ? TRUE : FALSE); }
 inline int JEncoder::setNull() {
    return  JEncoder_setNull(this); }
+#if BA_ENABLE_JENCODER_JVAL
 inline int JEncoder::setJV(struct JVal* val, bool iterateNext) {
    return  JEncoder_setJV(this,val,iterateNext?TRUE:FALSE); }
+#endif
 inline int JEncoder::set(const char* fmt, ...) {
    int retv; va_list argList;
    va_start(argList, fmt); 

@@ -1,6 +1,42 @@
-/* Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
- * Original AArch64 kernels for SharkSSL. Same license as SharkSslCrypto.c.
+/*
+ **
+ *     ____             _________                __                _
+ *    / __ \___  ____ _/ /_  __(_)___ ___  ___  / /   ____  ____ _(_)____
+ *   / /_/ / _ \/ __ `/ / / / / / __ `__ \/ _ \/ /   / __ \/ __ `/ / ___/
+ *  / _, _/  __/ /_/ / / / / / / / / / / /  __/ /___/ /_/ / /_/ / / /__
+ * /_/ |_|\___/\__,_/_/ /_/ /_/_/ /_/ /_/\___/_____/\____/\__, /_/\___/
+ *                                                       /____/
+ *
+ *                 SharkSSL Embedded SSL/TLS Stack
+ ****************************************************************************
+ *   PROGRAM MODULE
+ *
+ *   $Id: SharkSslCrypto_ARM64_Ghash.S 6686 2026-10-29 23:59:57Z wini $
+ *
+ *   COPYRIGHT:  Real Time Logic LLC, 2026
+ *
+ *   This software is copyrighted by and is the sole property of Real
+ *   Time Logic LLC.  All rights, title, ownership, or other interests in
+ *   the software remain the property of Real Time Logic LLC.  This
+ *   software may only be used in accordance with the terms and
+ *   conditions stipulated in the corresponding license agreement under
+ *   which the software has been supplied.  Any unauthorized use,
+ *   duplication, transmission, distribution, or disclosure of this
+ *   software is expressly forbidden.
+ *
+ *   This Copyright notice may not be removed or modified without prior
+ *   written consent of Real Time Logic LLC.
+ *
+ *   Real Time Logic LLC. reserves the right to modify this software
+ *   without notice.
+ *
+ *               http://www.realtimelogic.com
+ *               http://www.sharkssl.com
+ ****************************************************************************
+ *
+ *
  */
+
 #include "../../../inc/SharkSSL_cfg.h"
 #if !defined(__aarch64__) || defined(__AARCH64EB__) || !defined(__LP64__)
 #error "Requires little-endian AArch64 LP64"
@@ -64,6 +100,73 @@ sharkssl_arm64_gmult_pmull:
     ret
 .cfi_endproc
 .size sharkssl_arm64_gmult_pmull, .-sharkssl_arm64_gmult_pmull
+
+#if SHARKSSL_OPTIMIZED_GCM_ASM
+/* powers = {H^4, H^3, H^2, H}; ciphertext contains four full blocks.
+ * Accumulate four carry-less products before the one field reduction.
+ * Scratch vectors are caller-saved; v8-v15 must retain their low 64 bits. */
+.p2align 4
+.global sharkssl_arm64_gmult4_pmull
+.hidden sharkssl_arm64_gmult4_pmull
+.type sharkssl_arm64_gmult4_pmull, %function
+sharkssl_arm64_gmult4_pmull:
+.cfi_startproc
+    movi v7.16b, #0
+    movi v16.16b, #0
+    movi v17.16b, #0
+    ldr q18, [x1]
+    mov w8, #4
+.Lghash4_blocks:
+    ldr q0, [x2], #16
+    eor v0.16b, v0.16b, v18.16b
+    movi v18.16b, #0
+    ldr q1, [x0], #16
+    rbit v0.16b, v0.16b
+    rbit v1.16b, v1.16b
+    ext v2.16b, v1.16b, v1.16b, #8
+    pmull v3.1q, v0.1d, v1.1d
+    pmull2 v4.1q, v0.2d, v1.2d
+    pmull v5.1q, v0.1d, v2.1d
+    pmull2 v6.1q, v0.2d, v2.2d
+    eor v5.16b, v5.16b, v6.16b
+    ext v19.16b, v7.16b, v5.16b, #8
+    ext v20.16b, v5.16b, v7.16b, #8
+    eor v3.16b, v3.16b, v19.16b
+    eor v4.16b, v4.16b, v20.16b
+    eor v16.16b, v16.16b, v3.16b
+    eor v17.16b, v17.16b, v4.16b
+    subs w8, w8, #1
+    b.ne .Lghash4_blocks
+    umov x2, v16.d[0]
+    umov x3, v16.d[1]
+    umov x4, v17.d[0]
+    umov x5, v17.d[1]
+    eor x2, x2, x4
+    eor x2, x2, x4, lsl #1
+    eor x2, x2, x4, lsl #2
+    eor x2, x2, x4, lsl #7
+    eor x3, x3, x5
+    eor x3, x3, x5, lsl #1
+    eor x3, x3, x5, lsl #2
+    eor x3, x3, x5, lsl #7
+    eor x3, x3, x4, lsr #63
+    eor x3, x3, x4, lsr #62
+    eor x3, x3, x4, lsr #57
+    lsr x6, x5, #63
+    eor x6, x6, x5, lsr #62
+    eor x6, x6, x5, lsr #57
+    eor x2, x2, x6
+    eor x2, x2, x6, lsl #1
+    eor x2, x2, x6, lsl #2
+    eor x2, x2, x6, lsl #7
+    fmov d0, x2
+    ins v0.d[1], x3
+    rbit v0.16b, v0.16b
+    str q0, [x1]
+    ret
+.cfi_endproc
+.size sharkssl_arm64_gmult4_pmull, .-sharkssl_arm64_gmult4_pmull
+#endif
 
 /* ASIMD-only polynomial multiplication, with no crypto extension or lookup.
  * Split each byte into nibbles. PMUL returns the complete 4x4-bit product;

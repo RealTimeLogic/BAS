@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServCon.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: HttpServCon.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2003-2008
+ *   COPYRIGHT:  Real Time Logic LLC, 2003-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -89,7 +89,7 @@ typedef struct HttpServCon
         binds the wildcard address. Accepted representation is port-specific.
        \param userDefinedAccept The default (argument is NULL) is to
        accept connections for the web-server. A custom callback is required
-       in NO_BA_SERVER builds; omitting it calls baFatalE.
+       in BA_ENABLE_SERVER builds; omitting it calls baFatalE.
 
        A ServerConnection object is normally used for accepting new
        connections for the web-server. It is possible to

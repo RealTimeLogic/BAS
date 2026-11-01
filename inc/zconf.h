@@ -3,7 +3,7 @@
  * For conditions of distribution and use, see copyright notice in zlib.h 
  */
 
-/* @(#) $Id: zconf.h 5432 2023-05-02 01:10:25Z wini $ */
+/* @(#) $Id: zconf.h 6526 2026-10-19 23:45:18Z wini $ */
 
 #ifndef _ZCONF_H
 #define _ZCONF_H
@@ -101,6 +101,20 @@
 #  else
 #    define MAX_MEM_LEVEL 9
 #  endif
+#endif
+
+/* BAS compressor memory setting. Embedded builds can select 5 to save
+ * 112 KiB per compressor without reducing the 32 KiB deflate window.
+ */
+#ifndef BA_DEFLATE_MEM_LEVEL
+#  if MAX_MEM_LEVEL >= 8
+#    define BA_DEFLATE_MEM_LEVEL 8
+#  else
+#    define BA_DEFLATE_MEM_LEVEL MAX_MEM_LEVEL
+#  endif
+#endif
+#if BA_DEFLATE_MEM_LEVEL < 1 || BA_DEFLATE_MEM_LEVEL > MAX_MEM_LEVEL
+#  error BA_DEFLATE_MEM_LEVEL must be between 1 and MAX_MEM_LEVEL
 #endif
 
 /* Maximum value for windowBits in deflateInit2 and inflateInit2.

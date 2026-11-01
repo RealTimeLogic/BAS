@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: IoIntf.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: IoIntf.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2006-2018
+ *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -108,7 +108,7 @@
 #define IOINTF_BUFTOOSMALL -51
 
 
-/** IoIntf_OpenRes cannot uncompress the file since no NO_ZLIB is defined
+/** IoIntf_OpenRes cannot uncompress the file since no BA_ENABLE_ZLIB is defined
  */
 #define IOINTF_NOZIPLIB -100
 
@@ -124,7 +124,7 @@
 
 
 /** Encrypted ZIP file requires AES, but AES is not enabled in
- * ZipIo.c. Recompile without NO_SHARKSSL.
+ * ZipIo.c. Recompile without BA_ENABLE_SHARKSSL.
  */
 #define IOINTF_NOAESLIB -200
 

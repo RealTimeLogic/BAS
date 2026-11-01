@@ -1,10 +1,12 @@
 
 #ifndef lconfig_h
 
-#define BA_HAS_ANSI_IO
+#include <TargConfig.h>
+
 
 /* Redirect sprintf functions to the more stack friendly BA versions */
-#ifndef NO_BA_SERVER
+
+#if BA_ENABLE_SERVER
 #ifdef sprintf
 #undef snprintf
 #undef sprintf
@@ -20,9 +22,7 @@ extern int basnprintf(char* buf, int len, const char* fmt, ...);
 extern int basprintf(char* buf, const char* fmt, ...);
 #endif
 
-#ifdef NO_LOCALDECPOINT
-#define lua_getlocaledecpoint() '.'
-#endif
+/* Set lua_getlocaledecpoint() in the port for a dot-only runtime. */
 
 #include <gluaconf.h>
 

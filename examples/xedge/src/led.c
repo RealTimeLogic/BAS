@@ -110,7 +110,7 @@ static int LED_getLed(lua_State* L)
       reading/writing the Xedge configuration file.
 
    This optional feature can be utilized when the code is compiled
-   with NO_BAIO_DISK (no file system API) or to enhance the security
+   with XEDGE_ENABLE_DISK_IO (no file system API) or to enhance the security
    of the Xedge configuration file. When a file system is included
    with Xedge, the configuration file is stored as a backup on the
    file system. Enabling this security enhancement is recommended,
@@ -321,7 +321,7 @@ int xedgeOpenAUX(XedgeOpenAUX* aux)
       reference port, we use "eFUSE Registers". Note that you cannot
       use random generated data, as secret(s) must be persistent.
     */
-#ifndef NO_ENCRYPTIONKEY
+#if BA_ENABLE_SOFTTPM_KEY_MATERIAL
    const U8 secret[] = {'Q','W','E','R','T','Y'}; /* NO TRAILING ZERO EXAMPLE */
    /* Send secret to Lua code */
    aux->addSecret(aux, FALSE, secret, sizeof(secret));

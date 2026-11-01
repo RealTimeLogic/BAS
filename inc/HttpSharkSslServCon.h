@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpSharkSslServCon.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: HttpSharkSslServCon.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2004 - 2026
  *
@@ -198,7 +198,7 @@ typedef struct HttpSharkSslServCon
       but this callback is for implementing secure servers.
       The temporary-connection ownership rules of HttpServCon_AcceptNewCon
       apply. The callback may run before the TLS handshake completes. It is
-      required in NO_BA_SERVER builds; otherwise NULL selects HTTP handling.
+      required in BA_ENABLE_SERVER builds; otherwise NULL selects HTTP handling.
        */
       HttpSharkSslServCon(SharkSsl* sharkSsl,
                           HttpServer* server,

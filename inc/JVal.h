@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JVal.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: JVal.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
@@ -386,9 +386,7 @@ struct JVal
       {
             struct JVal* firstChild; /* If object or array */
             U8* s; /* If string */
-#ifndef NO_DOUBLE
             double f; /* If floating point */
-#endif
             S32 d; /* If integer */
             S64 l; /* If long integer */
             BaBool b; /* If true or false */

@@ -12,7 +12,7 @@
  *
  *   $Id: SoDisp.c 2234 2010-11-03 09:56:21Z gianluca $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2004
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -230,7 +230,7 @@ SoDisp_deactivateRec(SoDisp* o, SoDispCon* con)
 }
 
 
-#ifndef NO_ASYNCH_RESP
+#if BA_HAVE_SOCKET_WRITE_EVENTS
 void
 SoDisp_activateSend(SoDisp* o, SoDispCon* con)
 {

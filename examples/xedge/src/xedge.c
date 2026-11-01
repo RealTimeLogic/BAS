@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 5767 2026-04-18 10:47:22Z wini $
+ *   $Id: xedge.c 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2008 - 2025
+ *   COPYRIGHT:  Real Time Logic, 2008 - 2026
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -51,22 +51,35 @@
  restarted, the program does not exit.
 
  The C code below also installs a Lua debugger hook, indirectly when
- compiled with USE_DBGMON=1, or directly when compiled with the macro
- ENABLE_LUA_TRACE. When ENABLE_LUA_TRACE is defined, the code
+ compiled with BA_ENABLE_LUA_DEBUGGER=1, or directly when compiled with the macro
+ XEDGE_ENABLE_LUA_LINE_TRACE. When XEDGE_ENABLE_LUA_LINE_TRACE is defined, the code
  demonstrates how to print each Lua line executed. Refer to the lHook
  function below for details. For instructions on using the debugger,
  see the following link:
  https://makoserver.net/articles/Lua-and-LSP-Debugging
 
- Note: Some platforms automatically define USE_DBGMON=1 if the macro
+ Note: Some platforms automatically define BA_ENABLE_LUA_DEBUGGER=1 if the macro
  is not explicitly set. Check inc/arch/<PLAT>/TargConfig.h for your
  specific platform.
 */
 
 #include "xedge.h"
 
+/* Apply this definition to BAS as well as the standalone Xedge host. */
+#if !BA_ENABLE_EMBEDDED_CA
+#error Standalone Xedge requires BA_ENABLE_EMBEDDED_CA=1 when compiling Xedge and BAS. Alternatively, add .certificate/cacert.shark to Xedge.zip.
+#endif
+
+#if BA_ENABLE_MDNS && BA_ENABLE_MDNS_LUA
+#include <BamDNS.h>
+#endif
+
+#if SHARKSSL_PSA_CONSUMER
+void balua_psa(lua_State *L);
+#endif
+
 /* Special case when working on Xedge Lua code on a host computer */
-#if defined(NO_BAIO_DISK) && defined(BAIO_DISK)
+#if !XEDGE_ENABLE_DISK_IO && defined(BAIO_DISK)
 #include <BaDiskIo.h>
 #endif
 
@@ -74,22 +87,15 @@
 /* A secret key used by the Xedge Lua code
    See EncryptionKey.h.
  */
-#ifndef NO_ENCRYPTIONKEY
-#ifdef NewEncryptionKey
-#include <NewEncryptionKey.h>
-#else
-#include "EncryptionKey.h"
-#endif
+#if BA_ENABLE_SOFTTPM_KEY_MATERIAL
+#include XEDGE_SOFTTPM_KEY_HEADER
 #endif
 
-#ifdef USE_ZIPBINPWD
-#ifndef ZIPBINPWD_REQUIRED
-#define ZIPBINPWD_REQUIRED FALSE
-#endif
+#if BA_ENABLE_ZIP_PASSWORD
 #include "ZipBinPwd.h"
 #endif
 
-#ifdef USE_ZIPSIGNATURE
+#if BA_ENABLE_ZIP_SIGNATURE
 #include "ZipPublicKey.h"
 #endif
 
@@ -127,29 +133,29 @@ void setDispExit(void)
 extern ZipReader* getLspZipReader(void);
 #endif
 
-#if USE_LPEG
+#if BA_ENABLE_LUA_LPEG
 /* Parsing Expression Grammars For Lua
    https://www.inf.puc-rio.br/~roberto/lpeg/
 */
 extern int luaopen_lpeg(lua_State *L);
 #endif
-#if USE_PROTOBUF
+#if BA_ENABLE_LUA_PROTOBUF
 /* Google's protobuf for Lua
    https://github.com/starwing/lua-protobuf
 */
 extern int luaopen_pb(lua_State* L);
 #endif
-#if USE_CBOR
+#if BA_ENABLE_LUA_CBOR
 /*  The Concise Binary Object Represenation Lua Modules
     https://github.com/spc476/CBOR
     CBOR requires lpeg
 */
 int luaopen_org_conman_cbor_c(lua_State *L);
-#if USE_LPEG != 1
+#if BA_ENABLE_LUA_LPEG != 1
 #error CBOR requires LPeg
 #endif
 #endif
-#if USE_OPCUA
+#if BA_ENABLE_LUA_OPCUA
 #include <opcua_module.h>
 #endif
 
@@ -193,14 +199,20 @@ onunload(lua_State* L, int onunloadRef)
  * This variable can be set to a function by platform specific startup
  * code. (REF-1).
  */
-#ifndef NO_BAIO_DISK
+#if XEDGE_ENABLE_DISK_IO
 
 /* File system init code for HLOS */
-#if (defined _WIN32 || defined(BA_POSIX)) && !defined(NO_INIT_DISK_IO)
+#if XEDGE_USE_DEFAULT_DISK_IO_INIT
 #include <stdlib.h>
 int xedgeInitDiskIo(DiskIo* dio)
 {
-   static const char appmgr[] = {"xedge"};
+   static const char appmgr[] =
+#if SHARKSSL_PSA_CONSUMER
+      {"xedge-psa"};
+#else
+      {"xedge"};
+#endif
+
    int retVal;
    char* buf;
    IoStat st;
@@ -230,7 +242,7 @@ int xedgeInitDiskIo(DiskIo* dio)
 #endif
 /* End file system init code */
 
-#endif /* NO_BAIO_DISK */
+#endif /* XEDGE_ENABLE_DISK_IO */
 
 
 /* SharkTrustX
@@ -248,7 +260,7 @@ int xedgeInitDiskIo(DiskIo* dio)
    6: Download the generated C code, rename to tokengen.h,
       and place generated file in this directory
 */
-#ifdef NO_SHARKTRUST
+#if !BA_ENABLE_SHARKTRUST
 #define balua_tokengen(L)
 #else
 #define EMBEDDED_ZONE_KEY
@@ -263,15 +275,15 @@ static void
 createServer(HttpServer* server)
 {
    HttpServerConfig scfg;
-   /* When MAXTHREADS is defined, the HttpCmdThreadPool (HTTP thread
+   /* With XEDGE_THREAD_POOL_MODE=XEDGE_THREAD_POOL_SHARED_FIXED, the HttpCmdThreadPool (HTTP thread
     * pool) is not utilized. Instead, the LThreadMgr is used as the
     * thread pool. Additionally, the LThreadMgr is configured to prohibit
     * the creation of additional threads.
     * Details:
     *  https://realtimelogic.com/ba/doc/en/C/reference/html/group__ThreadMgr.html
     */
-#ifdef MAXTHREADS
-   U16 cmdInstances=MAXTHREADS;
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SHARED_FIXED
+   U16 cmdInstances=XEDGE_THREAD_COUNT;
    if(cmdInstances > 1)
       cmdInstances-=1;
 #else
@@ -302,15 +314,21 @@ createServer(HttpServer* server)
 
 /* Lua debugger hook. Use the debug monitor or the basic trace lib.
  */
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
 static void
 dbgExitRequest(void* na, BaBool rstart)
 {
    (void)na;
-   (void)rstart;
-   SoDisp_setExit(&dispatcher);
+   if(rstart)
+   {
+      SoDisp_setExit(&dispatcher);
+   }
+   else
+   {
+      setDispExit(); /* Terminate without entering the restart loop. */
+   }
 }
-#elif defined(ENABLE_LUA_TRACE)
+#elif XEDGE_ENABLE_LUA_LINE_TRACE
 /* Prints every line executed by Lua if enabled */
 static void lHook(lua_State *L, lua_Debug *ar)
 {
@@ -325,14 +343,6 @@ static void lHook(lua_State *L, lua_Debug *ar)
    disk   |    net   |    zip   |   ezip
    BAIO_DISK | BAIO_NET | BAIO_ZIP | BAIO_EZIP
 */
-#ifdef BAIO_DISK_PATH
-#define BAIO_DISK
-#define PATH_AUX(x) #x
-#define PATH_STRINGIFY(x) PATH_AUX(x)
-#define BAIO_DISK_PATH_STR PATH_STRINGIFY(BAIO_DISK_PATH)
-#else
-#define BAIO_DISK_PATH_STR "../XedgeResources"
-#endif
 static IoIntf*
 createVmIo()
 {
@@ -340,9 +350,9 @@ createVmIo()
    static DiskIo vmIo;
    int ecode;
    DiskIo_constructor(&vmIo);
-   if( (ecode=DiskIo_setRootDir(&vmIo, BAIO_DISK_PATH_STR)) != 0 )
+   if( (ecode=DiskIo_setRootDir(&vmIo, XEDGE_RESOURCE_DIRECTORY)) != 0 )
    {
-      HttpTrace_printf(0, "Cannot set DiskIo " BAIO_DISK_PATH_STR " directory: % s\n",
+      HttpTrace_printf(0, "Cannot set DiskIo " XEDGE_RESOURCE_DIRECTORY " directory: % s\n",
                        baErr2Str(ecode));
       baFatalE(FE_USER_ERROR_1, __LINE__);
    }
@@ -366,7 +376,7 @@ createVmIo()
 #else
    /* BAIO_EZIP: for Xedge release build. */
    zipReader = getLspZipReader();
-#ifdef USE_ZIPSIGNATURE
+#if BA_ENABLE_ZIP_SIGNATURE
    if(baCheckZipSignature(zipPubKey, zipReader->size, (CspReader*)zipReader))
       return 0; /* ZIP signature failed */
 #endif
@@ -383,7 +393,7 @@ createVmIo()
 /*
   Push the embedded primary secret key material as a Lua string
 */
-#ifndef NO_ENCRYPTIONKEY
+#if BA_ENABLE_SOFTTPM_KEY_MATERIAL
 static void pushPrimarySecret(lua_State* L)
 {
 #include "XedgeWBC.h"
@@ -429,13 +439,13 @@ addSecret(XedgeOpenAUX* aux, BaBool unique, const U8* secret, size_t slen)
       lua_pop(L,1);
    }
 }
-#endif /* NO_ENCRYPTIONKEY */
+#endif /* BA_ENABLE_SOFTTPM_KEY_MATERIAL */
 
 
 /* Wrapper for calling function xedgeOpenAUX.
  * Two xedgeOpenAUX examples: led.c and AsynchLua.c.
  */
-#ifdef NO_XEDGE_AUX
+#if !XEDGE_ENABLE_AUX
 #define callXedgeOpenAUX(L,ref,io) 0
 #else
 static void
@@ -444,14 +454,14 @@ callXedgeOpenAUX(lua_State* L, int initXedgeFuncRef, IoIntfPtr dio)
    XedgeOpenAUX aux = {
       L,
       dio,
-#ifdef NO_ENCRYPTIONKEY
+#if !BA_ENABLE_SOFTTPM_KEY_MATERIAL
       0,0,
 #else
       addSecret,initXedgeFuncRef,
 #endif
       0
    };
-#ifndef NO_ENCRYPTIONKEY
+#if BA_ENABLE_SOFTTPM_KEY_MATERIAL
    /* ENCRYPTIONKEY from (New)EncryptionKey.h
       Push the primary secret key material as a Lua string
    */
@@ -491,7 +501,7 @@ barracuda(void)
    static ThreadMutex mutex;
    static HttpServer server;
    static BaTimer timer;
-#ifndef MAXTHREADS
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SEPARATE
    static HttpCmdThreadPool pool;
 #endif
    static int ecode;
@@ -500,14 +510,29 @@ barracuda(void)
    static BaLua_param blp; /* configuration parameters */
    static int onunloadRef;
    static int initXedgeFuncRef;
-#ifndef NO_BAIO_DISK
+#if XEDGE_ENABLE_DISK_IO
    static DiskIo diskIo;
+#endif
+
+   HttpTrace_setPrio(9); /* block > 9 */
+
+#if SHARKSSL_PSA_CONSUMER
+   /* Provider storage and hardware must be ready before ZIP verification or
+    * Lua creation uses cryptography. Keep them alive across Lua restarts.
+    */
+   {
+      int status=xedgeInitPsa();
+      if(status)
+      {
+         HttpTrace_printf(0,"PSA provider initialization failed: %d\n",status);
+         baFatalE(FE_USER_ERROR_1, __LINE__);
+         return;
+      }
+   }
 #endif
 
 /* If restarted by Lua debugger */
   L_restart:
-
-   HttpTrace_setPrio(9); /* block > 9 */
 
    /* Create the Socket dispatcher (SoDisp), the SoDisp mutex, and the server.
     */
@@ -519,7 +544,7 @@ barracuda(void)
    NetIo_constructor(&netIo, &dispatcher);
 
    /* The optional timer is useful in LSP code */
-   BaTimer_constructor(&timer, &mutex, BA_STACKSZ, 25, ThreadPrioNormal, 0);
+   BaTimer_constructor(&timer, &mutex, BA_THREAD_STACK_SIZE, 25, ThreadPrioNormal, 0);
    
    /* Create a Lua (LSP) virtual machine.
     */
@@ -529,13 +554,13 @@ barracuda(void)
       return; /* ZIP signature failed */
    blp.server = &server;     /* pointer to a HttpServer */
    blp.timer = &timer;       /* Pointer to a BaTimer */
-#ifdef USE_ZIPBINPWD
+#if BA_ENABLE_ZIP_PASSWORD
    /* Must be set in zipbinpwd.h */
    blp.zipBinPwd = zipBinPwd;
    blp.zipBinPwdLen = sizeof(zipBinPwd);
-   blp.pwdRequired = ZIPBINPWD_REQUIRED;
+   blp.pwdRequired = BA_REQUIRE_ZIP_PASSWORD;
 #endif
-#ifdef USE_ZIPSIGNATURE
+#if BA_ENABLE_ZIP_SIGNATURE
    /* Must be set in ZipPublicKey.h */
    blp.zipPubKey = zipPubKey;
 #endif
@@ -545,9 +570,9 @@ barracuda(void)
       Use the debugger monitor or the basic trace lib (lHook).
       Must be first.
    */
-#if USE_DBGMON
+#if BA_ENABLE_LUA_DEBUGGER
    ba_ldbgmon(L, dbgExitRequest, 0);
-#elif defined(ENABLE_LUA_TRACE)
+#elif XEDGE_ENABLE_LUA_LINE_TRACE
    lua_sethook(L, lHook, LUA_MASKLINE, 0);
 #endif
 
@@ -557,14 +582,14 @@ barracuda(void)
    LThreadMgr_constructor(&ltMgr,
                           &server,
                           ThreadPrioNormal,
-                          BA_STACKSZ,
-#ifdef MAXTHREADS
-                          MAXTHREADS,
+                          BA_THREAD_STACK_SIZE,
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SHARED_FIXED
+                          XEDGE_THREAD_COUNT,
 #else
-                          2, /* Number of threads */
+                          XEDGE_THREAD_COUNT, /* Initial number of Lua threads */
 #endif
                           L,
-#ifdef MAXTHREADS
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SHARED_FIXED
                           FALSE /* do not allow creating more threads */
 #else
                           TRUE /* allow creating more threads */
@@ -582,7 +607,7 @@ barracuda(void)
    The following macro makes it possible to disable the DiskIo.
    Makefile option: make ..... nodisk=1
 */
-#ifdef NO_BAIO_DISK
+#if !XEDGE_ENABLE_DISK_IO
    HttpTrace_printf(0, "DiskIo not included. Use NetIo!\n");
 #else
    DiskIo_constructor(&diskIo);
@@ -606,31 +631,39 @@ barracuda(void)
       10*60); /* 10 minutes ban time if more than 4 login attempts in a row. */
 
    balua_tokengen(L); /* See  the "SharkTrustX" comment above */
-#if USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
    balua_mallinfo(L); /* Mem info. See dlmalloc.c */
 #endif
-#if USE_UBJSON
+#if BA_ENABLE_UBJSON
    balua_ubjson(L);
 #endif
-#if USE_LPEG
+#if BA_ENABLE_LUA_LPEG
    luaL_requiref(L, "lpeg", luaopen_lpeg, FALSE);
    lua_pop(L,1); /* Pop lpeg obj: statically loaded, not dynamically. */
 #endif
-#if USE_CBOR
+#if BA_ENABLE_LUA_CBOR
    luaL_requiref(L, "org.conman.cbor_c", luaopen_org_conman_cbor_c, FALSE);
    lua_pop(L,1);
 #endif
-#if USE_PROTOBUF
+#if BA_ENABLE_LUA_PROTOBUF
    luaL_requiref(L, "pb", luaopen_pb, FALSE);
    lua_pop(L,1); /* Pop pb obj: statically loaded, not dynamically. */
 #endif
-#if USE_REVCON
+#if BA_ENABLE_REVERSE_CONNECTION
    /* Add reverse server connection. This requires SharkTrustX.
     */
    balua_revcon(L);
 #endif
-#if USE_OPCUA
+#if BA_ENABLE_LUA_OPCUA
    luaopen_opcua_ns0_static(L);
+#endif
+#if BA_ENABLE_MDNS && BA_ENABLE_MDNS_LUA
+   /* Install ba.createmdns for SharkCA and local hostname resolution. */
+   BamDNS_luaopen(L, NULL);
+#endif
+#if SHARKSSL_PSA_CONSUMER
+   /* Register the binding in each new Lua state, before .config runs. */
+   balua_psa(L);
 #endif
    /* Dispatcher mutex must be locked until the dispatcher starts
     */
@@ -654,16 +687,16 @@ barracuda(void)
    initXedgeFuncRef=luaL_ref(L,LUA_REGISTRYINDEX);
 
    /* See (A) above */
-#ifdef MAXTHREADS
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SHARED_FIXED
    LThreadMgr_enableHttpPool(&ltMgr, &server);
 #else
-   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_STACKSZ);
+   HttpCmdThreadPool_constructor(&pool, &server, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
 #endif
 
    /* Example Lua bindings, compile with AsynchLua.c or led.c.
       This code opens ESP32 bindings when Xedge32 is compiled.
     */
-#ifdef NO_BAIO_DISK
+#if !XEDGE_ENABLE_DISK_IO
    callXedgeOpenAUX(L, initXedgeFuncRef, 0);
 #else
    callXedgeOpenAUX(L, initXedgeFuncRef, (IoIntfPtr)&diskIo);
@@ -671,7 +704,7 @@ barracuda(void)
 
    /* Signal done, now start server */
    lua_rawgeti(L, LUA_REGISTRYINDEX, initXedgeFuncRef);
-#if defined(NO_XEDGE_AUX) || defined(NO_ENCRYPTIONKEY)
+#if !XEDGE_ENABLE_AUX || !BA_ENABLE_SOFTTPM_KEY_MATERIAL
    lua_pushnil(L);
 #else
    lua_pushboolean(L, TRUE);
@@ -703,7 +736,7 @@ barracuda(void)
    /* Graceful termination of Lua apps. See function above. */
    onunload(L, onunloadRef);
    LThreadMgr_destructor(&ltMgr); /* Wait for threads to exit */
-#ifndef MAXTHREADS
+#if XEDGE_THREAD_POOL_MODE == XEDGE_THREAD_POOL_SEPARATE
    HttpCmdThreadPool_destructor(&pool);  /* Wait for threads to exit */
 #endif
 
@@ -714,7 +747,7 @@ barracuda(void)
    balua_close(L);
 
    IoIntf_destructor(blp.vmio); /* Virtual destr */
-#ifndef NO_BAIO_DISK
+#if XEDGE_ENABLE_DISK_IO
    DiskIo_destructor(&diskIo);
 #endif
    NetIo_destructor(&netIo);
@@ -723,7 +756,7 @@ barracuda(void)
    ThreadMutex_release(&mutex);   
    ThreadMutex_destructor(&mutex);
 
-   if(shutDown) /* via setDispExit() */
+   if(shutDown) /* Explicit shutdown or debugger termination. */
    {
       shutDown=FALSE;
    }

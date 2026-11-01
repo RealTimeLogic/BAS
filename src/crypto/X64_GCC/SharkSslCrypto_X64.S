@@ -1,43 +1,48 @@
+/*
+ **
+ *     ____             _________                __                _
+ *    / __ \___  ____ _/ /_  __(_)___ ___  ___  / /   ____  ____ _(_)____
+ *   / /_/ / _ \/ __ `/ / / / / / __ `__ \/ _ \/ /   / __ \/ __ `/ / ___/
+ *  / _, _/  __/ /_/ / / / / / / / / / / /  __/ /___/ /_/ / /_/ / / /__
+ * /_/ |_|\___/\__,_/_/ /_/ /_/_/ /_/ /_/\___/_____/\____/\__, /_/\___/
+ *                                                       /____/
+ *
+ *                 SharkSSL Embedded SSL/TLS Stack
+ ****************************************************************************
+ *   PROGRAM MODULE
+ *
+ *   $Id: SharkSslCrypto_X64.S 6635 2026-10-26 20:00:02Z gianluca $
+ *
+ *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
+ *
+ *   This software is copyrighted by and is the sole property of Real
+ *   Time Logic LLC.  All rights, title, ownership, or other interests in
+ *   the software remain the property of Real Time Logic LLC.  This
+ *   software may only be used in accordance with the terms and
+ *   conditions stipulated in the corresponding license agreement under
+ *   which the software has been supplied.  Any unauthorized use,
+ *   duplication, transmission, distribution, or disclosure of this
+ *   software is expressly forbidden.
+ *
+ *   This Copyright notice may not be removed or modified without prior
+ *   written consent of Real Time Logic LLC.
+ *
+ *   Real Time Logic LLC. reserves the right to modify this software
+ *   without notice.
+ *
+ *               http://www.realtimelogic.com
+ *               http://www.sharkssl.com
+ ****************************************************************************
+ *
+ *
+ */
+
 /* Linux x86-64 ELF/GAS port of the corresponding X64_MSVC file.
  * The public SysV entry adapts arguments to the private kernel schedule.
  * No compiler ABI attributes are needed in common C. */
 .intel_syntax noprefix
-/* **************************************************************************** */
-/* *     ____             _________                __                _ */
-/* *    / __ \___  ____ _/ /_  __(_)___ ___  ___  / /   ____  ____ _(_)____ */
-/* *   / /_/ / _ \/ __ `/ / / / / / __ `__ \/ _ \/ /   / __ \/ __ `/ / ___/ */
-/* *  / _, _/  __/ /_/ / / / / / / / / / / /  __/ /___/ /_/ /_/ / / /__/ */
-/* * /_/ |_|\___/\__,_/_/ /_/ /_/_/ /_/ /_/\___/_____/\____/\__, /_/\___/ */
-/* *                                                       /____/ */
-/* * */
-/* *                 SharkSSL Embedded SSL/TLS Stack */
-/* **************************************************************************** */
-/* *   PROGRAM MODULE */
-/* * */
-/* *   $Id: SharkSslCrypto_X64.asm 6069 2026-09-20 21:13:20Z gianluca $ */
-/* * */
-/* *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026 */
-/* * */
-/* *   This software is copyrighted by and is the sole property of Real */
-/* *   Time Logic LLC.  All rights, title, ownership, or other interests in */
-/* *   the software remain the property of Real Time Logic LLC.  This */
-/* *   software may only be used in accordance with the terms and */
-/* *   conditions stipulated in the corresponding license agreement under */
-/* *   which the software has been supplied.  Any unauthorized use, */
-/* *   duplication, transmission, distribution, or disclosure of this */
-/* *   software is expressly forbidden. */
-/* * */
-/* *   This Copyright notice may not be removed or modified without prior */
-/* *   written consent of Real Time Logic LLC. */
-/* * */
-/* *   Real Time Logic LLC. reserves the right to modify this software */
-/* *   without notice. */
-/* * */
-/* *               http://www.realtimelogic.com */
-/* *               http://www.sharkssl.com */
-/* **************************************************************************** */
 
-/*  SharkSSL AES-GCM acceleration for Microsoft x64 MASM. */
+/*  SharkSSL AES-GCM acceleration for x86-64 ELF/GAS. */
 
 /*  Full GCM blocks use AES-NI for CTR encryption and PCLMULQDQ for GHASH. */
 

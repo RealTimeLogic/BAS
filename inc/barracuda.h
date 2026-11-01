@@ -49,7 +49,7 @@
 #include <IoIntfCspReader.h>
 #include <ZipIo.h>
 
-#ifndef NO_BAIO_DISK
+#if !defined(XEDGE_ENABLE_DISK_IO) || XEDGE_ENABLE_DISK_IO
 #include <BaDiskIo.h>
 #endif
 

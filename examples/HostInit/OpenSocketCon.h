@@ -12,7 +12,7 @@
  *
  *   $Id: OpenSocketCon.h 4914 2021-12-01 18:24:30Z wini $
  *
- *   COPYRIGHT:  Real Time Logic
+ *   COPYRIGHT:  Real Time Logic, 2026
  *               https://realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -41,7 +41,7 @@ C++ code.
 
 #include <HttpTrace.h>
 #include <HttpServCon.h>
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include <HttpSharkSslServCon.h>
 #endif
 #include <BaErrorCodes.h>
@@ -50,15 +50,15 @@ C++ code.
 #ifdef __cplusplus
 extern "C" {
 #endif
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 SharkSsl sharkSsl;
 HttpSharkSslServCon httpSharkSslServCon;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 HttpSharkSslServCon httpSharkSslServCon6;
 #endif
 #endif
 HttpServCon httpServCon;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 HttpServCon httpServCon6;
 #endif
 #ifdef __cplusplus
@@ -94,18 +94,18 @@ openSocketCon(HttpServer* server, SoDisp* disp)
    }
    if( !HttpServCon_isValid(&httpServCon) )
       baFatalE(FE_USER_ERROR_1, 0);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    HttpServCon_constructor(&httpServCon6, server, disp, port, TRUE, 0, 0);
 #endif
 
    HttpTrace_printf(0,"HTTP: Server listening on IPv4 port %d",port);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if( HttpServCon_isValid(&httpServCon6) )
       HttpTrace_printf(0," and IPv6 port %d",port);
 #endif
    HttpTrace_printf(0,".\n");
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
    {
       /* Try the default server listen port.
          If unable to open, try ports in the range 9443 to 9460
@@ -143,7 +143,7 @@ openSocketCon(HttpServer* server, SoDisp* disp)
       if( !HttpServCon_isValid((HttpServCon*)&httpSharkSslServCon) )
          baFatalE(FE_USER_ERROR_2, 0);
 
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       HttpSharkSslServCon_constructor(
          &httpSharkSslServCon6,
          &sharkSsl,
@@ -157,7 +157,7 @@ openSocketCon(HttpServer* server, SoDisp* disp)
 
 
       HttpTrace_printf(0,"HTTPS: SharkSSL listening on IPv4 port %d", port);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if( HttpServCon_isValid(&httpSharkSslServCon6) )
       HttpTrace_printf(0," and IPv6 port %d",port);
 #endif

@@ -50,7 +50,7 @@ createServer(void)
    HttpServerConfig_setResponseData(&cfg, 8 * 1024);
    HttpServer_constructor(&server, &dispatcher, &cfg);
    HttpCmdThreadPool_constructor(
-      &pool, &server, ThreadPrioNormal, BA_STACKSZ);
+      &pool, &server, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
    openSocketCon(&server, &dispatcher); /* HLOS helper, when applicable */
    return &server;
 }
@@ -87,7 +87,7 @@ static HttpServer* createServer()
       cfg.setResponseData(8 * 1024);
       static HttpServer serverStorage(&dispatcher, &cfg);
       static HttpCmdThreadPool poolStorage(
-         &serverStorage, ThreadPrioNormal, BA_STACKSZ);
+         &serverStorage, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
       server = &serverStorage;
       pool = &poolStorage;
       openSocketCon(server, &dispatcher);

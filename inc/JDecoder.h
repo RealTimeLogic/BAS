@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JDecoder.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: JDecoder.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2014
+ *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -112,9 +112,7 @@ typedef struct
       U8* b;
       S32* d;
       S64* l;
-#ifndef NO_DOUBLE
       double* f;
-#endif
       char* s;
       struct /* For obj/array */
       {

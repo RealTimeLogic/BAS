@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 5364 2022-12-23 17:20:13Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2002 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -56,10 +56,14 @@
 #include <gBsdDspO.h>
 #include <NetConv.h>
 
-#define USE_ADDRINFO
-#define USE_DGRAM
+#ifndef BA_USE_GETADDRINFO
+#define BA_USE_GETADDRINFO 1
+#endif
+#ifndef BA_ENABLE_UDP
+#define BA_ENABLE_UDP 1
+#endif
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 #include <net/if.h>  /* if_nametoindex */
 #endif
 
@@ -81,7 +85,7 @@
 #undef SO_KEEPALIVE
 #define HttpSocket_setmembership(o,enable,ipv6,multiAddrName,intfName) -1
 #define HttpSocket_setTCPNoDelay(o, enable, status) (*(status)=0)
-#define NO_KEEPALIVEEX
+#define BA_HAVE_TCP_KEEPALIVE_TUNING 0
 
 #define HttpSockaddr_gethostbyname(o, host, useIp6, status) do {\
    *(status)=0;\
@@ -200,7 +204,10 @@
 
 #endif /* defined EINTR EAGAIN */
 
-#if !defined(NO_KEEPALIVEEX) && defined(TCP_KEEPIDLE)
+#ifndef BA_HAVE_TCP_KEEPALIVE_TUNING
+#define BA_HAVE_TCP_KEEPALIVE_TUNING 1
+#endif
+#if BA_HAVE_TCP_KEEPALIVE_TUNING && defined(TCP_KEEPIDLE)
 #define HttpSocket_getKeepAliveEx(o,enablePtr,timePtr,intervalPtr,statusPtr)\
 do {\
    int _ZoptV,_Zidle,_Zintv;\

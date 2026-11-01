@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDisp.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: SoDisp.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic LLC, 2002-2021
+ *   COPYRIGHT:  Real Time Logic LLC, 2002-2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -42,6 +42,7 @@
 #define _SoDisp_h
 
 #include <HttpCfg.h>
+#include <BaSocketConfig.h>
 #include <ThreadLib.h>
 
 
@@ -86,6 +87,11 @@ HttpResponse::getRequest, SoDispCon::getDispatcher,
  * connection registration or event state from another thread. The "generic SoDisp" is
  * using "socket select" and waits in a loop for the next active
  * socket connection.</p>
+ * Construct the port mutex and dispatcher before HttpServer. Shut down
+ * listener and worker activity before releasing these borrowed port objects.
+ * See \ref NativeStart for the construction sequence, \ref DispatcherMutext
+ * for locking, and the <a href="../../introduction.html#oo_c">C/C++ mapping</a>
+ * for the equivalent C function calls.
  */
 typedef struct SoDisp
 {
@@ -134,11 +140,11 @@ typedef struct SoDisp
       void deactivateRec(SoDispCon* con);
       /** Enable send-ready events.
        * @param[in,out] con Registered valid connection with a send callback and
-       * send events currently inactive. No operation in NO_ASYNCH_RESP builds. */
+       * send events currently inactive. No operation in BA_HAVE_SOCKET_WRITE_EVENTS builds. */
       void activateSend(SoDispCon* con);
       /** Disable send-ready events without closing or unregistering the connection.
        * @param[in,out] con Connection with send events active. No operation in
-       * NO_ASYNCH_RESP builds. */
+       * BA_HAVE_SOCKET_WRITE_EVENTS builds. */
       void deactivateSend(SoDispCon* con);
       /** Unregister a connection without closing or freeing it.
        * @param[in,out] con Registered connection. Deactivate both receive and
@@ -190,7 +196,7 @@ BA_API void SoDisp_activateRec(SoDisp* o, struct SoDispCon* con);
 /** @copydoc SoDisp::deactivateRec
  * @param[in,out] o Caller-owned dispatcher instance. */
 BA_API void SoDisp_deactivateRec(SoDisp* o, struct SoDispCon* con);
-#ifdef NO_ASYNCH_RESP
+#if !BA_HAVE_SOCKET_WRITE_EVENTS
 #define SoDisp_activateSend(o, con)
 #define SoDisp_deactivateSend(o, con)
 #else

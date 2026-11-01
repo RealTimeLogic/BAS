@@ -42,11 +42,11 @@ The following options configure the smallest possible SharkSSL library:
 #define SHARKSSL_ENABLE_AES_CTR_MODE 0                /* 1 */ 
 #define SHARKSSL_AES_CIPHER_LOOP_UNROLL 0             /* 1 */
 #define SHARKSSL_UNALIGNED_ACCESS 1                   /* nd */
-#define SHARKSSL_BIGINT_WORDSIZE 32                   /* 32 */
 #define SHARKSSL_USE_ECC 1                            /* 1 */ 
 #define SHARKSSL_ENABLE_ECDSA 1                       /* 1 */
 #define SHARKSSL_ECC_VERIFY_POINT 0                   /* 1 */
-#define SHARKSSL_ECC_TIMING_RESISTANT 0               /* 0 */
+#define SHARKSSL_ECC_FIXED_BASE_COMB 0                /* 1 */
+#define SHARKSSL_ECC_MULT_FIXED_WINDOW 0              /* 4 */
 #define SHARKSSL_ECC_USE_SECP521R1 0                  /* 1 */
 #define SHARKSSL_ECC_USE_BRAINPOOLP512R1 0            /* 1 */
 #define SHARKSSL_ENABLE_ECDHE_RSA 0                   /* 1 */

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ubjson.h 6056 2026-09-20 05:09:33Z wini $
+ *   $Id: ubjson.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2014 - 2026
  *
@@ -126,10 +126,8 @@ typedef struct {
       S16 int16; /**< Use when 't' is \ref UBJT_Int16 */
       S32 int32; /**< Use when 't' is \ref UBJT_Int32 */
       S64 int64; /**< Use when 't' is \ref UBJT_Int64 */
-#ifndef NO_DOUBLE
       double float64; /**< Use when 't' is \ref UBJT_Float64 */
       float float32; /**< Use when 't' is \ref UBJT_Float32 */
-#endif
       const char* string; /**< Borrowed chunk for String/HNumber; not NUL-terminated. Use len and x. */
    } u;
 

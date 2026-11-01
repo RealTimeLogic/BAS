@@ -11,9 +11,9 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: GenPrimT.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: GenPrimT.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004 - 2022
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -48,15 +48,18 @@
 
 #ifndef _GenPrimT_h
 #define _GenPrimT_h
+#include <BaConfigTypes.h>
 #include <stdint.h>
+#include <float.h>
+#include <limits.h>
 
+/* JSON/UBJSON and binary numeric encodings require these representations. */
+#if CHAR_BIT != 8 || FLT_RADIX != 2 || FLT_MANT_DIG != 24 || DBL_MANT_DIG != 53 || FLT_MAX_EXP != 128 || DBL_MAX_EXP != 1024
+#error BAS requires 8-bit bytes, binary32 float and binary64 double
+#endif
+typedef char BaFloatSizeCheck[sizeof(float) == 4 ? 1 : -1];
+typedef char BaDoubleSizeCheck[sizeof(double) == 8 ? 1 : -1];
 
-#define SHARKSSL_USE_SHA1       1
-#define SHARKSSL_USE_MD5        1
-#define SHARKSSL_ENABLE_AES_CCM 1
-#define SHARKSSL_HMAC_API       1
-#define SHARKSSL_ENABLE_AES_CBC 1
-#define SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT 1
 
 #ifdef __ICCARM__
 #pragma diag_suppress=Pa084
@@ -123,18 +126,18 @@ typedef U8 BaBool;
 
 #define S64_getMsw(o) ((S32)(0xFFFFFFFF & ((o) >> 32) ))
 
-#ifdef BA_FILESIZE64
-/** Unsigned file size or position in bytes; 64 bits with BA_FILESIZE64. */
+#if BA_FILE_OFFSET_BITS == 64
+/** Unsigned file size or position in bytes; 64 bits with BA_FILE_OFFSET_BITS=64. */
 typedef U64 BaFileSize;
-/** Signed file-size value in bytes; 64 bits with BA_FILESIZE64. */
+/** Signed file-size value in bytes; 64 bits with BA_FILE_OFFSET_BITS=64. */
 typedef S64 SBaFileSize;
 /* Unsigned and Signed baprintf FileSize format flags */
 #define BA_UFSF "llu"
 #define BA_SFSF "lld"
 #else
-/** Unsigned file size or position in bytes; 32 bits without BA_FILESIZE64. */
+/** Unsigned file size or position in bytes; 32 bits with BA_FILE_OFFSET_BITS=32. */
 typedef U32 BaFileSize;
-/** Signed file-size value in bytes; 32 bits without BA_FILESIZE64. */
+/** Signed file-size value in bytes; 32 bits with BA_FILE_OFFSET_BITS=32. */
 typedef S32 SBaFileSize;
 #define BA_UFSF "lu"
 #define BA_SFSF "ld"

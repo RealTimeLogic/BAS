@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -38,6 +38,37 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DLMALLOC
+#endif
+#if BA_ALLOCATOR != BA_ALLOCATOR_DLMALLOC && BA_ALLOCATOR != BA_ALLOCATOR_MQX
+#error The MQX port requires its DLMALLOC or MQX allocator
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_USE_C_RUNTIME_TIME
+#define BA_USE_C_RUNTIME_TIME 0
+#endif
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 #include <mqx.h>
 
 
@@ -57,13 +88,22 @@
 #endif
 #define BAI_FUNC
 
-#if PSP_ENDIAN != MQX_BIG_ENDIAN && PSP_ENDIAN != MQX_LITTLE_ENDIAN
-#error something is wrong
+#if !defined(PSP_ENDIAN) || !defined(MQX_BIG_ENDIAN) || !defined(MQX_LITTLE_ENDIAN)
+#error Missing MQX byte-order declaration
+#elif PSP_ENDIAN == MQX_BIG_ENDIAN
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_BIG_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
+#error BA_BYTE_ORDER disagrees with MQX
 #endif
-#if PSP_ENDIAN == MQX_BIG_ENDIAN
-#define B_BIG_ENDIAN
+#elif PSP_ENDIAN == MQX_LITTLE_ENDIAN
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
+#error BA_BYTE_ORDER disagrees with MQX
+#endif
 #else
-#define B_LITTLE_ENDIAN
+#error Unsupported MQX byte order
 #endif
 
 #if defined(SHARKSSL_LIB)
@@ -73,7 +113,7 @@
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 #include <BaErrorCodes.h>
 #ifdef NDEBUG
@@ -98,7 +138,7 @@
 extern "C" {
 #endif
 
-#ifdef USE_MQX_MALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
 /* Note: Do not use when using the Lua plugin */
 #define baMalloc(size) _mem_alloc_system(size)
 void* baRealloc(void* ptr, unsigned long size);

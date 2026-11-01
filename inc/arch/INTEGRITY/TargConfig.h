@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2011 - 2026
  *
@@ -39,24 +39,50 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 1
+#endif
+
+
 #include <INTEGRITY.h>
 
 #if defined(__LittleEndian) || defined(LittleEndian) || defined(TM_LITTLE_ENDIAN)
-  #ifdef B_BIG_ENDIAN
-    #error ENDIANESS MISMATCH!
-  #endif
-  #ifndef B_LITTLE_ENDIAN
-    #define B_LITTLE_ENDIAN
-  #endif
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
+#error BA_BYTE_ORDER disagrees with INTEGRITY
+#endif
 #elif defined(__BigEndian) || defined(BigEndian) || defined(TM_BIG_ENDIAN)
-  #ifdef B_LITTLE_ENDIAN
-    #error ENDIANESS MISMATCH!
-  #endif
-  #ifndef B_BIG_ENDIAN
-    #define B_BIG_ENDIAN
-  #endif
+#ifndef BA_BYTE_ORDER
+#define BA_BYTE_ORDER BA_BYTE_ORDER_BIG_ENDIAN
+#elif BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN
+#error BA_BYTE_ORDER disagrees with INTEGRITY
+#endif
 #else
-#error Missing little/big endian declaration
+#error Missing INTEGRITY byte-order declaration
 #endif
 
 
@@ -79,7 +105,7 @@
  ***********************************************************************/
 #include <stddef.h>
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #else
 #include <stdlib.h>
@@ -139,7 +165,7 @@ U32 baGetMsClock(void);
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#include <BaConfig.h>
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be
    exported to outside modules. Use when compiled as a shared library.

@@ -2,6 +2,7 @@
  * Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
  */
 /* Respect explicit command-line and SharkSSL_opts.h optimization settings. */
+#include <BaConfigEndian.h>
 #include "SharkSSL_opts.h"
 #ifdef SHARKSSL_OPTIMIZED_GCM_ASM
 SHARKSSL_MAKE_GCM_DEFINED
@@ -51,7 +52,7 @@ SHARKSSL_MAKE_TARGET_X64_MSVC
 SHARKSSL_MAKE_TARGET_X86_MSVC
 #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && defined(__ELF__) && defined(__x86_64__) && defined(__LP64__) && !defined(__ILP32__)
 SHARKSSL_MAKE_TARGET_X64_GCC
-#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && !defined(__ANDROID__) && defined(__ELF__) && defined(__aarch64__) && defined(__LP64__) && !defined(__ILP32__) && defined(__AARCH64EL__) && !defined(B_BIG_ENDIAN)
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && !defined(__ANDROID__) && defined(__ELF__) && defined(__aarch64__) && defined(__LP64__) && !defined(__ILP32__) && defined(__AARCH64EL__) && (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
 SHARKSSL_MAKE_TARGET_ARM64_GCC
 #endif
 

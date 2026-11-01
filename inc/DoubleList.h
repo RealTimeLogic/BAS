@@ -9,9 +9,9 @@
  *                  Barracuda Embedded Web-Server
  *
  ****************************************************************************
- *			      HEADER
+ *   HEADER
  *
- *   $Id: DoubleList.h 5853 2026-08-17 09:48:31Z gianluca $
+ *   $Id: DoubleList.h 6590 2026-10-24 16:37:22Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *

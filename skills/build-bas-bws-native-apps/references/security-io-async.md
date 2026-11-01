@@ -195,7 +195,7 @@ static int startService(HttpRequest* req)
    memset(self, 0, sizeof(*self));
    active = (SoDispCon*)HttpRequest_getConnection(req);
    dispatcher = active->dispatcher;
-   Thread_constructor(&self->thread, run, ThreadPrioNormal, BA_STACKSZ);
+   Thread_constructor(&self->thread, run, ThreadPrioNormal, BA_THREAD_STACK_SIZE);
    if(SoDispCon_moveCon(active, &self->con) != 0) {
       Thread_destructor(&self->thread);
       baFree(self);

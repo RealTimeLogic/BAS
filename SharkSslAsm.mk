@@ -12,12 +12,12 @@ SHARKSSL_BACKEND := none
 SHARKSSL_DETECTED_BACKEND := none
 # Public amalgamated packages supply their own layout; the SDK keeps its defaults.
 SHARKSSL_CRYPTO_DIR ?= $(BAROOT)/src/plugins/SharkSSL/src/crypto
-SHARKSSL_INCLUDE_DIR ?= $(BAROOT)/src/plugins/SharkSSL/inc
+SHARKSSL_INCLUDE_DIR ?= $(BAROOT)/inc
 SHARKSSL_PROBE_NULL := $(if $(filter cmd cmd.exe CMD.EXE,$(notdir $(SHELL))),NUL,/dev/null)
 
 ifneq ($(SHARKSSL_ASM),off)
 ifndef usebalibs
-ifndef NO_SHARKSSL
+ifneq ($(BA_ENABLE_SHARKSSL),0)
 # Probe failure selects no backend. Use exactly the C compiler and C flags.
 ifeq ($(MFT),/D)
 SHARKSSL_PROBE := $(shell $(CC) $(CFLAGS) /EP /I$(SHARKSSL_INCLUDE_DIR) SharkSslTarget.c 2>$(SHARKSSL_PROBE_NULL) && echo SHARKSSL_MAKE_PROBE_OK)
@@ -50,7 +50,12 @@ endif
 ifneq ($(SHARKSSL_BACKEND),none)
 SHARKSSL_M0 := $(patsubst SHARKSSL_MAKE_M0_%,%,$(filter SHARKSSL_MAKE_M0_%,$(SHARKSSL_PROBE)))
 SHARKSSL_BACKEND_DIR := $(SHARKSSL_CRYPTO_DIR)/$(SHARKSSL_$(SHARKSSL_BACKEND)_DIR)
-SHARKSSL_ASFLAGS = $(SHARKSSL_$(SHARKSSL_BACKEND)_ASFLAGS)
+# GAS preprocesses the same BAS byte-order configuration as the C sources.
+SHARKSSL_ENDIAN_FLAGS = $(if $(filter cc,$(SHARKSSL_$(SHARKSSL_BACKEND)_DRIVER)),-I"$(SHARKSSL_INCLUDE_DIR)" -include "$(SHARKSSL_INCLUDE_DIR)/BaConfigEndian.h")
+SHARKSSL_ASFLAGS = $(SHARKSSL_$(SHARKSSL_BACKEND)_ASFLAGS) $(SHARKSSL_ENDIAN_FLAGS)
+SHARKSSL_BACKEND_CFLAGS = $(SHARKSSL_$(SHARKSSL_BACKEND)_CFLAGS)
+SHARKSSL_SHA2_C = $(SHARKSSL_$(SHARKSSL_BACKEND)_SHA2_C)
+SHARKSSL_SHA2_CFLAGS = $(SHARKSSL_$(SHARKSSL_BACKEND)_SHA2_CFLAGS)
 # Test optional GAS kernels with the target toolchain, never the host CPU.
 # Compile the actual source to the null device; do not run target code.
 sharkssl_optional_supported = $(shell $(CC) $(CFLAGS) $(SHARKSSL_ASFLAGS) -c $(SHARKSSL_BACKEND_DIR)/$(SHARKSSL_$(SHARKSSL_BACKEND)_$(1)_ASM) -o $(SHARKSSL_PROBE_NULL) >$(SHARKSSL_PROBE_NULL) 2>&1 && echo yes)
@@ -73,7 +78,7 @@ SHARKSSL_AUTO_FLAGS := $(foreach option,$(SHARKSSL_DEFAULTS),$(if $(filter SHARK
 # Otherwise a guarded .S file could compile as empty and falsely pass.
 # Like the optional x64 check, compile to the null device; never run target code.
 ifeq ($(SHARKSSL_$(SHARKSSL_BACKEND)_COMPILE_CHECK),1)
-sharkssl_source_supported = $(shell $(CC) $(CFLAGS) $(SHARKSSL_AUTO_FLAGS) $(SHARKSSL_ASFLAGS) -c $(SHARKSSL_BACKEND_DIR)/$(1) -o $(SHARKSSL_PROBE_NULL) >$(SHARKSSL_PROBE_NULL) 2>&1 && echo yes)
+sharkssl_source_supported = $(shell $(CC) $(CFLAGS) $(SHARKSSL_AUTO_FLAGS) $(SHARKSSL_BACKEND_CFLAGS) $(if $(filter $(1),$(SHARKSSL_SHA2_C)),$(SHARKSSL_SHA2_CFLAGS)) $(SHARKSSL_ASFLAGS) -c $(SHARKSSL_BACKEND_DIR)/$(1) -o $(SHARKSSL_PROBE_NULL) >$(SHARKSSL_PROBE_NULL) 2>&1 && echo yes)
 SHARKSSL_COMPILE_FAILURES := $(foreach source,$(SHARKSSL_SELECTED_ASM) $(SHARKSSL_$(SHARKSSL_BACKEND)_C),$(if $(call sharkssl_source_supported,$(source)),,$(source)))
 ifneq ($(strip $(SHARKSSL_COMPILE_FAILURES)),)
 ifneq ($(SHARKSSL_ASM),auto)
@@ -92,8 +97,11 @@ endif
 
 ifneq ($(SHARKSSL_BACKEND),none)
 override CFLAGS += $(SHARKSSL_AUTO_FLAGS)
+override CFLAGS += $(SHARKSSL_BACKEND_CFLAGS)
 VPATH := $(VPATH):$(SHARKSSL_BACKEND_DIR)
 SOURCE += $(SHARKSSL_$(SHARKSSL_BACKEND)_C)
+SHARKSSL_SHA2_C_OBJS := $(addprefix $(ODIR)/,$(addsuffix $(O),$(basename $(SHARKSSL_SHA2_C))))
+$(SHARKSSL_SHA2_C_OBJS): CFLAGS += $(SHARKSSL_SHA2_CFLAGS)
 SHARKSSL_ASM_NAMES := $(basename $(SHARKSSL_SELECTED_ASM))
 SHARKSSL_ASM_OBJS := $(addprefix $(ODIR)/sharkssl_,$(addsuffix $(O),$(SHARKSSL_ASM_NAMES)))
 ifeq ($(SHARKSSL_$(SHARKSSL_BACKEND)_DRIVER),cc)
@@ -114,6 +122,7 @@ sharkssl-info:
 	@echo SharkSSL detected backend: $(SHARKSSL_DETECTED_BACKEND)
 	@echo SharkSSL backend: $(SHARKSSL_BACKEND)
 	@echo SharkSSL automatic defines: $(SHARKSSL_AUTO_FLAGS)
+	@echo SharkSSL backend C flags: $(SHARKSSL_BACKEND_CFLAGS)
 	@echo SharkSSL AES layout: $(SHARKSSL_M0)
 	@echo SharkSSL assembly files: $(SHARKSSL_SELECTED_ASM)
 	@echo SharkSSL unsupported optional assembly: $(SHARKSSL_UNSUPPORTED)
@@ -127,7 +136,7 @@ endif
 # Rebuild C as well as assembly after a backend/layout or description change.
 # Other compiler/command-line flag changes still require clean/separate ODIRs.
 SHARKSSL_STAMP := $(ODIR)/.sharkssl-$(SHARKSSL_BACKEND)-$(SHARKSSL_M0)
-$(SHARKSSL_STAMP): SharkSslAsm.mk SharkSslBackends.mk SharkSslTarget.c $(SHARKSSL_INCLUDE_DIR)/SharkSSL_opts.h $(SHARKSSL_INCLUDE_DIR)/SharkSSL_cfg.h
+$(SHARKSSL_STAMP): SharkSslAsm.mk SharkSslBackends.mk SharkSslTarget.c $(SHARKSSL_INCLUDE_DIR)/SharkSSL_opts.h $(SHARKSSL_INCLUDE_DIR)/SharkSSL_cfg.h $(SHARKSSL_INCLUDE_DIR)/BaConfigEndian.h $(SHARKSSL_INCLUDE_DIR)/BaConfigDefs.h $(SHARKSSL_INCLUDE_DIR)/BaConfigOpts.h
 ifeq ($(SHARKSSL_PROBE_NULL),NUL)
 	@if exist "$(subst /,\,$(ODIR))\.sharkssl-*" del /Q "$(subst /,\,$(ODIR))\.sharkssl-*"
 else

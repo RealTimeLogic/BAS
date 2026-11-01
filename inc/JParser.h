@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: JParser.h 5978 2026-09-11 16:13:48Z wini $
+ *   $Id: JParser.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006-2026
  *
@@ -392,9 +392,7 @@ typedef struct JParserVal
    union
    {
       char* s; /**< Borrowed UTF-8 bytes for String; use stringLen to preserve embedded NUL. */
-#ifndef NO_DOUBLE
       double f; /**< If number of type double */
-#endif
       S32 d; /**< If integer */
       U64 l; /**< Long integer bit pattern; signed JSON long values are interpreted as S64 by consumers. */
       BaBool b;

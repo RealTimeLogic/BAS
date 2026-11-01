@@ -1,7 +1,8 @@
 
 #ifndef lconfig_h
 
-#define BA_HAS_ANSI_IO
+#include <TargConfig.h>
+
 
 #undef snprintf
 #undef sprintf
@@ -15,9 +16,7 @@
 extern int basnprintf(char* buf, int len, const char* fmt, ...);
 extern int basprintf(char* buf, const char* fmt, ...);
 
-#ifdef NO_LOCALDECPOINT
-#define lua_getlocaledecpoint() '.'
-#endif
+/* Set lua_getlocaledecpoint() in the port for a dot-only runtime. */
 
 #include <gluaconf.h>
 

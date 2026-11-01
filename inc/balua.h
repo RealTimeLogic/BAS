@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: balua.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: balua.h 6674 2026-10-29 17:01:49Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
@@ -42,13 +42,20 @@
 #ifndef _balua_h
 #define _balua_h
 
+#ifndef BALUA_ENABLE_LEGACY_PEM_KEY_API
+#define BALUA_ENABLE_LEGACY_PEM_KEY_API (!SHARKSSL_PSA_CONSUMER)
+#endif
+#if SHARKSSL_PSA_CONSUMER && BALUA_ENABLE_LEGACY_PEM_KEY_API
+#error Legacy PEM private-key bindings require the native SharkSSL backend
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "lua.h"
 #include "lauxlib.h"
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 #include "SharkSSL.h"
 #endif
 #ifdef __cplusplus
@@ -61,7 +68,7 @@ extern "C" {
 #include "HttpCmdThreadPoolIntf.h"
 
 
-/** @defgroup LSP Lua C API
+/** @addtogroup LSP
 
    balua.h provides the public C API for creating, destroying, and
    configuring a BAS Lua/LSP VM.
@@ -100,7 +107,7 @@ extern "C" {
     runtime can verify the BAS library version.
     @param p Required pointer to initialized BaLua_param. The structure is copied;
     referenced resources are borrowed. In a normal server build, set L to NULL
-    and provide vmio. NO_BA_SERVER instead requires an existing L.
+    and provide vmio. BA_ENABLE_SERVER=0 instead requires an existing L.
     @return Initialized Lua state, or NULL for invalid parameters/version or
     initial allocation failure. Later VM initialization errors can invoke the
     fatal handler. Release a successful VM with balua_close().
@@ -120,7 +127,13 @@ extern "C" {
     @return Borrowed mutex pointer, or NULL for a VM without a server mutex.
  */
 #define balua_getmutex(L) balua_getparam(L)->mutex
-#define GET_BAMUTEX ThreadMutex* m = baluaENV_getmutex(L)
+/** Declare a borrowed server mutex pointer from a BAS Lua binding state.
+    @param name Local variable to declare; no lock operation is performed.
+    @param L Required Lua state whose binding environment supplies the mutex.
+    Use balua_releasemutex(name) before blocking native work, then
+    balua_setmutex(name) before accessing Lua again.
+ */
+#define BA_LUA_DECLARE_MUTEX(name, L) ThreadMutex* name = baluaENV_getmutex(L)
 /** Release mutex m if it is not NULL.
     @param m Borrowed ThreadMutex pointer, currently owned by this thread, or NULL.
     Reacquire before touching the Lua VM again.
@@ -176,11 +189,11 @@ struct LoginTracker;
 */
 typedef struct
 {
-   lua_State* L; /**< Input NULL in server builds; existing state in NO_BA_SERVER. Internal copy stores the active state. */
+   lua_State* L; /**< Input NULL with BA_ENABLE_SERVER=1; existing state with BA_ENABLE_SERVER=0. Internal copy stores the active state. */
    HttpServer* server; /**< Borrowed server, or NULL when server bindings are not needed. */
    struct BaTimer* timer; /**< Timer bindings activated if not NULL. */
    IoIntf* vmio; /**< Required VM I/O interface used for Lua resources. */
-   ThreadMutex* mutex; /**< Derived from server in normal builds; supplied directly in NO_BA_SERVER. */
+   ThreadMutex* mutex; /**< Derived from server with BA_ENABLE_SERVER=1; supplied directly with BA_ENABLE_SERVER=0. */
    struct LoginTracker* tracker; /**< Optional login tracker. */
    int errHndRef; /**< Initialize to zero; internal ba.seterrh reference. */
    const U8* zipPubKey;  /**< Borrowed SharkSSL ECC public key, or NULL to disable ZIP signature checks. */
@@ -199,6 +212,12 @@ typedef struct
 #ifdef BA_LEAK_CHECK
 BA_API void* baLMallocL(lua_State* L, size_t size,const char* file, int line);
 #define baLMalloc(L,size) baLMallocL(L,size,__FILE__,__LINE__)
+BA_API void* baLReallocL(lua_State* L, void* p, size_t size,
+                       const char* file, int line);
+#define baLRealloc(L,p,size) baLReallocL(L,p,size,__FILE__,__LINE__)
+BA_API char* baLStrdupL(lua_State* L, const char* str,
+                      const char* file, int line);
+#define baLStrdup(L,str) baLStrdupL(L,str,__FILE__,__LINE__)
 #else
 /** Allocate application memory, retrying after a full Lua GC on allocation failure.
     @param L Required live Lua state, with its mutex held.
@@ -207,6 +226,28 @@ BA_API void* baLMallocL(lua_State* L, size_t size,const char* file, int line);
     attempts fail. This helper does not raise an allocation error itself.
  */
 BA_API void* baLMalloc(lua_State* L, size_t size);
+/** Resize application memory, retrying after a full Lua GC on allocation failure.
+    @param L Required live Lua state, with the dispatcher mutex held throughout.
+    Keep the allocation's owner and Lua inputs reachable during collection,
+    which can run finalizers.
+    @param p Allocation compatible with baRealloc, or NULL for a new allocation.
+    @param size Requested number of bytes. Zero delegates to baRealloc without
+    collection or retry; its zero-size semantics apply.
+    @return Replacement allocation to release with baFree, or NULL on failure.
+    For positive sizes, failure leaves p and its contents unchanged. This helper
+    does not raise an allocation error itself.
+ */
+BA_API void* baLRealloc(lua_State* L, void* p, size_t size);
+/** Duplicate a string using baLMalloc, including its full-GC retry on failure.
+    @param L Required live Lua state, with the dispatcher mutex held throughout.
+    @param str NUL-terminated source, or NULL. Keep the source valid during
+    collection, which can run finalizers; retain Lua-owned sources on the stack
+    or through another strong reference until this function returns.
+    @return Caller-owned copy to release with baFree, or NULL for a NULL source
+    or if both allocation attempts fail. This helper does not raise an
+    allocation error itself.
+ */
+BA_API char* baLStrdup(lua_State* L, const char* str);
 #endif
 
 /** @copydoc balua_create
@@ -414,7 +455,7 @@ BAI_FUNC void balua_setEncodedField(
 BAI_FUNC void balua_setEncodedFunc(
    lua_State *L, lua_CFunction f, const U8 k[], size_t kz, int nup);
 
-#ifndef NO_SHARKSSL
+#if BA_ENABLE_SHARKSSL
 typedef struct
 {
    int (*pushCertificate)(lua_State *L, SoDispCon* con);

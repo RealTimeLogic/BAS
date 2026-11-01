@@ -27,7 +27,7 @@ I = /I
 OFT = /Fo
 PORTSRC ?= $(BAROOT)/src/arch/Windows/ThreadLib.c $(BAROOT)/src/arch/NET/generic/SoDisp.c $(BAROOT)/src/DiskIo/windows/BaFile.c
 PORTINC ?= $(BAROOT)/inc/arch/Windows $(BAROOT)/inc/arch/NET/Windows
-CPPFLAGS += /DB_LITTLE_ENDIAN /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS
+CPPFLAGS += /DBA_BYTE_ORDER=BA_BYTE_ORDER_LITTLE_ENDIAN /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS
 CFLAGS += /nologo /W3 /TC /Gy /Fd$(ODIR)/compiler.pdb
 ifeq ($(build),debug)
 CPPFLAGS += /D_DEBUG
@@ -54,7 +54,7 @@ PORTSRC ?= $(BAROOT)/src/arch/Posix/ThreadLib.c $(BAROOT)/src/arch/NET/generic/S
 PORTINC ?= $(BAROOT)/inc/arch/Posix $(BAROOT)/inc/arch/NET/Posix
 LDLIBS += -lpthread -lm -ldl
 endif
-CPPFLAGS += -DBA_FILESIZE64
+CPPFLAGS += -DBA_FILE_OFFSET_BITS=64
 CFLAGS += -Wall -MMD -MP
 ifeq ($(build),debug)
 CPPFLAGS += -D_DEBUG
@@ -68,16 +68,16 @@ LINK = $(CC) $(LDFLAGS) -o $@ $(HOBJS) $(GLIB) $(LDLIBS)
 endif
 
 # BWS includes these services under SHARKTRUSTX; compile only one library.
-CPPFLAGS += $(D)SHARKTRUSTX $(D)BA_JSON=1 $(D)TOKENGEN_C_API
+CPPFLAGS += $(D)SHARKTRUSTX $(D)BA_ENABLE_JSON=1 $(D)TOKENGEN_C_API
 CPPFLAGS += $(D)SHARKSSL_ENABLE_CERTINFO_PARSE_API=1
 CPPFLAGS += $(I)../src $(I)$(BAROOT)/inc $(addprefix $(I),$(PORTINC))
-ifeq ($(USE_IPV6),1)
-CPPFLAGS += $(D)USE_IPV6
+ifeq ($(BA_ENABLE_IPV6),1)
+CPPFLAGS += $(D)BA_ENABLE_IPV6=1
 endif
 
 # The private profile adds the mDNS core and one socket/discovery adapter.
 ifeq ($(SHARKTRUSTX_PRIVATE_CA),1)
-CPPFLAGS += $(D)SHARKTRUSTX_PRIVATE_CA
+CPPFLAGS += $(D)SHARKTRUSTX_PRIVATE_CA $(D)BA_ENABLE_MDNS=1
 MDNSSRC ?= $(BAROOT)/src/arch/NET/BamDNS-Sock.c
 MDNSSOURCE = BamDNS.c $(notdir $(MDNSSRC))
 ifeq ($(plat),win)

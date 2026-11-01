@@ -27,7 +27,7 @@
 #endif
 #include <dlmalloc.h>
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
@@ -6520,7 +6520,7 @@ balua_mallinfo(lua_State* L)
 
 
 
-/*  USE_DLMALLOC */
+/*  BA_ALLOCATOR */
 #else
 
 void

@@ -10,7 +10,7 @@
  ****************************************************************************
  *            HEADER
  *
- *   $Id: BufPrint.h 6097 2026-09-22 20:06:16Z gianluca $
+ *   $Id: BufPrint.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2008 - 2026
  *
@@ -82,7 +82,7 @@ BA_API int basnprintf(char* buf, int len, const char* fmt, ...);
 }
 #endif 
 
-/** @defgroup BufPrint printf compatible function
+/** @defgroup BufPrint Formatted output
    @{
 
 \sa <a href="../../index.html" _target="top"> Barracuda Introduction </a>

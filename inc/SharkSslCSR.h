@@ -52,16 +52,17 @@ extern "C" {
  * never copied to the certificate. CA profiles require an explicit
  * pathLenConstraint. Use 0xFFFF for leaves.
  */
-#define SHARKSSL_CERT_PROFILE_ROOT_CA          1
-#define SHARKSSL_CERT_PROFILE_INTERMEDIATE_CA  2
-#define SHARKSSL_CERT_PROFILE_TLS_SERVER       3
-#define SHARKSSL_CERT_PROFILE_TLS_CLIENT       4
-#define SHARKSSL_CERT_PROFILE_OPCUA_SERVER     5
-#define SHARKSSL_CERT_PROFILE_OPCUA_CLIENT     6
+#define SHARKSSL_CERT_PROFILE_ROOT_CA                 1
+#define SHARKSSL_CERT_PROFILE_INTERMEDIATE_CA         2
+#define SHARKSSL_CERT_PROFILE_TLS_SERVER              3
+#define SHARKSSL_CERT_PROFILE_TLS_CLIENT              4
+#define SHARKSSL_CERT_PROFILE_OPCUA_SERVER            5
+#define SHARKSSL_CERT_PROFILE_OPCUA_CLIENT            6
+#define SHARKSSL_CERT_PROFILE_TLS_SERVER_SELF_SIGNED  7
 
-#define SHARKSSL_CERT_SAN_DNS                  2
-#define SHARKSSL_CERT_SAN_URI                  6
-#define SHARKSSL_CERT_SAN_IP                   7
+#define SHARKSSL_CERT_SAN_DNS                         2
+#define SHARKSSL_CERT_SAN_URI                         6
+#define SHARKSSL_CERT_SAN_IP                          7
 
 /** DNS/URI values are ASCII bytes; IP values are 4 or 16 network-order bytes. */
 typedef struct SharkSslCertSAN
@@ -132,7 +133,10 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
  * to be NULL and privKey to match the CSR. OPC UA profiles also allow
  * caCert=NULL with a matching privKey, producing a self-signed application
  * leaf (cA=FALSE, keyCertSign present). TLS and intermediate profiles require
- * caCert. When supplied, caCert must identify a CA permitted to sign and its
+ * caCert, except TLS_SERVER_SELF_SIGNED, which requires caCert=NULL, a
+ * matching signing key and at least one DNS/IP SAN. Its leaf has cA=FALSE,
+ * serverAuth EKU and no CA signing usage. When supplied, 
+ * caCert must identify a CA permitted to sign and its
  * attached signing key must match the certificate's public key. The caller
  * must validate the issuer's trust chain and current validity separately.
  * OPC UA profiles require exactly one absolute URI SAN, nonempty commonName
@@ -140,7 +144,9 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
  * Usage for the subject's RSA/ECC key; servers include both TLS EKU purposes.
  * validFrom and validTo use UTC YYYYMMDDHHMMSS. On success, signedCSR
  * receives an allocated SharkSSL certificate that the caller frees with
- * baFree; the return value is its size. A negative value indicates failure.
+ * baFree; the return value is its size. Require both a positive size and a
+ * non-NULL output. Failure leaves the output NULL and normally returns a
+ * negative value, but an ASN.1 encoding failure can propagate 1.
  */
 SHARKSSL_API int
 SharkSslCert_signCSR(SharkSslCert *signedCSR,
@@ -153,6 +159,40 @@ SharkSslCert_signCSR(SharkSslCert *signedCSR,
                     int csrDataLen,
                     SharkCertSerialNumber serialNumber,
                     U8 hashID);
+#if SHARKSSL_PSA_CONSUMER
+/**
+ * Sign a verified CSR with a PSA RSA or P-256/P-384/P-521 ECDSA private handle
+ * The public key of the handle must match caCert or the self-signed CSR
+ * The returned SharkSSL certificate contains no private key
+ */
+SHARKSSL_API int SharkSslCert_signCSRWithPSAKey(SharkSslCert *signedCSR,
+                                               const SharkSslCertProfile *profile,
+                                               const U8 *csrData,
+                                               const SharkSslCert caCert,
+                                               const char *validFrom,
+                                               const char *validTo,
+                                               int csrDataLen,
+                                               SharkCertSerialNumber serialNumber,
+                                               psa_key_id_t psaSignKey,
+                                               U8 hashID);
+#if SHARKSSL_ENABLE_EDDSA
+/**
+ * Sign a verified CSR with a PSA Ed25519 or Ed448 PureEdDSA private handle
+ * The public key of the handle must match caCert or the self-signed CSR
+ * The returned SharkSSL certificate contains no private key
+ */
+SHARKSSL_API int
+SharkSslCert_signCSRWithPSAEdDSAKey(SharkSslCert *signedCSR,
+                                    const SharkSslCertProfile *profile,
+                                    const U8 *csrData,
+                                    const SharkSslCert caCert,
+                                    const char *validFrom,
+                                    const char *validTo,
+                                    int csrDataLen,
+                                    SharkCertSerialNumber serialNumber,
+                                    psa_key_id_t psaSignKey);
+#endif
+#endif
 #endif
 
 #ifdef __cplusplus

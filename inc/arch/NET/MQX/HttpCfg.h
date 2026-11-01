@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -53,7 +53,12 @@
 
 /* Not implemented due to limitations in the TCP/IP stack
  */
-#define NO_ASYNCH_RESP
+#if defined(BA_HAVE_SOCKET_WRITE_EVENTS) && BA_HAVE_SOCKET_WRITE_EVENTS != 0
+#error This network port does not implement socket write events
+#endif
+#ifndef BA_HAVE_SOCKET_WRITE_EVENTS
+#define BA_HAVE_SOCKET_WRITE_EVENTS 0
+#endif
 
 
 /***********************************************************************

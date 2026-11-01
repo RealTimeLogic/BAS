@@ -45,7 +45,7 @@ define run_npm
 	fi
 endef
 
-CPPFLAGS += -DBA_FILESIZE64 -DCHANGE_2_OBJ_DIR=0 \
+CPPFLAGS += -DBA_FILE_OFFSET_BITS=64 -DCHANGE_2_OBJ_DIR=0 \
             -I../../inc \
             -I../../inc/arch/Posix \
             -I../../inc/arch/NET/Posix \

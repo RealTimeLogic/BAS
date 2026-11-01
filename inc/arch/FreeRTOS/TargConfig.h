@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6080 2026-09-21 07:06:57Z wini $
+ *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2023 - 2026
  *
@@ -39,6 +39,34 @@
 #ifndef _TargConfig_h
 #define _TargConfig_h
 
+#include <BaConfigDefs.h>
+
+#ifndef BA_INTERNAL_CONFIG_OPTS_LOADED
+#define BA_INTERNAL_CONFIG_OPTS_LOADED 1
+#include <BaConfigOpts.h>
+#endif
+
+/* Select the allocator before any port hooks are installed. */
+#ifndef BA_ALLOCATOR
+#define BA_ALLOCATOR BA_ALLOCATOR_DEFAULT
+#endif
+#if BA_ALLOCATOR == BA_ALLOCATOR_MQX
+#error BA_ALLOCATOR_MQX requires the MQX port
+#endif
+
+
+/* C runtime and Lua library capabilities for this port. */
+#ifndef BA_HAVE_STDIO
+#define BA_HAVE_STDIO 0
+#endif
+#ifndef BA_LUA_OS_LIBRARY_MODE
+#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
+#endif
+#ifndef BA_ENABLE_LUA_STDIO
+#define BA_ENABLE_LUA_STDIO 0
+#endif
+
+
 #ifdef __cplusplus
 #include <string.h>
 #include <stdlib.h>
@@ -62,7 +90,7 @@
 #include <stddef.h>
 #include <time.h> /* time_t */
 
-#ifdef USE_DLMALLOC
+#if BA_ALLOCATOR == BA_ALLOCATOR_DLMALLOC
 #include <dlmalloc.h>
 #else
 #include <stdlib.h>
@@ -122,7 +150,9 @@ unsigned int baMsTime2TxTicks(BaTime msec);
 #ifdef ESP_PLATFORM
 #define DL_INLINE 0
 #if CONFIG_OPCUA_ENABLED
-#define USE_OPCUA 1
+#ifndef BA_ENABLE_LUA_OPCUA
+#define BA_ENABLE_LUA_OPCUA 1
+#endif
 #endif
  
 
@@ -135,7 +165,26 @@ unsigned int baMsTime2TxTicks(BaTime msec);
 #endif
 
 
-#include <BaSharkSslOpt.h>
+#ifdef ESP_PLATFORM
+#include <freertos/FreeRTOS.h>
+#else
+#include <FreeRTOS.h>
+#endif
+#ifndef BA_TIMER_SOURCE
+#if configUSE_TIMERS
+#define BA_TIMER_SOURCE BA_TIMER_SOURCE_EXTERNAL
+#else
+#define BA_TIMER_SOURCE BA_TIMER_SOURCE_INTERNAL
+#endif
+#endif
+#ifndef BA_ENABLE_THREAD_NAMES
+#ifdef NDEBUG
+#define BA_ENABLE_THREAD_NAMES 0
+#else
+#define BA_ENABLE_THREAD_NAMES 1
+#endif
+#endif
+#include <BaConfig.h>
 
 
 /* BAI_FUNC/DATA is a mark for all extern functions that are not to be

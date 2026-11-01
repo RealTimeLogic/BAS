@@ -4,10 +4,12 @@
 #define BA_LIB 1
 #endif
 #include <BamDNS.h>
+
+#if BA_ENABLE_MDNS
 #include <string.h>
 
-#ifndef USE_DGRAM
-#error BamDNS requires USE_DGRAM in the BAS socket hwmoddeassert
+#if !BA_ENABLE_UDP
+#error BamDNS requires BA_ENABLE_UDP in the BAS socket hwmoddeassert
 #endif
 
 #define MDNS_REFRESH_MS 5000
@@ -19,7 +21,7 @@ typedef struct BamDNS_Timer {
 } BamDNS_Timer;
 
 #define MDNS_A 1
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define MDNS_AAAA 2
 #endif
 #define MDNS_NSEC 4
@@ -101,7 +103,7 @@ _XzY0x196(const BamDNS* o, U8* p)
    memset(p, 0, 8);
    p[1]=6;
    if(o->records & MDNS_A) p[2]=0x40;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(o->records & MDNS_AAAA) p[5]=8;
 #endif
    p[7]=1; 
@@ -113,7 +115,7 @@ _XzY0x19F(const BamDNS* o, U16 rightsvalid)
    U8 bit=0;
    if(rightsvalid == 255) return o->records;
    if(rightsvalid == 1) bit=MDNS_A;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(rightsvalid == 28) bit=MDNS_AAAA;
 #endif
    return bit & o->records ? bit : MDNS_NSEC;
@@ -139,13 +141,13 @@ _XzY0x1A1(const BamDNS* o, const U8* p, int len, int* pos,
       *pos+=10;
       end=*pos+buttonsbuffalo;
       if(end > len || (rightsvalid == 1 && buttonsbuffalo != 4)) return -1;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       if(rightsvalid == 28 && buttonsbuffalo != 16) return -1;
 #endif
       if(cls == 1 && _XzY0x194 >= ttl && _XzY0x19D(o,name,n))
       {
          if(rightsvalid == 1 && !memcmp(p+*pos,o->net.addr4,4)) bit=MDNS_A;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
          if(rightsvalid == 28 && !memcmp(p+*pos,o->net.addr6,16)) bit=MDNS_AAAA;
 #endif
          if(rightsvalid == 47)
@@ -188,7 +190,7 @@ _XzY0x195(const BamDNS* o, U8* p, int at, U8 fpemulthreshold, U16 ttl,
       }
       rightsvalid=bit == MDNS_A ? 1 : 47;
       rd=bit == MDNS_A ? 4 : 10;
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       if(bit == MDNS_AAAA) { rightsvalid=28; rd=16; }
 #endif
       _XzY0x19E(p+at,rightsvalid);
@@ -198,7 +200,7 @@ _XzY0x195(const BamDNS* o, U8* p, int at, U8 fpemulthreshold, U16 ttl,
       _XzY0x19E(p+at+8,rd);
       at+=10;
       if(bit == MDNS_A) memcpy(p+at,o->net.addr4,4);
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
       else if(bit == MDNS_AAAA) memcpy(p+at,o->net.addr6,16);
 #endif
       else
@@ -605,7 +607,7 @@ _XzY0x1DE(BamDNS* o, const BamDNS_NetInfo* net)
          o->net.addr4[0]==127) return E_INVALID_PARAM;
       o->records|=MDNS_A;
    }
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
    if(_XzY0x19C(o->net.addr6,16))
    {
       if(!o->net.ifIndex6 || !o->net.prefix6 || o->net.prefix6>128 ||
@@ -659,7 +661,7 @@ BamDNS_destructor(BamDNS* o)
    _XzY0x1A5(o,E_SOCKET_CLOSED);
 }
 
-#ifdef BAS_LOADED
+#if BA_ENABLE_MDNS_LUA
 #include <balua.h>
 
 #define MDNS_META "\102\141\155\104\116\123"
@@ -748,3 +750,5 @@ BamDNS_luaopen(lua_State* L, const BamDNS_NetInfo* _XzY0x1A9)
 
 
 #endif
+
+#endif 

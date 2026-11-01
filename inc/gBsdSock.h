@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 5971 2026-09-11 10:01:39Z wini $
+ *   $Id: gBsdSock.h 6657 2026-10-28 18:19:39Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -39,6 +39,7 @@
  */
 #ifndef _gBsdSock_h
 #define _gBsdSock_h
+#include <BaSocketConfig.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -196,7 +197,7 @@ typedef struct {
    *(status) = socketBind((o)->hndl, (struct sockaddr *)&in, \
                           sizeof(struct sockaddr_in)); \
 } while(0)
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_bindIp6(o, sockAddr, port, status) do { \
       struct sockaddr_in6 in6; \
       memset(&in6, 0, sizeof(struct sockaddr_in6)); \
@@ -270,7 +271,7 @@ typedef struct {
 #endif
 
 #ifndef HttpSocket_getPeerName
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_getPeerName(o, addrMA, port, isIp6MA, status) do {\
    BaSockAddrStorage a;\
     basocklen_t aLen = sizeof(a);\
@@ -300,7 +301,7 @@ typedef struct {
 #endif
 
 #ifndef HttpSocket_getSockName
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_getSockName(o, addrMA, port, isIp6MA, status) do {\
    BaSockAddrStorage a;\
     basocklen_t aLen = sizeof(a);\
@@ -383,7 +384,7 @@ typedef struct {
 } while(0)
 #endif
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 #ifndef HttpSocket_sendto
 #define HttpSocket_sendto(o, data, len, addr, addrlen, retLen) do { \
     *(retLen)=(int)socketSendto((o)->hndl,data,len,0, addr, addrlen); \
@@ -399,7 +400,7 @@ typedef struct {
    memcpy(&sin.sin_addr.s_addr, (addrMA)->addr, 4);             \
    *(status) = (int)socketSendto((o)->hndl,data,len,0,               \
    (struct sockaddr *)&sin, sizeof(sin));
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_sendtoV6(o, data, len, addrMA, port, status)         \
    struct sockaddr_in6 sin6;                                            \
    memset((char *)&sin6, 0, sizeof(sin6));                              \
@@ -475,10 +476,10 @@ do { \
 
 
 #ifndef HttpSocket_soReuseaddr
-#ifndef ENABLE_REUSE_ADDR
-#define ENABLE_REUSE_ADDR 0
+#ifndef BA_ENABLE_SOCKET_REUSE_ADDRESS
+#define BA_ENABLE_SOCKET_REUSE_ADDRESS 1
 #endif
-#if ENABLE_REUSE_ADDR
+#if BA_ENABLE_SOCKET_REUSE_ADDRESS
 #define HttpSocket_soReuseaddr(o, status) do { \
    int enableFlag = 1; \
    *(status) = socketSetsockopt((o)->hndl, SOL_SOCKET, SO_REUSEADDR, \
@@ -505,7 +506,7 @@ do { \
 
 
 #ifndef HttpSocket_sockStream
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_sockStreamIp6(o, status) do { \
    (o)->hndl=socketSocket(AF_INET6, SOCK_STREAM, 0); \
    *(status) = HttpSocket_isValid(o) ? 0 : -1; \
@@ -527,7 +528,7 @@ do { \
 }while(0)
 #endif
 
-#ifdef USE_DGRAM
+#if BA_ENABLE_UDP
 
 #ifndef ba_nametoindex
 #define ba_nametoindex(name, resp,status) *(resp)=if_nametoindex(name)
@@ -535,7 +536,7 @@ do { \
 
 
 #ifndef HttpSocket_sockUdp
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_sockUdpIp6(o, status) do { \
    (o)->hndl=socketSocket(AF_INET6, SOCK_DGRAM, 0); \
    *(status) = HttpSocket_isValid(o) ? 0 : -1; \
@@ -564,7 +565,7 @@ do { \
    memcpy((sockAddr)->addr, &in.sin_addr.s_addr, 4);\
    *(port)=baHtons(in.sin_port);\
 } while(0)
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_recvfromIp6(o,data,len,sockAddr,port,status) do { \
   struct sockaddr_in6 in6; basocklen_t size=sizeof(struct sockaddr_in6);\
   *(status)=socketRecvfrom((o)->hndl,data,len,0,(struct sockaddr*)&in6,&size);\
@@ -591,7 +592,7 @@ BA_API int HttpSocket_setmembership(HttpSocket* o,
                                     const char* intfName);
 #endif
 
-#endif /* USE_DGRAM */
+#endif /* BA_ENABLE_UDP */
 
 #ifndef HttpSocket_wouldBlock
 #define HttpSocket_wouldBlock(o, status) do { \
@@ -614,7 +615,7 @@ HttpSocket_connect(HttpSocket*, HttpSockaddr*, U16 port, int* status)
    sin.sin_port = baHtons(port); \
    memcpy(&sin.sin_addr.s_addr, (addrMA)->addr, 4);\
    *(status) = socketConnect((o)->hndl,(struct sockaddr *)&sin, sizeof(sin));
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSocket_connectV6(o, addrMA, port, status)\
    struct sockaddr_in6 sin6; \
    memset((char *)&sin6, 0, sizeof(sin6)); \
@@ -656,7 +657,7 @@ typedef struct HttpSockaddr {
 
 
 #ifndef HttpSockaddr_gethostbynameIp6
-#ifdef USE_IPV6
+#if BA_ENABLE_IPV6
 #define HttpSockaddr_gethostbynameIp6(o, host, status) do { \
    if(host) { \
       struct addrinfo hints, *servinfo; \
@@ -683,7 +684,7 @@ typedef struct HttpSockaddr {
 #endif
 
 #ifndef HttpSockaddr_gethostbyname
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 #define HttpSockaddr_gethostbynameIp4(o, host, status) do { \
    (o)->isIp6=FALSE; \
    *(status)=0; \
@@ -722,7 +723,7 @@ typedef struct HttpSockaddr {
 }while(0)
 
 
-#endif /* USE_ADDRINFO */
+#endif /* BA_USE_GETADDRINFO */
 
 #define HttpSockaddr_gethostbyname(o, host, useIp6, status) do { \
    if(useIp6) \
@@ -750,7 +751,7 @@ BA_API void HttpSockaddr_inetAddr(
 #endif
 
 
-#ifdef USE_ADDRINFO
+#if BA_USE_GETADDRINFO
 
 #ifndef BaAddrinfo
 typedef struct addrinfo BaAddrinfo;
@@ -793,7 +794,7 @@ int BaAddrinfo_connect(BaAddrinfo* addr, HttpSocket* s, U32 timeout);
                      (socklen_t)(addr)->ai_addrlen, status)
 #endif
 
-#endif /* USE_ADDRINFO */
+#endif /* BA_USE_GETADDRINFO */
 
 
 #endif

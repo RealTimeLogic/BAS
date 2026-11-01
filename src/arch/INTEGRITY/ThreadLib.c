@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 5146 2022-05-10 17:15:54Z wini $
+ *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2011
+ *   COPYRIGHT:  Real Time Logic, 2011 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -143,7 +143,7 @@ Thread_constructor(
 
 
    Thread_ce(CommonCreateTask(
-                tprio,(Address)Thread_threadStart,stackSize,"BA",&o->task));
+                tprio,(Address)Thread_threadStart,stackSize,"BAS",&o->task));
    SetTaskIdentification(o->task, (Address)o);
 }
 

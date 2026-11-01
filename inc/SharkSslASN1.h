@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslASN1.h 6104 2026-09-23 05:21:50Z gianluca $
+ *   $Id: SharkSslASN1.h 6548 2026-10-21 21:40:49Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2018 - 2026
  *
@@ -67,6 +67,9 @@
 #define SHARKSSL_ASN1_BMP_STRING                      0x1E
 #define SHARKSSL_ASN1_CONSTRUCTED                     0x20
 #define SHARKSSL_ASN1_CONTEXT_SPECIFIC                0x80
+#define SHARKSSL_ASN1_ALGO_ID_ED25519                 0x90
+#define SHARKSSL_ASN1_ALGO_ID_ED448                   0xA0
+#define SHARKSSL_ASN1_MIN_INTEGER_TLV_LEN             3
 
 /**
  * {joint-iso-itu-t(2) ds(5) attributeType(4)
@@ -96,6 +99,13 @@
  *
  */
 #define SHARKSSL_CSR_TAG_ATTRIBUTES                   0x00
+
+/**
+ * RSASSA-PSS-params context-specific fields (RFC 4055)
+ */
+#define SHARKSSL_ASN1_PSS_TAG_HASH_ALGORITHM          0x00
+#define SHARKSSL_ASN1_PSS_TAG_MASK_GEN_ALGORITHM      0x01
+#define SHARKSSL_ASN1_PSS_TAG_SALT_LENGTH             0x02
 
 /**
  * X.509v3 tags
@@ -191,6 +201,10 @@ extern const U8 sharkssl_oid_aes256cbc[9];
 #if (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSASSA_PSS)
 extern const U8 sharkssl_oid_rsassaPss[9];
 extern const U8 sharkssl_oid_mgf1[9];
+#endif
+#if SHARKSSL_ENABLE_EDDSA
+extern const U8 sharkssl_oid_ed25519[3];
+extern const U8 sharkssl_oid_ed448[3];
 #endif
 
 
