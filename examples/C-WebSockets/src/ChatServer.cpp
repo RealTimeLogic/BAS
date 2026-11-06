@@ -96,6 +96,7 @@ dir:setfunc(wsRequest)
 
 
 #include "../../HostInit/OpenSocketCon.h"
+#include "../../HostInit/ExampleRng.h"
 #include <WebSocketServer.h>
 #include <DoubleList.h>
 #include <SingleList.h>
@@ -415,6 +416,12 @@ createServer(void)
 extern "C" void
 barracuda(void)
 {
+   /* DEMONSTRATION ONLY: replace with real entropy for production. */
+   if(sharkssl_exampleSeed())
+   {
+      HttpTrace_printf(0, "Cannot initialize example RNG.\n");
+      return;
+   }
    HttpServer* server = createServer();
    installVirtualDir(server);
 

@@ -78,7 +78,7 @@ BAI_FUNC void LDbgMon_userstatefree(struct lua_State* L, struct lua_State* L1);
 ** By default, Lua on Windows use (some) specific Windows features
 */
 #if !defined(BAS_RTOS_WINDOWS_SIM) && !defined(__INTIME__)
-#if !defined(LUA_USE_C89) && defined(_WIN32) && !defined(_WIN32_WCE)
+#if !defined(LUA_USE_C89) && defined(_WIN32)
 #define LUA_USE_WINDOWS  /* enable goodies for regular Windows */
 #endif
 #endif

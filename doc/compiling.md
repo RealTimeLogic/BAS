@@ -1,6 +1,8 @@
 # Compiling Mako Server and Xedge
 
-This guide explains how to build the two Barracuda App Server (BAS) reference hosts included in this repository: Mako Server for high-level operating systems (HLOS) and Xedge for real-time operating systems (RTOS) and embedded firmware. It covers the shared BAS source, porting layers, feature macros, generated resources, and cross-compilation details required by those hosts.
+Build **Mako Server** to run Lua and web applications on a desktop, server, or embedded Linux system. Build **Xedge** to run them in device firmware, with a browser-based development environment.
+
+Both use the Barracuda App Server (BAS) library in this repository. The build sections distinguish high-level operating systems (HLOS), such as Linux and Windows, from real-time operating systems (RTOS). Choose a build below, then refer to the shared source and porting details as needed.
 
 ## Choose Your Build Path
 
@@ -12,12 +14,12 @@ This guide explains how to build the two Barracuda App Server (BAS) reference ho
 
 For native Barracuda Embedded Web Server (BWS), REST, WebSocket, and Modern C++ projects, use the example chooser in the repository [README](../README.md#examples). The README also explains the available licenses.
 
-## Shared BAS Foundation
+## Shared BAS source
 
-Mako Server and Xedge both compile `src/BAS.c`, the amalgamated Barracuda App Server library. "Amalgamated" means that many separate C files have been combined into one primary source file, making compilation and integration easier.
+Mako Server and Xedge both compile `src/BAS.c`. This is an amalgamation: the core library sources are combined into one C file.
 
-- **Mako Server** adds HLOS startup, command-line/service behavior, disk resources, and optional native modules around BAS.
-- **Xedge** adds the embedded application environment, resource package, target startup integration, and optional hardware/native bindings around BAS.
+- **Mako Server** adds command-line and service startup, disk resources, and optional native modules.
+- **Xedge** adds the browser development environment, application resources, and hooks for device startup and hardware bindings.
 
 BAS includes the BWS C APIs and adds Lua, [Lua Server Pages (LSP)](https://realtimelogic.com/products/lua-server-pages/), and higher-level web and IoT APIs. Application logic can be written in Lua while performance-critical or hardware-specific modules remain in C or C++.
 
@@ -38,27 +40,15 @@ Add the Mako Server or Xedge host sources and generated resources described in t
 
 ## Basic Compile Model
 
-To compile either host, add the required porting layers to `src/BAS.c`:
+Compile `src/BAS.c`, the host sources, and one thread and socket port from
+the list above. Add a filesystem port if the application uses one.
 
-- Add the required `ThreadLib.c`.
-- Add the required `SoDisp.c`.
-- Optionally add `BaFile.c` when using file system support.
+Put `inc` and the selected OS and network header directories on the compiler's
+include path. For example, a generic POSIX build uses `inc/arch/Posix` and
+`inc/arch/NET/Posix`. Some ports combine both sets of headers in one directory;
+use the [Porting Layers](#porting-layers) table to choose the right combination.
 
-Replace `XXX` with the required porting layer.
-
-The compiler include path must include:
-
-- `inc`
-- `inc/arch/XXX`
-- `inc/arch/NET/XXX`
-- `inc/DiskIo/XXX`, when using a file system porting layer
-
-BAS can be used in several deployment models. This guide focuses on:
-
-- Mako Server as a process on desktop/server or embedded HLOS targets.
-- Xedge integrated into RTOS-powered or other embedded firmware.
-
-The amalgamated source can be compiled from the command line or added to an IDE, Makefile, CMake project, or vendor build system.
+Add these files to your IDE or build system, or use the commands below.
 
 ### POSIX file offsets
 
@@ -74,11 +64,31 @@ settings is rejected by the POSIX DiskIo size check.
 
 ## Mako Server (HLOS)
 
-POSIX command-line builds compile `examples/MakoServer/src/MakoPosixMain.c` alongside `MakoMain.c`. The former supplies `main()` and calls `runMako()`. If your application supplies its own entry point, omit `MakoPosixMain.c` and call `runMako()` from your startup code. Windows uses the sources in `examples/MakoServer/src/Windows`.
-
 The [Mako Server example](https://realtimelogic.com/ba/doc/en/Mako.html) is the reference host for high-level operating systems such as Windows, embedded Linux, and QNX. Mako Server can also be adapted to environments such as VxWorks 7, but Xedge is the normal starting point for RTOS and firmware integration.
 
+For a standard build, go to [Windows](#windows) or [Linux](#linux). The following dispatcher and assembly sections explain options used by the supplied build scripts.
+
 ![Mako Server Build Process](https://realtimelogic.com/ba/doc/en/examples/MakoServer/Build-Mako-Diagram.svg)
+
+### Choose a socket dispatcher
+
+Use **epoll on Linux** and **poll on QNX** for applications with many
+simultaneous connections. `LinuxBuild.sh` and `RaspberryPiBuild.sh` select
+epoll; `QNXBuild.sh` selects poll. Poll is also available on other compatible
+POSIX targets, such as macOS.
+
+For a QNX build using the generic select dispatcher, set `BA_USE_POLL=0`
+when running `QNXBuild.sh`.
+
+When invoking `mako.mk` directly, set the Boolean make option
+`BA_USE_EPOLL=1` or `BA_USE_POLL=1`. These options accept `0` or `1` and
+default to `0`, selecting generic select; the older `EPOLL=true` option also
+selects epoll. Do not enable both dispatchers. Clean and rebuild all objects
+when switching. The makefile selects the matching source and header for you.
+
+Poll avoids the generic select dispatcher's descriptor limit. Allow enough
+operating-system sockets, file descriptors, and memory for the desired
+connections, and configure Mako's numeric `conncnt` setting accordingly.
 
 ### Automatic SharkSSL assembly with mako.mk
 
@@ -88,6 +98,23 @@ compile-checks the backend sources with your selected compiler and flags.
 These checks never execute target code, so they also work when cross-compiling.
 Unsupported targets or failed automatic checks retain the C implementation.
 At runtime, feature checks select the cipher paths supported by the CPU and OS.
+
+Automatic selection enables AES-GCM/GHASH, ChaCha20, Poly1305 and the dedicated
+X25519 hook. x64 also enables VAES when the assembler supports it. ARM64 enables
+the SHA-256, SHA-384/SHA-512, BigInt, P-256 and P-384 hooks for configured algorithms.
+Common C keeps the compiler's baseline CPU target.
+
+Native AES assembly requires the integer options `SHARKSSL_AES_SOFTWARE_CT=0`
+and `SHARKSSL_AES_GCM_SOFTWARE_CT=0`. The selector supplies these values only
+when enabling AES assembly and only if you have not defined them. An explicit
+value of `1` for either option retains constant-time (CT) software AES and disables automatic
+AES assembly. Explicit per-algorithm settings are preserved. PSA consumers
+leave acceleration to their separate provider.
+
+On x86/x64,
+CPUs without AES-NI use table-based C AES/GHASH; software AES outside GCM also
+uses the non-CT implementation in this profile. To retain the software CT
+defaults, use `SHARKSSL_ASM=off` and remove manual assembly and CT overrides.
 
 From the repository root, inspect the selection before building:
 
@@ -176,14 +203,16 @@ msbuild examples\MakoServer\VcMake\mako.sln /p:Configuration=Release /p:Platform
 For Linux and embedded Linux, see [Embedded Linux Web Interface Design](https://makoserver.net/articles/Expedite-Your-Embedded-Linux-Web-Interface-Design). You can download and compile the server as follows:
 
 ```sh
+# Run in Bash to download and execute the Linux build script.
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
 
-For a more robust compilation option, use the [included Ansible script](../Ansible.md). You can also [install the server as a systemd service](https://github.com/RealTimeLogic/MakoInstaller) using an Ansible script.
+To manage source downloads, compilation, and installation together, use the [Ansible playbook](../Ansible.md). You can also [install the server as a systemd service](https://github.com/RealTimeLogic/MakoInstaller) using an Ansible script.
 
 To cross-compile for embedded Linux, set `CC` to your cross-compiler:
 
 ```sh
+# Replace this path with your installed cross-compiler.
 export CC=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-gcc
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
 ```
@@ -191,15 +220,19 @@ bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxB
 To cross-compile with [Lua GPIO bindings](https://github.com/vsergeev/lua-periphery), set `CROSS_COMPILE` to your toolchain prefix:
 
 ```sh
+# Use the toolchain prefix, without the gcc suffix.
 export CROSS_COMPILE=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
 bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/RaspberryPiBuild.sh)
 ```
 
 ### Generic HLOS Build
 
-The following example builds Mako Server without SQLite for a high-level operating system. It works with GCC and compatible compilers, including cross-compilers for embedded Linux and QNX. Replace `gcc` with the compiler for your target. See [VxWorks](#vxworks) for the RTOS-specific example.
+POSIX command-line builds compile `examples/MakoServer/src/MakoPosixMain.c` alongside `MakoMain.c`. The former supplies `main()` and calls `runMako()`. If your application supplies its own entry point, omit `MakoPosixMain.c` and call `runMako()` from your startup code. Windows uses the sources in `examples/MakoServer/src/Windows`.
+
+The following command builds Mako Server without SQLite on Linux. For another POSIX target, select its compiler, Lua platform settings, and system libraries. See [VxWorks](#vxworks) for that target's example. Run from the repository root.
 
 ```sh
+# Run from the repository root with the required port sources.
 gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
     -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DLUA_USE_LINUX -DMAKO -DMAKO_SQL_BACKEND=MAKO_SQL_NONE\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
@@ -215,11 +248,12 @@ After running the compilation command, [build `mako.zip`](https://github.com/Rea
 
 ### Windows Command-Line Build
 
-The following example compiles and links Mako Server as a 64-bit Windows application using the Visual Studio command-line compiler. It includes two additional files that make it possible to run the server as a Windows service.
+Run the following command from the repository root in a [64-bit Visual C++ tools prompt](https://learn.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170). It builds Mako Server with Windows service support.
 
 See the [current Mako Server for Windows page](https://makoserver.net/download/windows/) for Microsoft Store, ZIP, and source-build alternatives.
 
 ```bat
+rem Run from the repository root in the x64 compiler prompt.
 cl /O2^
  /DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 /DBA_FILE_OFFSET_BITS=64 /DMAKO /DMAKO_SQL_BACKEND=MAKO_SQL_NONE^
  /Iinc /Iinc/arch/Windows /Iinc/arch/NET/Windows^
@@ -231,13 +265,13 @@ cl /O2^
  /link /machine:X64 /OUT:examples/MakoServer/mako.exe
 ```
 
-This command requires the [64-bit Visual C++ toolset command line](https://learn.microsoft.com/en-us/cpp/build/how-to-enable-a-64-bit-visual-cpp-toolset-on-the-command-line?view=msvc-170).
 
 ### Including SQLite
 
 Mako Server can optionally be linked with SQLite and the [Lua SQLite bindings](https://realtimelogic.com/ba/doc/en/lua/luasql.html). Before running the command below, [download SQLite](https://www.sqlite.org/download.html) and copy `sqlite3.c` and `sqlite3.h` to `src`.
 
 ```sh
+# Run from the repository root with the required port sources.
 gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
     -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DLUA_USE_LINUX -DMAKO\
     -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
@@ -250,7 +284,7 @@ gcc -o examples/MakoServer/mako -fmerge-all-constants -Os\
 
 ## Xedge (RTOS)
 
-Xedge is the BAS-based host for developing and running Lua and LSP applications on RTOS and firmware targets. It includes a browser-based development environment and supports packaging applications for deployment. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for application development and release options.
+Xedge runs Lua and LSP applications on a device. Its browser-based development environment lets you edit and test applications, then package them for deployment. See the [online Xedge documentation](https://realtimelogic.com/ba/doc/en/Xedge.html) for application development and release options.
 
 [![Xedge in Developer Mode](https://realtimelogic.com/images/xedge/v1/Xedge.png)](https://simplemq.com/videos/Xedge-IDE-intro.mp4)
 
@@ -259,7 +293,7 @@ See the [Xedge product page](https://realtimelogic.com/products/xedge/) for deta
 
 ### Compiling and Integrating Xedge
 
-The Xedge IDE includes a single-page web application and supporting server-side code. These resources must be included in the build.
+The Xedge development environment includes browser files and server-side code. Build these resources into a ZIP, then convert the ZIP to a C array to include it in the executable or firmware.
 
 ![Xedge Build Process](https://realtimelogic.com/ba/doc/en/examples/xedge/Build-Xedge-Diagram.svg)
 
@@ -288,7 +322,7 @@ cp XedgeZip.c ../../BAS/examples/xedge/
 cd ../../BAS
 ```
 
-Standalone Xedge requires `BA_ENABLE_EMBEDDED_CA=1` for both `src/BAS.c` and the Xedge host. Keep `inc/cacert.h` on the include path. To select a smaller or private trust set, use the SharkSSL SDK tool `SharkSSLParseCAList your-roots.pem > cacert.h`, replace the header, and rebuild. Updating the compiled roots requires a new native build. Explicit Lua certificate stores remain supported. Ship the executable or firmware and its matching resources together.
+Standalone Xedge requires `BA_ENABLE_EMBEDDED_CA=1` for both `src/BAS.c` and the Xedge host. This enables the embedded certificate-authority (CA) trust store. Keep `inc/cacert.h` on the include path. To select a smaller or private trust set, use the SharkSSL SDK tool `SharkSSLParseCAList your-roots.pem > cacert.h`, replace the header, and rebuild. Updating the compiled roots requires a new native build. Explicit Lua certificate stores remain supported. Ship the executable or firmware and its matching resources together.
 
 `XedgeZip.c` contains the Xedge resources converted to a C file. See the [BAS-Resources repository](https://github.com/RealTimeLogic/BAS-Resources/tree/main/build) for details.
 
@@ -301,6 +335,7 @@ To compile Xedge, include:
 The following example uses Linux to compile Xedge as a standalone application. For embedded devices, include the relevant source files in your build system instead.
 
 ```sh
+# Build the host test after generating examples/xedge/XedgeZip.c.
 gcc -o xedge -Iinc -Iinc/arch/Posix -Iinc/arch/NET/Posix\
     -DLUA_USE_LINUX\
     -DBA_ENABLE_EMBEDDED_CA=1\
@@ -326,16 +361,18 @@ These Xedge instructions are excerpted from the [Xedge full SDK build guide](htt
 
 Include the files listed above in your IDE or Makefile. If the target does not provide a suitable allocator, BAS includes `src/dlmalloc.c` as one option. See the [FreeRTOS readme](../src/arch/FreeRTOS/README.txt) for an example of how to assemble the required components. Adapt the startup, allocator, and porting layers to the selected RTOS and network stack.
 
-For a quick RTOS trial, run Xedge on an ESP32 using FreeRTOS and lwIP, even if your final target uses another RTOS or device. The ESP32 is a practical learning target. Use the [precompiled ESP32 Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/).
+If you have an ESP32 board, the [precompiled Xedge binaries](https://realtimelogic.com/downloads/bas/ESP32/) let you try Xedge on FreeRTOS and lwIP before setting up a firmware build.
 
 ## Enabling and Disabling Features
 
-Shared options and validation live in `inc/BaConfig.h`; `inc/BaConfigOpts.h` is a comment-only application override hook. Port capabilities are resolved by `TargConfig.h` and `BaSocketConfig.h`. Host options live in `MakoConfig.h` or `XedgeConfig.h`. Boolean switches use numeric 0/1 values; enum options use the named constants documented in these headers. Apply shared definitions consistently to every translation unit.
+Use `inc/BaConfigOpts.h` for application overrides; it ships with comments only. Shared defaults and validation are in `inc/BaConfig.h`. The selected `TargConfig.h` and `BaSocketConfig.h` supply port capabilities. Mako and Xedge host options are in `MakoConfig.h` and `XedgeConfig.h`.
+
+Boolean switches accept numeric `0` or `1`. Options with several choices use the named constants in their headers. Apply shared definitions to every source file in the build.
 
 - `BA_ENABLE_LUA_DEBUGGER=1`: Include [Lua debugger support](https://makoserver.net/articles/Lua-and-LSP-Debugging).
 - `BA_ENABLE_REVERSE_CONNECTION=1`: Enable reverse connections for the connection bridge feature in [SharkTrustX](https://realtimelogic.com/products/SharkTrustX/).
 - `BA_ENABLE_LUA_OPCUA=1`: Enable OPC UA support when the build also includes the required OPC UA Lua resources and C module.
-- `BA_ENABLE_EMBEDDED_CA=1`: Required when compiling both BAS and standalone Xedge. Uses `inc/cacert.h` without retaining a heap copy; the Xedge resource ZIP contains no `.certificate/cacert.shark`. Other BAS hosts select their own CA mode.
+- `BA_ENABLE_EMBEDDED_CA=1`: Required for a standalone Xedge build, in both BAS and the host sources. Uses `inc/cacert.h` without retaining a heap copy; the Xedge resource ZIP contains no `.certificate/cacert.shark`. Other BAS hosts select their own CA mode.
 - `BA_ENABLE_LUA_FORKPTY=1`: Enable the [advanced process management API](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#forkptylib), available for Linux and QNX. This API is required for the [CGI plugin](https://github.com/RealTimeLogic/LSP-Examples/tree/master/CGI) and the [web shell](https://makoserver.net/articles/Linux-Web-Shell).
 - `BA_ENABLE_REVERSE_PROXY=1`: Enable the [reverse proxy](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#reverseproxy).
 - `BA_ENABLE_UBJSON=1`: Enable [Universal Binary JSON](https://realtimelogic.com/ba/doc/en/lua/auxlua.html#ubjson).
@@ -370,15 +407,15 @@ Shared options and validation live in `inc/BaConfig.h`; `inc/BaConfigOpts.h` is 
 | NuttX | `inc/arch/NET/Posix` `inc/arch/Posix` | `src/arch/Posix/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | Nucleus | `inc/arch/NET/Nucleus` `inc/arch/Nucleus` | `src/arch/Nucleus/ThreadLib.c` `src/arch/NET/Nucleus/SoDisp.c` |
 | POSIX (Linux, Mac, QNX) | `inc/arch/NET/Posix` `inc/arch/Posix` | `src/arch/Posix/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
+| QNX and compatible POSIX targets + poll | `inc/arch/NET/poll` `inc/arch/Posix` | `src/arch/Posix/ThreadLib.c` `src/arch/NET/poll/SoDisp.c` |
 | Quadros | `inc/arch/Quadros` | `src/arch/Quadros/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | SMX | `inc/arch/NET/SMX-NET` `inc/arch/SMX` | `src/arch/SMX/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
-| Azure RTOS | `inc/arch/ThreadX` | `src/arch/ThreadX/ThreadLib.c` `src/arch/ThreadX/SoDisp.c` |
+| ThreadX + NetX Duo | `inc/arch/ThreadX` | `src/arch/ThreadX/ThreadLib.c` `src/arch/ThreadX/SoDisp.c` |
 | VxWorks | `inc/arch/VxWorks` | `src/arch/VxWorks/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | Windows | `inc/arch/NET/Windows` `inc/arch/Windows` | `src/arch/Windows/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
-| Windows CE | `inc/arch/NET/CE` `inc/arch/Windows` | `src/arch/ce/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 | Zephyr | `inc/arch/Zephyr` | `src/arch/Zephyr/ThreadLib.c` `src/arch/NET/generic/SoDisp.c` |
 
-The generic `inc` directory must also be in the include path. The presence of a porting directory does not prove compatibility with every version of the target SDK. Compile against the actual SDK and confirm its configuration and networking APIs.
+Add `inc` to every build's include path. Check the selected port against your SDK version, especially its network settings and APIs.
 
 ## HLOS Build Examples
 
@@ -403,6 +440,7 @@ NuttX includes an Xedge demonstration in its application examples. See the [Xedg
 The following example compiles Xedge for Green Hills INTEGRITY. You can also [download a ready-to-run Xedge GHS Multi IDE project](https://realtimelogic.com/downloads/bas/xedge-ghs-build.zip).
 
 ```sh
+# Adjust the SDK path and BSP for your INTEGRITY installation.
 ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
     -non_shared -DXEDGE_THREAD_POOL_MODE=XEDGE_THREAD_POOL_SHARED_FIXED -DXEDGE_THREAD_COUNT=3 -DBA_ENABLE_EMBEDDED_CA=1\
     -Iinc -Iinc/arch/INTEGRITY -Iinc/arch/NET/Posix\
@@ -424,6 +462,7 @@ ccintarm -G -c99 -os_dir C:/ghs/int1144 -bsp simarm -o xedge\
 Xedge is the recommended starting point for new VxWorks integrations. The following example builds Mako Server for projects that require its standalone process-style host. See the [Barracuda App Server VxWorks build page](https://realtimelogic.com/downloads/bas/VxWorks/) for details.
 
 ```sh
+# Run from the repository root with the VxWorks compiler on PATH.
 wr-cc -o examples/MakoServer/mako -static -fmerge-all-constants -Os\
     -DMAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0 -DBA_FILE_OFFSET_BITS=64 -DBA_HAVE_STDIO=1 -DMAKO -DMAKO_SQL_BACKEND=MAKO_SQL_NONE\
     -Iinc -Iinc/arch/VxWorks -Iinc/arch/NET/Posix\
@@ -443,7 +482,7 @@ Download a ready-to-compile and ready-to-run project for [i.MX RT1020](https://r
 
 ![Xedge32](https://realtimelogic.com/images/xedge/finger-icon.png)
 
-[Xedge32](https://github.com/RealTimeLogic/Xedge32) is an Xedge version for ESP32 and ESP32-S3 microcontrollers.
+[Xedge32](https://github.com/RealTimeLogic/Xedge32) provides Xedge firmware and peripheral bindings for ESP32 devices. Its README lists supported boards and build instructions.
 
 ## Tutorials
 
@@ -452,7 +491,7 @@ Download a ready-to-compile and ready-to-run project for [i.MX RT1020](https://r
 - [Online Interactive Lua and LSP Tutorials](https://tutorial.realtimelogic.com/)
 - [Modern Approach to Embedding a Web Server in a Device](https://realtimelogic.com/articles/Modern-Approach-to-Embedding-a-Web-Server-in-a-Device)
 - [The Ultimate Guide to Embedded Web Server Technology](https://realtimelogic.com/articles/Embedded-Web-Server-Tutorials)
-- [A Large List of Mako/BAS Tutorials](https://makoserver.net/tutorials/)
+- [Mako/BAS Tutorials](https://makoserver.net/tutorials/)
 - [Ready-to-Run Examples](https://github.com/RealTimeLogic/LSP-Examples)
 
 ## Online Documentation

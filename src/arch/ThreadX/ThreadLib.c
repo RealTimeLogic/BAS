@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
+ *   $Id: ThreadLib.c 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
@@ -54,11 +54,12 @@
  *                         Time functions
  ***************************************************************************/
 
-static U32 unixTime;
+static volatile U32 unixTime;
 
 static VOID
 oneSecondTimer(ULONG notUsed)
 {
+   (void)notUsed;
    unixTime++;
 }
 
@@ -67,19 +68,31 @@ void
 baSetUnixTime(U32 time)
 {
    static TX_TIMER timer;
+   static BaBool initialized;
+   BaBool createTimer = FALSE;
+   TX_INTERRUPT_SAVE_AREA;
+   TX_DISABLE;
    unixTime = time;
-   memset(&timer, 0, sizeof(TX_TIMER));
-   TST_OK(tx_timer_create(&timer,
-                          "B sec tick",
-                          oneSecondTimer,
-                          0,
-                          NX_IP_PERIODIC_RATE,
-                          NX_IP_PERIODIC_RATE,
-                          TX_AUTO_ACTIVATE));
+   if(!initialized)
+   {
+      initialized = TRUE;
+      createTimer = TRUE;
+   }
+   TX_RESTORE;
+   if(createTimer)
+   {
+      TST_OK(tx_timer_create(&timer,
+                            "B sec tick",
+                            oneSecondTimer,
+                            0,
+                            NX_IP_PERIODIC_RATE,
+                            NX_IP_PERIODIC_RATE,
+                            TX_AUTO_ACTIVATE));
+   }
 }
 
 
-U32
+BaTime
 baGetUnixTime(void)
 { 
    return unixTime;
@@ -89,7 +102,7 @@ baGetUnixTime(void)
 U32
 baGetMsClock(void)
 {
-   return (U32)((U64)_tx_timer_system_clock * (U64)1000 /
+   return (U32)((U64)tx_time_get() * (U64)1000 /
                 (U64)NX_IP_PERIODIC_RATE);
 }
 
@@ -97,17 +110,9 @@ baGetMsClock(void)
 U32
 baMsTime2TxTicks(U32 msec)
 {
-   U32 sec;
-    /* Make sure msec * 1000 does not wrap on 32 bit.
-     * Assuming that _nx_system_ticks_per_second <= 1000
-     */
-   if(msec < 4294967)
-      return msec * NX_IP_PERIODIC_RATE / 1000;
-
-   sec = msec / 1000;
-   msec = msec % 1000;
-   return sec * NX_IP_PERIODIC_RATE +
-      msec * NX_IP_PERIODIC_RATE / 1000;
+   U64 ticks = ((U64)msec * NX_IP_PERIODIC_RATE + 999) / 1000;
+   /* A positive timeout must not become a poll or TX_WAIT_FOREVER. */
+   return ticks >= 0xFFFFFFFFU ? 0xFFFFFFFEU : (U32)ticks;
 }
 
 
@@ -120,8 +125,7 @@ Thread_threadStart(ULONG self)
 {
    Thread* o = (Thread*)self;
    o->runnable(o);
-   tx_thread_terminate(_tx_thread_current_ptr);
-   baAssert(0);
+   /* Returning lets ThreadX mark the thread completed for its owner to delete. */
 }
 
 
@@ -134,11 +138,20 @@ Thread_constructor(
    o->runnable = r;
    switch(priority)
    {
-      case ThreadPrioLowest:  txPrio -= 2; break;
-      case ThreadPrioLow:     txPrio -= 1; break;
-      case ThreadPrioNormal:                 break;
-      case ThreadPrioHigh:    txPrio += 1; break;
-      case ThreadPrioHighest: txPrio += 2; break;
+      case ThreadPrioLowest:
+         txPrio += 2;
+         break;
+      case ThreadPrioLow:
+         txPrio += 1;
+         break;
+      case ThreadPrioNormal:
+         break;
+      case ThreadPrioHigh:
+         txPrio -= 1;
+         break;
+      case ThreadPrioHighest:
+         txPrio -= 2;
+         break;
       default:
          baAssert(0);
    }

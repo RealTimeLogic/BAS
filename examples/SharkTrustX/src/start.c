@@ -18,53 +18,16 @@
 extern int psaSimulatorInit(void);
 #endif
 
-/* Platform-specific entropy setup stays here. The server below uses BAS
- * APIs and the selected DiskIo filesystem port. Initialize networking/DNS,
- * the UTC clock, storage, tracing and error handling before barracuda().
- * Standalone programs use the shared Main.c and HostInit.c; an RTOS uses
- * its normal board initialization and server task. */
-#if defined(_WIN32)
-#include <bcrypt.h>
-#endif
+/* Platform-neutral DEMONSTRATION ONLY seed on every native platform.
+ * Initialize networking, UTC time, storage and tracing before barracuda().
+ * Production native builds must replace this helper with real entropy.
+ * PSA provider/storage setup must precede the separate provider initializer.
+ */
+#include "../../HostInit/ExampleRng.h"
 
-/* Seed before generating any credentials, account keys or TLS keys. */
 static int seedRandom(void)
 {
-#if defined(_WIN32) || defined(__linux__)
-   U32 seed[16];
-   int i, rc = 0;
-#ifdef _WIN32
-   rc = BCryptGenRandom(0, (PUCHAR)seed, sizeof(seed),
-                        BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0;
-#else
-   FILE* random = fopen("/dev/urandom", "rb");
-   if(!random)
-      rc = -1;
-   else
-   {
-      if(fread(seed, 1, sizeof(seed), random) != sizeof(seed))
-         rc = -1;
-      if(fclose(random))
-         rc = -1;
-   }
-#endif
-   if(!rc)
-      for(i = 0; i < 16; ++i)
-         if(sharkssl_entropy(seed[i]))
-         {
-            rc = -1;
-            break;
-         }
-   sharkssl_clear(seed, sizeof(seed));
-   return rc;
-#else
-   /* EXAMPLE ONLY: a function address is predictable, NOT random entropy.
-    * Before using TLS on a device, seed SharkSSL using sharkssl_entropy()
-    * with real entropy from the board's hardware RNG or another secure
-    * source. Replace this placeholder with that platform's seeding code.
-    * tokengen credential obfuscation does not seed the random generator. */
-   return sharkssl_entropy((U32)(uintptr_t)&seedRandom);
-#endif
+   return sharkssl_exampleSeed();
 }
 
 /* The downloaded portal source supplies these when TOKENGEN_C_API is set. */

@@ -11,9 +11,9 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLibArch.h 4915 2021-12-01 18:26:55Z wini $
+ *   $Id: ThreadLibArch.h 6758 2026-11-05 21:16:51Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -64,7 +64,10 @@ typedef struct ThreadMutexBase
 }while(0)
 
 #define ThreadMutex_release(o)  do{\
-   (o)->tid = 0;\
+   if((o)->mutex.tx_mutex_ownership_count == 1)\
+   {\
+      (o)->tid = 0;\
+   }\
    TST_OK(tx_mutex_put(&(o)->mutex));\
 }while(0)
 

@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
+ *   $Id: ThreadLib.c 6746 2026-11-04 17:20:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -38,6 +38,33 @@
 #include <ThreadLib.h>
 #include <BaErrorCodes.h>
 #include <HttpCfg.h>
+
+/* Keep port functions in a translation unit, independent of header order. */
+int
+_socketConnect(int s, struct sockaddr* name, int namelen)
+{
+   struct timeval timeout;
+   timeout.tv_sec=1;
+   timeout.tv_usec=0;
+   return connectWithTimeout(s,name,namelen,&timeout);
+}
+
+#if BA_ENABLE_UDP
+int
+baVxWorksSendEmpty(int s, int flags, const struct sockaddr* addr, int addrlen)
+{
+   struct msghdr msg;
+   struct iovec iov;
+   memset(&msg,0,sizeof(msg));
+   iov.iov_base=(void*)"";
+   iov.iov_len=0;
+   msg.msg_name=(void*)addr;
+   msg.msg_namelen=addrlen;
+   msg.msg_iov=&iov;
+   msg.msg_iovlen=1;
+   return sendmsg(s,&msg,flags);
+}
+#endif
 
 #ifdef UseVxWorksGethostbyname
 #include <netdb.h>

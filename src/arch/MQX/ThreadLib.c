@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
+ *   $Id: ThreadLib.c 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -119,7 +119,7 @@ Thread_start(struct Thread* o)
    return -1;
 }
 
-U32
+BaTime
 baGetUnixTime(void)
 {
    TIME_STRUCT t;

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaConfig.h 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: BaConfig.h 6773 2026-11-06 17:36:44Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2023 - 2026
  *
@@ -333,7 +333,8 @@
 #endif
 
 /** \def BA_USE_C_RUNTIME_TIME
- * Use C-runtime time/calendar functions in Lua instead of the BAS fallback.
+ * Use C-runtime calendar conversion/formatting in Lua instead of the BAS
+ * UTC-only fallback. Current Unix time always comes from baGetUnixTime().
  *
  * Applies to: BAS Lua runtime/configuration, inherited by Mako/Xedge; no
  * native BWS consumer.
@@ -527,6 +528,18 @@
 #endif
 
 /* Port-selected dispatcher and listener policy. */
+/** \def BA_USE_POLL
+ * Select the POSIX poll dispatcher in a supporting build and socket port.
+ * Defaults to 0; the Mako QNX makefile defaults to 1. Use the poll HttpCfg.h
+ * for every translation unit and rebuild when changing dispatchers.
+ */
+#ifndef BA_USE_POLL
+#define BA_USE_POLL 0
+#endif
+#if (BA_USE_POLL != 0) && (BA_USE_POLL != 1)
+#error BA_USE_POLL must be 0 or 1
+#endif
+
 /** \def BA_USE_EPOLL
  * Select the epoll dispatcher in a supporting build and socket port.
  *
@@ -540,6 +553,9 @@
 #endif
 #if (BA_USE_EPOLL != 0) && (BA_USE_EPOLL != 1)
 #error BA_USE_EPOLL must be 0 or 1
+#endif
+#if BA_USE_POLL && BA_USE_EPOLL
+#error Select only one of BA_USE_POLL and BA_USE_EPOLL
 #endif
 
 /** \def BA_ENABLE_SOCKET_REUSE_ADDRESS
@@ -793,6 +809,15 @@
 #define SHARKSSL_PSA_CONSUMER_STANDALONE_AES 1
 #elif BA_ENABLE_TPM && (SHARKSSL_PSA_CONSUMER_STANDALONE_AES != 1)
 #error BA_ENABLE_TPM requires SHARKSSL_PSA_CONSUMER_STANDALONE_AES=1 with PSA
+#endif
+/* These native AES implementations do not apply to provider-backed AES. */
+#if SHARKSSL_PSA_CONSUMER_STANDALONE_AES
+#ifndef SHARKSSL_AES_SOFTWARE_CT
+#define SHARKSSL_AES_SOFTWARE_CT 0
+#endif
+#ifndef SHARKSSL_AES_GCM_SOFTWARE_CT
+#define SHARKSSL_AES_GCM_SOFTWARE_CT 0
+#endif
 #endif
 #ifndef SHARKSSL_ENABLE_RSA_API
 #define SHARKSSL_ENABLE_RSA_API 0

@@ -18,19 +18,21 @@ pre.code { overflow-x: auto; }
 
 <h1>SharkTrustX Native C Example</h1>
 
-<p>This example gives a C web server its own HTTPS certificate and renews it automatically. It uses the Barracuda Web Server (BWS) and SharkSSL with either the <a target="_blank" href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> portal for DNS-01 validation with a compatible ACME server, or the <a target="_blank" href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal to issue private certificates. The default build uses SharkTrustX with Let's Encrypt staging. A small web page shows whether the certificate is ready, when it expires, and when renewal is due. No Lua runtime is required.</p>
+<p>This example gives a C web server its own HTTPS certificate and renews it automatically. It uses Barracuda Web Server (BWS) and SharkSSL, with no Lua runtime. A status page shows when the certificate is ready, when it expires, and when renewal is due.</p>
+
+<p>The default build uses the <a target="_blank" href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> portal with Let's Encrypt's staging service. The portal proves control of the device's DNS name for certificate issuance. You can also connect the example to your own <a target="_blank" href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal to issue private certificates.</p>
 
 <p>For protected signing keys, build with the Platform Security Architecture (PSA) Crypto API and a provider backed by a Trusted Platform Module (TPM) or another protected key store. The client can then renew certificates and rotate keys without exporting private keys. The native C build without PSA saves software keys as unencrypted PEM data and has no built-in softTPM protection. Actual key isolation depends on the PSA provider and platform, not the build flag alone.</p>
 
 <blockquote>
-<p><strong>Do not</strong> use this C module if you are using Lua. Instead, use the <a href="https://realtimelogic.com/ba/doc/en/lua/acme.html">Lua ACME plugin</a>. The Lua integration can use <a href="https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM">softTPM</a>; it is separate from this C implementation.</p>
+<p>For a Lua application, use the <a href="https://realtimelogic.com/ba/doc/en/lua/acme.html">Lua ACME plugin</a>, which supports <a href="https://realtimelogic.com/ba/doc/en/lua/auxlua.html#TPM">softTPM</a>. The steps below are for a native C application.</p>
 </blockquote>
 
 
-<p>Use this guide to build and run the example on Windows or Linux, then use the same <code>void barracuda(void)</code> entry point with your target port, as in the other BAS examples. For certificate concepts and the C integration contract, read the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html">SharkTrustX C user manual</a>.</p>
+<p>Use this guide to build and run the example on Windows or Linux, then use the same <code>void barracuda(void)</code> entry point with your target port, as in the other BAS examples. For certificate concepts, API details, and callback requirements, read the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html">SharkTrustX C user manual</a>.</p>
 
 <blockquote>
-<p><strong>The default build uses staging certificates.</strong> It exercises real enrollment and certificate issuance, but its issued certificates are for testing and produce browser trust warnings. The device still validates the HTTPS services it connects to. See <a href="https://letsencrypt.org/docs/staging-environment/">Let's Encrypt's staging documentation</a>. After starting, browsing to the example, and accepting the warning, you may click the certificate and its chain in the browser, download the Let's Encrypt root CA staging certificate, and install it in your certificate store. The next time you start the browser, it will trust the connection.</p>
+<p><strong>The default build uses staging certificates.</strong> Enrollment and issuance work, but the test certificates produce browser trust warnings. The device still validates the HTTPS services it connects to. See <a href="https://letsencrypt.org/docs/staging-environment/">Let's Encrypt's staging documentation</a>. After starting, browsing to the example, and accepting the warning, you may click the certificate and its chain in the browser, download the Let's Encrypt root CA staging certificate, and install it in your certificate store. The next time you start the browser, it will trust the connection.</p>
 </blockquote>
 
 <ul>
@@ -51,10 +53,10 @@ pre.code { overflow-x: auto; }
 <h2 id="before">Before You Build</h2>
 
 <ol>
-<li><strong>Use the complete amalgamated BAS package.</strong> The example compiles <code>src/BWS.c</code>, which includes the SharkTrustX client and SharkSSL, with the public headers and target port sources. It does not need a prebuilt BAS library or a resource compiler.</li>
+<li><strong>Use the complete amalgamated BAS package.</strong> The example compiles <code>src/BWS.c</code>, which includes the SharkTrustX client and SharkSSL, with the public headers and target port sources. You can build it directly from these sources.</li>
 <li><strong>Choose key protection.</strong> The standard Windows and Linux build commands below use native software keys. For a TPM or another protected key store, follow <a href="#psa">Set up PSA key protection</a> when preparing your target build. Both paths support the public and private CA profiles.</li>
 <li><strong>Prepare portal credentials.</strong> The included <code>src/tokengen.c</code> supplies credentials for <a href="https://x.realtimelogic.com/">x.realtimelogic.com</a>. You can use these credentials to try the example. To use your own credentials, download <code>tokengen.c</code> from your <a href="https://github.com/RealTimeLogic/SharkTrustX">SharkTrustX</a> or <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> portal, replace the included file, and rebuild. For SharkCA, follow <a href="#sharkca">Switch to SharkCA</a>; replacing credentials alone does not select the private-CA protocol.</li>
-<li><strong>Set your contact and preferred name.</strong> In <code>src/start.h</code>, replace John Doe's placeholder email, <code>john.doe@example.com</code>, with your own contact email before building. SharkCA does not use a contact email. Set the preferred name to a label such as <code>controller-17</code>; the portal chooses the final full DNS name.</li>
+<li><strong>Set your contact and preferred name.</strong> In <code>src/start.h</code>, replace the placeholder email, <code>john.doe@example.com</code>, with your own contact email before building. SharkCA does not use a contact email. Set the preferred name to a label such as <code>controller-17</code>; the portal chooses the final full DNS name.</li>
 <li><strong>Check time, network, and ports.</strong> The host needs a correct UTC clock, DNS resolution, outbound HTTPS to the portal and CA, and unused local ports <code>8080</code> and <code>8443</code>. A certificate authority (CA) is the service that signs the certificate.</li>
 </ol>
 
@@ -64,13 +66,13 @@ pre.code { overflow-x: auto; }
 
 <p><b>Try it on Windows:</b> follow the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXPSAWindows.html">SharkTrustX PSA quick start</a> to build with the supplied development provider and persistent signing keys.</p>
 
-<p>The shared <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/PSAIntegration.html">PSA Crypto integration guide</a> explains provider selection, source ownership, and the Lua TPM integration. This native C example uses the key IDs and lifecycle below; it does not require the two Lua derivation roots.</p>
+<p>The <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/PSAIntegration.html">PSA Crypto integration guide</a> explains how to choose a provider, which sources to compile, and how Lua uses TPM keys. This native C example uses the key IDs and lifecycle below; it does not require the two Lua derivation roots.</p>
 
 <p>PSA selects how SharkSSL performs cryptography and stores signing keys. The <code>SharkTrustX_Config</code>, callbacks, and certificate lifecycle remain the same. Use a PSA Crypto provider that supports the client's key policy and the algorithms needed by your TLS connections. A TPM driver alone is not a complete PSA Crypto provider.</p>
 
 <h3>Include the Consumer Adapters and Your Provider</h3>
 
-<p>With <code>SHARKSSL_PSA_CONSUMER=1</code>, <code>src/BWS.c</code> includes these files from <code>src/plugins/SharkSSL/src/psa/</code>:</p>
+<p>With <code>SHARKSSL_PSA_CONSUMER=1</code>, <code>src/BWS.c</code> enables the following consumer adapters. Their code is already combined into the amalgamation; the filenames refer to the full SDK sources:</p>
 
 <ul>
 <li><code>SharkSslPSAConsumerCrypto.c</code></li>
@@ -81,7 +83,7 @@ pre.code { overflow-x: auto; }
 <li><code>SharkSslPSAConsumerAES.c</code></li>
 </ul>
 
-<p>BWS also includes <code>src/plugins/SharkSSL/src/util/SharkSslCSR.c</code> and <code>src/BWS.c (SharkTrustX section)</code>. <strong>Compile BWS once; do not compile these included files separately.</strong> Continue to compile the example sources and target ports described below. No Lua binding source is needed.</p>
+<p>The amalgamation also contains certificate-signing-request support and the SharkTrustX client. <strong>Compile <code>src/BWS.c</code> once; do not add separate copies of these components.</strong> Add the example sources and target ports described below.</p>
 
 <p>Link your target's PSA Crypto provider, hardware/key-storage driver, entropy support, and persistent-storage implementation. Select its matching <code>psa/crypto.h</code> and dependent headers, along with the SharkSSL headers and consumer helper headers under <code>inc/psa-consumer/</code>. The consumer adapters call the provider; they do not supply it.</p>
 
@@ -117,7 +119,7 @@ pre.code { overflow-x: auto; }
 
 <h2 id="sharkca">Switch to SharkCA</h2>
 
-<p>This same example can use <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> to obtain private certificates for devices on your network. There is no permanent public SharkCA test portal. Set up your own portal, for example with Mako Server on your computer, using the SharkCA installation guide.</p>
+<p>You can use this example with <a href="https://github.com/RealTimeLogic/SharkCA">SharkCA</a> to obtain private certificates for devices on your network. There is no permanent public SharkCA test portal. Set up your own portal, for example with Mako Server on your computer, using the SharkCA installation guide.</p>
 
 <ol>
 <li><strong>Configure your portal.</strong> Create the administrator account and enrollment zone. For a local installation, select local network grouping. Configure the zone's portal hostname and HTTPS certificate before downloading credentials. The hostname must resolve from the device, and the portal must serve HTTPS on port <code>443</code>. If the portal runs on another computer, <code>localhost</code> refers to the device itself.</li>
@@ -132,7 +134,7 @@ pre.code { overflow-x: auto; }
 
 <p>Both build paths default to <code>SHARKTRUSTX_PRIVATE_CA=0</code>, which leaves the C macro undefined and uses SharkTrustX with Let's Encrypt staging.</p>
 
-<p>For Visual Studio, close the solution and <strong>manually open <code>VcMake/example.vcxproj</code> in a text editor</strong>. In the XML <code>UserMacros</code> section, change the value inside the <code>SHARKTRUSTX_PRIVATE_CA</code> element from <code>0</code> to <code>1</code>. Save the file, reopen the solution, and select <strong>Rebuild</strong>.</p>
+<p>For Visual Studio, close the solution and open <code>VcMake/example.vcxproj</code> in a text editor. In the XML <code>UserMacros</code> section, change the value inside the <code>SHARKTRUSTX_PRIVATE_CA</code> element from <code>0</code> to <code>1</code>. Save the file, reopen the solution, and select <strong>Rebuild</strong>.</p>
 
 <p>This is an <strong>MSBuild project property</strong>. It includes the mDNS source files and required libraries and defines the C macro for all source files. Adding <code>SHARKTRUSTX_PRIVATE_CA=1</code> only under <strong>C/C++ &gt; Preprocessor &gt; Preprocessor Definitions</strong>, or adding a <code>#define</code> in <code>start.h</code>, does not include those files and can cause unresolved <code>BamDNS</code> linker errors.</p>
 
@@ -231,7 +233,7 @@ cd ../obj/debug
 <li><p>Press <strong>Ctrl+C</strong> in the host console to exit. Restart with the same credentials, settings, and state directory. A saved usable certificate is restored, then enrollment and automatic renewal continue.</p></li>
 </ol>
 
-<p>A newly confirmed name is not a certificate-ready signal. After a restart, the saved certificate may be ready before the portal confirms the name again.</p>
+<p>Name confirmation and certificate readiness are separate events. After a restart, the saved certificate may be ready before the portal confirms the name again.</p>
 
 <h3>Read the Status Page</h3>
 
@@ -242,11 +244,11 @@ cd ../obj/debug
 <tr><td>Confirmed DNS name</td><td>The portal-assigned name to use in the browser. It is reported independently of certificate readiness. In the SharkCA profile, confirmation starts mDNS for this name.</td></tr>
 <tr><td>Expires</td><td>The installed certificate's expiry date, in UTC (GMT).</td></tr>
 <tr><td>Renewal due</td><td>The midpoint of the installed certificate's validity period. This can be in the past while issuance or retries are running; it is not the next retry time.</td></tr>
-<tr><td>Last notification</td><td>The last certificate-ready or error notification. An error can coexist with a still-valid certificate. The accompanying retry event is logged to the console without hiding the error on the page.</td></tr>
+<tr><td>Last notification</td><td>The last certificate-ready or error notification. An error may be reported while the current certificate is still valid. The accompanying retry event is logged to the console without hiding the error on the page.</td></tr>
 </table>
 </div>
 
-<p>The public profile proves control of the name using a temporary DNS TXT record managed by the portal. The CA reads DNS; it does not need to connect to the example's HTTP or HTTPS port. Your browser still needs to resolve the assigned name and reach the device. Certificate issuance does not set up router forwarding or a remote-access tunnel.</p>
+<p>The public profile uses DNS-01 validation: the portal creates a temporary DNS TXT record to prove control of the device name. The CA reads DNS; it does not need to connect to the example's HTTP or HTTPS port. Your browser still needs to resolve the assigned name and reach the device. Certificate issuance does not set up router forwarding or a remote-access tunnel.</p>
 
 <p>With <code>BA_ENABLE_IPV6=1</code> enabled, both HTTP and HTTPS try IPv6 first, then IPv4 on their respective ports. Successful sockets are retained. Windows normally opens two sockets per service; Linux normally opens one dual-stack IPv6 socket per service that also accepts IPv4. Platform settings can change this. Both HTTPS listeners share one certificate and TLS context. Without <code>BA_ENABLE_IPV6=1</code>, only IPv4 is attempted.</p>
 
@@ -254,13 +256,13 @@ cd ../obj/debug
 
 <h2 id="settings">Example Settings</h2>
 
-<p>Edit <code>src/start.h</code> or supply compiler definitions before building. The example uses these settings:</p>
+<p>Edit <code>src/start.h</code> or supply compiler definitions before building. The available settings are:</p>
 
 <div class="table-scroll">
 <table cellpadding="4" border="1">
 <tr><th scope="col">Setting</th><th scope="col">C type</th><th scope="col">Default</th><th scope="col">Meaning</th></tr>
 <tr><td><code>EXAMPLE_NAME</code></td><td>String literal</td><td><code>sharktrustx-c</code></td><td>Preferred label, 1 to 63 ASCII letters, digits, or hyphens; no leading/trailing hyphen or dot. Keep it stable when reusing state.</td></tr>
-<tr><td><code>EXAMPLE_EMAIL</code></td><td>String literal</td><td><code>john.doe@example.com</code></td><td>John Doe's placeholder for the public ACME account contact. Replace it before public-profile enrollment; unused with SharkCA.</td></tr>
+<tr><td><code>EXAMPLE_EMAIL</code></td><td>String literal</td><td><code>john.doe@example.com</code></td><td>Placeholder for the public ACME account contact. Replace it before public-profile enrollment; unused with SharkCA.</td></tr>
 <tr><td><code>EXAMPLE_STATE_DIR</code></td><td>String literal</td><td><code>"."</code></td><td>Existing writable directory used as the private <code>DiskIo</code> root. Select persistent storage on a device.</td></tr>
 <tr><td><code>EXAMPLE_HTTP_PORT</code></td><td>Integer constant</td><td><code>8080</code></td><td>Unused port from 1 to 65535 for the status page.</td></tr>
 <tr><td><code>EXAMPLE_HTTPS_PORT</code></td><td>Integer constant</td><td><code>8443</code></td><td>A different unused port from 1 to 65535, managed by SharkTrustX.</td></tr>
@@ -308,11 +310,11 @@ SharkTrustX-staging.exe</pre>
 make plat=posix build=debug clean
 make plat=posix build=debug BA_ENABLE_IPV6=1 exe</pre>
 
-<p>An IPv6 build must use a BWS network port that implements IPv6. For example, the existing FreeRTOS/lwIP netconn port supports IPv4 only; <code>BA_ENABLE_IPV6=1</code> alone does not add IPv6 support to that port. An unsuccessful IPv6 attempt falls back to IPv4, following the same listener sequence.</p>
+<p>An IPv6 build needs both an IPv6-capable BWS port and an appropriately configured network stack. For lwIP, see the <a href="https://github.com/RealTimeLogic/BAS/blob/main/src/arch/FreeRTOS/README.txt">FreeRTOS port notes</a> for the required version and options. If an IPv6 listener cannot open, the example also attempts IPv4.</p>
 
 <h2 id="rtos">Integrate with an RTOS</h2>
 
-<p>The server uses the standard <code>void barracuda(void)</code> entry point. It can use any BAS target port that supplies the required thread, network, clock, and persistent-storage services. FreeRTOS, Zephyr, INTEGRITY, and VxWorks below are examples of port selection, not a fixed list of supported operating systems.</p>
+<p>The server uses the standard <code>void barracuda(void)</code> entry point. It can use any BAS target port that supplies the required thread, network, clock, and persistent-storage services. The table below shows the files and settings for several common targets.</p>
 
 <p>Call <code>barracuda()</code> once from the application's usual server task after initializing the scheduler, heap, console, networking/DNS, UTC clock, and persistent storage. As with the other BAS examples, it runs the dispatcher in that task. Use the shared <code>Main.c</code> and <code>HostInit.c</code> on systems with <code>main()</code>; an RTOS application supplies its normal board startup, trace callback, and fatal-error handler.</p>
 
@@ -352,7 +354,7 @@ make plat=custom tinc=/path/to/Target.mk lib</pre>
 <p>For PSA, initialize your target provider and its entropy and persistent key storage before <code>barracuda()</code>, as described in <a href="#psa">Set up PSA key protection</a>. Configure secure storage provisioning according to the provider's instructions. The C client generates its signing keys but does not provision provider storage secrets or use the Lua TPM root-secret services.</p>
 
 <blockquote>
-<p><strong>Supply real entropy before using TLS on a device.</strong> In a native software build, the platform section at the top of <code>start.c</code> seeds SharkSSL from the operating system on Windows and Linux. For other targets, <code>seedRandom()</code> contains a predictable function-address placeholder. Replace it with <code>sharkssl_entropy()</code> calls using the board's hardware random generator or another secure entropy source. In a PSA build, randomness comes from the provider; these seeding calls do not replace the provider's required entropy initialization.</p>
+<p><strong>Supply real entropy before using TLS on a device.</strong> The native example uses the same platform-neutral, demonstration-only <code>ExampleRng.h</code> helper on every platform, including Windows and Linux. It hashes a function address into a 48-byte initial buffer; expanding an address does not create entropy. Replace this demonstration input with at least 48 bytes from a secure platform source and check <code>sharkssl_entropyEx()</code>. Subsequent native reseeds require at least 32 bytes. In a PSA build, initialize the provider and its entropy source first; the helper calls the PSA-only <code>sharkssl_entropy(void)</code> initializer and does not inject application seed data.</p>
 </blockquote>
 
 <h2 id="troubleshooting">Troubleshooting</h2>
@@ -374,7 +376,7 @@ make plat=custom tinc=/path/to/Target.mk lib</pre>
 </table>
 </div>
 
-<p>For all callback values and recovery contracts, see the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-codes">manual's error reference</a>. Return to the <a href="https://realtimelogic.com/ba/examples/readme.html">BAS examples index</a> or <a href="https://realtimelogic.com/ba/examples/introduction.html">shared build introduction</a> for the surrounding example structure.</p>
+<p>For callback values and error recovery, see the <a target="_blank" href="https://realtimelogic.com/ba/doc/en/C/reference/html/SharkTrustXSharkSslPublicApi.html#stx-codes">manual's error reference</a>. See the <a href="https://realtimelogic.com/ba/examples/readme.html">BAS examples index</a> and <a href="https://realtimelogic.com/ba/examples/introduction.html">build introduction</a> for other applications and target setups.</p>
 
 </body>
 </html>

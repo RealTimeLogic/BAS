@@ -1,56 +1,46 @@
-# Embedded RESTful Services in C and C++
+# Embedded REST services in C and C++
 
-This directory contains the example source code for the tutorial [Designing Embedded RESTful Services in C and C++](https://realtimelogic.com/articles/Designing-Embedded-RESTful-Services-in-C-and-C), which shows how to implement a RESTful API using the [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/) library.
+This example implements a small user-management API with the [Barracuda Embedded Web Server (BWS)](https://realtimelogic.com/products/barracuda-web-server/). It shows how to route requests, parse JSON, and send responses using the native C APIs. The accompanying tutorial, [Designing Embedded RESTful Services in C and C++](https://realtimelogic.com/articles/Designing-Embedded-RESTful-Services-in-C-and-C), explains the code.
 
-This example implements REST routing directly with the BAS/BWS C APIs. It
-remains the best starting point when a target supports only C or when code and
-memory overhead must be kept to an absolute minimum. See
-the [Modern C++ REST Service](../Modern-Cpp-REST-Service/README.md) example, which
-trades some additional requirements and footprint for a much simpler application
-programming model.
+Use this example with a C-only toolchain or when you want direct control over request handling. If you prefer typed route parameters and reusable response helpers, try the [Modern C++ REST Service](../Modern-Cpp-REST-Service/README.md), which requires C++11 and the included `cpp/rest` library. Both use the same BWS server and JSON APIs.
 
-## Choosing between the REST examples
+## Build and run
 
-| Example | Use it when | Requirements and tradeoffs |
-| --- | --- | --- |
-| C RESTful Service (this example) | The target supports only C, or code and memory overhead must be kept to an absolute minimum. | Uses the BAS/BWS C APIs directly and does not require the C++ REST library. Route parsing and error handling are implemented explicitly by the application. |
-| [Modern C++ REST Service](../Modern-Cpp-REST-Service/README.md) | Ease of development, readable route definitions, typed parameters, and reusable REST handling are more important. | Requires a modern C++ compiler and the [cpp/rest library](../../cpp/rest/README.md). |
+On Linux, run from the repository root:
 
-Both examples use the same native BWS server and JSON facilities. The choice
-depends on the target toolchain, resource budget, and preferred programming
-model; neither example replaces the other.
+```sh
+# Build the C implementation with the supplied Makefile.
+cd examples/C-RESTful-Service
+make
+./restservice
+```
 
----
+On Windows, open `RestService.vcxproj` in Visual Studio and build the project.
 
-## 🛠️ Building the Project
+Check the startup output for the listening port. The test script expects port 80. On Linux, `sudo ./restservice` allows the example to bind to that port; if you run it on another port, update `BASE_URL` in `TestApi.py`.
 
-You can build the project on both **Linux** and **Windows**:
+For an embedded target, select the appropriate [thread and network ports](../../doc/compiling.md#porting-layers) and replace the shared host startup with your device's startup code.
 
-- **Linux**: Use the provided `Makefile`
-- **Windows**: Use the Visual Studio project file `RestService.vcxproj`
-- To **cross-compile for a custom embedded target**, refer to the Barracuda [porting API documentation](https://github.com/RealTimeLogic/BAS#porting-layers) and use the appropriate thread and socket abstraction layers.
+## Try the API
 
----
+Keep the server running and open another terminal in this example directory. The test script needs Python and the `requests` package:
 
-## 📂 File Overview
-
-| File Path                                  | Description                                  |
-|-------------------------------------------|----------------------------------------------|
-| `src/RestService.c` / `RestService.cpp`   | Main RESTful service implementation (C and C++) |
-| `src/RestJsonUtils.c`                     | Utility functions for JSON parsing/encoding |
-| `../HostInit/Main.c`                      | Entry point for high-level OS (HLOS) targets |
-| `../HostInit/HostInit.c`                  | Generic system initialization for HLOS      |
-| `../../src/BWS.c`                         | Barracuda Embedded Web Server core library  |
-| `../../src/arch/Posix/ThreadLib.c`        | POSIX thread abstraction layer              |
-| `../../src/arch/NET/generic/SoDisp.c`     | Generic socket dispatcher (TCP layer)       |
-
-## Testing the Service
-
-A Python script is included to test the RESTful API implementation. Before running the script, ensure that the server is listening on **port 80** (on Linux run: sudo ./restservice).
-
-To run the test:
-
-```bash
+```sh
+# Install the test dependency in your Python environment.
+python -m pip install requests
 python TestApi.py
 ```
 
+The script creates, fetches, and deletes users, and prints the responses to invalid requests and a full user table. It displays results for inspection; it does not assert that each response is correct.
+
+## Find your way around the code
+
+| File | Purpose |
+| --- | --- |
+| `src/RestService.c` / `src/RestService.cpp` | C and C++ versions of the service. |
+| `src/RestJsonUtils.c` | JSON parsing and encoding helpers. |
+| `../HostInit/Main.c` | Entry point for desktop and server operating systems. |
+| `../HostInit/HostInit.c` | Shared host initialization. |
+| `../../src/BWS.c` | Barracuda Embedded Web Server library. |
+| `../../src/arch/Posix/ThreadLib.c` | POSIX thread port. |
+| `../../src/arch/NET/generic/SoDisp.c` | Socket dispatcher. |

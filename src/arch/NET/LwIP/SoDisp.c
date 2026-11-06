@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 6667 2026-10-28 23:37:37Z wini $
+ *   $Id: SoDisp.c 6747 2026-11-04 20:29:24Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
@@ -54,6 +54,7 @@
 #include <BaServerLib.h>
 #include <HttpTrace.h>
 #include <lwip/tcp.h>
+#include <lwip/netif.h>
 #include <lwip/init.h>
 #if LWIP_VERSION_MAJOR < 2
 #include <lwip/api_msg.h>
@@ -63,9 +64,11 @@
 #endif
 #include <lwip/errno.h>
 #include <lwip/priv/api_msg.h>
+#include <lwip/priv/tcpip_priv.h>
 #endif
 
 #include <lwip/sockets.h>
+#include <stdint.h>
 
 
 #if LWIP_SO_RCVTIMEO != 1
@@ -74,27 +77,74 @@
 #if LWIP_DNS != 1
 #error LWIP_DNS must be set
 #endif
+#if LWIP_NETCONN_FULLDUPLEX != 1
+#error BAS lwIP requires LWIP_NETCONN_FULLDUPLEX=1
+#endif
+#if BA_ENABLE_IPV6 && (LWIP_VERSION_MAJOR < 2 || \
+    (LWIP_VERSION_MAJOR == 2 && LWIP_VERSION_MINOR < 1))
+#error BAS IPv6 requires lwIP 2.1 or later
+#endif
+#if BA_ENABLE_IPV6
+#define HttpSocket_isIp6(o) NETCONNTYPE_ISIPV6(netconn_type((o)->ncon))
+#else
+#define HttpSocket_isIp6(o) FALSE
+#endif
 
 /* See builds/FreeRTOS/README.txt for details on construction below:
  */
 #if BA_LWIP_USE_NETCONN_CALLBACK_DATA
-#define setCallBackData(ncon, httpSock) (ncon)->callbackData=httpSock
-#define getCallBackData(ncon) (HttpSocket*)(ncon)->callbackData
+#define getRawCallbackData(ncon) ((uintptr_t)(ncon)->callbackData)
+#define setRawCallbackData(ncon, value) (ncon)->callbackData=(void*)(value)
 #elif LWIP_SOCKET != 0
 #if LWIP_VERSION_MAJOR < 2 || (LWIP_VERSION_MAJOR == 2 && LWIP_VERSION_MINOR < 2)
 /* Cast the application's socket int member to/from HttpSocket* */
 #define USING_INT_AS_VOID_PTR
-#define setCallBackData(ncon, httpSock) (ncon)->socket=(int)httpSock
-#define getCallBackData(ncon)  /* -1: closed */                 \
-   (HttpSocket*)((ncon)->socket == -1 ? 0 : (ncon)->socket)
+#define getRawCallbackData(ncon) ((uintptr_t)(unsigned int)(ncon)->socket)
+#define setRawCallbackData(ncon, value) (ncon)->socket=(int)(value)
 #else
-#define setCallBackData(ncon, httpSock) (ncon)->callback_arg.ptr=httpSock
-#define getCallBackData(ncon) (HttpSocket*)                             \
-   (HttpSocket*)((ncon)->callback_arg.socket == -1 ? 0 : (ncon)->callback_arg.ptr)
+#define getRawCallbackData(ncon) ((uintptr_t)(ncon)->callback_arg.ptr)
+#define setRawCallbackData(ncon, value) (ncon)->callback_arg.ptr=(void*)(value)
 #endif     
 #else
 #error Must set callBackData pointer in api.h or define LWIP_SOCKET=1
 #endif
+
+/* Accepted netconns have no HttpSocket until netconn_accept returns. Store
+   their pending receive count in the otherwise unused callback slot. The low
+   two bits tag pending counts (1), detached I/O counts (3), or pointers (0).
+   HttpSocket is at least four-byte aligned. LwIP uses
+   socket == -1 for a newly accepted netconn in its socket-enabled builds. */
+static HttpSocket*
+getCallBackData(struct netconn* ncon)
+{
+   uintptr_t value=getRawCallbackData(ncon);
+   return value && !(value & 3) ? (HttpSocket*)value : 0;
+}
+
+static void
+setCallBackData(struct netconn* ncon, HttpSocket* sock)
+{
+   baAssert(!((uintptr_t)sock & 3));
+   setRawCallbackData(ncon,(uintptr_t)sock);
+}
+
+static int
+getPendingRecEvents(struct netconn* ncon)
+{
+   uintptr_t value=getRawCallbackData(ncon);
+   return !value || (unsigned int)value == (unsigned int)-1 ? 0 :
+      (int)(value >> 2);
+}
+
+static void
+setPendingRecEvents(struct netconn* ncon, int count)
+{
+   baAssert(count >= 0 && count < 0x40000000);
+   setRawCallbackData(ncon,((uintptr_t)count << 2) | 1);
+}
+
+#define setClosedIOCount(ncon,count) \
+   setRawCallbackData(ncon,((uintptr_t)(count) << 2) | 3)
 
  /* Set in the SoDisp_constructor. We can have only one instance! */
 static SoDisp* disp;
@@ -147,28 +197,159 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
  */
 
 
+static void
+HttpSockaddr_fromLwip(HttpSockaddr* o, const ip_addr_t* addr)
+{
+#if BA_ENABLE_IPV6
+   o->zone=0;
+   if(IP_IS_V6(addr))
+   {
+      memcpy(o->addr,ip_2_ip6(addr)->addr,16);
+      o->isIp6=TRUE;
+      o->zone=ip6_addr_zone(ip_2_ip6(addr));
+      return;
+   }
+#endif
+   o->isIp6=FALSE;
+#if LWIP_IPV6
+   memcpy(o->addr,ip_2_ip4(addr),4);
+#else
+   memcpy(o->addr,&addr->addr,4);
+#endif
+}
+
+static void
+HttpSockaddr_toLwip(const HttpSockaddr* o, ip_addr_t* addr)
+{
+#if BA_ENABLE_IPV6
+   if(o->isIp6)
+   {
+      memcpy(ip_2_ip6(addr)->addr,o->addr,16);
+      IP_SET_TYPE_VAL(*addr,IPADDR_TYPE_V6);
+      ip6_addr_set_zone(ip_2_ip6(addr),o->zone);
+      return;
+   }
+#endif
+#if LWIP_IPV6
+   memcpy(ip_2_ip4(addr),o->addr,4);
+   IP_SET_TYPE_VAL(*addr,IPADDR_TYPE_V4);
+#else
+   memcpy(&addr->addr,o->addr,4);
+#endif
+}
+
+#if BA_ENABLE_IPV6
+typedef struct
+{
+   struct tcpip_api_call_data call;
+   const char* name;
+   U8 zone;
+} HttpSockaddrZone;
+
+static err_t
+HttpSockaddr_findZone(struct tcpip_api_call_data* call)
+{
+   HttpSockaddrZone* zone=(HttpSockaddrZone*)call;
+   struct netif* netif=netif_find(zone->name);
+   zone->zone=netif ? netif_get_index(netif) : 0;
+   return ERR_OK;
+}
+
+void
+_HttpSockaddr_inetAddr(HttpSockaddr* o,const char* host,BaBool ip6,int* status)
+{
+   ip_addr_t addr;
+   char literal[46];
+   const char* scope=strchr(host,'%');
+   size_t len=scope ? (size_t)(scope-host) : strlen(host);
+   *status=-1;
+   if(!len || len >= sizeof(literal) ||
+      strspn(host,"0123456789abcdefABCDEF:.") != len)
+      return;
+   memcpy(literal,host,len);
+   literal[len]=0;
+   if(!ipaddr_aton(literal,&addr) || (IP_IS_V6(&addr) != (ip6 != 0)))
+      return;
+   HttpSockaddr_fromLwip(o,&addr);
+   if(scope)
+   {
+      unsigned long index;
+      char* end;
+      if(!ip6 || !ip6_addr_has_scope(ip_2_ip6(&addr),IP6_UNKNOWN))
+         return;
+      ++scope;
+      if(*scope >= '0' && *scope <= '9')
+      {
+         index=strtoul(scope,&end,10);
+         if(*end || !index || index > 255)
+            return;
+         o->zone=(U8)index;
+      }
+      else
+      {
+         HttpSockaddrZone zone;
+         if(!scope[0] || !scope[1] || scope[2] < '0' || scope[2] > '9')
+            return;
+         index=strtoul(scope+2,&end,10);
+         if(*end || index > 254)
+            return;
+         zone.name=scope;
+         zone.zone=0;
+         if(tcpip_api_call(HttpSockaddr_findZone,&zone.call) != ERR_OK ||
+            !zone.zone)
+            return;
+         o->zone=zone.zone;
+      }
+   }
+   *status=0;
+}
+
+void
+_HttpSockaddr_addr2String(HttpSockaddr* o,char* buf,int len,int* status)
+{
+   ip_addr_t addr;
+   HttpSockaddr_toLwip(o,&addr);
+   *status=ipaddr_ntoa_r(&addr,buf,len) ? 0 : -1;
+   if(!*status && o->zone)
+   {
+      int used=(int)strlen(buf);
+      int n=basnprintf(buf+used,len-used,"%%%u",(unsigned)o->zone);
+      if(n < 0 || n >= len-used)
+         *status=-1;
+   }
+}
+#endif
+
 void
 HttpSockaddr_gethostbyname(
    HttpSockaddr* o, const char* host, BaBool ip6, int* status)
 {
    ip_addr_t addr;
-   memset(o, 0, sizeof(HttpSockaddr));
+   memset(o,0,sizeof(*o));
+   *status=-1;
+#if !BA_ENABLE_IPV6
    if(ip6)
-   {
-      *status = -1;
-   }
-   else if(host)
-   {
-      *status = netconn_gethostbyname(host, &addr);
-   }
-   if( ! *status )
-   {
-#if LWIP_IPV6==0
-      memcpy(o->addr,&addr.addr,4);
-#else
-      memcpy(o->addr,&addr.u_addr.ip4,4);
+      return;
 #endif
+   o->isIp6=ip6;
+   if(!host)
+   {
+      *status=0;
+      return;
    }
+#if BA_ENABLE_IPV6
+   _HttpSockaddr_inetAddr(o,host,ip6,status);
+   if(!*status || strchr(host,'%'))
+      return;
+#endif
+#if LWIP_IPV6 && LWIP_VERSION_MAJOR >= 2
+   *status=netconn_gethostbyname_addrtype(
+      host,&addr,ip6 ? NETCONN_DNS_IPV6 : NETCONN_DNS_IPV4);
+#else
+   *status=netconn_gethostbyname(host,&addr);
+#endif
+   if(!*status)
+      HttpSockaddr_fromLwip(o,&addr);
 }
 
 
@@ -188,23 +369,6 @@ HttpSockaddr_gethostbyname(
 */
 #define httpSocket2Con(httpSock) \
  ((SoDispCon*)(((U8*)httpSock)-offsetof(SoDispCon,httpSocket)))
-
-
-/* lwIP race condition management used by function HttpSocket_accept
- * and HttpSocket_close. See comment in HttpSocket_netconnCB for
- * details.
- */
-static SoDispAcceptQNode*
-SoDispAcceptQ_findNode(SoDispAcceptQNode* ptr, struct netconn* ncon)
-{
-   int i;
-   for(i=0 ; i < DISP_ACCEPT_Q_LEN ; i++,ptr++)
-   {
-      if(ncon == ptr->ncon) return ptr;
-   }
-   return 0;
-}
-
 
 
 /*
@@ -237,6 +401,15 @@ HttpSocket_netconnCB(struct netconn* ncon, enum netconn_evt evt, u16_t len)
    doEvent=FALSE;
 
    SYS_ARCH_PROTECT(lev);
+
+   /* Do not change ncon->callback: LwIP's API_EVENT reads it twice without
+      this lock. Detached connections ignore events; -1 means new accept. */
+   if((getRawCallbackData(ncon) & 3) == 3 &&
+      (unsigned int)getRawCallbackData(ncon) != (unsigned int)-1)
+   {
+      SYS_ARCH_UNPROTECT(lev);
+      return;
+   }
 
    /* ON COMPILE ERROR -> Add to struct netconn: void* callbackData;
     * The BAS LwIP porting layer requires a handle (pointer) for the
@@ -294,51 +467,17 @@ HttpSocket_netconnCB(struct netconn* ncon, enum netconn_evt evt, u16_t len)
    }
    else
    {
-      /* We get to this part in the code if we get an event for a
-         netconn object with no HttpSocket handle.  This happens when
-         the peer sends data immediately after connecting and the lwIP
-         thread has a higher priority than the SoDisp thread. This
-         race condition is managed in the code below by counting the
-         events. This information is then used in HttpSocket_accept
-         when the SoDisp thread starts running.
-      */
-      int i;
-      SoDispAcceptQNode* ptr=disp->acceptQ;
-      for(i=0 ; i < DISP_ACCEPT_Q_LEN ; i++,ptr++)
+      /* Data may arrive before accept can attach its HttpSocket. There is
+         one count per netconn, so unrelated listeners cannot exhaust it. */
+      int count=getPendingRecEvents(ncon);
+      if(evt == NETCONN_EVT_RCVPLUS || evt == NETCONN_EVT_ERROR)
       {
-         if(ncon == ptr->ncon) break;
+         if(count < 0x3FFFFFFF)
+            count++;
       }
-      if(i == DISP_ACCEPT_Q_LEN) /* if not found */
-      {
-         ptr=disp->acceptQ;
-         for(i=0 ; i < DISP_ACCEPT_Q_LEN ; i++,ptr++)
-         {
-            if( ! ptr->ncon )
-            {
-               ptr->ncon=ncon;
-               break;
-            }
-         }
-      }
-      if(ptr->ncon == ncon)
-      {
-         switch(evt)
-         {
-            case NETCONN_EVT_ERROR:
-            case NETCONN_EVT_RCVPLUS:
-               ptr->recEvent++;
-               break;
-
-            case NETCONN_EVT_RCVMINUS:
-               ptr->recEvent--;
-               if(ptr->recEvent == 0)
-                  ptr->ncon=0;
-               break;
-
-            default:
-               break;
-         }
-      }
+      else if(evt == NETCONN_EVT_RCVMINUS && count)
+         count--;
+      setPendingRecEvents(ncon,count);
    }
    SYS_ARCH_UNPROTECT(lev);
 }
@@ -407,26 +546,178 @@ HttpSocket_setNonblocking(HttpSocket* o, int* status)
 void
 HttpSocket_wouldBlock(HttpSocket* o, int* status)
 {
-   *status = o->ncon && (EWOULDBLOCK == *status || ERR_INPROGRESS ==*status);
+   *status = o->ncon && (ERR_WOULDBLOCK == *status ||
+                         ERR_INPROGRESS == *status);
 }
 
+
+enum HttpSocketTcpOptionType
+{
+   HttpSocketTcpOption_NoDelay,
+#if LWIP_TCP_KEEPALIVE == 1
+   HttpSocketTcpOption_GetKeepAlive,
+   HttpSocketTcpOption_SetKeepAlive,
+   HttpSocketTcpOption_GetKeepAliveEx,
+   HttpSocketTcpOption_SetKeepAliveEx
+#endif
+};
+
+typedef struct
+{
+#if LWIP_VERSION_MAJOR >= 2
+   struct tcpip_api_call_data call;
+#endif
+   struct netconn* ncon;
+   enum HttpSocketTcpOptionType type;
+   int enable;
+   int time;
+   int interval;
+   int status;
+} HttpSocketTcpOption;
+
+static void
+HttpSocket_applyTcpOption(HttpSocketTcpOption* option)
+{
+   struct netconn* ncon=option->ncon;
+   if(!ncon || NETCONNTYPE_GROUP(netconn_type(ncon)) != NETCONN_TCP ||
+      ncon->state == NETCONN_LISTEN || !ncon->pcb.tcp)
+   {
+      option->status=E_SOCKET_CLOSED;
+      return;
+   }
+   option->status=0;
+   switch(option->type)
+   {
+      case HttpSocketTcpOption_NoDelay:
+         if(option->enable)
+            tcp_nagle_disable(ncon->pcb.tcp);
+         else
+            tcp_nagle_enable(ncon->pcb.tcp);
+         break;
+#if LWIP_TCP_KEEPALIVE == 1
+      case HttpSocketTcpOption_GetKeepAlive:
+         option->enable=ip_get_option(ncon->pcb.ip,SOF_KEEPALIVE);
+         break;
+      case HttpSocketTcpOption_SetKeepAlive:
+         if(option->enable)
+            ip_set_option(ncon->pcb.ip,SOF_KEEPALIVE);
+         else
+            ip_reset_option(ncon->pcb.ip,SOF_KEEPALIVE);
+         break;
+      case HttpSocketTcpOption_GetKeepAliveEx:
+         option->enable=ip_get_option(ncon->pcb.ip,SOF_KEEPALIVE);
+         option->time=(int)(ncon->pcb.tcp->keep_idle/1000);
+         option->interval=(int)(ncon->pcb.tcp->keep_intvl/1000);
+         break;
+      case HttpSocketTcpOption_SetKeepAliveEx:
+         if(option->enable)
+         {
+            ip_set_option(ncon->pcb.ip,SOF_KEEPALIVE);
+            ncon->pcb.tcp->keep_idle=option->time*1000;
+            ncon->pcb.tcp->keep_intvl=option->interval*1000;
+         }
+         else
+            ip_reset_option(ncon->pcb.ip,SOF_KEEPALIVE);
+         break;
+#endif
+   }
+}
+
+#if LWIP_VERSION_MAJOR >= 2
+static err_t
+HttpSocket_applyTcpOptionCore(struct tcpip_api_call_data* call)
+{
+   HttpSocket_applyTcpOption((HttpSocketTcpOption*)call);
+   return ERR_OK;
+}
+#endif
+
+static int
+HttpSocket_runTcpOption(HttpSocketTcpOption* option)
+{
+#if LWIP_VERSION_MAJOR >= 2
+   if(tcpip_api_call(HttpSocket_applyTcpOptionCore,&option->call) != ERR_OK)
+      return E_SOCKET_CLOSED;
+#else
+   HttpSocket_applyTcpOption(option);
+#endif
+   return option->status;
+}
 
 void
 HttpSocket_setTCPNoDelay(HttpSocket* o, int enable, int* status)
 {
-   if(o->ncon && o->ncon->pcb.tcp)
-   {
-      *status = 0;
-      if(enable)
-         tcp_nagle_enable(o->ncon->pcb.tcp); 
-      else
-         tcp_nagle_disable(o->ncon->pcb.tcp); 
-   }
-   else
-   {
-      *status = E_SOCKET_CLOSED;
-   }
+   HttpSocketTcpOption option;
+   option.ncon=o->ncon;
+   option.type=HttpSocketTcpOption_NoDelay;
+   option.enable=enable;
+   *status=HttpSocket_runTcpOption(&option);
 }
+
+
+#if LWIP_VERSION_MAJOR >= 2
+typedef struct
+{
+   struct tcpip_api_call_data call;
+   struct netconn* ncon;
+   ip_addr_t addr;
+   BaBool hasAddress;
+   BaBool found;
+} HttpSocketLocalAddrCheck;
+
+/* netif_list belongs to the TCP/IP thread, not the BAS dispatcher mutex. */
+static err_t
+HttpSocket_findLocalAddr(struct tcpip_api_call_data* call)
+{
+   HttpSocketLocalAddrCheck* check=(HttpSocketLocalAddrCheck*)call;
+   struct netif* netif;
+   if(!check->hasAddress || ip_addr_isany(&check->addr) ||
+      ip_addr_isloopback(&check->addr))
+      check->found=TRUE;
+   for(netif=netif_list; netif && !check->found; netif=netif->next)
+   {
+#if BA_ENABLE_IPV6
+      if(IP_IS_V6(&check->addr))
+      {
+         int i;
+         for(i=0;i<LWIP_IPV6_NUM_ADDRESSES;i++)
+         {
+            if(ip6_addr_isvalid(netif_ip6_addr_state(netif,i)) &&
+               ip6_addr_cmp_zoneless(netif_ip6_addr(netif,i),ip_2_ip6(&check->addr)) &&
+               (!ip6_addr_has_zone(ip_2_ip6(&check->addr)) ||
+                ip6_addr_test_zone(ip_2_ip6(&check->addr),netif)))
+            {
+               check->found=TRUE;
+               break;
+            }
+         }
+      }
+      else
+#endif
+      if(ip4_addr_cmp(netif_ip4_addr(netif),ip_2_ip4(&check->addr)))
+      {
+         check->found=TRUE;
+         break;
+      }
+   }
+   if(check->found && check->ncon->pcb.ip)
+      ip_set_option(check->ncon->pcb.ip,SO_REUSEADDR);
+   return ERR_OK;
+}
+
+static BaBool
+HttpSocket_prepareBind(struct netconn* ncon, const ip_addr_t* addr)
+{
+   HttpSocketLocalAddrCheck check;
+   check.ncon=ncon;
+   check.hasAddress=(BaBool)(addr != 0);
+   if(addr)
+      check.addr=*addr;
+   check.found=FALSE;
+   return tcpip_api_call(HttpSocket_findLocalAddr,&check.call) == ERR_OK &&
+      check.found;
+}
+#endif
 
 
 void
@@ -435,14 +726,25 @@ _HttpSocket_newSock(HttpSocket* o, const char* host, enum netconn_type t,
 {
    (void)host;
    *status = -1;
-   if(!o->ncon && !ip6)
+#if !BA_ENABLE_IPV6
+   if(ip6)
+      return;
+#else
+   if(ip6)
+      t=(enum netconn_type)(t | NETCONN_TYPE_IPV6);
+#endif
+   if(!o->ncon)
    {
       o->recEvent = 0;
       o->sendEvent = o->errEvent = FALSE;
       o->ncon = netconn_new_with_callback(t, HttpSocket_netconnCB);
       if(o->ncon)
       {
-         o->isDgram = (U8)(t == NETCONN_UDP);
+         o->isDgram = (U8)(NETCONNTYPE_GROUP(t) == NETCONN_UDP);
+#if BA_ENABLE_IPV6
+         if(ip6)
+            netconn_set_ipv6only(o->ncon,1);
+#endif
          setCallBackData(o->ncon, o);
          *status = 0;
       }
@@ -453,12 +755,32 @@ _HttpSocket_newSock(HttpSocket* o, const char* host, enum netconn_type t,
 void
 HttpSocket_bind(HttpSocket* o,HttpSockaddr* addr,U16 port,int* status)
 {
-   (void)addr; /* Not implemented. Note LwIP uses pointers for comp. */
-   if(o->ncon)
+   ip_addr_t ia;
+   const ip_addr_t* local=IP_ADDR_ANY;
+   if(!o->ncon || (addr && (addr->isIp6 != HttpSocket_isIp6(o))))
    {
-      ip_set_option(o->ncon->pcb.ip, SO_REUSEADDR);
+      *status=-1;
+      return;
    }
-   *status = (!o->ncon || netconn_bind(o->ncon,IP_ADDR_ANY,port)) ? -1 : 0;
+   if(addr)
+   {
+      HttpSockaddr_toLwip(addr,&ia);
+      local=&ia;
+   }
+#if BA_ENABLE_IPV6
+   else if(NETCONNTYPE_ISIPV6(netconn_type(o->ncon)))
+      local=IP6_ADDR_ANY;
+#endif
+#if LWIP_VERSION_MAJOR >= 2
+   if(!HttpSocket_prepareBind(o->ncon,addr ? &ia : 0))
+   {
+      *status=-1;
+      return;
+   }
+#else
+   ip_set_option(o->ncon->pcb.ip, SO_REUSEADDR);
+#endif
+   *status = netconn_bind(o->ncon,local,port) == ERR_OK ? 0 : -1;
 }
 
 
@@ -474,13 +796,12 @@ void
 HttpSocket_connect(HttpSocket* o,HttpSockaddr* addr,U16 port,int* status)
 {
    ip_addr_t ia;
-   if(!o->ncon || addr->isIp6) *status = -1;
-#if LWIP_IPV6==0
-   memcpy(&ia.addr, addr->addr, 4);
-#else
-   memcpy(&ia.u_addr.ip4,addr->addr, 4);
-   IP_SET_TYPE_VAL(ia, IPADDR_TYPE_V4);
-#endif
+   if(!o->ncon || !addr || (addr->isIp6 != HttpSocket_isIp6(o)))
+   {
+      *status=-1;
+      return;
+   }
+   HttpSockaddr_toLwip(addr,&ia);
    *status=netconn_connect(o->ncon, &ia, port);
 }
 
@@ -490,16 +811,12 @@ HttpSocket_accept(HttpSocket* o,HttpSocket* newSock,int* status)
 {
    if(o->ncon && ! netconn_accept(o->ncon, &newSock->ncon))
    {
-      SoDispAcceptQNode* acn = SoDispAcceptQ_findNode(
-         disp->acceptQ, newSock->ncon);
+      SYS_ARCH_DECL_PROTECT(lev);
+      SYS_ARCH_PROTECT(lev);
+      newSock->recEvent=getPendingRecEvents(newSock->ncon);
       setCallBackData(newSock->ncon, newSock);
+      SYS_ARCH_UNPROTECT(lev);
       *status=0;
-      if(acn) /* if pending recv events */
-      {
-         newSock->recEvent = acn->recEvent;
-         acn->ncon=0;
-         acn->recEvent=0;
-      }
    }
    else
       *status=-1;
@@ -516,14 +833,8 @@ HttpSocket_close(HttpSocket* o)
    ncon = o->ncon;
    if(ncon)
    {
-      SoDispAcceptQNode* acn = SoDispAcceptQ_findNode(disp->acceptQ, ncon);
-      if(acn)
-      {
-         acn->ncon=0;
-         acn->recEvent=0;
-      }
-      setCallBackData(ncon,0);
-      ncon->callback = 0;
+      /* Detached connections retain only their outstanding I/O count. */
+      setClosedIOCount(ncon,o->ioCount);
       o->ncon = 0;
    }
    if(DoubleLink_isLinked(o))
@@ -535,9 +846,23 @@ HttpSocket_close(HttpSocket* o)
        */
       if(o == disp->curSock)
          disp->curSock=0;
-      netconn_close(ncon);
-      netconn_delete(ncon);
+#if LWIP_NETCONN_FULLDUPLEX
+      if(o->ioCount)
+      {
+         /* Cancel before the caller frees any send/TLS buffers. The last
+            returning I/O call deletes the netconn, even if o is gone. */
+         err_t err=netconn_prepare_delete(ncon);
+         if(err != ERR_OK)
+            baFatalE(FE_SOCKET,err);
+      }
+      else
+#endif
+      {
+         netconn_close(ncon);
+         netconn_delete(ncon);
+      }
    }
+   o->ioCount=0;
    if(o->nbuf)
    {
       if(o->isDgram)
@@ -546,6 +871,8 @@ HttpSocket_close(HttpSocket* o)
          pbuf_free((struct pbuf*)o->nbuf);
       o->nbuf=0;
    }
+   o->pbOffs=0;
+   o->emptyDgram=FALSE;
    o->recEvent = 0;
    o->errEvent = o->sendEvent = FALSE;
 }
@@ -564,15 +891,11 @@ HttpSocket_getAddr(HttpSocket* o, HttpSockaddr* addr, U16* port,
    ip_addr_t ia;
    U16 portBuf;
    if(!port) port=&portBuf;
-   if(o->ncon && !ip6 && ERR_OK == netconn_getaddr(o->ncon,&ia,port,local))
+   if(o->ncon && (ip6 == HttpSocket_isIp6(o)) &&
+      ERR_OK == netconn_getaddr(o->ncon,&ia,port,local))
    {
-#if LWIP_IPV6==0
-      memcpy(addr->addr,&ia.addr,4);
-#else
-      memcpy(addr->addr,&ia.u_addr.ip4,4);
-#endif
+      HttpSockaddr_fromLwip(addr,&ia);
       *status = 0;
-      addr->isIp6=FALSE;
    }
    else
       *status = -1;
@@ -592,9 +915,12 @@ HttpSocket_move(HttpSocket* o,HttpSocket* newS)
    o->ncon=0;
    newS->nbuf = o->nbuf;
    newS->pbOffs = o->pbOffs;
+   newS->ioCount = o->ioCount;
    newS->recEvent = o->recEvent;
    newS->sendEvent = o->sendEvent;
    newS->errEvent = o->errEvent;
+   newS->isDgram = o->isDgram;
+   newS->emptyDgram = o->emptyDgram;
    setCallBackData(newS->ncon, newS);
    if(DoubleLink_isLinked(o))
       DoubleLink_unlink((DoubleLink*)o);
@@ -603,10 +929,59 @@ HttpSocket_move(HttpSocket* o,HttpSocket* newS)
       disp->curSock=0;
    o->nbuf=0;
    o->pbOffs=0;
+   o->ioCount=0;
    o->recEvent=0;
    o->sendEvent = o->errEvent = FALSE;
+   o->isDgram = o->emptyDgram = FALSE;
 }
 
+
+#if LWIP_NETCONN_FULLDUPLEX
+/* Called with the BAS mutex held. No allocation, search, or polling is
+   needed: close transfers the count to the detached netconn callback slot. */
+static HttpSocket*
+HttpSocket_endIO(struct netconn* ncon, BaBool* isTerminated)
+{
+   HttpSocket* sock=getCallBackData(ncon);
+   if(sock)
+   {
+      baAssert(sock->ioCount);
+      --sock->ioCount;
+      if(!*isTerminated)
+         return sock;
+   }
+   else
+   {
+      int count=getPendingRecEvents(ncon)-1;
+      baAssert(count >= 0);
+      if(count)
+      {
+         SYS_ARCH_DECL_PROTECT(lev);
+         SYS_ARCH_PROTECT(lev);
+         setClosedIOCount(ncon,count);
+         SYS_ARCH_UNPROTECT(lev);
+      }
+      else
+         netconn_delete(ncon);
+   }
+   *isTerminated=TRUE;
+   return 0;
+}
+#endif
+
+
+static int
+HttpSocket_dgramMaxLen(HttpSocket* o)
+{
+#if BA_ENABLE_IPV6
+   /* lwIP's 16-bit pbuf length includes the IP and UDP headers. */
+   if(NETCONNTYPE_ISIPV6(netconn_type(o->ncon)))
+      return 65535-40-8;
+#else
+   (void)o;
+#endif
+   return 65507;
+}
 
 void HttpSocket_send(HttpSocket* o, struct ThreadMutex* m, BaBool* isTerminated,
                 const void* data, int len, int* retLen)
@@ -621,13 +996,20 @@ void HttpSocket_send(HttpSocket* o, struct ThreadMutex* m, BaBool* isTerminated,
    {
       struct netbuf* nbuf;
       char* ndata;
+      if(len < 0 || len > HttpSocket_dgramMaxLen(o))
+      {
+         *retLen=E_SOCKET_WRITE_FAILED;
+         return;
+      }
       if(0 != (nbuf = netbuf_new()))
       {
          if(0 != (ndata = netbuf_alloc(nbuf, len)))
          {
             memcpy(ndata, data, len);
-            *retLen = netconn_send(o->ncon, nbuf) == ERR_OK ? len :
-               E_SOCKET_WRITE_FAILED;
+            /* Keep the caller's mutex: FULLDUPLEX does not pin this netconn
+               against deletion between unlocking and entering netconn_send. */
+            err=netconn_send(o->ncon,nbuf);
+            *retLen = err == ERR_OK ? len : E_SOCKET_WRITE_FAILED;
          }
          else
             *retLen = E_MALLOC;
@@ -641,15 +1023,33 @@ void HttpSocket_send(HttpSocket* o, struct ThreadMutex* m, BaBool* isTerminated,
    {
       if(m && ThreadMutex_isOwner(m))
       {
+#if LWIP_NETCONN_FULLDUPLEX
+         struct netconn* ncon=o->ncon;
+         if(!isTerminated)
+         {
+            *retLen=E_INCORRECT_USE;
+            return;
+         }
+         ++o->ioCount;
          ThreadMutex_release(m);
-         err=netconn_write(o->ncon, data, len, NETCONN_COPY);
+         err=netconn_write(ncon, data, len, NETCONN_COPY);
          ThreadMutex_set(m);
+         o=HttpSocket_endIO(ncon,isTerminated);
+         if(!o)
+         {
+            *retLen=E_SOCKET_CLOSED;
+            return;
+         }
+#else
+         *retLen=E_INCORRECT_USE;
+         return;
+#endif
       }
       else
       {
          err=netconn_write(o->ncon, data, len, NETCONN_COPY);
       }
-      if(*isTerminated)
+      if(isTerminated && *isTerminated)
       {
          *retLen=E_SOCKET_CLOSED;
          return;
@@ -696,11 +1096,13 @@ HttpSocket_sendto(HttpSocket* o, const void* data, int len,
       *status=E_SOCKET_CLOSED;
       return;
    }
-#if LWIP_IPV6==0
-   memcpy(&addr.addr,sa->addr,4);
-#else
-   memcpy(&addr.u_addr.ip4,sa->addr,4);
-#endif
+   if(!o->isDgram || !sa || (sa->isIp6 != HttpSocket_isIp6(o)) ||
+      len < 0 || len > HttpSocket_dgramMaxLen(o))
+   {
+      *status=E_SOCKET_WRITE_FAILED;
+      return;
+   }
+   HttpSockaddr_toLwip(sa,&addr);
    if(0 != (nbuf = netbuf_new()))
    {
       if(0 != (ndata = netbuf_alloc(nbuf, len)))
@@ -721,29 +1123,23 @@ HttpSocket_sendto(HttpSocket* o, const void* data, int len,
 void
 _HttpSocket_getKeepAlive(HttpSocket* o, int* enable, int* status)
 {
-   if(o->ncon)
-   {
-      *enable = ip_get_option(o->ncon->pcb.ip, SOF_KEEPALIVE);
-      *status=0;
-   }
-   else
-      *status=E_SOCKET_CLOSED;
+   HttpSocketTcpOption option;
+   option.ncon=o->ncon;
+   option.type=HttpSocketTcpOption_GetKeepAlive;
+   *status=HttpSocket_runTcpOption(&option);
+   if(!*status)
+      *enable=option.enable;
 }
 
 
 void
 _HttpSocket_setKeepAlive(HttpSocket* o, int enable, int* status)
 {
-   if(o->ncon)
-   {
-      if(enable)
-         ip_set_option(o->ncon->pcb.ip, SOF_KEEPALIVE);
-      else
-         ip_reset_option(o->ncon->pcb.ip, SOF_KEEPALIVE);
-      *status=0;
-   }
-   else
-      *status=E_SOCKET_CLOSED;
+   HttpSocketTcpOption option;
+   option.ncon=o->ncon;
+   option.type=HttpSocketTcpOption_SetKeepAlive;
+   option.enable=enable;
+   *status=HttpSocket_runTcpOption(&option);
 }
 
 
@@ -751,15 +1147,16 @@ void
 _HttpSocket_getKeepAliveEx(
    HttpSocket* o,int* enable,int* time,int* interval,int* status)
 {
-   if(o->ncon)
+   HttpSocketTcpOption option;
+   option.ncon=o->ncon;
+   option.type=HttpSocketTcpOption_GetKeepAliveEx;
+   *status=HttpSocket_runTcpOption(&option);
+   if(!*status)
    {
-      *enable = ip_get_option(o->ncon->pcb.ip,SOF_KEEPALIVE);
-      *time = (int)(o->ncon->pcb.tcp->keep_idle/1000);
-      *interval = (int)(o->ncon->pcb.tcp->keep_intvl/1000);
-      *status=0;
+      *enable=option.enable;
+      *time=option.time;
+      *interval=option.interval;
    }
-   else
-      *status=E_SOCKET_CLOSED;
 }
 
 
@@ -767,20 +1164,21 @@ void
 _HttpSocket_setKeepAliveEx(
    HttpSocket* o,int enable,int time, int interval,int* status)
 {
-   if(o->ncon)
+   if(enable && (time <= 0 || interval <= 0 ||
+                 time > 0x7FFFFFFF/1000 || interval > 0x7FFFFFFF/1000))
    {
-      if(enable)
-      {
-         ip_set_option(o->ncon->pcb.ip, SOF_KEEPALIVE);
-         o->ncon->pcb.tcp->keep_idle = time*1000;
-         o->ncon->pcb.tcp->keep_intvl = interval*1000;
-      }
-      else
-         ip_reset_option(o->ncon->pcb.ip, SOF_KEEPALIVE);
-      *status=0;
+      *status=E_INVALID_PARAM;
+      return;
    }
-   else
-      *status=E_SOCKET_CLOSED;
+   {
+      HttpSocketTcpOption option;
+      option.ncon=o->ncon;
+      option.type=HttpSocketTcpOption_SetKeepAliveEx;
+      option.enable=enable;
+      option.time=time;
+      option.interval=interval;
+      *status=HttpSocket_runTcpOption(&option);
+   }
 }
 #endif
 
@@ -801,9 +1199,10 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
    HttpSocket* sock = &o->httpSocket;
    int releaseMutex =
       m && ThreadMutex_isOwner(m) && ! SoDispCon_isNonBlocking(o);
+   sock->emptyDgram=FALSE;
    if(sock->errEvent || !sock->ncon)
       return E_SOCKET_CLOSED;
-   isTcp=netconn_type(sock->ncon) == NETCONN_TCP;
+   isTcp=NETCONNTYPE_GROUP(netconn_type(sock->ncon)) == NETCONN_TCP;
    baAssert((netconn_is_nonblocking(sock->ncon) == 0) ==
             (SoDispCon_isNonBlocking(o) == 0));
    for(;;)
@@ -815,16 +1214,37 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
          sock->pbOffs = 0;
          if(releaseMutex)
          {
-            ThreadMutex_release(m);
+#if LWIP_NETCONN_FULLDUPLEX
+            struct netconn* ncon=sock->ncon;
+            void* nbuf=0;
+            if(!isTerminated)
+               return E_INCORRECT_USE;
             /* rtmo 0 means wait forever, same concept as used by netconn */
-            netconn_set_recvtimeout(sock->ncon, o->rtmo*50);
+            netconn_set_recvtimeout(ncon, o->rtmo*50);
+            ++sock->ioCount;
+            ThreadMutex_release(m);
             err = isTcp ?
-               netconn_recv_tcp_pbuf(sock->ncon, (struct pbuf**)&sock->nbuf) :
-               netconn_recv(sock->ncon, (struct netbuf**)&sock->nbuf);
+               netconn_recv_tcp_pbuf(ncon, (struct pbuf**)&nbuf) :
+               netconn_recv(ncon, (struct netbuf**)&nbuf);
             ThreadMutex_set(m);
-            if(*isTerminated)
+            sock=HttpSocket_endIO(ncon,isTerminated);
+            if(!sock)
+            {
+               if(nbuf)
+               {
+                  if(isTcp)
+                     pbuf_free((struct pbuf*)nbuf);
+                  else
+                     netbuf_delete((struct netbuf*)nbuf);
+               }
                return E_SOCKET_READ_FAILED;
+            }
+            o=httpSocket2Con(sock);
+            sock->nbuf=nbuf;
             HttpSocket_checkEvents(sock);
+#else
+            return E_INCORRECT_USE;
+#endif
          }
          else if(sock->recEvent > 0)
          {
@@ -871,6 +1291,26 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
          }
       }
       pb = isTcp ? (struct pbuf*)sock->nbuf : ((struct netbuf*)sock->nbuf)->p;
+      if(!isTcp)
+      {
+         struct netbuf* nbuf=(struct netbuf*)sock->nbuf;
+         /* Lua probes the actual packet length before allocating its string.
+            Keep the packet socket-owned until a consuming read or close. */
+         if(!data)
+            return (int)pb->tot_len+1;
+         rlen=(int)pbuf_copy_partial(pb,data,dlen,0);
+         sock->emptyDgram=(U8)(pb->tot_len == 0);
+         if(addr)
+         {
+            *port=nbuf->port;
+            HttpSockaddr_fromLwip(addr,&nbuf->addr);
+         }
+         netbuf_delete(nbuf); /* Discard a truncated tail with its packet. */
+         sock->nbuf=0;
+         if(sock->recEvent <= 0)
+            SoDispCon_clearSocketHasNonBlockData(o);
+         return rlen;
+      }
       rlen=(int)pbuf_copy_partial(pb,(U8*)data+offset,dlen,sock->pbOffs);
       if(!rlen)
          return E_SOCKET_READ_FAILED;
@@ -878,22 +1318,9 @@ SoDispCon_lwipRec(struct SoDispCon* o,ThreadMutexBase* m,BaBool* isTerminated,
       offset += rlen;
       dlen -= rlen;
       baAssert(dlen >= 0 && sock->pbOffs <= pb->tot_len);
-      if( ! isTcp && addr )
-      {
-         *port = ((struct netbuf*)sock->nbuf)->port;
-#if LWIP_IPV6==0
-         memcpy(addr->addr, &((struct netbuf*)sock->nbuf)->addr.addr, 4);
-#else
-         memcpy(addr->addr, &((struct netbuf*)sock->nbuf)->addr.u_addr.ip4, 4);
-#endif
-         addr->isIp6 = FALSE;
-      }
       if(sock->pbOffs >= pb->tot_len)
       {
-         if(isTcp)
-           pbuf_free(pb);
-         else
-           netbuf_delete((struct netbuf*)sock->nbuf);
+         pbuf_free(pb);
          sock->nbuf=0;
          if(sock->recEvent > 0)
          {

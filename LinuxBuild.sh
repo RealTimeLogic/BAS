@@ -182,7 +182,7 @@ fi
 
 unameOut="$(uname -s)"
 case "${unameOut}" in
-    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;export EPOLL=TRUE;;
+    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;export BA_USE_EPOLL=1;;
     Darwin*)    machine=Mac;;
     CYGWIN*)    XLIB=-ldl;XCFLAGS="-DLUA_USE_LINUX -DBA_ENABLE_LUA_FORKPTY=0";machine=Cygwin;;
 #    MINGW*)     machine=MinGw;;

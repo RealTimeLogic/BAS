@@ -1,44 +1,48 @@
-# Embedded Modern C\+\+ REST layer
+# C++ REST library for BAS and BWS
 
-This directory contains a C\+\+11 REST routing library for the native
+Use this C++11 library to add REST routes to a native
 [Barracuda App Server](https://realtimelogic.com/products/barracuda-application-server/)
-and
-[Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/)
-(BAS/BWS). A C or C\+\+ application installs `RestService` into its
-existing
-[Virtual File System](https://realtimelogic.com/ba/doc/en/VirtualFileSystem.html).
+(BAS) or [Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/)
+(BWS) application. It handles route matching, typed parameters, request bodies,
+and responses. Mount a `RestService` in the server's
+[Virtual File System (VFS)](https://realtimelogic.com/ba/doc/en/VirtualFileSystem.html)
+alongside your other pages and resources.
 
-This implementation is optimized for embedded systems with limited memory.
-It uses no regular-expression engine, RTTI, coroutine runtime, `std::function`,
-`std::string`, or per-request routing allocation.
+For a complete build you can run, start with the
+[REST service and device console example](../../examples/Modern-Cpp-REST-Service/README.md).
+This guide covers integration and API behavior.
+
+The router uses fixed capacities and does not allocate memory during route
+dispatch. It needs no regular-expression engine, run-time type information
+(RTTI), coroutines, `std::function`, or `std::string`.
 
 ## Files
 
-- `inc/bas/rest/Rest.h`: the public API together with the bounded handler adaptation.
-- `src/Rest.cpp`: BAS/BWS adapters, route compilation/matching, typed parsing,
+- `inc/bas/rest/Rest.h`: public declarations and storage for route handlers.
+- `src/Rest.cpp`: BAS/BWS integration, route matching, parameter parsing,
   and response helpers.
 - `../../examples/Modern-Cpp-REST-Service`: complete native BWS example.
 
 Add both `cpp/rest/inc` and the normal BAS/BWS include directories to the
-C\+\+ include path. Compile `cpp/rest/src/Rest.cpp` as C\+\+11 or newer. Compile
+C++ include path. Compile `cpp/rest/src/Rest.cpp` as C++11 or newer. Compile
 the selected BAS/BWS amalgamation and porting layers as C, then link the final
-program with a C\+\+ linker.
+program with a C++ linker.
 
-The public include is written as:
+Include the public header as follows:
 
 ```cpp
+// Add cpp/rest/inc to the compiler include path.
 #include <bas/rest/Rest.h>
 ```
 
-Here, `bas` comes from the directory hierarchy beneath the configured include
-root: `cpp/rest/inc` + `bas/rest/Rest.h` resolves to
-`cpp/rest/inc/bas/rest/Rest.h`. It is a namespace-like directory used to group
-the library's public headers. Configure the compiler
-with `cpp/rest/inc` as the include directory, not with
-`cpp/rest/inc/bas/rest`. This keeps the same portable include statement in the
-library, examples, and application code.
+The include path is `cpp/rest/inc`. The compiler finds `bas/rest/Rest.h`
+beneath it; do not add `cpp/rest/inc/bas/rest` instead.
 
 ## Minimal use
+
+This shortened example mounts `/api/health` and a device-control route.
+Supply your own `updateDevice()` function. Call `installApi()` once during
+server startup, and check route-registration results in application code.
 
 ```cpp
 #include <bas/rest/Rest.h>
@@ -73,7 +77,7 @@ static void installApi(HttpServer& server)
 }
 ```
 
-Verify each `RestRouteStatus` during startup in production environments. Constructing
+Check each `RestRouteStatus` during startup; the shortened example omits those checks. Constructing
 `RestService` freezes its router; later registration returns
 `RestRouteStatus_Frozen`. The router and service objects must persist for the duration of the running application.
 
@@ -93,7 +97,7 @@ over string parameters, and string parameters over path remainders. This is
 independent of registration order. Duplicate routes and same-method numeric
 ambiguities are rejected during registration.
 
-The initial method set is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE`.
+The supported methods are `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, and `DELETE`.
 `OPTIONS` is reserved for automatic handling. 
 
 Trailing slashes are strict: `/health` and `/health/` are different. A `HEAD`
@@ -114,7 +118,7 @@ is therefore a path separator, not segment data.
 `data()` pointer; a present-but-empty value has non-null data and size zero.
 Views returned for route parameters, headers, query parameters, cookies, URI,
 and authenticated-user names are valid only during the active handler. Use
-`copyTo()` or another caller-owned bounded buffer before retaining data or
+`copyTo()` or a buffer owned by your application before retaining data or
 handing it to asynchronous work.
 
 Route patterns and small callable objects are copied into the router during
@@ -122,13 +126,14 @@ startup. Dispatch itself uses router-owned immutable data and stack-local
 parameter state. It does not allocate from the heap. A callable capture larger
 than `BAS_REST_HANDLER_SIZE` fails at compile time; use the function-pointer
 plus context overload to keep a larger application-owned handler elsewhere.
-A callable's own constructor may, of course, allocate.
+A callable's own constructor may still allocate.
 
 BAS/BWS may allocate while processing its normal server features, including
 header storage, cookie parsing, sessions, and response header growth. The REST
 layer does not change those existing policies.
 
-The default capacities may be overridden before including `Rest.h`:
+These optional integer macros set the router's capacities. Define them
+consistently across the build before including `Rest.h`:
 
 | Macro | Default | When and how to use it |
 | --- | ---: | --- |
@@ -178,8 +183,8 @@ encode its argument. Once committed, status and header changes return the
 native `E_IS_COMMITTED` error. Header names and values are checked for response
 splitting characters, and unknown BAS status codes are rejected.
 
-Use `nativeCommand()`, `nativeRequest()`, `nativeResponse()`, and `writer()` as
-explicit escape hatches for an existing BAS/BWS feature. Their lifetime and
+Use `nativeCommand()`, `nativeRequest()`, `nativeResponse()`, and `writer()` to
+access BAS/BWS features directly. Their lifetime and
 locking rules remain unchanged.
 
 ## JSON parsing and encoding
@@ -302,11 +307,11 @@ The 256-byte array is only a reusable input chunk; `JParser` retains its parse
 state between reads. `JParserValFact` still allocates the generated tree nodes
 and strings. The example uses the default BAS/BWS allocator, but a
 memory-constrained target should supply an application-owned bounded allocator
-and enforce any application-specific document limits. Seee the [JSON Library Tutorial](https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_JSON.html) for details.
+and enforce any application-specific document limits. See the [JSON Library Tutorial](https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_JSON.html) for details.
 
 ## Language and error model
 
-The required language level is C\+\+11. RTTI is not used. Normal failures use
+The required language level is C++11. RTTI is not used. Normal failures use
 `RestResult`, `RestRouteStatus`, and native BAS/BWS codes. Builds may disable
 exceptions. When exceptions are enabled, `RestService` catches all exceptions
 at the C callback boundary and emits a controlled `500` if the response is not
@@ -316,9 +321,8 @@ Handler captures are shared immutable route state. If a handler mutates a
 captured application object, synchronization is the application developer's
 responsibility, particularly inside unlocked regions.
 
-The Rest library intentionally has no allocating middleware chain.
-Use the existing `HttpDir` authenticator/authorizer on
-`RestService::getHttpDir()` for access control, wrap a handler with a small
-application-owned policy function for route-local validation, and set CORS or
-logging headers through the direct request/response facades. This preserves a
-small core while leaving policy composition explicit.
+For access control, attach the existing `HttpDir` authenticator/authorizer to
+`RestService::getHttpDir()`. Put route-specific validation in a handler or a
+small wrapper function. Use the request and response APIs to read headers,
+write cross-origin resource sharing (CORS) headers, and add logging. The
+library does not provide a middleware chain.

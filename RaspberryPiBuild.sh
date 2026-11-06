@@ -126,7 +126,7 @@ curl -fsSL https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.s
 cd BAS || abort
 
 echo "Compiling Mako Server"
-export EPOLL=true
+export BA_USE_EPOLL=1
 make -f mako.mk || abort
 cd ..
 

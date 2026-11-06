@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64_VAES.S 6635 2026-10-26 20:00:02Z gianluca $
+ *   $Id: SharkSslCrypto_X64_VAES.S 6728 2026-11-03 16:53:19Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -258,7 +258,8 @@ sharkssl_gcm_prepare64M0:
     lea r8, [rbx+112]
     call .Lsharkssl_gcm_mul_reflected_vaes
 
-    vzeroupper
+/*  SysV keeps no vector register: clear the H-power temporaries. */
+    vzeroall
     add rsp, 32
 .cfi_adjust_cfa_offset -32
     pop rbx
@@ -925,6 +926,11 @@ sharkssl_gcm_crypt_blocks_vaes:
     jnz gcm_vaes_block_loop
 
     gcm_vaes_blocks_done:
+/*  Wipe the tail scratch and the scaled H^1..H^16 power slots. */
+    vpxor xmm0, xmm0, xmm0
+.irp off, 0,32,64,192,224,256,288,320,352,384,416
+    vmovdqu YMMWORD PTR [rsp+\off], ymm0
+.endr
     vmovdqu xmm6, XMMWORD PTR [rsp+448]
     vmovdqu xmm7, XMMWORD PTR [rsp+464]
     vmovdqu xmm8, XMMWORD PTR [rsp+480]
@@ -934,7 +940,8 @@ sharkssl_gcm_crypt_blocks_vaes:
     vmovdqu xmm12, XMMWORD PTR [rsp+160]
     vmovdqu xmm13, XMMWORD PTR [rsp+176]
     vmovdqu xmm14, XMMWORD PTR [rsp+96]
-    vzeroupper
+/*  SysV keeps no vector register: clear round keys, powers and products. */
+    vzeroall
     add rsp, GCM_VAES_FRAME_BYTES
 .cfi_adjust_cfa_offset -512
     pop r15

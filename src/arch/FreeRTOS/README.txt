@@ -1,82 +1,79 @@
+Barracuda Web Server and App Server on FreeRTOS
+==============================================
 
-Building Barracuda Embedded Web/Application Server for FreeRTOS+TCP
+Use this port to run Barracuda Embedded Web Server (BWS) or Barracuda
+App Server (BAS) with FreeRTOS+TCP or lwIP. BWS provides native C/C++ web
+services; BAS adds Lua and Lua Server Pages (LSP).
 
-  * Compiling
-  * Examples
-  * Memory management
-  * Using FreeRTOS+FAT with Barracuda
-  * Example startup code
+For a first BAS application, start with Xedge in examples/xedge. Its build
+guide covers resources, startup, and hardware bindings:
+  https://github.com/RealTimeLogic/BAS/blob/main/doc/compiling.md#xedge-rtos
 
+Build files
+-----------
 
------------------------------  Compiling the source code library
+The source lists below use the GitHub package layout. If you have the full
+BAS SDK, see "Full SDK source layout" at the end of this guide before
+selecting files.
 
-View the Barracuda Web Server (BWS) and Barracuda Application Server (BAS)
-Setup Tutorial video: http://youtu.be/1NqHB79cfpY
+Compile exactly one library:
 
-Include one of the following in your makefile/IDE:
+  src/BWS.c    Native C/C++ applications
+  src/BAS.c    Applications using Lua or Xedge
 
-amalgamation/BWS.c 
-amalgamation/BAS.c
+Add src/arch/FreeRTOS/ThreadLib.c and select one network port:
 
-Include paths:
-  Generic: inc
-  FreeRTOS+TCP: inc/arch/FreeRTOS
-  FreeRTOS lwIP: inc/arch/bsd/LwIP and then inc/arch/FreeRTOS
-                 See the end of this readme for lwIP instructions.
+  FreeRTOS+TCP
+    Source:  src/arch/FreeRTOS/SoDisp.c
+    Headers: inc and inc/arch/FreeRTOS
 
-Required Macros:
-FreeRTOS: BA_FREERTOS
-If using lwIP: BA_LWIP
+  lwIP
+    Source:  src/arch/NET/LwIP/SoDisp.c
+    Headers: inc, inc/arch/NET/LwIP, and inc/arch/FreeRTOS
 
+For lwIP, put its network headers before the FreeRTOS headers. Define
+BA_FREERTOS in the build and BA_LWIP when using lwIP. Add your application
+sources and initialize the board and network before starting the server.
 
-See amalgamation/README.txt for details.
+Memory allocation
+-----------------
 
-In addition, include one of the two following examples when using BAS:
+The port defaults to the C runtime's malloc, realloc, and free. Lua makes
+frequent use of realloc, so choose an allocator suited to your workload.
 
------------------------------  Recommended BAS Examples
+To use the included dlmalloc allocator, compile src/dlmalloc.c and set
+BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC throughout the build. Initialize its
+heap before any Barracuda allocation:
 
-https://realtimelogic.com/ba/doc/?url=LspNetIo/readme.html
-https://realtimelogic.com/ba/doc/?url=lspappmgr/readme.html
+  #include <dlmalloc.h>
 
+  /* Example heap size; measure your application's peak use. */
+  static char poolBuf[1024 * 1024];
+  init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
 
------------------------------  Memory management
+Keep the buffer alive for the server's lifetime. Account for application
+data, concurrent connections, TLS, and thread stacks when sizing memory.
 
-The BWS and BAS requires a memory allocator.
-When using the LSP plugin, it is important to have a malloc
-implementation with an efficient realloc function. The allocation
-functions used by BWS/BAS, which are defined in TargConfig.h, are
-therefore configured to use dlmalloc. Consequently, you must include
-dlmalloc in the build. It is however possible to redefine the allocation
-functions in TargConfig.h if you prefer to use a different allocator.
+Optional FreeRTOS+FAT storage
+----------------------------
 
-From your startup code, initiate the allocator as follows:
+For writable files, add src/DiskIo/FreeRTOS-FAT/BaFile.c and initialize
+the filesystem before using it. Barracuda calls its native filesystem
+adapter DiskIo. It supports uses such as file uploads, WebDAV, and the
+Web File Manager.
 
-extern void init_dlmalloc(char* heapstart, char* heapend);
-static char poolBuf[1024*1024]; /* 1M, minimum 600K when using LSP */
-init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
+You can also keep the web application in an embedded ZIP and serve it
+through ZipIo, without a native filesystem. NetIo provides another option
+for loading files over the network during development.
 
-In your IDE, define the following: BA_ALLOCATOR
-BAS uses the default allocator (malloc/free) if this macro is not set.
+Example startup code
+--------------------
 
+This skeleton shows where to initialize dlmalloc and install trace and
+fatal-error callbacks. Supply those callbacks for your board, initialize
+networking and cryptographic entropy, and choose a task stack and priority
+for your application before using it.
 
------------------------------ Using FreeRTOS+FAT
-
-One can optionally add FreeRTOS+FAT file support in Barracuda by
-compiling and linking the following file with your firmware:
-xrc\DiskIo\FreeRTOS-FAT\BaFile.c
-
-Native file system support in Barracuda is called DiskIo, and all
-examples can optionally be compiled with DiskIo integration.
-
-File system support is not needed unless you plan on remotely managing
-files in the device by, for example, using the WebDAV server or the Web
-File Manager. We do not recommend storing web applications directly as
-files on the file system. Instead use the NetIo for development and the ZipIo
-for deployment. See the main documentation for more information.
-
-
-
------------------------------ Example startup code
 
 #include <HttpServer.h>
 #include <HttpTrace.h>
@@ -106,7 +103,7 @@ writeHttpTrace(char* buf, int bufLen)
 */
 extern void barracuda(void);
 
-/* dlmalloc and it's allocator buffer */
+/* dlmalloc and its allocator buffer */
 extern void init_dlmalloc(char* heapstart, char* heapend);
 static char poolBuf[1024 * 1024];
 
@@ -136,24 +133,77 @@ xTaskCreate(barracudaTask, /* The function that implements the demo task. */
 
 ----------------------------- FreeRTOS and lwIP
 
-Required settings in lwIP opt.h that is not enabled by default:
+Enable these settings in lwIP's lwipopts.h:
 #define LWIP_DNS                        1
 #define LWIP_SO_RCVTIMEO                1
+#define LWIP_NETCONN_FULLDUPLEX         1
 
-The lwIP BAS port uses the netconn callback API. This lwIP API
-provides a mechanism for the lwIP TCP stack to call into the BAS lwIP
-porting layer for each socket event, however, although the API
-includes a function pointer, the API does not include a callback data
-pointer. The BAS lwIP porting API also requires a data pointer. The
-data pointer is by default cast to an int and back again to a
-pointer. This requires sizeof(int) == sizeof(void*). If the int size
-differs from void* size on your platform, add the following to the end
-of lwIP's netconn structure (in api.h): void* callbackData;
+Optional IPv6 support requires lwIP 2.1 or later with both LWIP_IPV4=1 and
+LWIP_IPV6=1. Compile BAS with BA_ENABLE_IPV6=1; leaving it disabled retains
+the IPv4-only port. IPv6 sockets are IPv6-only, so create separate IPv4 and
+IPv6 listeners when serving both families. Enable LWIP_IPV6_SCOPES for
+link-local addresses. Scoped literals accept an interface index or lwIP
+interface name, for example fe80::1%2 or fe80::1%ap1. Returned scoped
+addresses include the numeric index. The application must configure IPv6
+addresses on each interface; BAS does not configure the network stack.
 
-The end of the structure should then look like:
+The UDP port is shared across lwIP targets. The recorded ESP32-S3 tests
+used the following limits and buffer settings: lwIP's 16-bit
+pbuf total length limits ordinary IPv6 UDP payloads to 65487 bytes
+(65535 minus 40 IP and 8 UDP header bytes); IPv4 permits 65507
+bytes. Larger outgoing datagrams fail before allocation. Receiving
+fragmented packets requires IPv6 reassembly and enough native
+reassembly/driver buffers. The S3 tests use 64 reassembly pbufs and 64
+dynamic Wi-Fi RX buffers; these are on-demand driver buffers, not a
+BAS temporary receive allocation. Other targets must size their own
+pools.
+
+Warning: with IPv6 reassembly enabled, the tested ESP-IDF 6.1 stack on ESP32-S3
+asserted in ip6_reass and rebooted on an incoming fragmented IPv6 UDP payload
+of 65488 bytes; 65487 bytes passed. The failure occurs in lwIP before BAS
+receives the packet, so BAS receive-buffer handling cannot prevent it.
+Xedge32 uses the SDK's unmodified IPv6 reassembler and permits builds with
+IPv6 reassembly enabled. This known native-stack issue remains until fixed
+in the SDK; Xedge32 does not apply an automatic lwIP patch.
+
+The port requires LWIP_NETCONN_FULLDUPLEX=1 at compile time. Mutex release
+remains conditional on the caller, blocking mode and termination marker;
+full-duplex support does not mean the mutex is always released. IPv6 does not
+change this behavior. Retest blocked read/write cancellation with both
+address families.
+
+The lwIP netconn callback reports socket events but has no user-data
+pointer. By default, the BAS port stores its pointer in an integer field,
+which requires sizeof(int) == sizeof(void*). If those sizes differ on your
+target, add a void* callbackData member at the end of lwIP's struct netconn
+in api.h:
+
   netconn_callback callback;
-   void* callbackData; /* PATCH needed by BAS */
+  void* callbackData; /* User data for the BAS socket-event callback. */
 };
 
-You must also set the define BA_LWIP_USE_NETCONN_CALLBACK_DATA
-See src/arch/bsdSocket/LwIP/SoDisp.c for details.
+Set the Boolean option BA_LWIP_USE_NETCONN_CALLBACK_DATA=1 consistently
+across the build. Its default is 0. See src/arch/NET/LwIP/SoDisp.c for the
+callback implementation.
+
+Full SDK source layout
+----------------------
+
+The full SDK and the GitHub package use different source layouts. For an
+SDK build with explicitly selected ports, use these equivalents:
+
+  GitHub package                 Full SDK
+  src/BAS.c                      amalgamation/BASCore.c
+  src/BWS.c                      amalgamation/BWSCore.c
+  src/arch/NET/                   src/arch/bsdSocket/
+  inc/arch/NET/                   inc/arch/bsd/
+  src/DiskIo/                    xrc/DiskIo/
+  src/dlmalloc.c                 xrc/malloc/dlmalloc.c
+
+ThreadLib.c and the OS-specific header directories keep the same paths.
+Both core files include zlib.
+
+The SDK also provides amalgamation/BAS.c and amalgamation/BWS.c, which
+include the default target ports. If you use one of those wrappers, do
+not add a second copy of its port sources. See amalgamation/README.txt
+and examples/xedge/readme.html in the SDK for its build instructions.

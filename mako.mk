@@ -1,8 +1,10 @@
 # Makefile for compiling the Mako Server for Linux, Mac, QNX, Windows
 # with GNU Make Example:
-# make -f mako.mk EPOLL=true
-# The above compiles mako using the 'epoll' socket dispatcher for Linux. The
-# default is to use the 'select' socket dispatcher.
+# make -f mako.mk BA_USE_EPOLL=1
+# Epoll is recommended for Linux. QNXBuild.sh selects BA_USE_POLL=1;
+# other compatible POSIX builds can opt into poll with the same setting.
+# Direct make defaults to generic select. EPOLL=true remains supported.
+# Clean and rebuild all objects when switching dispatchers.
 # SharkSSL GCC x64/ARM64 assembly defaults to auto, selected by the compiler
 # target and compile checks, never the build host CPU. Failed auto checks use C.
 # Inspect: make -f mako.mk sharkssl-info
@@ -46,6 +48,27 @@ endif
 BA_ENABLE_LUA_OPCUA?=1
 DEBUG?=0
 
+# Keep the existing EPOLL option compatible with earlier build commands.
+BA_USE_POLL ?= 0
+BA_USE_EPOLL ?= $(if $(EPOLL),1,0)
+ifneq ($(BA_USE_POLL),0)
+ifneq ($(BA_USE_POLL),1)
+$(error BA_USE_POLL must be 0 or 1)
+endif
+endif
+ifneq ($(BA_USE_EPOLL),0)
+ifneq ($(BA_USE_EPOLL),1)
+$(error BA_USE_EPOLL must be 0 or 1)
+endif
+endif
+ifeq ($(BA_USE_POLL)$(BA_USE_EPOLL),11)
+$(error Select only one of BA_USE_POLL and BA_USE_EPOLL)
+endif
+ifeq ($(OS),QNX)
+ifeq ($(BA_USE_EPOLL),1)
+$(error BA_USE_EPOLL requires Linux; use BA_USE_POLL=1 for QNX)
+endif
+endif
 
 #Optional
 export LPEGDIR=../LPeg
@@ -53,6 +76,10 @@ export PROTOBUFDIR=../lua-protobuf
 export CBORDIR=../CBOR
 
 ifeq ($(WINDOWS),1)
+
+ifneq ($(filter 1,$(BA_USE_POLL) $(BA_USE_EPOLL)),)
+$(error Poll and epoll require a compatible POSIX target)
+endif
 
 XLIB=ws2_32.lib advapi32.lib user32.lib shell32.lib
 D=/D
@@ -92,12 +119,17 @@ CFLAGS += -fmerge-all-constants -Wall
 CFLAGS += $(D)LUA_USE_LINUX $(D)BA_FILE_OFFSET_BITS=64
 
 CFLAGS += $(I)inc $(I)inc/arch/Posix
-ifdef EPOLL
+ifeq ($(BA_USE_POLL),1)
+SODISP = poll
+CFLAGS += $(I)inc/arch/NET/poll $(D)BA_USE_POLL=1
+else
+ifeq ($(BA_USE_EPOLL),1)
 SODISP = epoll
-CFLAGS += $(I)inc/arch/NET/epoll
+CFLAGS += $(I)inc/arch/NET/epoll $(D)BA_USE_EPOLL=1
 else
 SODISP = generic
 CFLAGS += $(I)inc/arch/NET/Posix
+endif
 endif
 
 VPATH = src src/arch/Posix src/arch/NET/$(SODISP) src/DiskIo/posix examples/MakoServer/src

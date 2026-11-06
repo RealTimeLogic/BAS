@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64.S 6635 2026-10-26 20:00:02Z gianluca $
+ *   $Id: SharkSslCrypto_X64.S 6728 2026-11-03 16:53:19Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -104,6 +104,16 @@ sharkssl_x86_64_gcm_layout_180:
     movdqa \value, \t2
 .endm
 
+/*  Clear the registers that held round keys, H powers and GHASH products. */
+.macro CLEAR_XMM0_5
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    pxor xmm4, xmm4
+    pxor xmm5, xmm5
+.endm
+
 /*  Multiply two reflected field elements. rcx=a, rdx=b, r8=result. */
 .type .Lsharkssl_gcm_mul_reflected, @function
 .Lsharkssl_gcm_mul_reflected:
@@ -156,6 +166,7 @@ sharkssl_gcm_prepare32M0:
     mov r8, r11
     mov r9, r10
     call .Lsharkssl_gcm_prepare32M0
+    CLEAR_XMM0_5
     add rsp, 40
 .cfi_adjust_cfa_offset -40
     ret
@@ -285,6 +296,7 @@ sharkssl_gcm_gmult32M0:
     mov r8, r11
     mov r9, r10
     call .Lsharkssl_gcm_gmult32M0
+    CLEAR_XMM0_5
     add rsp, 40
 .cfi_adjust_cfa_offset -40
     ret
@@ -572,6 +584,16 @@ sharkssl_gcm_crypt_blocks:
     jnz gcm_block_loop
 
     gcm_blocks_done:
+/*  Wipe the block scratch and GHASH accumulators, then the registers. */
+    CLEAR_XMM0_5
+    movdqu XMMWORD PTR [rsp+0], xmm0
+    movdqu XMMWORD PTR [rsp+16], xmm0
+    movdqu XMMWORD PTR [rsp+32], xmm0
+    movdqu XMMWORD PTR [rsp+48], xmm0
+    movdqu XMMWORD PTR [rsp+64], xmm0
+    movdqu XMMWORD PTR [rsp+80], xmm0
+    movdqu XMMWORD PTR [rsp+96], xmm0
+    movdqu XMMWORD PTR [rsp+112], xmm0
     add rsp, 128
 .cfi_adjust_cfa_offset -128
     pop r15

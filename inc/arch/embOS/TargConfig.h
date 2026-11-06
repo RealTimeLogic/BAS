@@ -148,7 +148,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-U32 baGetUnixTime(void);
+BaTime baGetUnixTime(void);
 U32 baGetMsClock(void);
 #ifdef __cplusplus
 }

@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpServer.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: HttpServer.h 6770 2026-11-06 15:33:36Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2003 - 2026
  *
@@ -36,9 +36,9 @@
  *
  */
 
-#define BASLIB_VER_NO 6709
+#define BASLIB_VER_NO 6774
 #define BASLIB_VER_M(x) #x
-#define BASLIB_VER BASLIB_VER_M(6709)
+#define BASLIB_VER BASLIB_VER_M(6774)
 
 /*! \page HttpDirVolatileMem Volatile/temporary memory used as name in a HttpDir/HttpPage
 
@@ -2571,7 +2571,8 @@ typedef enum {
    HttpSessionContainer_OK = 0,
    HttpSessionContainer_NoMemory,
    HttpSessionContainer_TooManySessions,
-   HttpSessionContainer_NoPeerAddress
+   HttpSessionContainer_NoPeerAddress,
+   HttpSessionContainer_RandomFailure /**< RNG unavailable; no session created. */
 } HttpSessionContainer_ECode;
 
 

@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_ARM64_ChaCha.S 6629 2026-10-26 19:43:26Z gianluca $
+ *   $Id: SharkSslChaCha_ARM64.S 6739 2026-11-04 08:10:12Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -361,6 +361,29 @@ sharkssl_arm64_chacha_neon:
     sub w3, w3, #256
     cbnz w3, .Lneon_next
 .Lneon_short:
+    movi v0.16b, #0
+    movi v1.16b, #0
+    movi v2.16b, #0
+    movi v3.16b, #0
+    movi v4.16b, #0
+    movi v5.16b, #0
+    movi v6.16b, #0
+    movi v7.16b, #0
+    movi v16.16b, #0
+    movi v17.16b, #0
+    movi v18.16b, #0
+    movi v19.16b, #0
+    movi v20.16b, #0
+    movi v21.16b, #0
+    movi v22.16b, #0
+    movi v23.16b, #0
+    movi v24.16b, #0
+    movi v25.16b, #0
+    movi v26.16b, #0
+    movi v27.16b, #0
+    movi v28.16b, #0
+    movi v29.16b, #0
+    movi v30.16b, #0
     cbnz w3, sharkssl_arm64_chacha_scalar
     ret
 .cfi_endproc
@@ -572,6 +595,20 @@ sharkssl_arm64_chacha_scalar:
     stp xzr, xzr, [sp, #48]
     stp xzr, xzr, [sp, #64]
     stp xzr, xzr, [sp, #80]
+    mov x4, xzr
+    mov x5, xzr
+    mov x6, xzr
+    mov x7, xzr
+    mov x8, xzr
+    mov x9, xzr
+    mov x10, xzr
+    mov x11, xzr
+    mov x12, xzr
+    mov x13, xzr
+    mov x14, xzr
+    mov x15, xzr
+    mov x16, xzr
+    mov x17, xzr
     ldp x21, x22, [sp, #16]
 .cfi_restore 21
 .cfi_restore 22

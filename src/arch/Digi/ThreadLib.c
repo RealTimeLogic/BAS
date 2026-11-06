@@ -201,7 +201,7 @@ Thread_sleep(U32 milliseconds)
 }
 
 
-U32
+BaTime
 baGetUnixTime(void)
 {
    return time(0);

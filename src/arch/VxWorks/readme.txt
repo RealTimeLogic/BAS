@@ -1,224 +1,116 @@
+Barracuda App Server on VxWorks
+==============================
 
------------------------------  Getting Started
+Use this port to add web services and Lua applications to a VxWorks
+system. For a new embedded integration, start with examples/xedge and
+the Xedge build guide. It also includes a Mako Server command-line build
+for applications that need a standalone process:
+  https://github.com/RealTimeLogic/BAS/blob/main/doc/compiling.md
 
-Barracuda App Server (BAS) for VxWorks
+Build the library
+-----------------
 
-  * Building the BAS library
-  * Examples
-  * Memory allocation
-  * Zlib compression
-  * IPv6
-  * File System
-  * Using client libraries (such as HTTP) with DNS resolve
+The source lists below use the GitHub package layout. If you have the full
+BAS SDK, see "Full SDK source layout" at the end of this guide before
+selecting files.
 
+Paths here are relative to the GitHub package root. Compile one library:
 
---------------------------------------------------------------------
-------------------------  Building the BAS library:
---------------------------------------------------------------------
+  src/BAS.c    For Lua, Lua Server Pages (LSP), or Xedge
+  src/BWS.c    For native C/C++ web services without Lua
 
-The following directories must be in your compiler's include path:
-    inc
-    inc/arch/VxWorks
-    inc/arch/bsd/Posix
-No other directories should be included.
+Add the VxWorks thread and socket ports:
 
-Macros:
- Required:
-   BA_VXWORKS
- Optional:
-   BA_USE_GETADDRINFO -
-     Use addrinfo for name translation and enable multi name
-     DNS lookups that work with Round Robin DNS clusters.
-   BA_ENABLE_UDP -
-     Enable datagram (UDP sockets) in the auxiliary socket API.
-   BA_ENABLE_IPV6 -
-     Enable IPv6
-   BA_ALLOCATOR -
-    Use the dlmalloc library and not the VxWorks heap functions (recommended).
-    See below for details.
+  src/arch/VxWorks/ThreadLib.c
+  src/arch/NET/generic/SoDisp.c
 
-BAS library (one file): amalgamation/BAS.c 
+Use these include directories, along with your VxWorks SDK headers:
 
-We provide generic makefiles for compiling BAS. However, the makefiles
-are not needed if you use the C file BAS.c, which includes
-all other BAS C files using the "#include" directive. You can simply
-include this C file in your build instead of using the makefiles (recommended).
+  inc
+  inc/arch/VxWorks
 
-Note: floating point requires that you create a dedicated task for the
-      socket dispatcher SoDisp with the flag VX_FP_TASK -- i.e.
-      taskCreate("SoDisp", prio, VX_FP_TASK,....
+The VxWorks port supplies its own HttpCfg.h. Keep the selected port
+headers ahead of any alternative socket headers in your include path.
+TargConfig.h defines BA_VXWORKS.
 
-Note: all code, when compiled with DIAB, must be compiled with:
-       -Xchar-unsigned
+Add the chosen host or application sources and generated resources.
+The core amalgamation includes zlib, but it does not include the thread,
+socket, filesystem, or dlmalloc sources listed in this guide. Compile
+each required port source once.
 
--- Makefile information (if you are not using BAS.c)
+Startup
+-------
 
-The SIMNT directory contains the BA library Makefile and the target
-definition includes file Target.mk. Copy the directory SIMNT and its
-content to a new directory such as mytarget.
+Initialize the network, UTC clock, heap, and platform entropy source
+before starting the application. Register trace output and a fatal-error
+handler for your device. Run the example's barracuda(void) entry point
+from a dedicated task with enough stack for the selected application.
+See the Xedge section of the build guide for source files and startup hooks.
 
-Edit mytarget/Target.mk and modify the settings such that it suits
-your target environment.
+When creating a VxWorks task that uses floating point, include VX_FP_TASK
+in its task options. For DIAB builds, compile all sources with
+-Xchar-unsigned, as required by this port's build configuration.
 
-Optionally edit the SetEnv.bat batch file if you would like to use the
-build.bat batch file to build the libraries.
+Memory allocation
+-----------------
 
-Build the BAS libraries for your target platform.
+The port defaults to the VxWorks C allocation routines. To use dlmalloc,
+set BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC consistently across the build,
+compile src/dlmalloc.c, and initialize its heap before calling BAS:
 
---------------------------------------------------------------------
--------------------  Examples (VxWorks integration test):
---------------------------------------------------------------------
+  #include <dlmalloc.h>
 
-Navigate to the examples directory. We suggest that you start with
-examples/lspappmgr/ or examples/LspNetIo 
+  /* Example size; choose a heap for your application's measured needs. */
+  static char poolBuf[1024 * 1024];
+  init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
 
-Include the example and BAS.c in your build. Read the
-example readme file for details.
+Keep the buffer alive while BAS runs. Lua needs an efficient realloc
+implementation; allow for application data and concurrent TLS connections.
 
-Call function barracuda from a dedicated thread, or from your main function.
-Example:
+Network options
+---------------
 
-extern void barracuda(void); /* Example program entry point */
-int main()
-{
-   barracuda();
-   return -1; // Should not return
-}
+These Boolean build options accept 0 or 1:
 
+  BA_USE_GETADDRINFO   Default 1 in the VxWorks port. Uses getaddrinfo
+                      for hostname resolution.
+  BA_ENABLE_IPV6      Default 0. Set to 1 with an IPv6-capable target stack.
+  BA_ENABLE_UDP       Default 0. Set to 1 for the BAS datagram socket API.
 
--- Makefile information (if you are not using BAS.c)
+Configure DNS in the VxWorks network stack before starting clients that
+use hostnames. Use your SDK's resolver setup and the DNS servers for your
+network. Numeric IP addresses do not require a DNS lookup.
 
-The example makefiles require that you have two environment variables
-set, BAROOT and tinc.
+Filesystem access
+-----------------
 
-BAROOT must point to the root of the BA installation directory.
-tinc must be: $BAROOT/ builds/VxWorks/mytarget /Target.mk, where
-mytarget is your copied SIMNT directory.
+Add src/DiskIo/posix/BaFile.c for the DiskIo filesystem adapter. Set its
+root to an existing VxWorks file device and directory, such as
+"/file-device/www". The exact device name comes from your BSP and mounts.
 
-The example makefiles are designed to support host like operating
-systems and deep embedded systems. Most deep embedded systems must
-support their own startup code. Typically an embedded system compiles
-the example library files as follows: make lib. This produces one or
-two libraries that must be included in your device together with the
-BA libraries and startup code. All examples define the entry point
-"barracuda" for the entry to the server example. This entry point is
-called by platform specific startup code.
+For Xedge, connect the mounted storage through xedgeInitDiskIo() as
+described in the Xedge build guide. To include the original Lua standard
+I/O library, set the Boolean option BA_HAVE_STDIO=1. The Lua I/O reference is:
+  https://realtimelogic.com/ba/doc/en/lua/man/manual.html#6.8
 
-VxWorks is a cross between a deep embedded system and a host operating
-system. You can make the examples work out of the box if you rename
-the "main" startup entry to another name. You can then use the
-complete make operation and perform the following make command: make
-exe.
+Full SDK source layout
+----------------------
 
+The full SDK and the GitHub package use different source layouts. For an
+SDK build with explicitly selected ports, use these equivalents:
 
---------------------------------------------------------------------
-------------------------  Memory allocation
---------------------------------------------------------------------
+  GitHub package                 Full SDK
+  src/BAS.c                      amalgamation/BASCore.c
+  src/BWS.c                      amalgamation/BWSCore.c
+  src/arch/NET/                   src/arch/bsdSocket/
+  inc/arch/NET/                   inc/arch/bsd/
+  src/DiskIo/                    xrc/DiskIo/
+  src/dlmalloc.c                 xrc/malloc/dlmalloc.c
 
-BA requires a memory allocator.
+ThreadLib.c and the OS-specific header directories keep the same paths.
+Both core files include zlib.
 
-When using the LSP plugin, it is important to have a malloc
-implementation with an efficient realloc function. The allocation
-functions used by BAS, which are defined in TargConfig.h, can be
-reconfigured to use dlmalloc. The default is to use the VxWorks
-allocation routines.
-
-To enable dlmalloc:
-
-compile the code with the macro BA_ALLOCATOR or modify
-inc/arch/VxWorks/TargConfig.h
-
-Include xrc/malloc/dlmalloc.c in your build.
-Note: BAS.c includes dlmalloc.c if macro BA_ALLOCATOR is defined.
-
-From your startup code, initiate the allocator as follows:
-
-extern void init_dlmalloc(char* heapstart, char* heapend);
-static char poolBuf[600*1024]; /* Minimum 600K when using LSP */
-init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
-
-
-
---------------------------------------------------------------------
------------------------ The Zlib compression library
---------------------------------------------------------------------
-
-Barracuda requires the ZLIB inflate/deflate library. You can use the
-standard zlib library or build your application with our modified
-version: xrc/zip/BaZlib.c.
-
-Note: BAS.c includes BaZlib.c
- 
-
---------------------------------------------------------------------
------------------------- IPv6
---------------------------------------------------------------------
-
-IPv6 is not enabled by default for VxWorks. To enable IPv6 support,
-compile the code with the macro BA_ENABLE_IPV6. This macro is defined in
-Target.mk for SIMNT
-
-
---------------------------------------------------------------------
------------------------ File System
---------------------------------------------------------------------
-
-The DiskIo enables BAS to access files on any of your VxWorks file systems.
-
-In additon, you may optionally enable the original Lua IO by compiling with:
--DBA_HAVE_STDIO=1
-See: https://realtimelogic.com/ba/doc/en/lua/man/manual.html#6.8
-
-The VxWorks DiskIo port xrc/DiskIo/posix/BaFile.c is automatically
-included when compiling amalgamation/BAS.c
-
-VxWorks provides a virtualized I/O system, where the base component of
-a path typically includes the VxWorks device type. You must configure
-the DiskIo and set the base path to a valid "file device". A base path
-will typically include "/file-device/root-dir", where file-device is
-a valid file system device and root-dir is an existing directory on
-this file system. You may omit this directory if the root of the file
-system is to be used as a base path.
-
-Typical DiskIo configuration:
-
-DiskIo_setRootDir(&vmIo,"/file-device"); /* access root of '/file-device' */
-baLua_param.vmio = &vmIo;          /* The required IO */
-
-Lua can now directly access the root of the "/file-device" file
-system. You may then create a new I/O in Lua for you web files.
-
-Lua Example:
-
--- The following code should be in the .config script
-
-local vmio=ba.openio("vm") -- root is "/file-device". See C code.
-
--- Let's create a new I/O for one web-app, where the base is 'www'
-if not vmio:stat"www" then vmio:mkdir"www" end
--- Create a new I/O from the Virtual Machine's I/O
-local wwwio = ba.mkio(vmio, "www") -- base will be /file-device/www
-assert(wwwio, "Cannot create 'www'")
-
--- We must have at least one directory in the virtual file system
--- Do not use 'local' in front of 'wwwapp'
--- The variable must be referenced (anchored)
-wwwapp = ba.create.resrdr(wwwio) -- The web app uses '/file-device/www'
-wwwapp:insert() -- Insert as root directory in the BAS virtual file system
--- http://address/index.html will now map to /file-device/www/index.html
-
--- Note, you also need to LSP enable this directory:
-wwwapp:lspfilter(setmetatable({io=wwwio},{__index=_G}))
--- See the documentation for details on method 'lspfilter'
-
---------------------------------------------------------------------
---------- Using client libraries (such as HTTP) with DNS resolve
---------------------------------------------------------------------
-
-You must initialize DNS as follows if you plan on using any TCP client
-API with names that must be resolved by DNS. The function must be
-called by your C startup code.
-
-VxWorks 6.6 and newer: ipcom_sysvar_set("ipdnsc.primaryns", "8.8.8.8", 1)
-Older VxWorks versions: resolvInit("8.8.8.8", "com", NULL);
-
+The SDK also provides amalgamation/BAS.c and amalgamation/BWS.c, which
+include the default target ports. If you use one of those wrappers, do
+not add a second copy of its port sources. See amalgamation/README.txt
+and examples/xedge/readme.html in the SDK for its build instructions.

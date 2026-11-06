@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64_Poly1305.S 6635 2026-10-26 20:00:02Z gianluca $
+ *   $Id: SharkSslCrypto_X64_Poly1305.S 6728 2026-11-03 16:53:19Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -538,6 +538,15 @@ sharkssl_poly1305_process_avx2:
     mov eax, DWORD PTR [rsp+532]
     and eax, 0x0FFFFFFC0
 
+/*  Wipe the key powers, hibit and h limbs, and the scalar key/h temporaries. */
+    vpxor xmm0, xmm0, xmm0
+.irp off, 160,192,224,256,288,320,352,384,416,448,480,512
+    vmovdqu YMMWORD PTR [rsp+\off], ymm0
+.endr
+    vmovdqu XMMWORD PTR [rsp+544], xmm0
+    xor r10d, r10d
+    xor r11d, r11d
+
     vmovdqu xmm6, XMMWORD PTR [rsp]
     vmovdqu xmm7, XMMWORD PTR [rsp+16]
     vmovdqu xmm8, XMMWORD PTR [rsp+32]
@@ -549,7 +558,8 @@ sharkssl_poly1305_process_avx2:
     vmovdqu xmm14, XMMWORD PTR [rsp+128]
     vmovdqu xmm15, XMMWORD PTR [rsp+144]
 /*  Keep the Windows unwind-recognized epilogue (add/pop/ret) contiguous. */
-    vzeroupper
+/*  SysV keeps no vector register, so clear all of them. */
+    vzeroall
     add rsp, POLY_FRAME_BYTES
 .cfi_adjust_cfa_offset -560
     pop rdi

@@ -13,7 +13,7 @@
  *
  *   $Id: ThreadLib.cpp 1926 2009-12-23 08:27:06Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2004
+ *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *               http://www.realtimelogic.com
  *
  *   The copyright to the program herein is the property of
@@ -47,9 +47,9 @@ void baSetUnixTime(u32 time)
 {
    __unixTimeBase = time;
 }
-u32 baGetUnixTime(void)
+BaTime baGetUnixTime(void)
 {
-   return sb_OS_STIME_GET() + __unixTimeBase;
+   return (BaTime)sb_OS_STIME_GET() + (BaTime)__unixTimeBase;
 }
 
 u32 baGetClock()

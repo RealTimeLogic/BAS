@@ -10,9 +10,9 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: BaFile.c 4914 2021-12-01 18:24:30Z wini $
+ *   $Id: BaFile.c 6758 2026-11-05 21:16:51Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2009
+ *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -43,7 +43,7 @@ property function:
 void setFxMedia(DiskIo* dio, FX_MEDIA* mptr)
 { 
    IoIntfPtr io = (IoIntfPtr)dio;
-   io->propertyFp(io, "setmedia", (void*)&mptr, 0);
+   io->propertyFp(io, "setmedia", mptr, 0);
 }
 
 */
@@ -92,7 +92,7 @@ DiskIo_freeRootDir(DiskIo* o)
 static int
 doError(int err, const char** ecode)
 {
-   char* dummy;
+   const char* dummy;
    if(!ecode) ecode=&dummy;
    switch(err)
    {
@@ -180,13 +180,22 @@ typedef struct
       char path[1]; /* Dynamic */
 } DirIter;
 
+static void
+restoreLocalPath(FX_MEDIA* media, FX_LOCAL_PATH* previous)
+{
+   if(previous) fx_directory_local_path_restore(media, previous);
+   else fx_directory_local_path_clear(media);
+}
 
 static int
 DirIter_read(DirIntfPtr super)
 {
    DirIter* o = (DirIter*)super;
+   FX_LOCAL_PATH* previous = (FX_LOCAL_PATH*)tx_thread_identify()->tx_thread_filex_ptr;
    UINT s;
    UINT attributes=0; /* Not used */
+   if((s=fx_directory_local_path_restore(o->mptr, &o->lp)) != FX_SUCCESS)
+      return doError(s, 0);
    if(o->firstEntry)
    {
       s = fx_directory_first_full_entry_find(o->mptr, 
@@ -203,8 +212,6 @@ DirIter_read(DirIntfPtr super)
    }
    else
    {
-      if( (s=fx_directory_local_path_restore(o->mptr, &o->lp)) != FX_SUCCESS)
-         return doError(s, 0);
       s = fx_directory_next_full_entry_find(o->mptr, 
                                             o->name, 
                                             &attributes,
@@ -217,6 +224,7 @@ DirIter_read(DirIntfPtr super)
                                             &o->second);
 
    }
+   restoreLocalPath(o->mptr, previous);
    if(s == FX_SUCCESS)
       o->isDir = attributes & FX_DIRECTORY ? TRUE : FALSE;
    else
@@ -242,8 +250,8 @@ DirIter_stat(DirIntfPtr super, IoStat* st)
    t.tm_min = (int)o->minute;
    t.tm_hour = (int)o->hour;
    t.tm_mday = (int)o->day;
-   t.tm_mon = (int)o->month;
-   t.tm_year = (int)o->year + 80; /* Convert from 1980 to 1900 */
+   t.tm_mon = (int)o->month - 1;
+   t.tm_year = (int)o->year - 1900;
    st->lastModified = baTm2Time(&t);
    st->size = o->size;
    st->isDir = o->isDir;
@@ -297,24 +305,23 @@ DiskRes_write(ResIntfPtr super, const void* buf, size_t size)
 
 
 static int
-DiskRes_seek(ResIntfPtr super, size_t offset)
+DiskRes_seek(ResIntfPtr super, BaFileSize offset)
 {
    DiskRes* o = (DiskRes*)super; /* upcast */
    UINT s;
-   if( (s = fx_file_seek(&o->file, offset)) !=0 )
+   if( (s = fx_file_extended_seek(&o->file, offset)) !=0 )
       return doError(s,0);
    return 0;
 }
 
 
-/*
-  Not implemented
- */
+/* Commit file metadata and media cache before reporting flush success. */
 static int
 DiskRes_flush(ResIntfPtr super)
 {
-   (void)super;
-   return 0;
+   DiskRes* o = (DiskRes*)super;
+   UINT s = fx_media_flush(o->file.fx_file_media_ptr);
+   return s ? doError(s,0) : 0;
 }
 
 
@@ -322,9 +329,12 @@ static int
 DiskRes_close(ResIntfPtr super)
 {
    UINT s;
+   FX_MEDIA* media;
    baAssert(super);
    if(!super) return -1;
+   media = ((DiskRes*)super)->file.fx_file_media_ptr;
    s = fx_file_close(&((DiskRes*)super)->file);
+   if(!s) s = fx_media_flush(media);
    baFree(super);
    return s ? doError(s,0) : 0;
 }
@@ -378,8 +388,10 @@ DiskIo_openAbsDir(DiskIo* o, CHAR* aname, int* status, const char** ecode)
    if(di)
    {
       UINT s;
-      memset(di,0,sizeof(di));
+      FX_LOCAL_PATH* previous = (FX_LOCAL_PATH*)tx_thread_identify()->tx_thread_filex_ptr;
+      memset(di,0,sizeof(*di));
       s = fx_directory_local_path_set(o->mptr, &di->lp, aname);
+      restoreLocalPath(o->mptr, previous);
       if(!s)
       {
          DirIntf_constructor((DirIntf*)di,
@@ -389,6 +401,7 @@ DiskIo_openAbsDir(DiskIo* o, CHAR* aname, int* status, const char** ecode)
          di->mptr=o->mptr;
          di->firstEntry = TRUE;
          strcpy(di->path, aname);
+         *status = 0;
          return (DirIntfPtr)di;
       }
       *status = doError(s, ecode);
@@ -433,6 +446,8 @@ DiskIo_mkDir(IoIntfPtr super, const char* rname, const char** ecode)
    if(ecode) *ecode=0;
    if( (aname = DiskIo_mkAbsPath(o, rname, &s)) != 0)
    {
+      size_t len = strlen(aname);
+      if(len > 1 && aname[len-1] == '/') aname[len-1] = 0;
       s = fx_directory_create(o->mptr, aname);
       if(s)
          s=doError(s, ecode);
@@ -450,7 +465,7 @@ DiskIo_rename(
    int s = DiskIo_stat(super, rfrom, &st);
    if(!o->mptr)
       return IOINTF_IOERROR;
-   if(*ecode) *ecode=0;
+   if(ecode) *ecode=0;
    if(!s)
    {
       char* afrom = DiskIo_mkAbsPath(o, rfrom, &s);
@@ -504,6 +519,8 @@ DiskIo_rmDir(IoIntfPtr super, const char* rname, const char** ecode)
    if(ecode) *ecode=0;
    if( (aname = DiskIo_mkAbsPath(o, rname, &s)) != 0)
    {
+      size_t len = strlen(aname);
+      if(len > 1 && aname[len-1] == '/') aname[len-1] = 0;
       s = fx_directory_delete(o->mptr, aname);
       baFree(aname);
       if(s)
@@ -597,10 +614,21 @@ DiskIo_openRes(IoIntfPtr super, const char* rname, U32 mode,
       if(dr)
       {
          UINT s;
-         if(mode==OpenRes_WRITE)
+         if(mode & OpenRes_WRITE)
          {
-            fx_file_create(o->mptr, aname);
-            s = fx_file_open(o->mptr, &dr->file, aname, FX_OPEN_FOR_WRITE);
+            s = fx_file_create(o->mptr, aname);
+            if(s == FX_ALREADY_CREATED) s = FX_SUCCESS;
+            if(!s)
+            {
+               s = fx_file_open(o->mptr, &dr->file, aname, FX_OPEN_FOR_WRITE);
+               if(!s)
+               {
+                  s = (mode & OpenRes_APPEND) ?
+                     fx_file_extended_seek(&dr->file, dr->file.fx_file_current_file_size) :
+                     fx_file_truncate(&dr->file, 0);
+                  if(s) fx_file_close(&dr->file);
+               }
+            }
          }
          else
          {
@@ -647,7 +675,7 @@ DiskIo_closeDir(IoIntfPtr super, DirIntfPtr* dirIntf)
 static int
 DiskIo_property(IoIntfPtr super,const char* name,void* a,void* b)
 {
-   UINT s;
+   int s;
    DiskIo* o = (DiskIo*)super;
    if(!o->mptr && strcmp(name, "setmedia"))
       return IOINTF_IOERROR;
@@ -697,7 +725,7 @@ DiskIo_property(IoIntfPtr super,const char* name,void* a,void* b)
          *((char**)b) = path;
          return 0;
       }
-      return status;
+      return s;
    }
 
    if( ! strcmp(name, "attach") )
@@ -816,17 +844,17 @@ DiskIo_setRootDir(DiskIo* o, const char* root)
    else
    {
       IoStat st;
+      s = DiskIo_stat((IoIntfPtr)o, root, &st);
+      if(s || !st.isDir)
+         return s ? s : IOINTF_NOTFOUND;
       o->rootPath = baMalloc(strlen(root)+2);
       if(o->rootPath)
       {
-         char* ptr;
          strcpy(o->rootPath, root);
-         ptr = strrchr(o->rootPath, '/');
-         if(!ptr || (ptr > o->rootPath && ptr[1]))
+         if(o->rootPath[strlen(o->rootPath)-1] != '/')
             strcat(o->rootPath, "/");
          o->rootPathLen = strlen(o->rootPath);
-         s = (DiskIo_stat((IoIntfPtr)o, "/", &st) || !st.isDir) ?
-            IOINTF_NOTFOUND : 0;
+         s = 0;
       }
       else
          s = IOINTF_MEM;

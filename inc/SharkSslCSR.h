@@ -145,8 +145,7 @@ SharkSslCert_validateIssuedIdentity(const SharkSslCertDER *issued,
  * validFrom and validTo use UTC YYYYMMDDHHMMSS. On success, signedCSR
  * receives an allocated SharkSSL certificate that the caller frees with
  * baFree; the return value is its size. Require both a positive size and a
- * non-NULL output. Failure leaves the output NULL and normally returns a
- * negative value, but an ASN.1 encoding failure can propagate 1.
+ * non-NULL output. Failure leaves the output NULL and returns a negative value.
  */
 SHARKSSL_API int
 SharkSslCert_signCSR(SharkSslCert *signedCSR,

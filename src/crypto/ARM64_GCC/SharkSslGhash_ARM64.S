@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_ARM64_Ghash.S 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: SharkSslGhash_ARM64.S 6739 2026-11-04 08:10:12Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -97,76 +97,22 @@ sharkssl_arm64_gmult_pmull:
     ins v0.d[1], x3
     rbit v0.16b, v0.16b
     str q0, [x1]
+    movi v0.16b, #0
+    movi v1.16b, #0
+    movi v2.16b, #0
+    movi v3.16b, #0
+    movi v4.16b, #0
+    movi v5.16b, #0
+    movi v6.16b, #0
+    mov x2, xzr
+    mov x3, xzr
+    mov x4, xzr
+    mov x5, xzr
+    mov x6, xzr
+    mov x7, xzr
     ret
 .cfi_endproc
 .size sharkssl_arm64_gmult_pmull, .-sharkssl_arm64_gmult_pmull
-
-#if SHARKSSL_OPTIMIZED_GCM_ASM
-/* powers = {H^4, H^3, H^2, H}; ciphertext contains four full blocks.
- * Accumulate four carry-less products before the one field reduction.
- * Scratch vectors are caller-saved; v8-v15 must retain their low 64 bits. */
-.p2align 4
-.global sharkssl_arm64_gmult4_pmull
-.hidden sharkssl_arm64_gmult4_pmull
-.type sharkssl_arm64_gmult4_pmull, %function
-sharkssl_arm64_gmult4_pmull:
-.cfi_startproc
-    movi v7.16b, #0
-    movi v16.16b, #0
-    movi v17.16b, #0
-    ldr q18, [x1]
-    mov w8, #4
-.Lghash4_blocks:
-    ldr q0, [x2], #16
-    eor v0.16b, v0.16b, v18.16b
-    movi v18.16b, #0
-    ldr q1, [x0], #16
-    rbit v0.16b, v0.16b
-    rbit v1.16b, v1.16b
-    ext v2.16b, v1.16b, v1.16b, #8
-    pmull v3.1q, v0.1d, v1.1d
-    pmull2 v4.1q, v0.2d, v1.2d
-    pmull v5.1q, v0.1d, v2.1d
-    pmull2 v6.1q, v0.2d, v2.2d
-    eor v5.16b, v5.16b, v6.16b
-    ext v19.16b, v7.16b, v5.16b, #8
-    ext v20.16b, v5.16b, v7.16b, #8
-    eor v3.16b, v3.16b, v19.16b
-    eor v4.16b, v4.16b, v20.16b
-    eor v16.16b, v16.16b, v3.16b
-    eor v17.16b, v17.16b, v4.16b
-    subs w8, w8, #1
-    b.ne .Lghash4_blocks
-    umov x2, v16.d[0]
-    umov x3, v16.d[1]
-    umov x4, v17.d[0]
-    umov x5, v17.d[1]
-    eor x2, x2, x4
-    eor x2, x2, x4, lsl #1
-    eor x2, x2, x4, lsl #2
-    eor x2, x2, x4, lsl #7
-    eor x3, x3, x5
-    eor x3, x3, x5, lsl #1
-    eor x3, x3, x5, lsl #2
-    eor x3, x3, x5, lsl #7
-    eor x3, x3, x4, lsr #63
-    eor x3, x3, x4, lsr #62
-    eor x3, x3, x4, lsr #57
-    lsr x6, x5, #63
-    eor x6, x6, x5, lsr #62
-    eor x6, x6, x5, lsr #57
-    eor x2, x2, x6
-    eor x2, x2, x6, lsl #1
-    eor x2, x2, x6, lsl #2
-    eor x2, x2, x6, lsl #7
-    fmov d0, x2
-    ins v0.d[1], x3
-    rbit v0.16b, v0.16b
-    str q0, [x1]
-    ret
-.cfi_endproc
-.size sharkssl_arm64_gmult4_pmull, .-sharkssl_arm64_gmult4_pmull
-#endif
 
 /* ASIMD-only polynomial multiplication, with no crypto extension or lookup.
  * Split each byte into nibbles. PMUL returns the complete 4x4-bit product;
@@ -175,10 +121,10 @@ sharkssl_arm64_gmult4_pmull:
  * All temporary vectors are caller-saved. Memory addresses are key-independent.
  */
 .p2align 4
-.global sharkssl_arm64_gmult_neon
-.hidden sharkssl_arm64_gmult_neon
-.type sharkssl_arm64_gmult_neon, %function
-sharkssl_arm64_gmult_neon:
+.global sharkssl_arm64_gmult_neon_core
+.hidden sharkssl_arm64_gmult_neon_core
+.type sharkssl_arm64_gmult_neon_core, %function
+sharkssl_arm64_gmult_neon_core:
 .cfi_startproc
     ldr q0, [x0, #128]
     rev32 v0.16b, v0.16b
@@ -245,16 +191,16 @@ sharkssl_arm64_gmult_neon:
     str q0, [x1]
     ret
 .cfi_endproc
-.size sharkssl_arm64_gmult_neon, .-sharkssl_arm64_gmult_neon
+.size sharkssl_arm64_gmult_neon_core, .-sharkssl_arm64_gmult_neon_core
 
 /* Fixed 128 iterations; no secret-indexed table accesses or branches.
  * Used when Linux does not expose ASIMD.
  */
 .p2align 4
-.global sharkssl_arm64_gmult_scalar
-.hidden sharkssl_arm64_gmult_scalar
-.type sharkssl_arm64_gmult_scalar, %function
-sharkssl_arm64_gmult_scalar:
+.global sharkssl_arm64_gmult_scalar_core
+.hidden sharkssl_arm64_gmult_scalar_core
+.type sharkssl_arm64_gmult_scalar_core, %function
+sharkssl_arm64_gmult_scalar_core:
 .cfi_startproc
 
     ldp x2, x3, [x1]
@@ -289,7 +235,86 @@ sharkssl_arm64_gmult_scalar:
     stp x8, x9, [x1]
     ret
 .cfi_endproc
+.size sharkssl_arm64_gmult_scalar_core, .-sharkssl_arm64_gmult_scalar_core
+.p2align 4
+.global sharkssl_arm64_ghash_clear
+.hidden sharkssl_arm64_ghash_clear
+.type sharkssl_arm64_ghash_clear, %function
+sharkssl_arm64_ghash_clear:
+.cfi_startproc
+    movi v0.16b, #0
+    movi v1.16b, #0
+    movi v2.16b, #0
+    movi v3.16b, #0
+    movi v4.16b, #0
+    movi v5.16b, #0
+    movi v6.16b, #0
+    movi v7.16b, #0
+    movi v16.16b, #0
+    movi v17.16b, #0
+    movi v18.16b, #0
+    movi v19.16b, #0
+    movi v20.16b, #0
+    movi v21.16b, #0
+    movi v22.16b, #0
+    mov x2, xzr
+    mov x3, xzr
+    mov x4, xzr
+    mov x5, xzr
+    mov x6, xzr
+    mov x7, xzr
+    mov x8, xzr
+    mov x9, xzr
+    mov x10, xzr
+    mov x11, xzr
+    mov x12, xzr
+    mov x13, xzr
+    ret
+.cfi_endproc
+.size sharkssl_arm64_ghash_clear, .-sharkssl_arm64_ghash_clear
+
+.p2align 4
+.global sharkssl_arm64_gmult_neon
+.hidden sharkssl_arm64_gmult_neon
+.type sharkssl_arm64_gmult_neon, %function
+sharkssl_arm64_gmult_neon:
+.cfi_startproc
+    stp x29, x30, [sp, #-16]!
+.cfi_def_cfa_offset 16
+.cfi_offset 29, -16
+.cfi_offset 30, -8
+    mov x29, sp
+    bl sharkssl_arm64_gmult_neon_core
+    bl sharkssl_arm64_ghash_clear
+    ldp x29, x30, [sp], #16
+.cfi_restore 29
+.cfi_restore 30
+.cfi_def_cfa_offset 0
+    ret
+.cfi_endproc
+.size sharkssl_arm64_gmult_neon, .-sharkssl_arm64_gmult_neon
+
+.p2align 4
+.global sharkssl_arm64_gmult_scalar
+.hidden sharkssl_arm64_gmult_scalar
+.type sharkssl_arm64_gmult_scalar, %function
+sharkssl_arm64_gmult_scalar:
+.cfi_startproc
+    stp x29, x30, [sp, #-16]!
+.cfi_def_cfa_offset 16
+.cfi_offset 29, -16
+.cfi_offset 30, -8
+    mov x29, sp
+    bl sharkssl_arm64_gmult_scalar_core
+    bl sharkssl_arm64_ghash_clear
+    ldp x29, x30, [sp], #16
+.cfi_restore 29
+.cfi_restore 30
+.cfi_def_cfa_offset 0
+    ret
+.cfi_endproc
 .size sharkssl_arm64_gmult_scalar, .-sharkssl_arm64_gmult_scalar
+
 #endif
 .section .note.GNU-stack,"",%progbits
 

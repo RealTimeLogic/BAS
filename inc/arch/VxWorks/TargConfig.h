@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: TargConfig.h 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -196,7 +196,7 @@
  ***********************************************************************/
 #include <time.h>
 #include <sysLib.h>
-#define baGetUnixTime() time(0)
+#define baGetUnixTime() ((BaTime)time(0))
 #define baGetMsClock() (U32)(((U64)tickGet() * (U64)1000) / (U64)sysClkRateGet())
 
 /***********************************************************************

@@ -1,5 +1,6 @@
 #include "RestJsonUtils.h"
 #include "../../HostInit/OpenSocketCon.h"
+#include "../../HostInit/ExampleRng.h"
 #include <stdlib.h>
 
 #define MAX_USERS 10
@@ -270,6 +271,12 @@ static HttpServer* createServer(void)
  */
 extern void barracuda(void)
 {
+   /* DEMONSTRATION ONLY: replace with real entropy for production. */
+   if(sharkssl_exampleSeed())
+   {
+      HttpTrace_printf(0, "Cannot initialize example RNG.\n");
+      return;
+   }
    HttpServer* server = createServer();
    installVirtualDir(server);
    SoDisp_run(HttpServer_getDispatcher(server), -1); // Start processing HTTP requests

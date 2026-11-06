@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: TargConfig.h 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -162,7 +162,7 @@ void* baRealloc(void* ptr, unsigned long size);
 #ifdef __cplusplus
 extern "C" {
 #endif
-U32 baGetUnixTime(void);
+BaTime baGetUnixTime(void);
 U32 baGetMsClock(void);
 #ifdef __cplusplus
 }

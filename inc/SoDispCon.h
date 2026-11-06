@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: SoDispCon.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: SoDispCon.h 6746 2026-11-04 17:20:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2006 - 2026
  *
@@ -373,6 +373,8 @@ typedef struct SoDispCon
  * @return TRUE if recorded as IPv6, FALSE for IPv4. */
 #define SoDispCon_isIP6(o)\
   (((o)->dataBits & SoDispCon_IP6DataBitMask) ? TRUE : FALSE)
+#endif
+#ifndef SoDispCon_isDGRAM
 /** @param[in] o Initialized connection.
  * @return TRUE if recorded as datagram/UDP. */
 #define SoDispCon_isDGRAM(o)                                    \
@@ -571,6 +573,37 @@ BA_API void SoDispCon_printSockErr(
 #ifndef SoDispCon_platReadData
 int SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
                            void* data, int len);
+#endif
+
+#if BA_ENABLE_UDP
+/* Stack-owned read transaction; no per-connection storage. */
+typedef struct
+{
+   BaBool terminated;
+#ifndef SoDispCon_platPeekDgram
+   SoDispCon_Execute exec;
+   HttpSocket socket;
+#endif
+} SoDispCon_DgramRead;
+int SoDispCon_beginDgramRead(SoDispCon* o, SoDispCon_DgramRead* read);
+void SoDispCon_endDgramRead(SoDispCon* o, SoDispCon_DgramRead* read);
+
+/* Internal packet probe. The caller holds the dispatcher mutex and registers
+   isTerminated in recTermPtr through probe, allocation and consumption.
+   m may release that mutex while waiting; every return reacquires it.
+   data holds len writable bytes. No packet is consumed. Return byte length
+   + 1 (including 1 for empty), zero for would-block, E_TOO_MUCH_DATA when
+   length is unknown and the buffer is too small, or a negative error.
+   The default wait retains the native handle through bounded readiness waits;
+   native peeks run nonblocking with the mutex held. */
+#ifndef SoDispCon_platPeekDgram
+int SoDispCon_platPeekDgram(SoDispCon* o, ThreadMutex* m,
+                          BaBool* isTerminated, void* data, int len);
+#endif
+#ifndef SoDispCon_recvfrom
+int SoDispCon_recvfrom(SoDispCon* o, void* data, int len,
+                      HttpSockaddr* addr, U16* port);
+#endif
 #endif
 
 /** @copydoc SoDispCon::connect

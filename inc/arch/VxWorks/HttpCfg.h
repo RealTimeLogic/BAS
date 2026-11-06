@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: HttpCfg.h 6746 2026-11-04 17:20:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2007 - 2026
  *
@@ -83,14 +83,12 @@
 
 #define socketConnect _socketConnect
 int _socketConnect(int s,  struct sockaddr* name,  int namelen);
-#ifdef sodisp_c
-int _socketConnect(int s,  struct sockaddr* name,  int namelen)
-{
-   struct timeval timeout;
-   timeout.tv_sec  = 1;
-   timeout.tv_usec = 0;
-   return connectWithTimeout(s,name,namelen,&timeout);
-}
+#if BA_ENABLE_UDP
+/* VxWorks sendto rejects empty datagrams; sendmsg preserves them. */
+int baVxWorksSendEmpty(int s, int flags, const struct sockaddr* addr, int addrlen);
+#define socketSendto(s,data,len,flags,addr,addrlen) \
+   ((len) ? sendto(s,data,len,flags,addr,addrlen) : \
+    baVxWorksSendEmpty(s,flags,addr,addrlen))
 #endif
 
 
@@ -110,6 +108,7 @@ int _socketConnect(int s,  struct sockaddr* name,  int namelen)
 #endif
 
 #define socketIoctl(a,b,c) ioctl(a,b,c)
+#define socketWouldBlock(s) (errno == EAGAIN || errno == EWOULDBLOCK)
 
 
 #if BA_ENABLE_IPV6

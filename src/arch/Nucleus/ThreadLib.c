@@ -10,9 +10,9 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 5146 2022-05-10 17:15:54Z wini $
+ *   $Id: ThreadLib.c 6760 2026-11-06 00:03:47Z wini $
  *
- *   COPYRIGHT:  Real Time Logic, 2014
+ *   COPYRIGHT:  Real Time Logic, 2014 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
  *   Time Logic LLC.  All rights, title, ownership, or other interests in
@@ -53,10 +53,11 @@ baSetUnixTime(U32 time)
 }
 
 
-U32
+BaTime
 baGetUnixTime(void)
 { 
-   return unixTimeBase + (U32)(NU_Retrieve_Clock64()/(U64)NU_TICKS_PER_SECOND);
+   return (BaTime)unixTimeBase +
+      (BaTime)(NU_Retrieve_Clock64()/(U64)NU_TICKS_PER_SECOND);
 }
 
 

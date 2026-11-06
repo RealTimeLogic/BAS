@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: HttpCfg.h 6747 2026-11-04 20:29:24Z wini $
  *   COPYRIGHT:  Real Time Logic, 2015 - 2026
  *
  *   This software is copyrighted by and is the sole property of Real
@@ -55,6 +55,10 @@
 #include <DoubleList.h>
 #include <ThreadLib.h>
 
+#if BA_ENABLE_IPV6 && !LWIP_IPV6
+#error BA_ENABLE_IPV6 requires LWIP_IPV6
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,7 +81,17 @@ typedef struct HttpSockaddr
    U8 addr[16]; /* Must be long aligned */
 
    BaBool isIp6;
+#if BA_ENABLE_IPV6
+   U8 zone; /* lwIP interface index for scoped IPv6 addresses, otherwise zero */
+#endif
 } HttpSockaddr;
+
+#if BA_ENABLE_IPV6
+#define HttpSockaddr_inetAddr _HttpSockaddr_inetAddr
+#define HttpSockaddr_addr2String _HttpSockaddr_addr2String
+#define HttpSockaddr_scopeEqual(a,b) \
+   (((a)->isIp6 ? (a)->zone : 0) == ((b)->isIp6 ? (b)->zone : 0))
+#endif
 
 
 void HttpSockaddr_gethostbyname(HttpSockaddr*, const char*, BaBool, int*);
@@ -96,11 +110,13 @@ typedef struct HttpSocket
    DoubleLink super; /*Used when in SoDisp queue. */
    struct netconn* ncon;
    void* nbuf; /* pbuf when TCP, netbuf when UDP */
-   int pbOffs;
    int recEvent;
+   U16 pbOffs; /* Offset in a pbuf (whose tot_len is also 16 bits) */
+   U8 ioCount; /* Blocking calls outside the BAS mutex */
    U8 sendEvent;
    U8 errEvent;
    U8 isDgram;
+   U8 emptyDgram; /* Last read consumed a zero-length UDP datagram */
 } HttpSocket;
 
 
@@ -152,6 +168,9 @@ void HttpSocket_getAddr(HttpSocket*,HttpSockaddr*,U16*,BaBool,int*, int);
 void HttpSocket_move(HttpSocket*,HttpSocket* newS);
 void HttpSocket_send(HttpSocket*, struct ThreadMutex* m,
                      BaBool* isTerminated, const void*,int,int*);
+/* Releasing the BAS mutex requires LWIP_NETCONN_FULLDUPLEX. Without it,
+   blocking calls requesting release fail with E_INCORRECT_USE. NULL mutex
+   and nonblocking calls retain their existing behavior. */
 
 void HttpSocket_sendto(
    HttpSocket*,const void*,int,struct HttpSockaddr*,U16,int*);
@@ -198,8 +217,14 @@ struct SoDispCon;
 #define BA_HAVE_SODISPCON_RECVFROM 1
 #define SoDispCon_recvfrom(o,data,len,addr,port) \
    SoDispCon_lwipRec(o,0,0,data,len,addr,port)
+#define SoDispCon_readEmptyDgram(o) ((o)->httpSocket.emptyDgram)
 #define SoDispCon_platReadData(o,m,isTerminated, data, len) \
    SoDispCon_lwipRec(o,m,isTerminated, data, len,0,0)
+#define SoDispCon_platPeekDgram(o,m,isTerminated,data,len) \
+   SoDispCon_lwipRec(o,m,isTerminated,0,0,0,0)
+/* UDP with data == NULL: retain the packet and return its byte length + 1,
+   including 1 for an empty packet. Zero still means would-block. The caller
+   must keep the BAS mutex until consuming the packet; close also releases it. */
 int SoDispCon_lwipRec(
    struct SoDispCon* o, ThreadMutexBase* m, BaBool* isTerminated,
    void* data, int len, HttpSockaddr* addr, U16* port);
@@ -210,17 +235,8 @@ int SoDispCon_lwipRec(
  ***********************************************************************/
 
 
-typedef struct
-{
-   struct netconn* ncon;
-   int recEvent;
-} SoDispAcceptQNode;
-
-#define DISP_ACCEPT_Q_LEN 12
-
 #define DISPATCHER_DATA \
   DoubleList soDispQueue;\
-  SoDispAcceptQNode acceptQ[DISP_ACCEPT_Q_LEN];\
   sys_sem_t queueSem;\
   HttpSocket* curSock
 

@@ -1,127 +1,94 @@
+Barracuda Web Server and App Server on Quadros
+=============================================
 
-Building Barracuda Embedded Web/Application Server for Quadros and Treck TCP/IP
+This port uses the Quadros RTXC kernel and Treck TCP/IP. Choose Barracuda
+Embedded Web Server (BWS) for native C/C++ web services, or Barracuda
+App Server (BAS) for Lua and Lua Server Pages (LSP) applications.
 
-  * Memory allocation
-  * Zlib compression
-  * Time function
-  * Example code
+Build files
+-----------
 
+The source lists below use the GitHub package layout. If you have the full
+BAS SDK, see "Full SDK source layout" at the end of this guide before
+selecting files.
 
------------------------------  Prerequisite
-View the Barracuda Web Server and Barracuda Application Server Setup
-Tutorial video: http://youtu.be/1NqHB79cfpY
+Compile src/BWS.c or src/BAS.c, plus these port files:
 
+  src/arch/Quadros/ThreadLib.c
+  src/arch/NET/generic/SoDisp.c
 
------------------------------  Memory allocation
+Add inc and inc/arch/Quadros to the include path, together with the
+headers for your kernel and TCP/IP stack. Add your application or Xedge
+host sources separately. The Xedge build guide covers resource generation:
+  https://github.com/RealTimeLogic/BAS/blob/main/doc/compiling.md#xedge-rtos
 
-The Barracuda Server (BA) requires a memory allocator.
-When using the LSP plugin, it is important to have a malloc
-implementation with an efficient realloc function. The allocation
-functions used by BA, which are defined in TargConfig.h, are
-therefore configured to use dlmalloc. Consequently, you must include
-dlmalloc in the build. It is however possible to redefine the allocation
-functions in TargConfig.h if you prefer to use a different allocator.
+The amalgamated library already includes zlib. Do not compile a second
+copy of the compression library.
 
--- To use dmalloc
+Memory allocation
+-----------------
 
-Include xrc\malloc\dlmalloc.c in your build.
+The port defaults to malloc, realloc, and free from the C runtime. Lua
+uses realloc frequently, so check that your allocator handles this
+workload well.
 
-From your startup code, initiate the allocator as follows:
+To use the supplied dlmalloc allocator, compile src/dlmalloc.c and set
+BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC throughout the build. Initialize it
+before any Barracuda allocation:
 
-extern void init_dlmalloc(char* heapstart, char* heapend);
-static char poolBuf[500*1024]; /* Minimum 500K when using LSP */
-init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
+  #include <dlmalloc.h>
 
+  /* Example heap size; adjust it to the application's measured needs. */
+  static char poolBuf[1024 * 1024];
+  init_dlmalloc(poolBuf, poolBuf + sizeof(poolBuf));
 
------------------------------ The Zlib compression library
+The heap buffer must remain valid while the server runs.
 
-Barracuda requires the ZLIB inflate/deflate library. You can use the
-standard zlib library or build your application with our modified
-version: xrc\zip\BaZlib.c
+Provide the clock
+-----------------
 
+Implement the function declared by inc/arch/Quadros/TargConfig.h:
 
------------------------------ Time function
+  BaTime baGetUnixTime(void);
 
-You must create the following function, which is used by BA.
+It takes no arguments and returns UTC seconds since 1970-01-01 as a
+BaTime value. Set an initial value from a hardware clock or network time
+service, then advance it using your platform timer. The port uses the
+Quadros TIMEBASE counter and CLKTICK for its separate millisecond clock.
 
-unsigned long baGetUnixTime(void);
+Start the server
+----------------
 
-The function must return the number of seconds since January 1970.
-UNIX time: https://en.wikipedia.org/wiki/Unix_time
+After initializing the kernel and network, start a dedicated Barracuda
+task. Before calling the chosen example's barracuda(void) entry point:
 
-The time logic required for the function can be setup by creating a
-periodic one second tick using the Quadros kernel call
-KS_SetCounterAcc.
+  1. Initialize the allocator, if using dlmalloc.
+  2. Set the UTC clock and provide cryptographic entropy for TLS.
+  3. Register board-specific callbacks with HttpTrace_setFLushCallback()
+     and HttpServer_setErrHnd().
 
-The base value for the timer can be setup at system start by using a
-hardware clock or by designing a Simple Network Time Protocol (SNTP)
-client.
+Keep this task and its resources alive while the server runs. Replace the
+host startup files with your Quadros startup code; desktop startup does
+not initialize the board or Treck stack.
 
-We provide a SNTP C code example in the Barracuda Server HTML
-documentation under section: Manual -> C & C++ -> Examples -> Network
-Client.
+Full SDK source layout
+----------------------
 
+The full SDK and the GitHub package use different source layouts. For an
+SDK build with explicitly selected ports, use these equivalents:
 
------------------------------ Example startup code
+  GitHub package                 Full SDK
+  src/BAS.c                      amalgamation/BASCore.c
+  src/BWS.c                      amalgamation/BWSCore.c
+  src/arch/NET/                   src/arch/bsdSocket/
+  inc/arch/NET/                   inc/arch/bsd/
+  src/DiskIo/                    xrc/DiskIo/
+  src/dlmalloc.c                 xrc/malloc/dlmalloc.c
 
-#include <HttpServer.h>
-#include <HttpTrace.h>
+ThreadLib.c and the OS-specific header directories keep the same paths.
+Both core files include zlib.
 
-/* xrc\malloc\dlmalloc.c.  */
-extern void init_dlmalloc(char* heapstart, char* heapend);
-
-/* The Barracuda examples entry function. Link with one of
-   the examples.
-*/
-extern void barracuda(void);
-
-
-static void
-displayFatalError(const char* eMsg,
-                  BaFatalErrorCodes ecode1,
-                  unsigned int ecode2,
-                  const char* file,
-                  int line)
-{
-   // Do error handling
-}
-
-static void
-myErrHandler(BaFatalErrorCodes ecode1,
-             unsigned int ecode2,
-             const char* file,
-             int line)
-{
-   displayFatalError("Fatal error in Barracuda", ecode1, ecode2, file, line);
-}
-
-
-static void
-writeHttpTrace(char* buf, int bufLen)
-{
-   buf[bufLen]=0; /* Zero terminate. Bufsize is at least bufLen+1. */
-   //Emit buffer
-}
- 
-
-/* The Barracuda Quadros socket dispatcher thread.
-   Create and start this thread at startup.
-*/
-void barracudaThread(void)
-{
-   static char baPoolBuf[500*1024]; /* Minimum 500K when using LSP */
-   /* IMPORTANT: Do this before any Barracuda calls */
-   init_dlmalloc(baPoolBuf, baPoolBuf + sizeof(baPoolBuf));
-
-   HttpTrace_setFLushCallback(writeHttpTrace);
-   HttpServer_setErrHnd(myErrHandler);
-   barracuda(); /* Run the Barracuda example code. Function never returns. */
-}
-
-
-/* Implement a function that returns seconds since Jan 1970
-*/
-unsigned long baGetUnixTime(void)
-{
-    return seconds since jan 1970;
-}
+The SDK also provides amalgamation/BAS.c and amalgamation/BWS.c, which
+include the default target ports. If you use one of those wrappers, do
+not add a second copy of its port sources. See amalgamation/README.txt
+and examples/xedge/readme.html in the SDK for its build instructions.

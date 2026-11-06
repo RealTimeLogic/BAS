@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: xedge.c 6770 2026-11-06 15:33:36Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2026
  *               http://www.realtimelogic.com
@@ -565,6 +565,10 @@ barracuda(void)
    blp.zipPubKey = zipPubKey;
 #endif
    L = balua_create(&blp);   /* create the Lua state */
+   if(!L)
+   {
+      baFatalE(FE_BLUA_PANIC, 0);
+   }
 
    /* Lua debugger hook.
       Use the debugger monitor or the basic trace lib (lHook).

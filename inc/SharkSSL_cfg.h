@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 6706 2026-11-01 08:32:24Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6759 2026-11-05 21:18:27Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -178,15 +178,38 @@
 #endif
 
 /**
+ * Software AES constant-time protection is enabled by default.
+ * Setting either software CT option to 0 can expose secret-dependent table
+ * accesses and timing. Disable these protections at your own risk, after
+ * assessing the selected backend and the target's side-channel exposure.
+ * The assembler helper options below accelerate the CT implementation;
+ * they do not disable its protections.
+ */
+
+/**
+ * Select fixed-access bitsliced software AES for SharkSslAesCtx: the
+ * constructor, block encryption and decryption, and the modes built on them
+ * (CBC, CTR, CCM, the PSA AES ciphers and key wrap).
+ * The AES lookup tables are then not linked. CTR, CBC decryption and CCM
+ * process two blocks per bitsliced call. The context layout and public API
+ * stay unchanged. AES-GCM keeps its own option: also select
+ * SHARKSSL_AES_GCM_SOFTWARE_CT for a fixed-access GHASH. Not supported with
+ * the x86/x64 and ARM64 assembler GCM, which reads FIPS 197 round keys.
+ */
+#ifndef SHARKSSL_AES_SOFTWARE_CT
+#define SHARKSSL_AES_SOFTWARE_CT                         1
+#endif
+
+/**
  * Select fixed-access software AES encryption and GHASH for AES-GCM.
  * The AES-GCM context layout and public API stay unchanged. Other AES modes
  * retain their selected backend. Hardware or assembler GCM backends use
- * their own security properties. The option is disabled by default because
- * it uses more cycles and stack. SHARKSSL_AES_CIPHER_LOOP_UNROLL also
+ * their own security properties. The option is enabled by default and
+ * uses more cycles and stack. SHARKSSL_AES_CIPHER_LOOP_UNROLL also
  * selects the faster (1) or the smaller (0) code for this option.
  */
 #ifndef SHARKSSL_AES_GCM_SOFTWARE_CT
-#define SHARKSSL_AES_GCM_SOFTWARE_CT                     0
+#define SHARKSSL_AES_GCM_SOFTWARE_CT                     1
 #endif
 
 /**
@@ -197,7 +220,19 @@
  * Cortex-M3 is not supported. The public AES-GCM context is unchanged.
  */
 #ifndef SHARKSSL_AES_GCM_CT_M4_ASM
-#define SHARKSSL_AES_GCM_CT_M4_ASM                        0
+#define SHARKSSL_AES_GCM_CT_M4_ASM                       0
+#endif
+
+/**
+ * Select the Cortex-M85 Helium (MVE) GHASH for software CT AES-GCM,
+ * instead of SHARKSSL_AES_GCM_CT_M4_ASM. Compile
+ * crypto/Cortex-M_GCC/SharkSslAesGcmCT_MVE.S (GCC) or
+ * crypto/Cortex-M_IAR/SharkSslAesGcmCT_MVE.s (IAR) with the same options.
+ * The core must implement MVE and the platform must enable CP10/CP11 in
+ * CPACR before AES-GCM is used. The public AES-GCM context is unchanged.
+ */
+#ifndef SHARKSSL_AES_GCM_CT_MVE_ASM
+#define SHARKSSL_AES_GCM_CT_MVE_ASM                      0
 #endif
 
 /**
@@ -459,9 +494,6 @@
  */
 #ifndef SHARKSSL_DHE_MIN_PRIME_BITS
 #define SHARKSSL_DHE_MIN_PRIME_BITS                      2048
-#endif
-#if (SHARKSSL_DHE_MIN_PRIME_BITS < 1024)
-#error SHARKSSL_DHE_MIN_PRIME_BITS must be at least 1024
 #endif
 
 /**
@@ -860,10 +892,20 @@
 #endif
 
 /**
+ * Select an assembly backend for BigInt add, subtract and right shift only.
+ * Multiplication and Montgomery product remain in SharkSslBigInt.c. The
+ * MIPS32 big-endian GCC backend uses this option; it is independent of the
+ * all-BigInt assembler option above and must not be combined with it.
+ */
+#ifndef SHARKSSL_OPTIMIZED_BIGINT_WORD_ASM
+#define SHARKSSL_OPTIMIZED_BIGINT_WORD_ASM               0
+#endif
+
+/**
  * Select 1 to use the assembly for the P-256 (secp256r1) field arithmetic:
  * on Cortex-M4/M7 SharkSslP256_M4.S for GCC, SharkSslP256_M4.s for IAR
  * and Keil; on RXv2/RXv3 SharkSslP256_RX.S for GCC, SharkSslP256_RX.s
- * for IAR. Multiplication, addition and subtraction modulo the P-256
+ * for IAR; on AArch64 SharkSslP256_ARM64.S for GCC. Multiplication, addition and subtraction modulo the P-256
  * prime then run in assembly and in constant time; the other curves are
  * not affected. Independent of #SHARKSSL_OPTIMIZED_BIGINT_ASM.
  */
@@ -875,7 +917,7 @@
  * Select 1 to use the assembly for the P-384 (secp384r1) field arithmetic:
  * on Cortex-M4/M7 SharkSslP384_M4.S for GCC, SharkSslP384_M4.s for IAR
  * and Keil; on RXv2/RXv3 SharkSslP384_RX.S for GCC, SharkSslP384_RX.s
- * for IAR. Multiplication, addition and subtraction modulo the P-384
+ * for IAR; on AArch64 SharkSslP384_ARM64.S for GCC. Multiplication, addition and subtraction modulo the P-384
  * prime then run in assembly and in constant time; the other curves are
  * not affected. Independent of #SHARKSSL_ECC_P256_ASM and
  * #SHARKSSL_OPTIMIZED_BIGINT_ASM.
@@ -938,34 +980,19 @@
 #endif
 
 /**
- * Setting this macro to 1 enables TinyMT32 and disables other RNGs.
- * TinyMT32 is not suitable for cryptographic applications. The SharkSSL
- * implementation passes TestU01's bbattery_FIPS_140_2 statistical test,
- * but that result does not make the generator cryptographically secure.
- * A TLS 1.3 build using TinyMT32 is a reduced profile and is not generally
- * conformant with the RFC 9846 CSPRNG requirement.
+ * The native cryptographic RNG is SHA-256 Hash_DRBG (SP 800-90A Rev. 1).
+ * PSA consumers use the selected provider's RNG instead. There is no
+ * separate algorithm selector for the native generator.
  */
-#ifndef SHARKSSL_USE_RNG_TINYMT
-#define SHARKSSL_USE_RNG_TINYMT                          0
+#if ((defined(SHARKSSL_USE_RNG_TINYMT) && SHARKSSL_USE_RNG_TINYMT) || (defined(SHARKSSL_USE_RNG_FORTUNA) && SHARKSSL_USE_RNG_FORTUNA))
+#error TinyMT and Fortuna have been removed; native SharkSSL uses SHA-256 Hash_DRBG
 #endif
 
-/**
- * Setting this macro to 1 enables the Fortuna RNG.
- * It is suitable for cryptographic applications.
- * SHARKSSL_USE_RNG_TINYMT must be disabled.
- * AES-256 and SHA-256 must be enabled.
- * The SharkSSL implementation passes the bbattery_FIPS_140_2 test
- * of TestU01 (http://simul.iro.umontreal.ca/testu01/tu01.html)
- */
-#ifndef SHARKSSL_USE_RNG_FORTUNA
-#define SHARKSSL_USE_RNG_FORTUNA                         0
-#endif
 
 /**
- * Setting this macro to 1 enables the usage of sharkssl_rng
- * in a multithreaded environment. Please remember to initialize
- * the RNG by calling sharkssl_entropy at least once
- * before calling sharkssl_rng
+ * Setting this macro to 1 enables native sharkssl_rng use in a multithreaded
+ * environment. Initialize the native RNG with at least 48 unpredictable
+ * bytes through sharkssl_entropyEx before starting worker threads.
  */
 #ifndef SHARKSSL_RNG_MULTITHREADED
 #define SHARKSSL_RNG_MULTITHREADED                       1
@@ -1004,6 +1031,14 @@
  */
 #if ((SHARKSSL_MAX_HANDSHAKE_LENGTH == 0) || (SHARKSSL_MAX_HANDSHAKE_LENGTH > 0x00FFFFFFUL))
 #error SHARKSSL_MAX_HANDSHAKE_LENGTH must be in the range 1..0x00FFFFFF
+#endif
+
+#if (SHARKSSL_DHE_MIN_PRIME_BITS < 1024)
+#error SHARKSSL_DHE_MIN_PRIME_BITS must be at least 1024
+#endif
+
+#if (SHARKSSL_OPTIMIZED_BIGINT_ASM && SHARKSSL_OPTIMIZED_BIGINT_WORD_ASM)
+#error Select only one BigInt assembly backend
 #endif
 
 /**
@@ -1088,9 +1123,6 @@
 #if (!SHARKSSL_ENABLE_KEY_UPDATE)
 #error SHARKSSL_RFC_9846_CONFORMANCE_PROFILE requires TLS 1.3 KeyUpdate
 #endif
-#if SHARKSSL_USE_RNG_TINYMT
-#error SHARKSSL_RFC_9846_CONFORMANCE_PROFILE requires a cryptographically secure RNG
-#endif
 #endif  /* SHARKSSL_RFC_9846_CONFORMANCE_PROFILE */
 
 /* Check the selected PSA consumer profile after all TLS options are resolved. */
@@ -1099,7 +1131,8 @@
 #error SHARKSSL_AES_GCM_CT_M4_ASM requires SHARKSSL_AES_GCM_SOFTWARE_CT
 #endif
 /**
- * GCC 13 identifies M85 as ARMv8-M Mainline with the ARMv8.1-M BTI feature.
+ * GCC 13 identifies M85 as ARMv8-M Mainline (Clang 18 as ARMv8.1-M Mainline)
+ * with the ARMv8.1-M BTI feature.
  * IAR identifies M4/M7 as __ARM7EM__ and M85 as __ARM8EM_MAINLINE__ with BTI.
  * This is an instruction-set check, not a requirement to enable BTI at run time.
  */
@@ -1107,8 +1140,28 @@
 #if ((!defined(__ARM_PROFILE_M__)) || ((__CORE__ != __ARM7EM__) && ((__CORE__ != __ARM8EM_MAINLINE__) || (!defined(__ARM_FEATURE_BTI)))) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
 #error SHARKSSL_AES_GCM_CT_M4_ASM requires little-endian Cortex-M4/M7/M85 and GCC Thumb or IAR
 #endif
-#elif (((!defined(__ARM_ARCH_7EM__)) && ((!defined(__ARM_ARCH_8M_MAIN__)) || (!defined(__ARM_FEATURE_BTI)))) || (!defined(__GNUC__)) || (!defined(__thumb__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#elif (((!defined(__ARM_ARCH_7EM__)) && (((!defined(__ARM_ARCH_8M_MAIN__)) && (!defined(__ARM_ARCH_8_1M_MAIN__))) || (!defined(__ARM_FEATURE_BTI)))) || (!defined(__GNUC__)) || (!defined(__thumb__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
 #error SHARKSSL_AES_GCM_CT_M4_ASM requires little-endian Cortex-M4/M7/M85 and GCC Thumb or IAR
+#endif
+#endif
+#if SHARKSSL_AES_GCM_CT_MVE_ASM
+#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
+#error SHARKSSL_AES_GCM_CT_MVE_ASM requires SHARKSSL_AES_GCM_SOFTWARE_CT
+#endif
+#if SHARKSSL_AES_GCM_CT_M4_ASM
+#error SHARKSSL_AES_GCM_CT_MVE_ASM and SHARKSSL_AES_GCM_CT_M4_ASM are exclusive
+#endif
+/**
+ * Only Cortex-M85 is accepted (see SHARKSSL_AES_GCM_CT_M4_ASM). GCC does not
+ * define __ARM_FEATURE_MVE with -mfloat-abi=soft, so the C code is not
+ * required to use MVE; the GCC assembly file enables MVE itself.
+ */
+#if (defined(__ICCARM__) || defined(__IAR_SYSTEMS_ASM__))
+#if ((!defined(__ARM_PROFILE_M__)) || (__CORE__ != __ARM8EM_MAINLINE__) || (!defined(__ARM_FEATURE_BTI)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_MVE_ASM requires little-endian Cortex-M85 and GCC Thumb or IAR
+#endif
+#elif (((!defined(__ARM_ARCH_8M_MAIN__)) && (!defined(__ARM_ARCH_8_1M_MAIN__))) || (!defined(__ARM_FEATURE_BTI)) || (!defined(__GNUC__)) || (!defined(__thumb__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_GCM_CT_MVE_ASM requires little-endian Cortex-M85 and GCC Thumb or IAR
 #endif
 #endif
 #if (SHARKSSL_AES_GCM_SOFTWARE_CT && (!SHARKSSL_ENABLE_AES_GCM))
@@ -1116,6 +1169,9 @@
 #endif
 #if (SHARKSSL_AES_GCM_SOFTWARE_CT && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
 #error SHARKSSL_AES_GCM_SOFTWARE_CT requires the native AES context
+#endif
+#if (SHARKSSL_AES_SOFTWARE_CT && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
+#error SHARKSSL_AES_SOFTWARE_CT requires the native AES context
 #endif
 #if (SHARKSSL_AES_GCM_SOFTWARE_CT && (SHARKSSL_OPTIMIZED_GHASH_ASM || SHARKSSL_OPTIMIZED_GCM_ASM || SHARKSSL_OPTIMIZED_GCM_VAES_ASM))
 #error SHARKSSL_AES_GCM_SOFTWARE_CT cannot be combined with GCM/GHASH assembler
@@ -1175,9 +1231,6 @@
 #endif
 #if (SHARKSSL_ENABLE_POST_HANDSHAKE_AUTH && ((!SHARKSSL_ENABLE_CLIENT_AUTH) || (!SHARKSSL_SSL_SERVER_CODE)))
 #error SHARKSSL_PSA_CONSUMER post-handshake auth requires client auth and server code
-#endif
-#if (SHARKSSL_USE_RNG_TINYMT || SHARKSSL_USE_RNG_FORTUNA)
-#error SHARKSSL_PSA_CONSUMER uses the provider RNG
 #endif
 #endif  /* SHARKSSL_PSA_CONSUMER */
 

@@ -45,6 +45,12 @@ void xedgeWait4Network(void);
  */
 void setDispExit(void);
 
+/* Native hosts may supply a checked, secure 48-byte initial buffer through
+ * sharkssl_entropyEx before barracuda. balua_create retains a platform-neutral
+ * weak bootstrap and preserves earlier seed contributions. Shared Lua Internet
+ * reseeding runs later, after the standalone clock/SNTP gate opens; it is
+ * supplemental public input and is not a security barrier before key creation.
+ */
 #if SHARKSSL_PSA_CONSUMER
 /* Required platform hook in PSA builds. No arguments; return int 0 on success
  * or a nonzero error code to stop startup. Initialize entropy, hardware, and

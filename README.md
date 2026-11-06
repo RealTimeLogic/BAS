@@ -1,34 +1,38 @@
-# BWS and BAS - [Embedded Web Servers](https://realtimelogic.com/articles/What-Is-an-Embedded-Web-Server)
+# Barracuda Web Server and App Server
 
-This repository contains the amalgamated C source code for Real Time Logic's embedded web and application server libraries:
+Add a browser interface, REST API, or real-time connection to your device with Real Time Logic's embedded server libraries. Write the application in C/C++, or use Lua for web pages and application logic while keeping hardware access in native code.
 
-- **BWS:** [Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/), a compact HTTP(S) and WebSocket C library integrated with the SharkSSL TLS stack.
-- **BAS:** [Barracuda App Server](https://realtimelogic.com/products/barracuda-application-server/), an application server and IoT toolkit built on BWS. BAS adds Lua, [Lua Server Pages](https://realtimelogic.com/products/lua-server-pages/), and higher-level APIs for rapid embedded web and IoT development.
+This repository contains two C libraries:
 
-BWS and BAS share the same porting layer model and support a broad range of targets, including embedded Linux, Zephyr, FreeRTOS, lwIP, VxWorks, QNX, INTEGRITY, Windows, Azure RTOS, Nucleus RTOS, embOS, Mac, and other POSIX systems.
+- **[Barracuda Embedded Web Server (BWS)](https://realtimelogic.com/products/barracuda-web-server/)** provides HTTP, HTTPS, and WebSockets for C/C++ applications, with SharkSSL handling TLS.
+- **[Barracuda App Server (BAS)](https://realtimelogic.com/products/barracuda-application-server/)** includes BWS and adds Lua, [Lua Server Pages (LSP)](https://realtimelogic.com/products/lua-server-pages/), and APIs for web and IoT applications.
 
-## AI-Assisted Development
+Each library is *amalgamated*: its core source is combined into one file. Compile `src/BWS.c` or `src/BAS.c`, then add the thread, network, and optional filesystem files for your target. Both libraries use the same [porting layers](doc/compiling.md#porting-layers), with ports for Linux, Windows, QNX, VxWorks, FreeRTOS, Zephyr, ThreadX, and other systems.
 
-The [BAS/BWS Agent Guide](AGENTS.md) routes humans and AI assistants to the included skills and examples. Use the [native C/C++ skill](skills/build-bas-bws-native-apps/SKILL.md) for BAS/BWS applications, REST services, WebSockets, VFS layouts, generated resources, uploads, WebDAV, and native integration. Use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) for Lua and Lua Server Pages applications, including application lifecycle, routing, browser interfaces, authentication, SMQ, SQLite, deployment, and Lua bindings. Use both skills when a native Mako/Xedge host exposes or extends Lua APIs.
+## Get started
+
+For a first look at BAS, choose a [precompiled package for your platform](https://realtimelogic.com/downloads/bas/) or try the [Lua and LSP tutorials in your browser](https://tutorial.realtimelogic.com/).
+
+To build from source, pick an example below. Each native example has its own build instructions. For **Mako Server** on a desktop, server, or embedded Linux system, or **Xedge** in device firmware, see [Compiling Mako Server and Xedge](doc/compiling.md). Mako and Xedge both run Lua/LSP applications on BAS; Xedge also includes a browser-based development environment.
 
 ## Examples
 
-Choose the example that matches where you want to implement the application logic. The first four examples use native C or C++. Mako Server and Xedge provide native hosts for Lua and Lua Server Pages (LSP) applications.
+| Example | What you can build |
+| --- | --- |
+| [C RESTful Service](examples/C-RESTful-Service/README.md) | A REST API using the BWS C APIs directly. Start here for a C-only toolchain or when you want to manage routing and memory use yourself. |
+| [Modern C++ REST Service](examples/Modern-Cpp-REST-Service/README.md) | A REST API with typed route parameters, response helpers, and a Svelte device console. Requires C++11 or newer and the included `cpp/rest` library. |
+| [C++ WebSockets](examples/C-WebSockets/README.md) | A browser chat application that exchanges text and JPEG images. Shows multiple clients, broadcasts, and web content served from disk or embedded in the executable. |
+| [SharkTrustX](examples/SharkTrustX/readme.html) | A C web server that obtains and renews its HTTPS certificate. Try Let's Encrypt staging or connect it to your own SharkCA portal. |
+| [Mako Server](examples/MakoServer/) | The standalone BAS host. Use these sources to customize startup, native extensions, Windows service support, or resource packaging. See the [Mako build guide](doc/compiling.md#mako-server-hlos). |
+| [Xedge](examples/xedge/) | The BAS host for firmware and real-time operating systems (RTOS). Use it to integrate storage, hardware bindings, and embedded application resources. See the [Xedge build guide](doc/compiling.md#xedge-rtos). |
 
-| Example | Start here when | Approach and requirements |
-| --- | --- | --- |
-| [C-RESTful-Service](examples/C-RESTful-Service/README.md) | You need a native REST service for a C-only target or want to minimize code and memory overhead. | Uses the BAS/BWS C APIs directly, with routing and error handling implemented by the application. It does not require `cpp/rest`. |
-| [Modern-Cpp-REST-Service](examples/Modern-Cpp-REST-Service/README.md) | You want concise route definitions, typed parameters, structured errors, streaming, reusable REST handling, or the included Svelte device UI. | Uses the same native BWS foundation as the C REST example. Requires C++11 or newer and the `cpp/rest` library. |
-| [C-WebSockets](examples/C-WebSockets/README.md) | You need a native C++ WebSocket service with text and binary frames, multiple clients, concurrent broadcasts, or embedded browser resources. | Uses the native BAS/BWS WebSocket API with disk-based or embedded web content. For WebSocket behavior implemented in Lua, use the Mako/Xedge Lua skill. |
-| [SharkTrustX](examples/SharkTrustX/readme.html) | You need automatic HTTPS certificate enrollment and renewal in a C application. | Uses BWS and the native SharkTrustX client without Lua. Includes a certificate status page and supports Let's Encrypt staging or your own SharkCA portal with multicast DNS (mDNS). |
-| [MakoServer](examples/MakoServer/) | You want to build or customize the standalone Mako executable, platform startup, native extensions, services, or resource packaging. | Provides the native host for high-level operating systems. For ordinary Lua/LSP applications, use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md). See [Mako Server compilation](doc/compiling.md#mako-server-hlos). |
-| [xedge](examples/xedge/) | You want to port or embed Xedge in firmware or an RTOS and integrate storage, hardware hooks, embedded resources, or native extensions. | Provides the native Xedge host for RTOS and firmware targets. Use the [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) for `.preload`, `.config`, `.xlua`, and LSP application development. See [Xedge compilation](doc/compiling.md#xedge-rtos). |
+The two REST examples use the same BWS server. Choose between direct C APIs and the C++ routing library according to your toolchain and application needs.
 
-### Next Steps
+For Lua/LSP application code to run on Mako or Xedge, browse the [LSP examples](https://github.com/RealTimeLogic/LSP-Examples).
 
-- To start with **BAS**, choose your operating system on the [BAS download page](https://realtimelogic.com/downloads/bas/). The page provides instructions, precompiled packages, and platform-specific build options for supported operating systems.
-- To build or customize the native **Mako Server** or integrate **Xedge** into an RTOS/firmware target, see [Compiling Mako Server and Xedge](doc/compiling.md).
+## AI-assisted development
 
+If you use an AI coding assistant, point it to [AGENTS.md](AGENTS.md). The repository includes a [native C/C++ skill](skills/build-bas-bws-native-apps/SKILL.md) and a [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) with API guidance, examples, and build instructions. Native Lua bindings use both.
 
 ## License
 

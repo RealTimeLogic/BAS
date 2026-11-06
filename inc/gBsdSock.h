@@ -11,7 +11,7 @@
  ****************************************************************************
  *                            HEADER
  *
- *   $Id: gBsdSock.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: gBsdSock.h 6746 2026-11-04 17:20:37Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -529,6 +529,14 @@ do { \
 #endif
 
 #if BA_ENABLE_UDP
+
+/* Peek one packet: length + 1, zero for would-block, E_TOO_MUCH_DATA if the
+   supplied buffer cannot establish its length, or a negative read error. */
+#ifndef HttpSocket_peekDgram
+#define BA_BSD_DGRAM_PEEK 1
+#define HttpSocket_peekDgram HttpSocket_bsdPeekDgram
+int HttpSocket_bsdPeekDgram(HttpSocket* o, void* data, int len);
+#endif
 
 #ifndef ba_nametoindex
 #define ba_nametoindex(name, resp,status) *(resp)=if_nametoindex(name)

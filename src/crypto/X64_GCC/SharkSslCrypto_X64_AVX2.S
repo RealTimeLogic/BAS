@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64_AVX2.S 6635 2026-10-26 20:00:02Z gianluca $
+ *   $Id: SharkSslCrypto_X64_AVX2.S 6728 2026-11-03 16:53:19Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -330,7 +330,11 @@ sharkssl_chacha_crypt_avx2:
     jnz small_byte
     small_done:
     mov eax, DWORD PTR [rsp+64]
-    vzeroupper
+/*  Wipe the tail keystream; SysV keeps no vector register, so clear all. */
+    vpxor xmm0, xmm0, xmm0
+    vmovdqu YMMWORD PTR [rsp+0], ymm0
+    vmovdqu YMMWORD PTR [rsp+32], ymm0
+    vzeroall
     add rsp, 72
 .cfi_adjust_cfa_offset -72
     ret
@@ -469,6 +473,11 @@ sharkssl_chacha_crypt_avx2:
     jae chacha_loop
 
     chacha_done:
+/*  Wipe the state, keystream and rotate scratch slots. */
+    vpxor xmm0, xmm0, xmm0
+.irp off, 0,32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512
+    vmovdqu YMMWORD PTR [rsp+\off], ymm0
+.endr
     vmovdqu xmm6, XMMWORD PTR [rsp+544]
     vmovdqu xmm7, XMMWORD PTR [rsp+560]
     vmovdqu xmm8, XMMWORD PTR [rsp+576]

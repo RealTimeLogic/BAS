@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: TargConfig.h 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  2020 - 2026
  *
@@ -185,7 +185,7 @@
  ***********************************************************************/
 
 #include <time.h>
-#define baGetUnixTime() time(0)
+#define baGetUnixTime() ((BaTime)time(0))
 
 #ifdef __cplusplus
 extern "C" {

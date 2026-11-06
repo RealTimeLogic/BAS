@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_ARM64.c 6682 2026-10-29 21:14:37Z gianluca $
+ *   $Id: SharkSslCrypto_ARM64.c 6737 2026-11-04 05:37:01Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -115,6 +115,10 @@ int sharkssl_arm64_sha2_available(void)
 {
    return (sharkssl_arm64_capabilities() & 8) != 0;
 }
+#endif
+
+#if (SHARKSSL_USE_SHA_256 && SHARKSSL_ARM64_SHA256_INTRINSICS && (!SHARKSSL_PSA_CONSUMER))
+typedef char arm64_sha256_state[(offsetof(SharkSslSha256Ctx, state) == 8) ? 1 : -1];
 #endif
 
 #if SHARKSSL_USE_CHACHA20 && SHARKSSL_OPTIMIZED_CHACHA_ASM

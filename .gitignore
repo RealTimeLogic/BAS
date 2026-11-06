@@ -1,2 +1,9 @@
 *~
 
+# Local Mako build outputs and the generated per-build encryption key.
+/mako
+/mako.exe
+/mako.zip
+/.sharkssl-*
+/examples/MakoServer/src/NewEncryptionKey.h
+

@@ -183,6 +183,9 @@ export CFLAGS="$HEXEFLAGS -DBA_QNX -DBA_ARCH_64BIT=1 -DBA_FILE_OFFSET_BITS=64 -D
 export CC=qcc
 export XLIB="-lz -lsocket -lm"
 
+# Poll supports larger connection sets on QNX. Set BA_USE_POLL=0 for select.
+export BA_USE_POLL="${BA_USE_POLL:-1}"
+
 if [ -f src/BAS.c ]; then
     abort "Incorrect use! This script should not be run in the BAS directory.\nDetails: https://github.com/RealTimeLogic/BAS"
 fi
@@ -211,7 +214,8 @@ if [ -n "${NOCOMPILE+set}" ]; then
     exit 0
 fi
 
-make -f mako.mk || abort $LINENO
+# Select the QNX build even when the host exports OS=Windows_NT.
+make -f mako.mk OS=QNX || abort $LINENO
 
 echo "Done building 'mako' for QNX"
 ask_install_developer_mako_zip "mako.zip"

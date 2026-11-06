@@ -67,7 +67,7 @@ Thread_constructor(Thread* o, Thread_Run r, ThreadPriority tp, int stackSize)
 }
 
 
-U32
+BaTime
 baGetUnixTime(void)
 {
    return (U32)OS_GetTime32() / 1000;  /* one tick each ms */

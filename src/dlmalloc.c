@@ -22,8 +22,7 @@
 /* The native BWS build can omit the Lua mallinfo bindings and headers. */
 #if !defined(NO_MALLINFO) || !NO_MALLINFO
 #include <balua.h>
-#else
-#include <SharkSSL.h> /* sharkssl_entropy used by init_dlmalloc */
+
 #endif
 #include <dlmalloc.h>
 
@@ -3154,12 +3153,11 @@ static size_t traverse_and_check(mstate m);
   streamlined version of the approach described by William Robertson
   et al in "Run-time Detection of Heap-based Overflows" LISA'03
   http://www.usenix.org/events/lisa03/tech/robertson.html The footer
-  of an inuse chunk holds the xor of its mstate and a random seed,
-  that is checked upon calls to free() and realloc().  This is
-  (probabalistically) unguessable from outside the program, but can be
-  computed by any code successfully malloc'ing any chunk, so does not
-  itself provide protection against code that has already broken
-  security through some other means.  Unlike Robertson et al, we
+  of an inuse chunk holds the xor of its mstate and a lifetime-stable
+  integrity tag, checked upon calls to free() and realloc(). This BAS
+  port derives the tag without crypto so allocator startup cannot depend
+  on RNG initialization. The tag is not secret and does not protect
+  against an attacker who can forge a known tag.  Unlike Robertson et al, we
   always dynamically check addresses of all offset chunks (previous,
   next, etc). This turns out to be cheaper than relying on hashes.
 */
@@ -3316,7 +3314,11 @@ static int init_mparams(void) {
 #endif
 
     {
-      sharkssl_rng((U8*)&magic, sizeof(magic)); 
+      /* The heap must work before crypto (whose mutex may allocate).
+         This lifetime-stable integrity tag is not a secret or RNG seed.
+         FOOTERS still detects inconsistent tags, not forged known tags. */
+      magic = (size_t)&mparams ^ (size_t)dmalloc_heapstart ^
+              (size_t)dmalloc_heapend ^ (size_t)0x55555555U;
       magic |= (size_t)8U;    /* ensure nonzero */
       magic &= ~(size_t)7U;   /* improve chances of fault for bad values */
       /* Until memory modes commonly available, use volatile-write */
@@ -6475,7 +6477,6 @@ init_dlmalloc(char* heapstart, char* heapend)
 #if USE_BA_LOCKS
    ThreadMutex_constructor(&morecore_mutex);
    ThreadMutex_constructor(&magic_init_mutex);
-   sharkssl_entropy((U32)heapend);
 #endif
 }
 

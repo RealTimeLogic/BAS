@@ -1,164 +1,95 @@
-# Compiling and Installing Mako Server with Ansible
+# Build and install Mako Server with Ansible
 
-This guide walks you through using an Ansible playbook to **compile** and **optionally install** and launch the Lua tutorials for the Mako Server, either on your **local computer** or on a **target computer** such as a **Raspberry Pi** or any Linux target computer where Python is installed. **Ansible** is an automation tool that simplifies software provisioning. You do not need Ansible experience for using our ready to run playbook.
+The included [Ansible playbook](mako.yaml) downloads the sources and builds Mako Server on a Debian-based Linux system. You can run it on your own computer or build directly on a remote device, such as a Raspberry Pi. It can also install the server and start the Lua tutorials.
 
-- **Windows Users:** [Use WSL](https://learn.microsoft.com/en-us/windows/wsl/install)
+Ansible runs the setup steps for you. You don't need to write a playbook to use this one. On Windows, run it in [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install).
 
-One of the main benefits of this approach is how easy it makes it to **update and recompile** the binary whenever any of the GitHub repositories are updated. Simply re-run the playbook to rebuild the server with the latest changes.
+## Before you start
 
-This is especially **important** if you're using the Mako Server to **generate ECC certificates** or if you're relying on the built-in **softTPM** - whether implicitly or explicitly. In these cases, it's crucial to preserve the auto-generated pre-master secret. This secret is stored in a generated C header file the first time the server is compiled:
+Install Ansible on the computer that will run the playbook, then download `mako.yaml`:
 
-- BAS/examples/MakoServer/src/NewEncryptionKey.h
-
-Be sure **not to delete or overwrite** this file when recompiling, as it plays a key role in securing your application. For more information, refer to the [soft Trusted Platform Module documentation](https://realtimelogic.com/ba/examples/MakoServer/readme.html#TPM).
-
-## Prerequisites
-
-Before you start, ensure you're on a Debian-based system and have Ansible installed and that you have download the Mako Server Ansible script:
-
-``` bash
+```sh
+# Run on your Debian/Ubuntu development computer.
 sudo apt update && sudo apt install ansible -y
 wget https://raw.githubusercontent.com/RealTimeLogic/BAS/refs/heads/main/mako.yaml
 ```
 
-## Running the Playbook
+The build machine needs Python and internet access to download the sources. The playbook installs the build packages on Debian-based systems. Package installation and copying the finished server to `/usr/local/bin` require sudo access. Add `--ask-become-pass` to the commands below if sudo requires a password.
 
-### Install on a Local Machine
+## Build on your computer
 
-To compile, install, and run tutorials locally:
+Run these commands from the directory containing `mako.yaml`.
 
-``` bash
+To download and compile without installing:
+
+```sh
+# The trailing comma identifies localhost as the inventory, rather than a file.
+ansible-playbook -i localhost, -c local mako.yaml
+```
+
+To compile, install, and start the tutorials:
+
+```sh
+# Install mako and mako.zip in /usr/local/bin, then launch the tutorials.
 ansible-playbook -i localhost, -c local mako.yaml -e install=true -e tutorials=true
 ```
 
-**Note:**
-- You can customize the playbook run with [optional flags](#optional-playbook-flags) like `-e install=true`.
-- The Playbook requires [passwordless sudo access](https://gcore.com/learning/how-to-disable-password-for-sudo-command). If you do not want to enable this feature, you can add the option `--ask-become-pass`
+Starting the tutorials stops existing `mako` processes with `killall mako`. Use this option when you're ready to replace a running Mako instance.
 
-#### Cross-Compiling (for experts)
-To cross-compile, set the CROSS_COMPILE environment variable to the compiler's prefix before running the playbook. For example, if the compiler is not in the path and the GCC compiler name is arm-linux-gnueabihf-gcc, set an environment variable similar to:
+## Build on a remote device
 
-``` bash
-export CROSS_COMPILE=/opt/gcc-linaro-7.1.1-2017.08-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
-```
+Run Ansible on your development computer. The compilation runs on the remote device, which needs Python and enough disk space for the sources and build tools.
 
-### Install on a Remote Machine (e.g. embedded Linux)
+Set up SSH key access if you haven't already, then run the playbook:
 
-Ansible makes it easy to install on a device such as Raspberry Pi. You run Ansible on your host computer, not the target computer.
-
-To target a remote device (for example, a NanoPi):
-
-``` bash
+```sh
+# Replace the address and user with those of your device.
 ssh-copy-id debian@192.168.1.146
 ansible-playbook -i 192.168.1.146, -u debian mako.yaml -e install=true -e tutorials=true
 ```
 
-Replace 192.168.1.146 with your target machine's IP address (or hostname/domain name), and debian with the appropriate SSH user.
+## Open the tutorials
 
-**Note:**
-- The `ssh-copy-id` command is necesarry if you have not copied your public SSH key to the remote computer. Ansible requires passwordless login via SSH.
-- When remote compiling directly on a device, the required build tools consume approximately 250 MB of disk space.
+After a run with `tutorials=true`, open [http://localhost](http://localhost) for a local installation, or `http://<target-ip>` for a remote device. If port 80 was unavailable, use port 9357, for example [http://localhost:9357](http://localhost:9357).
 
-## Optional Playbook Flags
+## Playbook options
 
-You can customize the behavior with these variables:
+Pass options with `-e`, as shown above.
 
-- install=true     - Installs the compiled binaries to /usr/local/bin
-- tutorials=true   - Launches the Lua tutorial project after install
+| Variable | Type and default | Effect |
+| --- | --- | --- |
+| `install` | Boolean, `false` | Copies `mako` and `mako.zip` to `/usr/local/bin`. |
+| `tutorials` | Boolean, `false` | Starts the tutorial launcher using the installed server. Use with `install=true` on the first run. |
+| `builddir` | Directory path, `makobuild` | Selects the directory for the source checkouts on the build machine. |
+| `mako_install_path` | Directory path, `/usr/local/bin` | Selects the installation directory. |
 
-## 🌍 Accessing the Tutorials
+## Updating an existing build
 
-After the playbook runs (with tutorials=true), open a browser and go to:
+Rerun the playbook to update its Git checkouts. The compile task runs when the **BAS checkout changes**. Changes to BAS-Resources or another dependency alone do not trigger compilation; rebuild those manually from the BAS build directory:
 
-http://localhost           (for local runs)  
-http:/target-ip         (for remote runs)
-
-
-## Notes
-
-- Git repositories are updated each time the playbook runs.
-
-- With option `tutorials=true` and if the server cannot open port 80, it will be listening on port 9357; thus, you will need to navigate to http://localhost:9357
-
-- Running the tutorials will stop any existing Mako server instance (using killall mako), then launch a new one using your current user.
-
-Feel free to extend this with additional features like systemd integration or logging flags if needed.
-
-### What This Playbook Does
-
-The playbook performs the following tasks:
-
-1. Ensures required system packages are installed (git, gcc, etc.).
-2. Clones the necessary Git repositories:
-   - BAS
-   - BAS-Resources
-   - LPeg, lua-protobuf, and CBOR libraries
-3. Downloads and extracts the SQLite amalgamation (if missing). Note that the SQLite version and year are in the two variables sqlver and sqldir.
-4. Compiles the Mako Server.
-5. Optionally installs the mako binary and mako.zip to /usr/local/bin.
-6. Optionally starts the Lua tutorial launcher using the built server.
-
-#### Example
-
-The following shows Ansible compiling, installing, and running the Mako Server tutorials.
-
-
-```bash
-ansible-playbook -i localhost, -c local mako.yaml -e install=true -e tutorials=true
-
-PLAY [Build and optionally install Mako Server] ************************************************************************
-
-TASK [Gathering Facts] *************************************************************************************************
-ok: [localhost]
-
-TASK [Ensure base directory exists] ************************************************************************************
-changed: [localhost]
-
-TASK [Ensure required packages are installed] **************************************************************************
-ok: [localhost]
-
-TASK [Clone BAS repository if not present] *****************************************************************************
-changed: [localhost]
-
-TASK [Clone BAS-Resources repository if not present] *******************************************************************
-changed: [localhost]
-
-TASK [Make build scripts in BAS-Resources executable] ******************************************************************
-ok: [localhost]
-
-TASK [Clone LPeg if not present] ***************************************************************************************
-changed: [localhost]
-
-TASK [Clone lua-protobuf if not present] *******************************************************************************
-changed: [localhost]
-
-TASK [Clone CBOR if not present] ***************************************************************************************
-changed: [localhost]
-
-TASK [Check if sqlite3.c exists] ***************************************************************************************
-ok: [localhost]
-
-TASK [Download SQLite amalgamation] ************************************************************************************
-ok: [localhost]
-
-TASK [Unzip SQLite] ****************************************************************************************************
-changed: [localhost]
-
-TASK [Move SQLite files to BAS/src] ************************************************************************************
-changed: [localhost]
-
-TASK [Compile Mako Server] *********************************************************************************************
-changed: [localhost]
-
-TASK [Install Mako Server binary] **************************************************************************************
-changed: [localhost]
-
-TASK [Install Mako zip file] *******************************************************************************************
-changed: [localhost]
-
-TASK [Run Lua tutorials] ***********************************************************************************************
-changed: [localhost]
-
-PLAY RECAP *************************************************************************************************************
-localhost                  : ok=17   changed=12   unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+```sh
+# Use your configured builddir if it differs from makobuild.
+cd makobuild/BAS
+make -f mako.mk clean
+make -f mako.mk
 ```
+
+Keep `BAS/examples/MakoServer/src/NewEncryptionKey.h` when updating or moving an existing build. This generated header contains the pre-master secret used by native softTPM key derivation, including ECC certificate keys. Replacing it changes the secret available to the application. See the [softTPM documentation](https://realtimelogic.com/ba/examples/MakoServer/readme.html#TPM).
+
+The playbook manages its own source checkouts. Its BAS-Resources update uses `force: yes`, so keep edits you want to retain outside that managed checkout or save them before running it.
+
+## Cross-compiling
+
+For a local cross-build, set `CROSS_COMPILE` to the toolchain prefix before running the playbook. The makefile appends `gcc`:
+
+```sh
+# Example prefix for an installed ARM Linux toolchain.
+export CROSS_COMPILE=/opt/toolchain/bin/arm-linux-gnueabihf-
+ansible-playbook -i localhost, -c local mako.yaml
+```
+
+Copy the resulting executable and `mako.zip` to the target. Leave `install` and `tutorials` disabled on the build computer when it cannot run the target executable. The remote-device procedure above compiles on the device itself.
+
+## What gets downloaded
+
+The playbook fetches BAS, BAS-Resources, LPeg, lua-protobuf, and CBOR. It also downloads the SQLite amalgamation when `sqlite3.c` is absent; `sqldir` and `sqlver` in `mako.yaml` select its release. The output is a `mako` executable and its `mako.zip` resource archive.

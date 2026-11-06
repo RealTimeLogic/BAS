@@ -5,6 +5,7 @@
 
 #include "RestJsonUtils.h"
 #include "../../HostInit/OpenSocketCon.h"
+#include "../../HostInit/ExampleRng.h"
 #include <stdlib.h>
 #include <new>
 
@@ -225,6 +226,12 @@ static HttpServer* createServer()
 
 extern "C" void barracuda()
 {
+   /* DEMONSTRATION ONLY: replace with real entropy for production. */
+   if(sharkssl_exampleSeed())
+   {
+      HttpTrace_printf(0, "Cannot initialize example RNG.\n");
+      return;
+   }
    HttpServer* server = createServer();
    installVirtualDir(server);
    server->getDispatcher()->run();

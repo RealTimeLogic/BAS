@@ -6,12 +6,12 @@
 #define SHARKSSL_CRYPTO_ASM_H
 
 #if (defined(_MSC_VER) && !defined(_M_ARM64EC) && (defined(_M_X64) || defined(_M_IX86))) || \
-    ((defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && defined(__ELF__) && defined(__x86_64__) && defined(__LP64__) && !defined(__ILP32__))
+    ((defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && defined(__ELF__) && (defined(__i386__) || (defined(__x86_64__) && defined(__LP64__) && !defined(__ILP32__))))
 #define SHARKSSL_X86_ASM_PLATFORM 1
 #else
 #define SHARKSSL_X86_ASM_PLATFORM 0
 #endif
-#if SHARKSSL_X86_ASM_PLATFORM && !defined(_M_IX86)
+#if SHARKSSL_X86_ASM_PLATFORM && !defined(_M_IX86) && !defined(__i386__)
 #define SHARKSSL_X64_ASM_PLATFORM 1
 #else
 #define SHARKSSL_X64_ASM_PLATFORM 0
@@ -42,7 +42,7 @@ static U8 name(void) \
 }
 
 #if SHARKSSL_OPTIMIZED_CHACHA_ASM || SHARKSSL_OPTIMIZED_POLY1305_ASM
-#if defined(_M_IX86)
+#if !SHARKSSL_X64_ASM_PLATFORM
 int sharkssl_x86_avx2_available(void);
 SHARKSSL_ASM_AVAILABILITY(sharkssl_x86_avx2Available, sharkssl_x86_avx2_available())
 #else
@@ -52,7 +52,7 @@ SHARKSSL_ASM_AVAILABILITY(sharkssl_x86_avx2Available, sharkssl_x86_64_avx2_avail
 #endif
 
 #if SHARKSSL_OPTIMIZED_GCM_ASM && SHARKSSL_OPTIMIZED_GHASH_ASM
-#if defined(_M_IX86)
+#if !SHARKSSL_X64_ASM_PLATFORM
 int sharkssl_x86_gcm_available(void);
 SHARKSSL_ASM_AVAILABILITY(sharkssl_gcm_asmAvailable, sharkssl_x86_gcm_available())
 #else

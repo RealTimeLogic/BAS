@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: MakoMain.c 6702 2026-10-31 22:23:48Z wini $
+ *   $Id: MakoMain.c 6770 2026-11-06 15:33:36Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2012 - 2026
  *
@@ -1334,43 +1334,52 @@ openVmIo(const U8* zipPubKey, IoIntf* rootIo,const char* execpath,
 }
 
 
+#if !SHARKSSL_PSA_CONSUMER
+static void
+seedSharkSSL(void)
+{
+   U8 seed[48];
+   size_t received = 0;
 #if defined(LUA_USE_LINUX) || defined(LUA_USE_MACOSX)
-static void
-seedSharkSSL(void)
-{
-   int i;
-   U32 rndData[4];
-   sharkssl_entropy((U32)baGetUnixTime());
-   sharkssl_entropy(baGetMsClock());
-   int f = open("/dev/random", O_RDONLY);
-   if(f < 0) return;
-   if(read(f, rndData, sizeof(rndData)) > 0)
+   int fd = open("/dev/urandom", O_RDONLY);
+   if(fd >= 0)
    {
-      for(i = 0 ; i < 4 ; i++)
-         sharkssl_entropy(rndData[i]);
+      while(received < sizeof(seed))
+      {
+         ssize_t n = read(fd, seed + received, sizeof(seed) - received);
+         if(n > 0)
+            received += (size_t)n;
+         else if(n < 0 && errno == EINTR)
+            continue;
+         else
+            break;
+      }
+      close(fd);
    }
-   close(f);
-}
-#elif defined LUA_USE_WINDOWS
-static void
-seedSharkSSL(void)
-{
-   int i;
-   unsigned int rnd;
-   sharkssl_entropy((U32)baGetUnixTime());
-   sharkssl_entropy(baGetMsClock());
-   for(i = 0 ; i < 4 ; i++)
+#elif defined(LUA_USE_WINDOWS)
+   while(received < sizeof(seed))
    {
-      if( ! rand_s(&rnd) )
-         sharkssl_entropy(rnd);
+      unsigned int word;
+      if(rand_s(&word))
+         break;
+      memcpy(seed + received, &word, sizeof(word));
+      received += sizeof(word);
+      sharkssl_clear(&word, sizeof(word));
    }
-}
-#else
-static void
-seedSharkSSL(void)
-{
-   sharkssl_entropy((U32)baGetUnixTime());
-   sharkssl_entropy(baGetMsClock());
+#endif
+   if(received == sizeof(seed))
+   {
+      int status = sharkssl_entropyEx(seed, sizeof(seed));
+      sharkssl_clear(seed, sizeof(seed));
+      if(status)
+         errQuit("Native RNG initialization failed (%d).\n", status);
+   }
+   else
+   {
+      sharkssl_clear(seed, sizeof(seed));
+      HttpTrace_printf(0, "OS entropy unavailable; using the weak portable "
+                       "Lua bootstrap.\n");
+   }
 }
 #endif
 
@@ -1687,7 +1696,9 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
       }
    }
 #endif
+#if !SHARKSSL_PSA_CONSUMER
    seedSharkSSL();
+#endif
 
 #if BA_ENABLE_LUA_DEBUGGER
   L_restart:
@@ -1736,6 +1747,8 @@ runMako(int isWinService, int argc, char* argv[], char* envp[])
    blp.server = &server;           /* pointer to a HttpServer */
    blp.timer = &timer;             /* Pointer to a BaTimer */
    L = balua_create(&blp);        /* create the Lua state */
+   if(!L)
+      errQuit("Cannot initialize Lua state.\n");
 #if BA_ENABLE_LUA_DEBUGGER
    /* Add Lua debugger */
     ba_ldbgmon(L, dbgExitRequest, 0);

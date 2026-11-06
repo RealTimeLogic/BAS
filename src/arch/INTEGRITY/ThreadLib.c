@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: ThreadLib.c 6674 2026-10-29 17:01:49Z wini $
+ *   $Id: ThreadLib.c 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2011 - 2026
  *
@@ -55,11 +55,11 @@ baSetUnixTime(U32 time)
 }
 
 
-U32 baGetUnixTime(void)
+BaTime baGetUnixTime(void)
 {
   Time t;
   Thread_ce(GetClockTime(HighestResStandardClock, &t));
-  return timeBase + t.Seconds;
+  return (BaTime)timeBase + (BaTime)t.Seconds;
 }
 
 

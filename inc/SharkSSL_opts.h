@@ -50,7 +50,6 @@ The following options configure the smallest possible SharkSSL library:
 #define SHARKSSL_ECC_USE_SECP521R1 0                  /* 1 */
 #define SHARKSSL_ECC_USE_BRAINPOOLP512R1 0            /* 1 */
 #define SHARKSSL_ENABLE_ECDHE_RSA 0                   /* 1 */
-#define SHARKSSL_USE_RNG_TINYMT 1                     /* 0 */
 
 
 #ifndef BASIC_TRUST_CHECK

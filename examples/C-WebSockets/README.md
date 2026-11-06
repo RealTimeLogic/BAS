@@ -1,59 +1,40 @@
-# C++ WebSocket Example
+# C++ WebSocket chat example
 
-**A Barracuda Embedded Web Server Example**
+Build a chat server that sends text and JPEG images between browser clients.
+The server is written in C++, the client in JavaScript, and communication
+uses the [Barracuda Embedded Web Server (BWS) WebSocket API](https://realtimelogic.com/ba/doc/en/C/reference/html/group__WebSockets.html).
 
 ![Barracuda Embedded Web Server](https://realtimelogic.com/GZ/images/BarracudaWebServer.svg)
 
-This WebSocket example shows how to use the
-[C WebSocket Server](https://realtimelogic.com/ba/doc/en/C/reference/html/group__WebSockets.html)
-included with the
-[Barracuda Embedded Web Server](https://realtimelogic.com/products/barracuda-web-server/)
-and the
-[Barracuda App Server](https://realtimelogic.com/products/barracuda-application-server/). The
-example is designed for HLOS, but can easily be ported to a monolithic
-RTOS system. The example includes a Makefile for Linux and a Visual
-Studio project file for Windows. The makefile and project file are using the [amalgamated Barracuda Embedded Web Server C source code library](https://raw.githubusercontent.com/RealTimeLogic/BAS/main/src/BWS.c); however, you can also link the example code with the [amalgamated Barracuda App Server C source code library](https://raw.githubusercontent.com/RealTimeLogic/BAS/main/src/BAS.c).
-
-The Barracuda Web & App Server's C WebSocket server is one of three
-WebSocket server implementations provided by Real Time Logic.
-
-* The Minnow Server is designed for resource constrained devices such as a Cortex-M0 and ESP8266. A Minnow Server application must be designed as an SPA and preferably use the [SPA amalgamator service](https://realtimelogic.com/articles/Creating-SinglePage-Apps-with-the-Minnow-Server#deploy) for converting the SPA assets into a C array.
-* **This example**; The [Barracuda Web Server](https://realtimelogic.com/products/barracuda-web-server/)'s [WebSocket Server](https://realtimelogic.com/ba/doc/en/C/reference/html/group__WebSockets.html) enables hybrid server-side/client-side web applications to communicate using both HTTP(S) and (secure) WebSockets. Consider using this WebSocket server if you plan on using HTTP(S) services in addition to WS(S) services and/or require a dual WSS/WS server.
-* The [Barracuda App Server's WebSocket Server](https://realtimelogic.com/ba/doc/?url=SockLib.html#WebSockets) provides the easiest to use solution, in which server side business logic can be designed in the easy to learn [Lua scripting language](https://realtimelogic.com/products/lua-server-pages/). With the Barracuda App Server, much of the device's high level logic can be implemented in Lua. Just as Lua is popular with rapid game development, now embedded systems can benefit from the same. The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes a ready to compile and run Barracuda App Server project called the [LSP Application Manager](https://realtimelogic.com/ba/doc/?url=examples/lspappmgr/readme.html), which can be used as the foundation for your development. See the online tutorial for an [interactive WebSocket example](https://tutorial.realtimelogic.com/).
+The supplied Linux and Windows projects compile `src/BWS.c`. You can also
+use the example in a Barracuda App Server (BAS) application that compiles
+`src/BAS.c`; compile only one of those libraries. For application logic in
+Lua, see the [BAS Lua WebSocket API](https://realtimelogic.com/ba/doc/?url=SockLib.html#WebSockets)
+and [interactive tutorials](https://tutorial.realtimelogic.com/).
 
 ## How to compile and run the WebSocket chat example
 
-This example illustrates how a basic chat client can be implemented in
-JavaScript and how the backend can be implemented in C++.
+Build on your computer first, then adapt the startup and porting layers
+for your device.
 
-Use as follows:
+1. [Compile the example](#how-to-compile-the-c-code) and start the server.
+2. Open the server address shown in its startup output in two browser windows.
+3. Enter a message in the text box at the bottom of either window.
+4. Drop a JPEG image of at most 65,535 bytes into either window.
 
-1. [Compile the C code](#how-to-compile-the-c-code)
-2. Start the server
-3. Open at least two browser windows and navigate to http(s)://localhost:portno
-4. Enter text in any Window (text input dialog at bottom of screen)
-5. Drag and drop JPEG images into any of the browser windows
-
-The drag and drop feature illustrates how to use binary
-frames. Dropping a JPEG image (max size 0xFFFF) onto the chat client
-running in the browser makes the JavaScript code send a binary frame
-to the server, which is then distributed to all connected clients
-where the image is shown. The images dropped into the browser window
-must be JPEG, and the image sizes must be less than 65,535 bytes.
-
-The example is designed for embedded use, but we recommend testing it
-on your host computer initially. You can use the ready-to-use makefile
-or the Visual Studio Project file if you are on Windows.
+Messages and images appear in all connected clients. Text uses WebSocket
+text frames; JPEGs use binary frames. The size limit is `0xFFFF` bytes.
 
 ![Host Build](HostBuild.gif)
 
 ## How to compile the C code
 
-The chat example is designed with ease-of-use in mind. On Linux, testing is made super easy with the included makefile. We also include RTOS build instructions. Simply follow the steps, and you'll be ready to go in no time.
-
 ### Linux
 
-``` shell
+Install GCC, G++, and Make, then run:
+
+```sh
+# Clone the repository and build the chat example.
 git clone https://github.com/RealTimeLogic/BAS.git
 cd BAS/examples/C-WebSockets/
 make
@@ -62,68 +43,87 @@ make
 
 ### Windows
 
-Open the project file in BAS\examples\C-WebSockets\VcMake
+Open `examples/C-WebSockets/VcMake/example.sln` in Visual Studio, build,
+and run the project.
 
 ### RTOS
 
-**Before you begin:**
+For a real-time operating system (RTOS), choose how to store the browser
+files: embed them in the firmware, or serve them from a filesystem.
+Embedding the files lets you try the example before adding filesystem
+support.
 
-We recommend initially embedding the resources in the HTML directory by zipping the HTML directory and converting this zip file to a C array. This method works seamlessly, even if your setup includes a file system. You can use the provided C code "as is" when embedding the resources. However, when incorporating a file system along with a [DiskIo](https://realtimelogic.com/ba/doc/en/C/reference/html/structDiskIo.html), you'll need to tweak the code in ChatServer.cpp. Specifically, adjust the settings where the root of the DiskIo is configured. You can find this configuration in the installVirtualDir function within src/ChatServer.cpp.
+The following Linux build shows how to embed the files. It needs `zip`
+and the C/C++ toolchain. Run it from `examples/C-WebSockets`:
 
-The following Linux commands exemplify the required steps:
-
-``` shell
-# Create obj/release/html.zip.
-. BuildZip.sh
-# Compile all using the C compiler, except ChatServer.cpp, which is compiled using g++
+```sh
+# Build the resource tool, then create the ZIP and C array in a subprocess.
+mkdir -p obj/release
+gcc -o obj/release/bin2c ../../tools/bin2c.c
+PATH="$PWD/obj/release:$PATH" bash BuildZip.sh
+# GCC selects C++ for ChatServer.cpp; link the C++ runtime explicitly.
 gcc -o ChatServer -I../../inc -I../../inc/arch/Posix -I../../inc/arch/NET/Posix\
-    ../../src/BAS.c\
+    ../../src/BWS.c\
     ../../src/arch/Posix/ThreadLib.c ../../src/arch/NET/generic/SoDisp.c\
     ../HostInit/HostInit.c ../HostInit/Main.c\
     src/ChatServer.cpp\
     obj/release/html.zip.c\
-     -lpthread -lm -lstdc++
+    -lpthread -lm -lstdc++
 ```
 
-**Note:** The [Xedge instructions](https://github.com/RealTimeLogic/BAS/#xedge-rtos) provide guidance on how to replace HostInit.c and Main.c with customized code for your embedded device.
+For the device build, add these files to your project:
 
-**Build Instructions:**
+| File | Purpose |
+| --- | --- |
+| `src/BWS.c` | Web server library. |
+| `src/arch/<OS>/ThreadLib.c` | Thread port for your RTOS. |
+| `src/arch/NET/<NET>/SoDisp.c` | Dispatcher for your network stack. |
+| `examples/C-WebSockets/src/ChatServer.cpp` | Chat service. |
+| `src/DiskIo/<FS>/BaFile.c` | Filesystem port, if using disk resources. |
 
-Add the following files to your build; (xxx) is the [porting layer](https://github.com/RealTimeLogic/BAS/#porting-layers):
+Paths in this table are relative to the repository root. Select the
+matching headers from [Porting Layers](../../doc/compiling.md#porting-layers).
+Replace `Main.c` and `HostInit.c` with your target's startup code, then call
+`barracuda()` from a dedicated task after initializing the platform and
+network. The [Xedge integration guide](../../doc/compiling.md#xedge-rtos)
+also describes this startup pattern.
 
-- BAS/src/BWS.c                  -- Amalgamated [Barracuda Embedded Web Server library](https://realtimelogic.com/products/barracuda-web-server/)
-- BAS/src/arch/XXX/ThreadLib.c   -- RTOS porting layer
-- BAS/src/arch/NET/XXX/SoDisp.c  -- TCP porting layer
-- BAS/src/DiskIo/XXX/BaFile.c    -- Optional: add if you have a file system
-- BAS/examples/C-WebSockets/src/ChatServer.cpp -- The chat server example
-- In your code, create a thread and have this thread call function barracuda()
+#### Option 1: Using an embedded filesystem
 
-#### Option 1: Using embedded file system
-
-If you included BaFile.c in your build, copy the HTML files to your embedded file system and add the compilation flag -DBAIO_DISK
+Compile `BaFile.c` and define `BAIO_DISK`. Copy the contents of `html` to
+the device, then set the `DiskIo` root in `installVirtualDir()` in
+`src/ChatServer.cpp` to that directory.
 
 #### Option 2: Embedding the HTML files in the firmware
 
-If you did not add BaFile or if you want to embed the HTML files in your firmware, do the following:
+Compile `tools/bin2c.c` as a host tool and put `bin2c` on your path. From
+`examples/C-WebSockets`, create the resource array:
 
-``` shell
+```sh
+# Keep index.html at the ZIP root and export the reader expected by ChatServer.cpp.
 cd html
 zip -D -r -9 ../html.zip *
 cd ..
 bin2c -z getZipReader html.zip html.zip.c
 ```
 
-The bin2c source code can be found in BAS/tools. You must compile this tool before running the above command.
+Add `html.zip.c` to the device build and leave `BAIO_DISK` undefined.
 
-#### All porting layers, directories to include, and compiler flags:
+### Ready-to-run RTOS build
 
-See [Porting Layers](https://github.com/RealTimeLogic/BAS/#porting-layers)
-
-### Ready to run RTOS build
-
-The [SharkSSL IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/) includes a ready-to-use build for this chat example. The following screenshot shows how to use the web-based IDE, compile, upload the firmware, and navigate to the chat server running on the ESP32.
-
+The [SharkSSL ESP32 IDE](https://realtimelogic.com/downloads/sharkssl/ESP32/)
+includes this chat example. The animation shows building and uploading it,
+then opening the chat server in a browser.
 
 ![ESP32 C++ WebSocket Example](https://realtimelogic.com/images/BWSChatServerESP32.gif)
 
+## Random-generator initialization
 
+
+The native example calls the shared `HostInit/ExampleRng.h` helper before
+creating server objects. This is a platform-neutral demonstration: hashing an
+address into a 48-byte seed does not create entropy. Replace it with a checked
+`sharkssl_entropyEx` call using at least 48 bytes from a secure platform source
+before production TLS or authentication. Later native reseeds require at
+least 32 bytes. A PSA build must initialize its provider first; the helper
+uses the PSA-only no-argument initializer instead of injecting a seed.

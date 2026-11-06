@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 6668 2026-10-29 03:45:26Z wini $
+ *   $Id: SharkSslCrypto.h 6756 2026-11-05 17:13:26Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -309,15 +309,27 @@ extern "C" {
 #endif
 
 /* SharkSslCrypto.c */
+#if SHARKSSL_PSA_CONSUMER
 /**
- * Mix 32 application-supplied bits into the default RNG state. Before any
- * cryptographic use, call this function with sufficient unpredictable input
- * from a platform CSPRNG or hardware entropy source. Time values, addresses,
- * or counters alone do not provide an RFC 9846-compliant entropy source.
+ * Initialize the selected PSA Crypto provider. Complete any platform-specific
+ * hardware or storage setup before calling this function. Entropy is managed
+ * by the provider. Returns zero on success, -1 on initialization failure.
  */
-SHARKSSL_API int   sharkssl_entropy(U32);
-SHARKSSL_API int   sharkssl_rng(U8*, U16);
-SHARKSSL_API int   sharkssl_kmemcmp(const void *a, const void *b, U32 n);
+SHARKSSL_API int sharkssl_entropy(void);
+#else
+/**
+ * Seed the native global DRBG atomically from an entropy buffer. Before the
+ * first output supply at least 48 entropy bytes; later reseeds require at
+ * least 32. The source must provide the required entropy, not just length.
+ * Initialize before starting threads. Returns zero only when ready, -1 on
+ * invalid input.
+ */
+SHARKSSL_API int sharkssl_entropyEx(const U8 *entropy, U16 len);
+#endif
+
+
+SHARKSSL_API int sharkssl_rng(U8*, U16);
+SHARKSSL_API int sharkssl_kmemcmp(const void *a, const void *b, U32 n);
 
 
 #if SHARKSSL_USE_MD5

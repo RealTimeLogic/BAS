@@ -1,6 +1,7 @@
 # Detect the compiler TARGET, never the host. No target executable is run.
 # Copyright (c) Real Time Logic LLC, 2026. All rights reserved.
-include SharkSslBackends.mk
+SHARKSSL_MAKE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(SHARKSSL_MAKE_DIR)SharkSslBackends.mk
 SHARKSSL_ASM ?= auto
 ifneq ($(words $(SHARKSSL_ASM)),1)
 $(error SHARKSSL_ASM must be one of: auto off $(SHARKSSL_BACKENDS))
@@ -20,11 +21,11 @@ ifndef usebalibs
 ifneq ($(BA_ENABLE_SHARKSSL),0)
 # Probe failure selects no backend. Use exactly the C compiler and C flags.
 ifeq ($(MFT),/D)
-SHARKSSL_PROBE := $(shell $(CC) $(CFLAGS) /EP /I$(SHARKSSL_INCLUDE_DIR) SharkSslTarget.c 2>$(SHARKSSL_PROBE_NULL) && echo SHARKSSL_MAKE_PROBE_OK)
+SHARKSSL_PROBE := $(shell $(CC) $(CFLAGS) /EP /I$(SHARKSSL_INCLUDE_DIR) "$(SHARKSSL_MAKE_DIR)SharkSslTarget.c" 2>$(SHARKSSL_PROBE_NULL) && echo SHARKSSL_MAKE_PROBE_OK)
 else
 # qcc interprets -P as preprocess to a .i file, hiding the markers from make.
 # -E alone writes stdout for GCC, Clang and qcc; line markers are filtered out.
-SHARKSSL_PROBE := $(shell $(CC) $(CFLAGS) -E -x c -I$(SHARKSSL_INCLUDE_DIR) SharkSslTarget.c 2>$(SHARKSSL_PROBE_NULL) && echo SHARKSSL_MAKE_PROBE_OK)
+SHARKSSL_PROBE := $(shell $(CC) $(CFLAGS) -E -x c -I$(SHARKSSL_INCLUDE_DIR) "$(SHARKSSL_MAKE_DIR)SharkSslTarget.c" 2>$(SHARKSSL_PROBE_NULL) && echo SHARKSSL_MAKE_PROBE_OK)
 endif
 ifneq (,$(filter SHARKSSL_MAKE_PROBE_OK,$(SHARKSSL_PROBE)))
 SHARKSSL_MATCHES := $(filter $(SHARKSSL_BACKENDS),$(patsubst SHARKSSL_MAKE_TARGET_%,%,$(filter SHARKSSL_MAKE_TARGET_%,$(SHARKSSL_PROBE))))
@@ -74,6 +75,11 @@ SHARKSSL_DEFAULTS := $(filter-out GCM GHASH GCM_VAES,$(SHARKSSL_DEFAULTS))
 endif
 sharkssl_option = $(if $(SHARKSSL_OPTION_$(1)),$(SHARKSSL_OPTION_$(1)),SHARKSSL_OPTIMIZED_$(1)_ASM)
 SHARKSSL_AUTO_FLAGS := $(foreach option,$(SHARKSSL_DEFAULTS),$(if $(filter SHARKSSL_MAKE_$(option)_DEFINED,$(SHARKSSL_PROBE)),,$(MFT)$(call sharkssl_option,$(option))=1))
+# Native AES assembly requires the maintainer's non-CT software layout/fallback.
+# Preserve explicit CT choices; unsupported targets and ASM=off keep C defaults.
+ifneq (,$(filter GCM GHASH GCM_VAES,$(SHARKSSL_DEFAULTS))$(filter SHARKSSL_MAKE_GCM_REQUIRED SHARKSSL_MAKE_GHASH_REQUIRED SHARKSSL_MAKE_GCM_VAES_REQUIRED,$(SHARKSSL_PROBE)))
+SHARKSSL_AUTO_FLAGS += $(foreach option,AES_SOFTWARE_CT AES_GCM_SOFTWARE_CT,$(if $(filter SHARKSSL_MAKE_$(option)_DEFINED,$(SHARKSSL_PROBE)),,$(MFT)SHARKSSL_$(option)=0))
+endif
 # Check target C helpers as well as kernels, using the final feature flags.
 # Otherwise a guarded .S file could compile as empty and falsely pass.
 # Like the optional x64 check, compile to the null device; never run target code.
@@ -136,7 +142,7 @@ endif
 # Rebuild C as well as assembly after a backend/layout or description change.
 # Other compiler/command-line flag changes still require clean/separate ODIRs.
 SHARKSSL_STAMP := $(ODIR)/.sharkssl-$(SHARKSSL_BACKEND)-$(SHARKSSL_M0)
-$(SHARKSSL_STAMP): SharkSslAsm.mk SharkSslBackends.mk SharkSslTarget.c $(SHARKSSL_INCLUDE_DIR)/SharkSSL_opts.h $(SHARKSSL_INCLUDE_DIR)/SharkSSL_cfg.h $(SHARKSSL_INCLUDE_DIR)/BaConfigEndian.h $(SHARKSSL_INCLUDE_DIR)/BaConfigDefs.h $(SHARKSSL_INCLUDE_DIR)/BaConfigOpts.h
+$(SHARKSSL_STAMP): $(addprefix $(SHARKSSL_MAKE_DIR),SharkSslAsm.mk SharkSslBackends.mk SharkSslTarget.c) $(SHARKSSL_INCLUDE_DIR)/SharkSSL_opts.h $(SHARKSSL_INCLUDE_DIR)/SharkSSL_cfg.h $(SHARKSSL_INCLUDE_DIR)/BaConfigEndian.h $(SHARKSSL_INCLUDE_DIR)/BaConfigDefs.h $(SHARKSSL_INCLUDE_DIR)/BaConfigOpts.h $(wildcard $(SHARKSSL_CRYPTO_DIR)/../SharkSslBigInt.h $(SHARKSSL_CRYPTO_DIR)/../SharkSslEndian.h)
 ifeq ($(SHARKSSL_PROBE_NULL),NUL)
 	@if exist "$(subst /,\,$(ODIR))\.sharkssl-*" del /Q "$(subst /,\,$(ODIR))\.sharkssl-*"
 else

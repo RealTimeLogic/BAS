@@ -7,7 +7,11 @@
 extern "C" {
 #endif
 
-/* Initialize host networking, tracing, and error handling before barracuda. */
+/* Initialize the allocator, networking, tracing, and error handling before
+ * barracuda. The allocator must not depend on SharkSSL randomness. Native
+ * applications must seed SharkSSL before their first RNG/TLS/authentication
+ * consumer; the shared ExampleRng helper is demonstration-only. PSA hosts
+ * must initialize their provider before entering barracuda. */
 void hostInit(void);
 /* Application-provided server entry point, called once by the host startup. */
 void barracuda(void);

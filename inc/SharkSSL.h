@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6682 2026-10-29 21:14:37Z gianluca $
+ *   $Id: SharkSSL.h 6726 2026-11-03 10:41:29Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -1923,7 +1923,29 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(
    const char *certPEM, const char *keyPEM, 
    const char *passphrase, SharkSslCert *sharkSslCert);
 
+/**
+ * Length-explicit variant of sharkssl_PEM. The passphrase may contain NUL
+ * bytes; passphraseLen is public and no password terminator is scanned.
+ * The legacy sharkssl_PEM API scans the password once to obtain that length.
+ * PEM labels, whitespace, encoded length and ASN.1 structure are public
+ * format information. For native encrypted AES keys, also enable
+ * SHARKSSL_AES_SOFTWARE_CT to avoid AES table accesses during decryption.
+ */
+SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEMEx(const char *certPEM, const char *keyPEM,
+                                                const char *passphrase, SharkSslCert *sharkSslCert, 
+                                                U16 passphraseLen);
+
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
+/**
+ * PBKDF2 with an explicit public password length, including embedded NUL
+ * bytes. Work depends on the public password/salt/output lengths, hash
+ * and iteration count, not password bytes. The legacy API below obtains
+ * the password length with strlen. PSA builds use the selected provider.
+ */
+SHARKSSL_API int sharkssl_PEM_PBKDF2Ex(U8 *dk, const char *passphrase, const char *salt,
+                                       U32 saltLen, U32 iterations, U16 passphraseLen, 
+                                       U16 dkLen, U8 hashID);
+
 /** sharkssl_PEM_PBKDF2 (output, passphrase, salt, salt_len, iterations, dkLen, hashID)
     Derives a key from a passphrase using the PBKDF2 algorithm as specified in RFC 8018 section 5.2.
 

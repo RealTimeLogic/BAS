@@ -36,7 +36,7 @@ else
 CPPFLAGS += /DNDEBUG
 CFLAGS += /O2 /MD
 endif
-LDLIBS += ws2_32.lib bcrypt.lib
+LDLIBS += ws2_32.lib
 ARCHIVE = $(AR) /nologo /OUT:$@ $(GOBJS)
 LINK = $(CC) /nologo /Fe$@ $(HOBJS) $(GLIB) $(LDLIBS) /link $(LDFLAGS) /INCREMENTAL:NO /MACHINE:$(if $(filter x64,$(ARC)),X64,X86)
 ifeq ($(build),debug)

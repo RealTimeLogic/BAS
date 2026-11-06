@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64_CPUID.c 6635 2026-10-26 20:00:02Z gianluca $
+ *   $Id: SharkSslCrypto_X64_CPUID.c 6730 2026-11-03 20:10:54Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -69,10 +69,4 @@ int sharkssl_x86_64_avx2_available(void)
 {
    unsigned b,c;
    return sharkssl_x64_ymm() && sharkssl_x64_leaf(7,&b,&c) && (b & (1U<<5)) != 0;
-}
-int sharkssl_x86_64_vaes_available(void)
-{
-   unsigned b,c;
-   return sharkssl_x86_64_gcm_available() && sharkssl_x64_ymm() &&
-      sharkssl_x64_leaf(7,&b,&c) && (b & (1U<<5)) && (c & (1U<<9)) && (c & (1U<<10));
 }

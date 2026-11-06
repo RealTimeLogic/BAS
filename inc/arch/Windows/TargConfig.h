@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: TargConfig.h 6686 2026-10-29 23:59:57Z wini $
+ *   $Id: TargConfig.h 6760 2026-11-06 00:03:47Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2004 - 2026
  *
@@ -55,20 +55,6 @@
 
 
 /* C runtime and Lua library capabilities for this port. */
-#ifdef _WIN32_WCE
-#ifndef BA_HAVE_LOG2
-#define BA_HAVE_LOG2 0
-#endif
-#ifndef BA_USE_C_RUNTIME_TIME
-#define BA_USE_C_RUNTIME_TIME 0
-#endif
-#ifndef BA_HAVE_STDIO
-#define BA_HAVE_STDIO 0
-#endif
-#ifndef BA_LUA_OS_LIBRARY_MODE
-#define BA_LUA_OS_LIBRARY_MODE BA_LUA_OS_LIBRARY_MINIMAL
-#endif
-#endif
 #ifndef BA_HAVE_STDIO
 #define BA_HAVE_STDIO 1
 #endif
@@ -96,12 +82,6 @@
 #define BA_BYTE_ORDER BA_BYTE_ORDER_LITTLE_ENDIAN
 #elif BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN
 #error BA_BYTE_ORDER disagrees with Windows
-#endif
-
-#ifdef _WIN32_WCE
-#define errno  GetLastError()
-#define BUFSIZ 512
-#define basocklen_t int
 #endif
 
 #include <windows.h>
@@ -222,13 +202,9 @@
  *  Time functions
  ***********************************************************************/
 #include <time.h>
-#ifdef _WIN32_WCE
-BA_API unsigned baGetUnixTime(void);
-#else
 #define baGetUnixTime() ((BaTime)time(0))
 BA_API void _baClckGettime(BaTimeEx* spec);
 #define baClckGettime _baClckGettime
-#endif
 #define baGetClock() ((BaTime)clock()/CLOCKS_PER_SEC)
 #define baGetMsClock() GetTickCount()
 
