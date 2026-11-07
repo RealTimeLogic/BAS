@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 6761 2026-11-06 00:38:14Z wini $
+ *   $Id: SoDisp.c 6761M 2026-11-06 23:54:32Z (local) $
  *
  *   COPYRIGHT:  Real Time Logic, 2009 - 2026
  *
@@ -39,6 +39,16 @@
 #include <HttpTrace.h>
 #include <stddef.h>
 #include <nx_tcp.h>
+#if BA_ENABLE_MDNS
+#include <BamDNS.h>
+#include <nx_ipv6.h>
+#if !BA_ENABLE_UDP
+#error BA_ENABLE_MDNS requires BA_ENABLE_UDP
+#endif
+#if BA_ENABLE_IPV6 && !defined(NX_ENABLE_IPV6_MULTICAST)
+#error BA_ENABLE_MDNS with IPv6 requires NX_ENABLE_IPV6_MULTICAST
+#endif
+#endif
 
 #ifdef BA_NX_DNS
 #include <nxd_dns.h>
@@ -77,9 +87,26 @@ typedef struct HttpSocketNxUdp
    U16 peerPort;
    BaBool ip6;
    BaBool broadcast;
+#if BA_ENABLE_MDNS
+   /* Logical channels share one native dual-stack socket per NX_IP. The
+      transport retains its allocation until the last channel is closed. */
+   struct HttpSocketNxUdp* mdnsTransport;
+   struct HttpSocketNxUdp* mdnsNext;
+   struct HttpSocketNxUdp* mdnsMembers;
+   struct HttpSocketNxUdp* mdnsNextTransport;
+   HttpSocket* mdnsOwner;
+   NX_PACKET* mdnsHead;
+   NX_PACKET* mdnsTail;
+   UINT mdnsInterface;
+   U8 mdnsQueued;
+#endif
 } HttpSocketNxUdp;
 
 #define HttpSocket_nxUdp(ref) ((HttpSocketNxUdp*)((ref) + 1))
+#if BA_ENABLE_MDNS
+static UINT mdnsNxReceive(HttpSocketNxUdp* udp, NX_PACKET** packet);
+static void mdnsNxClose(HttpSocketNxUdp* udp);
+#endif
 #endif
 
 static HttpSocketNxRef*
@@ -709,6 +736,13 @@ HttpSocket_udpReceive(HttpSocketNxRef* ref, NX_PACKET** packet, ULONG wait)
 {
    HttpSocketNxUdp* udp = HttpSocket_nxUdp(ref);
    ULONG start = tx_time_get();
+#if BA_ENABLE_MDNS
+   if(udp->mdnsTransport)
+   {
+      baAssert(wait == NX_NO_WAIT);
+      return mdnsNxReceive(udp, packet);
+   }
+#endif
    UINT status = HttpSocket_udpBind(udp);
    unsigned filtered = 0;
    if(status)
@@ -1062,6 +1096,25 @@ HttpSocket_nxClose(HttpSocket* o, int hardClose)
    if(o->nxDgram)
    {
       HttpSocketNxUdp* udp = HttpSocket_nxUdp(o->nxRef);
+#if BA_ENABLE_MDNS
+      if(udp->mdnsTransport)
+      {
+         o->nxRef->closed = TRUE;
+         mdnsNxClose(udp);
+         TX_DISABLE;
+         if(DoubleLink_isLinked(o))
+            DoubleLink_unlink(o);
+         TX_RESTORE;
+         if(o->nxFirstPacket)
+            nx_packet_release(o->nxFirstPacket);
+         HttpSocket_nxRelease(o->nxRef);
+         o->nxRef = 0;
+         o->nxFirstPacket = o->nxPacket = 0;
+         o->nxPktOffs = 0;
+         o->nxDgram = FALSE;
+         return;
+      }
+#endif
       ip = udp->socket.nx_udp_socket_ip_ptr;
       o->nxRef->closed = TRUE;
       TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
@@ -1074,8 +1127,11 @@ HttpSocket_nxClose(HttpSocket* o, int hardClose)
       TX_RESTORE;
       if(o->nxFirstPacket)
          nx_packet_release(o->nxFirstPacket);
-      nx_udp_socket_unbind(&udp->socket); /* Wakes a blocked reader. */
-      TST_OK(nx_udp_socket_delete(&udp->socket));
+      if(udp->socket.nx_udp_socket_id)
+      {
+         nx_udp_socket_unbind(&udp->socket); /* Wakes a blocked reader. */
+         TST_OK(nx_udp_socket_delete(&udp->socket));
+      }
       HttpSocket_nxRelease(o->nxRef);
       o->nxRef = 0;
       o->nxFirstPacket = o->nxPacket = 0;
@@ -1838,6 +1894,10 @@ SoDisp_nxInit(NX_IP** ip, NX_PACKET_POOL* _nxPacketPool,
       if(!instance->nx_ip_udp_packet_receive)
          nx_udp_enable(instance);
 #endif
+#if BA_ENABLE_MDNS
+      if(!instance->nx_ip_igmp_packet_receive)
+         nx_igmp_enable(instance);
+#endif
       ipPtr++;
    }
 }
@@ -1853,6 +1913,408 @@ SoDisp_setDNS(void* dns)
    baAssert(0);
 #endif
 }
+
+#if BA_ENABLE_MDNS
+/* Native NetX mDNS transport. NetX binds UDP ports across both IP families,
+   so share one socket and give each responder/channel a bounded packet queue.
+   The IP mutex protects membership, queues and the native notification. The
+   BAS mutex serializes setup/close and the transport list; callbacks never
+   acquire it or invoke Lua. No TCP/IP stack or Ethernet driver changes. */
+static HttpSocketNxUdp* mdnsNxTransports;
+
+static void
+mdnsNxGroup(NXD_ADDRESS* group, BaBool ipv6)
+{
+   memset(group, 0, sizeof(*group));
+   group->nxd_ip_version = ipv6 ? NX_IP_VERSION_V6 : NX_IP_VERSION_V4;
+#if BA_ENABLE_IPV6
+   if(ipv6)
+   {
+      group->nxd_ip_address.v6[0] = 0xff020000UL;
+      group->nxd_ip_address.v6[3] = 0xfb;
+   }
+   else
+#endif
+      group->nxd_ip_address.v4 = 0xe00000fbUL;
+}
+
+/* BAS reserves zero for an absent interface. Encode the IP instance and
+   physical interface as a one-based token; never advertise loopback. */
+static NX_IP*
+mdnsNxInterface(U32 token, UINT* index)
+{
+   unsigned i;
+   if(!token || !nxIpList)
+      return 0;
+   --token;
+   *index = token % NX_MAX_PHYSICAL_INTERFACES;
+   for(i = 0; nxIpList[i]; ++i)
+      if(i == token / NX_MAX_PHYSICAL_INTERFACES)
+         return nxIpList[i];
+   return 0;
+}
+
+int
+BamDNS_getNetInfo(BamDNS_NetInfo* net)
+{
+   unsigned n, i;
+   if(!net)
+      return E_INVALID_PARAM;
+   memset(net, 0, sizeof(*net));
+   if(!nxIpList)
+      return E_CANNOT_RESOLVE;
+   for(n = 0; nxIpList[n]; ++n)
+   {
+      NX_IP* ip = nxIpList[n];
+      TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
+      for(i = 0; i < NX_MAX_PHYSICAL_INTERFACES; ++i)
+      {
+         NX_INTERFACE* iface = &ip->nx_ip_interface[i];
+         U32 token = n * NX_MAX_PHYSICAL_INTERFACES + i + 1;
+         ULONG addr = iface->nx_interface_ip_address;
+         ULONG mask = iface->nx_interface_ip_network_mask;
+         NXD_ADDRESS native;
+         HttpSockaddr address;
+         if(!iface->nx_interface_valid || !iface->nx_interface_link_up)
+            continue;
+         if(addr && addr < 0xe0000000UL && (addr >> 24) != 127 && mask)
+         {
+            native.nxd_ip_version = NX_IP_VERSION_V4;
+            native.nxd_ip_address.v4 = addr;
+            HttpSockaddr_fromNx(&address, &native, ip);
+            memcpy(net->addr4, address.addr, 4);
+            net->ifIndex4 = token;
+            while(mask & 0x80000000UL)
+            {
+               ++net->prefix4;
+               mask <<= 1;
+            }
+         }
+#if BA_ENABLE_IPV6
+         {
+            unsigned a;
+            for(a = 0; a < NX_MAX_IPV6_ADDRESSES; ++a)
+            {
+               NXD_IPV6_ADDRESS* v6 = &ip->nx_ipv6_address[a];
+               if(v6->nxd_ipv6_address_state != NX_IPV6_ADDR_STATE_VALID ||
+                  v6->nxd_ipv6_address_attached != iface)
+                  continue;
+               native.nxd_ip_version = NX_IP_VERSION_V6;
+               memcpy(native.nxd_ip_address.v6, v6->nxd_ipv6_address, 16);
+               HttpSockaddr_fromNx(&address, &native, ip);
+               if(!address.addr[0] || address.addr[0] == 255)
+                  continue;
+               memcpy(net->addr6, address.addr, 16);
+               net->ifIndex6 = token;
+               net->prefix6 = v6->nxd_ipv6_address_prefix_length;
+               if(address.addr[0] == 0xfe && (address.addr[1] & 0xc0) == 0x80)
+                  break;
+            }
+         }
+#endif
+         if(net->ifIndex4
+#if BA_ENABLE_IPV6
+            || net->ifIndex6
+#endif
+           )
+         {
+            TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+            return 0;
+         }
+      }
+      TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+   }
+   return E_CANNOT_RESOLVE;
+}
+
+static void
+mdnsNxNotify(NX_UDP_SOCKET* socket)
+{
+   HttpSocketNxUdp* transport = (HttpSocketNxUdp*)socket;
+   NX_PACKET* packet;
+   /* Called by NetX with the IP mutex held. Copies preserve destination and
+      receiving-interface metadata. Pool exhaustion drops datagrams without
+      blocking the IP thread; normal mDNS retransmission handles loss. */
+   while(!nx_udp_socket_receive(socket, &packet, NX_NO_WAIT))
+   {
+      HttpSocketNxUdp* member;
+      UINT iface;
+      nxd_udp_packet_info_extract(packet, 0, 0, 0, &iface);
+      for(member = transport->mdnsMembers; member; member = member->mdnsNext)
+      {
+         NX_PACKET* copy;
+         if(member->mdnsQueued == 8 || member->mdnsInterface != iface ||
+            member->ip6 != (packet->nx_packet_ip_version == NX_IP_VERSION_V6))
+            continue;
+         if(nx_packet_copy(packet, &copy, packet->nx_packet_pool_owner, NX_NO_WAIT))
+            continue;
+         copy->nx_packet_ip_version = packet->nx_packet_ip_version;
+         copy->nx_packet_queue_next = 0;
+         if(member->mdnsTail)
+            member->mdnsTail->nx_packet_queue_next = copy;
+         else
+            member->mdnsHead = copy;
+         member->mdnsTail = copy;
+         ++member->mdnsQueued;
+         HttpSocket_queueEvent(member->mdnsOwner, FALSE);
+      }
+      nx_packet_release(packet);
+   }
+}
+
+static UINT
+mdnsNxReceive(HttpSocketNxUdp* udp, NX_PACKET** packet)
+{
+   NX_IP* ip = udp->mdnsTransport->socket.nx_udp_socket_ip_ptr;
+   TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
+   *packet = udp->mdnsHead;
+   if(*packet)
+   {
+      udp->mdnsHead = (*packet)->nx_packet_queue_next;
+      if(!udp->mdnsHead)
+         udp->mdnsTail = 0;
+      --udp->mdnsQueued;
+      (*packet)->nx_packet_queue_next = 0;
+   }
+   TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+   return *packet ? NX_SUCCESS : NX_NO_PACKET;
+}
+
+int
+BamDNS_socketSetup(BamDNS_Channel* c, const BamDNS_NetInfo* net)
+{
+   HttpSocket* owner = &c->con.httpSocket;
+   HttpSocketNxUdp* udp = HttpSocket_nxUdp(owner->nxRef);
+   HttpSocketNxUdp* transport;
+   NXD_ADDRESS group;
+   UINT iface, status;
+   U32 token = net->ifIndex4;
+   NX_IP* ip;
+#if BA_ENABLE_IPV6
+   if(c->ipv6)
+      token = net->ifIndex6;
+#endif
+   ip = mdnsNxInterface(token, &iface);
+   if(!ip)
+      return -1;
+   mdnsNxGroup(&group, c->ipv6);
+   TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
+   status = c->ipv6 ?
+#if BA_ENABLE_IPV6
+      nxd_ipv6_multicast_interface_join(ip, &group, iface) :
+#else
+      NX_NOT_SUPPORTED :
+#endif
+      nx_igmp_multicast_interface_join(ip, group.nxd_ip_address.v4, iface);
+   if(status)
+   {
+      TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+      return -1;
+   }
+   for(transport = mdnsNxTransports; transport;
+       transport = transport->mdnsNextTransport)
+      if(transport->socket.nx_udp_socket_ip_ptr == ip)
+         break;
+   if(!transport)
+   {
+      /* sockUdp may have selected another NX_IP. Recreate on the discovered
+         interface, preserving the ordinary UDP path when mDNS is disabled. */
+      if(udp->socket.nx_udp_socket_ip_ptr != ip)
+      {
+         nx_udp_socket_delete(&udp->socket);
+         status = nx_udp_socket_create(ip, &udp->socket, "BA mDNS",
+                                        NX_IP_NORMAL, NX_FRAGMENT_OKAY, 255, 8);
+      }
+      else
+         udp->socket.nx_udp_socket_time_to_live = 255;
+      if(!status)
+         status = nx_udp_socket_bind(&udp->socket, 5353, NX_NO_WAIT);
+      if(!status)
+      {
+         transport = udp;
+         HttpSocket_nxRetain(owner);
+         transport->mdnsNextTransport = mdnsNxTransports;
+         mdnsNxTransports = transport;
+         nx_udp_socket_receive_notify(&transport->socket, mdnsNxNotify);
+      }
+   }
+   else
+      nx_udp_socket_delete(&udp->socket);
+   if(!status)
+   {
+      udp->mdnsTransport = transport;
+      udp->mdnsOwner = owner;
+      udp->mdnsInterface = iface;
+      udp->mdnsNext = transport->mdnsMembers;
+      transport->mdnsMembers = udp;
+   }
+   else
+   {
+#if BA_ENABLE_IPV6
+      if(c->ipv6)
+         nxd_ipv6_multicast_interface_leave(ip, &group, iface);
+      else
+#endif
+         nx_igmp_multicast_interface_leave(ip, group.nxd_ip_address.v4, iface);
+   }
+   TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+   return status == NX_PORT_UNAVAILABLE ? E_BIND : status ? -1 : 0;
+}
+
+static void
+mdnsNxClose(HttpSocketNxUdp* udp)
+{
+   HttpSocketNxUdp* transport = udp->mdnsTransport;
+   HttpSocketNxUdp** link;
+   NX_IP* ip = transport->socket.nx_udp_socket_ip_ptr;
+   NX_PACKET* packet;
+   NXD_ADDRESS group;
+   BaBool last;
+   TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
+   for(link = &transport->mdnsMembers; *link != udp; link = &(*link)->mdnsNext)
+      ;
+   *link = udp->mdnsNext;
+   while((packet = udp->mdnsHead) != 0)
+   {
+      udp->mdnsHead = packet->nx_packet_queue_next;
+      nx_packet_release(packet);
+   }
+   mdnsNxGroup(&group, udp->ip6);
+#if BA_ENABLE_IPV6
+   if(udp->ip6)
+      nxd_ipv6_multicast_interface_leave(ip, &group, udp->mdnsInterface);
+   else
+#endif
+      nx_igmp_multicast_interface_leave(ip, group.nxd_ip_address.v4, udp->mdnsInterface);
+   udp->mdnsTransport = 0;
+   last = transport->mdnsMembers == 0;
+   if(last)
+   {
+      nx_udp_socket_receive_notify(&transport->socket, 0);
+      nx_udp_socket_unbind(&transport->socket);
+      TST_OK(nx_udp_socket_delete(&transport->socket));
+   }
+   TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+   if(last)
+   {
+      for(link = &mdnsNxTransports; *link != transport; link = &(*link)->mdnsNextTransport)
+         ;
+      *link = transport->mdnsNextTransport;
+      HttpSocket_nxRelease(((HttpSocketNxRef*)transport) - 1);
+   }
+}
+
+static BaBool
+mdnsNxPrefix(const U8* a, const U8* b, unsigned bits)
+{
+   unsigned n = bits / 8;
+   if(memcmp(a, b, n))
+      return FALSE;
+   bits %= 8;
+   return !bits || !((a[n] ^ b[n]) & (0xff << (8 - bits)));
+}
+
+int
+BamDNS_socketRecv(BamDNS_Channel* c, const BamDNS_NetInfo* net,
+                  void* data, int size, BamDNS_Peer* peer)
+{
+   HttpSocket* s = &c->con.httpSocket;
+   HttpSocketNxUdp* udp = HttpSocket_nxUdp(s->nxRef);
+   NX_PACKET* packet = s->nxPacket;
+   NXD_ADDRESS source, dest, group;
+   HttpSockaddr destination;
+   UINT port, iface;
+   ULONG length = 0;
+   BaBool accept;
+   if(!packet && mdnsNxReceive(udp, &packet))
+      return -2;
+   s->nxPacket = s->nxFirstPacket = 0;
+   s->nxPktOffs = 0;
+   SoDispCon_clearSocketHasNonBlockData(&c->con);
+   nxd_udp_packet_info_extract(packet, &source, 0, &port, &iface);
+   dest.nxd_ip_version = source.nxd_ip_version;
+#if BA_ENABLE_IPV6
+   if(c->ipv6)
+      memcpy(dest.nxd_ip_address.v6,
+             ((NX_IPV6_HEADER*)packet->nx_packet_ip_header)->nx_ip_header_destination_ip, 16);
+   else
+#endif
+      dest.nxd_ip_address.v4 =
+         ((NX_IPV4_HEADER*)packet->nx_packet_ip_header)->nx_ip_header_destination_ip;
+   HttpSockaddr_fromNx(&peer->addr, &source, udp->mdnsTransport->socket.nx_udp_socket_ip_ptr);
+   HttpSockaddr_fromNx(&destination, &dest, peer->addr.ip);
+   peer->port = (U16)port;
+   mdnsNxGroup(&group, c->ipv6);
+   peer->multicast = !memcmp(&dest.nxd_ip_address, &group.nxd_ip_address, c->ipv6 ? 16 : 4);
+#if BA_ENABLE_IPV6
+   if(c->ipv6)
+      accept = peer->multicast || (!memcmp(destination.addr, net->addr6, 16) &&
+         ((peer->addr.addr[0] == 0xfe && (peer->addr.addr[1] & 0xc0) == 0x80) ||
+          mdnsNxPrefix(peer->addr.addr, net->addr6, net->prefix6)));
+   else
+#endif
+      accept = peer->multicast || (!memcmp(destination.addr, net->addr4, 4) &&
+         ((peer->addr.addr[0] == 169 && peer->addr.addr[1] == 254) ||
+          mdnsNxPrefix(peer->addr.addr, net->addr4, net->prefix4)));
+   if(accept && port && iface == udp->mdnsInterface &&
+      packet->nx_packet_length <= (ULONG)size)
+      nx_packet_data_retrieve(packet, data, &length);
+   nx_packet_release(packet);
+   return (int)length;
+}
+
+int
+BamDNS_socketSend(BamDNS_Channel* c, const BamDNS_NetInfo* net,
+                  const void* data, int size, const BamDNS_Peer* peer)
+{
+   HttpSocketNxUdp* udp = HttpSocket_nxUdp(c->con.httpSocket.nxRef);
+   NX_UDP_SOCKET* socket = &udp->mdnsTransport->socket;
+   NX_IP* ip = socket->nx_udp_socket_ip_ptr;
+   NX_PACKET_POOL* pool = nxPacketPool ? nxPacketPool : ip->nx_ip_default_packet_pool;
+   NX_PACKET* packet;
+   NXD_ADDRESS dest;
+   UINT index = udp->mdnsInterface, status;
+   if(peer)
+      HttpSockaddr_toNx(&peer->addr, &dest);
+   else
+      mdnsNxGroup(&dest, c->ipv6);
+   TST_OK(tx_mutex_get(&ip->nx_ip_protection, TX_WAIT_FOREVER));
+#if BA_ENABLE_IPV6
+   if(c->ipv6)
+   {
+      HttpSockaddr local;
+      NXD_ADDRESS native;
+      memset(&local, 0, sizeof(local));
+      local.isIp6 = TRUE;
+      memcpy(local.addr, net->addr6, 16);
+      HttpSockaddr_toNx(&local, &native);
+      for(index = 0; index < NX_MAX_IPV6_ADDRESSES; ++index)
+         if(ip->nx_ipv6_address[index].nxd_ipv6_address_state == NX_IPV6_ADDR_STATE_VALID &&
+            ip->nx_ipv6_address[index].nxd_ipv6_address_attached == &ip->nx_ip_interface[udp->mdnsInterface] &&
+            !memcmp(ip->nx_ipv6_address[index].nxd_ipv6_address, native.nxd_ip_address.v6, 16))
+            break;
+      if(index == NX_MAX_IPV6_ADDRESSES)
+      {
+         TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+         return -1;
+      }
+   }
+#else
+   (void)net;
+#endif
+   status = nx_packet_allocate(pool, &packet, NX_UDP_PACKET, NX_NO_WAIT);
+   if(!status)
+   {
+      status = nx_packet_data_append(packet, (void*)data, (ULONG)size, pool, NX_NO_WAIT);
+      if(!status)
+         status = nxd_udp_socket_source_send(socket, packet, &dest, peer ? peer->port : 5353, index);
+      if(status)
+         nx_packet_release(packet);
+   }
+   TST_OK(tx_mutex_put(&ip->nx_ip_protection));
+   return !status ? size : status == NX_NO_PACKET ? -2 : -1;
+}
+#endif /* BA_ENABLE_MDNS */
 
 
 void

@@ -12,14 +12,13 @@ guide covers resources, startup, and hardware bindings:
 Build files
 -----------
 
-The source lists below use the GitHub package layout. If you have the full
-BAS SDK, see "Full SDK source layout" at the end of this guide before
-selecting files.
+The source lists below use the full BAS SDK layout. See "Full SDK source
+layout" at the end of this guide for the GitHub package equivalents.
 
 Compile exactly one library:
 
-  src/BWS.c    Native C/C++ applications
-  src/BAS.c    Applications using Lua or Xedge
+  amalgamation/BWSCore.c    Native C/C++ applications
+  amalgamation/BASCore.c    Applications using Lua or Xedge
 
 Add src/arch/FreeRTOS/ThreadLib.c and select one network port:
 
@@ -28,8 +27,8 @@ Add src/arch/FreeRTOS/ThreadLib.c and select one network port:
     Headers: inc and inc/arch/FreeRTOS
 
   lwIP
-    Source:  src/arch/NET/LwIP/SoDisp.c
-    Headers: inc, inc/arch/NET/LwIP, and inc/arch/FreeRTOS
+    Source:  src/arch/bsdSocket/LwIP/SoDisp.c
+    Headers: inc, inc/arch/bsd/LwIP, and inc/arch/FreeRTOS
 
 For lwIP, put its network headers before the FreeRTOS headers. Define
 BA_FREERTOS in the build and BA_LWIP when using lwIP. Add your application
@@ -41,7 +40,7 @@ Memory allocation
 The port defaults to the C runtime's malloc, realloc, and free. Lua makes
 frequent use of realloc, so choose an allocator suited to your workload.
 
-To use the included dlmalloc allocator, compile src/dlmalloc.c and set
+To use the included dlmalloc allocator, compile xrc/malloc/dlmalloc.c and set
 BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC throughout the build. Initialize its
 heap before any Barracuda allocation:
 
@@ -57,7 +56,7 @@ data, concurrent connections, TLS, and thread stacks when sizing memory.
 Optional FreeRTOS+FAT storage
 ----------------------------
 
-For writable files, add src/DiskIo/FreeRTOS-FAT/BaFile.c and initialize
+For writable files, add xrc/DiskIo/FreeRTOS-FAT/BaFile.c and initialize
 the filesystem before using it. Barracuda calls its native filesystem
 adapter DiskIo. It supports uses such as file uploads, WebDAV, and the
 Web File Manager.
@@ -183,7 +182,7 @@ in api.h:
 };
 
 Set the Boolean option BA_LWIP_USE_NETCONN_CALLBACK_DATA=1 consistently
-across the build. Its default is 0. See src/arch/NET/LwIP/SoDisp.c for the
+across the build. Its default is 0. See src/arch/bsdSocket/LwIP/SoDisp.c for the
 callback implementation.
 
 Full SDK source layout

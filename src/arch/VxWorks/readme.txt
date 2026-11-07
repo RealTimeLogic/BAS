@@ -10,19 +10,18 @@ for applications that need a standalone process:
 Build the library
 -----------------
 
-The source lists below use the GitHub package layout. If you have the full
-BAS SDK, see "Full SDK source layout" at the end of this guide before
-selecting files.
+The source lists below use the full BAS SDK layout. See "Full SDK source
+layout" at the end of this guide for the GitHub package equivalents.
 
-Paths here are relative to the GitHub package root. Compile one library:
+Paths here are relative to the BAS SDK root. Compile one library:
 
-  src/BAS.c    For Lua, Lua Server Pages (LSP), or Xedge
-  src/BWS.c    For native C/C++ web services without Lua
+  amalgamation/BASCore.c    For Lua, Lua Server Pages (LSP), or Xedge
+  amalgamation/BWSCore.c    For native C/C++ web services without Lua
 
 Add the VxWorks thread and socket ports:
 
   src/arch/VxWorks/ThreadLib.c
-  src/arch/NET/generic/SoDisp.c
+  src/arch/bsdSocket/generic/SoDisp.c
 
 Use these include directories, along with your VxWorks SDK headers:
 
@@ -56,7 +55,7 @@ Memory allocation
 
 The port defaults to the VxWorks C allocation routines. To use dlmalloc,
 set BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC consistently across the build,
-compile src/dlmalloc.c, and initialize its heap before calling BAS:
+compile xrc/malloc/dlmalloc.c, and initialize its heap before calling BAS:
 
   #include <dlmalloc.h>
 
@@ -84,7 +83,7 @@ network. Numeric IP addresses do not require a DNS lookup.
 Filesystem access
 -----------------
 
-Add src/DiskIo/posix/BaFile.c for the DiskIo filesystem adapter. Set its
+Add xrc/DiskIo/posix/BaFile.c for the DiskIo filesystem adapter. Set its
 root to an existing VxWorks file device and directory, such as
 "/file-device/www". The exact device name comes from your BSP and mounts.
 

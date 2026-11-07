@@ -117,7 +117,7 @@ Required libraries, drivers and BAS settings:
     Ethernet buffers must be DMA-accessible and cache-coherent;
     flash-programming code and constants must execute from RAM.
 
-  - BAS/Xedge: BAS with the ThreadX port, src/DiskIo/FileX/BaFile.c,
+  - BAS/Xedge: BAS with the ThreadX port, xrc/DiskIo/FileX/BaFile.c,
     the FileX DiskIo headers, Xedge's embedded resources and key material.
     Enable XEDGE_ENABLE_AUX=1, XEDGE_ENABLE_DISK_IO=1 and
     XEDGE_USE_DEFAULT_DISK_IO_INIT=0. Standalone Xedge also requires
@@ -277,11 +277,10 @@ A ready web interface alone does not prove that SNTP succeeded.
 Build the Barracuda library
 ---------------------------
 
-The source lists below use the GitHub package layout. If you have the full
-BAS SDK, see "Full SDK source layout" at the end of this guide before
-selecting files.
+The source lists below use the full BAS SDK layout. See "Full SDK source
+layout" at the end of this guide for the GitHub package equivalents.
 
-Compile src/BWS.c for a native C/C++ web application, or src/BAS.c for
+Compile amalgamation/BWSCore.c for a native C/C++ web application, or amalgamation/BASCore.c for
 Lua or Xedge. Add these ThreadX port files:
 
   src/arch/ThreadX/ThreadLib.c
@@ -298,10 +297,39 @@ NX_INCLUDE_USER_DEFINE_FILE consistently for NetX and its consumers.
 Likewise, use TX_INCLUDE_USER_DEFINE_FILE when configuring ThreadX through
 tx_user.h.
 
+Network stack and driver requirements
+-------------------------------------
+
+Choose a NetX Duo stack and network driver that preserve the complete BAS
+socket behavior required by your build. For full Xedge support, this covers
+TCP clients and servers in blocking and asynchronous modes, Lua callbacks
+and cosockets, TLS and WebSockets, and IPv4/IPv6 UDP, DNS and mDNS. It also
+includes partial writes, timeouts, close/cancellation and recovery when
+transmit queues or packet pools run out of space. A working web page or
+small echo exchange does not establish this compatibility. Features and
+known option limits are described in the reference sections below.
+
+BAS blocking TCP sends and large UDP datagrams can span several NX_PACKET
+buffers linked as a packet chain. Keep NX_DISABLE_PACKET_CHAIN undefined
+for this full configuration, with the required IP fragmentation/reassembly
+support. TCP segmentation and IP fragmentation are different from buffer
+chaining: one network frame can itself occupy several buffers.
+
+The supplied stack/driver combination must handle every packet chain that
+can reach the driver. A driver that accepts only single-buffer frames is
+compatible only if the stack guarantees that representation on all required
+send paths, including packet-pool pressure. Size each buffer for the frame,
+headers, alignment and DMA requirements. Increasing buffer counts alone
+does not prove that a chained packet can never reach the driver.
+
+Require compatibility with the unchanged BAS socket port and supplied
+drivers. Disabling chaining, omitting blocking sockets or reducing datagram
+coverage to accommodate a driver does not satisfy full socket support.
+
 Memory and BAS initialization
 -----------------------------
 
-The ThreadX port defaults to dlmalloc. Compile src/dlmalloc.c once,
+The ThreadX port defaults to dlmalloc. Compile xrc/malloc/dlmalloc.c once,
 alongside the amalgamated library, and initialize its heap before any
 Barracuda allocations. Size the heap, thread stacks, TCP windows and
 packet pools for your application, including concurrent TLS connections.
@@ -446,7 +474,7 @@ UDP and DNS
 Set BA_ENABLE_UDP=1 to enable Barracuda's native datagram adapter and the Lua
 UDP API. Its default is 0. TCP and UDP socket state use the Barracuda heap
 through baMalloc and baFree. NetX packets use the configured packet pools.
-Multicast membership and dontroute are not implemented. IPv4 broadcast is
+General Lua UDP multicast membership and dontroute are not implemented. IPv4 broadcast is
 available through the Lua socket broadcast option.
 
 For hostname resolution, define BA_NX_DNS, compile the NetX Duo DNS add-on
@@ -461,6 +489,33 @@ adapter; however, several services in Xedge require DNS.
 DNS does not require BA_ENABLE_UDP=1; it uses NetX's own UDP service. Numeric
 IP addresses do not require DNS. NetX retry settings determine the total
 lookup wait.
+
+mDNS and SharkCA local hostnames
+-------------------------------
+
+Set BA_ENABLE_MDNS=1 and BA_ENABLE_UDP=1 for the native NetX mDNS responder.
+Set BA_ENABLE_MDNS_LUA=1 to expose ba.createmdns to Lua and enable Xedge's
+SharkCA option. With IPv6 enabled, also define NX_ENABLE_IPV6_MULTICAST in
+nx_user.h and rebuild NetX and the application with the same configuration.
+Missing required settings fail at compile time. General port defaults remain
+off; the RT1020 Xedge example enables both mDNS macros.
+
+SoDisp.c supplies the native transport; do not compile BamDNS-Sock.c from
+the BSD socket port. SoDisp_nxInit enables IGMP. Automatic discovery selects
+one active physical interface from the registered NX_IP instances, prefers
+an IPv6 link-local address, and refreshes the address snapshot every five
+seconds. IPv4 and IPv6 channels share UDP port 5353 on each NX_IP instance.
+The driver must deliver receive processing in NetX's IP helper thread, as
+the RT1020 deferred driver does. Each channel has a bounded receive queue.
+Closing a responder releases its
+memberships and packets; the last channel releases the shared socket.
+
+The responder announces the selected host label under .local, with A and
+AAAA records when available. Choose a unique name; this minimal responder
+does not probe for name conflicts. SharkCA issues private certificates, so
+connecting computers must trust the intended portal's private root CA.
+Enabling the dialog is not certificate enrollment: configure your SharkCA
+portal and credentials before requesting a certificate.
 
 Selecting a network interface
 -----------------------------
@@ -477,7 +532,7 @@ Web resources and optional FileX storage
 Use ZipIo for embedded web resources. The BAS/BWS amalgamation includes
 zlib; do not compile another copy.
 
-For writable FileX storage, include src/DiskIo/FileX/BaFile.c and the matching
+For writable FileX storage, include xrc/DiskIo/FileX/BaFile.c and the matching
 DiskIo headers. After constructing DiskIo, attach an opened FX_MEDIA* with
 its setmedia property. For DiskIo* disk and FX_MEDIA* media:
 

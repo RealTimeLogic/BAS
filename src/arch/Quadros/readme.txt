@@ -8,14 +8,13 @@ App Server (BAS) for Lua and Lua Server Pages (LSP) applications.
 Build files
 -----------
 
-The source lists below use the GitHub package layout. If you have the full
-BAS SDK, see "Full SDK source layout" at the end of this guide before
-selecting files.
+The source lists below use the full BAS SDK layout. See "Full SDK source
+layout" at the end of this guide for the GitHub package equivalents.
 
-Compile src/BWS.c or src/BAS.c, plus these port files:
+Compile amalgamation/BWSCore.c or amalgamation/BASCore.c, plus these port files:
 
   src/arch/Quadros/ThreadLib.c
-  src/arch/NET/generic/SoDisp.c
+  src/arch/bsdSocket/generic/SoDisp.c
 
 Add inc and inc/arch/Quadros to the include path, together with the
 headers for your kernel and TCP/IP stack. Add your application or Xedge
@@ -32,7 +31,7 @@ The port defaults to malloc, realloc, and free from the C runtime. Lua
 uses realloc frequently, so check that your allocator handles this
 workload well.
 
-To use the supplied dlmalloc allocator, compile src/dlmalloc.c and set
+To use the supplied dlmalloc allocator, compile xrc/malloc/dlmalloc.c and set
 BA_ALLOCATOR=BA_ALLOCATOR_DLMALLOC throughout the build. Initialize it
 before any Barracuda allocation:
 
