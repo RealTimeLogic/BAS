@@ -32,15 +32,31 @@ For Lua/LSP application code to run on Mako or Xedge, browse the [LSP examples](
 
 ## AI-assisted development
 
-If you use an AI coding assistant, point it to [AGENTS.md](AGENTS.md). The repository includes a [native C/C++ skill](skills/build-bas-bws-native-apps/SKILL.md) and a [Mako/Xedge Lua skill](skills/build-xedge-mako-lua-apps/SKILL.md) with API guidance, examples, and build instructions. Native Lua bindings use both.
+If you use an AI coding assistant, point it to [AGENTS.md](AGENTS.md) or choose from the [skills index](skills/README.md):
+
+- [Native C/C++ applications](skills/build-bas-bws-native-apps/SKILL.md): servers, services, resources, and platform integration.
+- [Mako/Xedge Lua applications](skills/build-xedge-mako-lua-apps/SKILL.md): Lua/LSP application development, packaging, and deployment.
+- [Lua bindings in C/C++](skills/build-bas-lua-bindings/SKILL.md): native modules, hardware access, callbacks, and object ownership.
+
+## Xedge ports
+
+Xedge brings the same browser-based Lua and LSP development workflow to several
+embedded platforms. Explore the port that fits your hardware and RTOS.
+
+- [Xedge32](https://github.com/RealTimeLogic/Xedge32): Xedge for ESP32 devices.
+- [Xedge for ThreadX](https://github.com/RealTimeLogic/Xedge4ThreadX): Xedge integrated with ThreadX, NetX Duo, and FileX.
+- [Xedge for Zephyr](https://github.com/RealTimeLogic/Xedge4Zephyr): Xedge for the Zephyr RTOS.
+- [Xedge for FreeRTOS](https://realtimelogic.com/downloads/bas/rt1020/): Ready-to-run project for the NXP i.MX RT1020 evaluation board.
+- [Xedge for NuttX](https://nuttx.apache.org/docs/latest/applications/examples/xedge_demo/index.html): Example and build instructions in the Apache NuttX documentation.
+- [Generic Xedge port](https://github.com/RealTimeLogic/BAS/blob/main/doc/compiling.md#xedge-rtos): BAS build instructions for integrating Xedge with your own RTOS target.
 
 ## License
 
 BAS and BWS Amalgamated are available under three license options:
 
-- **[GPLv2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)**
-- **Free commercial license for small companies:** https://realtimelogic.com/startuplic/
-- **Standard royalty-free commercial license:** https://realtimelogic.com/contactus/license/
+1. **[GPLv2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)**
+2. **Free commercial license for small companies:** https://realtimelogic.com/startuplic/
+3. **Standard royalty-free commercial license:** https://realtimelogic.com/contactus/license/
 
 Commercial licensing is available for users who cannot use BAS or BWS under GPLv2.
 

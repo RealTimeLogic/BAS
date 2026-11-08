@@ -41,7 +41,7 @@ Mako is often the quickest development host, but test the final Xedge/Xedge32 pa
 
 The component list, source URLs, and refresh metadata live in [references/upstream-sources.json](references/upstream-sources.json) and [references/upstream/manifest.json](references/upstream/manifest.json). Load only what the task needs:
 
-| Task | Upstream source to consult |
+| Task | Guidance or API source to consult |
 | --- | --- |
 | Any BAS Lua/LSP/Mako/Xedge API | Search relevant definitions in [basapi.md](references/upstream/basapi.md) |
 | Xedge32 or ESP32 hardware | [esp32api.md](references/upstream/esp32api.md) |
@@ -50,16 +50,63 @@ The component list, source URLs, and refresh metadata live in [references/upstre
 | Authentication or authorization | [Authentication-Authorization-Skill.md](references/upstream/Authentication-Authorization-Skill.md) |
 | Public, administrative, upload, file, or device-control security | [OWASP-General-Security-Skill.md](references/upstream/OWASP-General-Security-Skill.md) and the authentication skill when identity is involved |
 | SMQ topics, presence, or device messaging | [SMQ-Skill.md](references/upstream/SMQ-Skill.md) |
-| SQLite schema or writes | [SQLite-Skill.md](references/upstream/SQLite-Skill.md) |
-| Lua/C/C++ bindings | [Lua-Binding-Skill.md](references/upstream/Lua-Binding-Skill.md), plus the repository's native BAS/BWS skill. For GPIO or peripheral bindings, also read [hardware-bindings.md](references/hardware-bindings.md). |
+| SQLite schema or writes | [SQLite-Skill.md](references/upstream/SQLite-Skill.md). When an HTTP response depends on a writer-thread callback, also read [deferred-responses.md](references/deferred-responses.md). |
+| Lua/C/C++ bindings | [BAS Lua binding skill](../build-bas-lua-bindings/SKILL.md), including the shared binding and hardware guides and native build guidance |
 | Installing or operating Mako Server | [Deploy-Mako-Server-Skill.md](references/upstream/Deploy-Mako-Server-Skill.md) |
 | LSP, htmx, fetch, WebSocket RPC, or SMQ browser UI | [Build-LSP-Web-Interfaces-Skill.md](references/upstream/Build-LSP-Web-Interfaces-Skill.md) |
 
-The vendored upstream bundle is a dated snapshot. For this checkout's accepted configuration-macro migration, use the current `inc/BaConfig.h`, `inc/balua.h`, and host configuration headers. In older snippets, replace `GET_BAMUTEX;` with `BA_LUA_DECLARE_MUTEX(m, L);`, `USE_SYSLOG=1` with `BA_ENABLE_SYSLOG=1`, and defined `NO_ZLIB` with `BA_ENABLE_ZLIB=0`. The old `AUX_LUA_BINDINGS` / `myCustomBindings` pair is now the optional function-name setting `MAKO_OPEN_BINDINGS`; declare the selected function with C linkage where needed. Keep the vendored snapshot and its integrity manifest together.
+## Target Headers and Snapshot Compatibility
+
+The vendored upstream bundle is a dated snapshot. For this checkout's configuration macros, use the current `inc/BaConfig.h`, `inc/balua.h`, and host configuration headers. In older snippets, replace `GET_BAMUTEX;` with `BA_LUA_DECLARE_MUTEX(m, L);`, `USE_SYSLOG=1` with `BA_ENABLE_SYSLOG=1`, and defined `NO_ZLIB` with `BA_ENABLE_ZLIB=0`. The old `AUX_LUA_BINDINGS` / `myCustomBindings` pair is now the optional function-name setting `MAKO_OPEN_BINDINGS`; declare the selected function with C linkage where needed. For another BAS version, check that version's headers before translating macros. Keep the vendored snapshot and its integrity manifest together.
 
 Official API references control names, signatures, and runtime behavior. If an example or skill conflicts with the applicable API source, report the conflict and follow the runtime-correct API.
 
 Paths such as `inc/balua.h` inside an upstream component are relative to the target BAS checkout, not `references/upstream/`. The consolidated API bundles may also retain relative links from their original generated HTML documentation; search the downloaded Markdown bundle for the referenced symbol or section when such a navigation link has no vendored target.
+
+## Keep the Implementation Small
+
+- Implement the smallest design that satisfies the requested behavior,
+  correctness, security, lifecycle, and established compatibility contracts.
+- Leave out optional features, speculative hooks, compatibility aliases,
+  configuration switches, fallbacks, dependencies, wrappers, and abstraction
+  layers unless the user or an existing contract requires them.
+- Prefer one direct module and one narrow interface. Split code when ownership,
+  reuse, testability, or a security boundary makes the separation useful.
+- Use the runtime's existing facilities before adding a framework, protocol, or
+  helper. Do not add a generalized mechanism for one known call site.
+- Remove unused branches, fields, functions, imports, and duplicated validation
+  introduced by the change. Keep required cleanup and error handling.
+- Preserve an established public or wire contract unless the user authorizes
+  its replacement. Compatibility is required only for contracts still in scope.
+
+When documenting the interface, give public arguments, configuration fields,
+table members, callback values, return values, and event fields explicit types.
+State optional status, defaults, accepted values or ranges, units, and ownership
+where relevant. Include useful comments in examples explaining prerequisites,
+lifecycle ownership, or non-obvious choices.
+
+For native code, follow the native skill's
+[source formatting rules](../build-bas-bws-native-apps/SKILL.md#preserve-bas-source-formatting-and-copyright).
+Small implementations still use readable control blocks and preserve deliberate
+compact argument parsing.
+
+## Distinguish API Misuse From Operational Failure
+
+For BAS Lua APIs and Lua/C bindings, raise errors for incorrect API usage, such
+as invalid argument types, unsupported values, or invalid call order. Report
+operational failures through the API's documented error returns, commonly
+`nil` followed by an error string or code and any additional details. This
+includes allocation failures detected by native code, I/O failures, timeouts,
+and invalid data received from external sources. Do not turn these failures
+into exceptions or successful empty results in a wrapper.
+
+Classify the failure by its source: an invalid URL supplied by the programmer
+is an API usage error; an invalid redirect URL received from a server is an
+operational error. Document and test both paths. For existing APIs, preserve
+their documented return shapes and inspect callers and compatibility
+requirements before changing an established contract. Lua VM errors, including
+allocation errors raised by the Lua C API, still require the runtime's protected
+call and cleanup mechanisms.
 
 ## Preserve the BAS Application Model
 
@@ -107,11 +154,27 @@ Do not introduce JSON, WebSocket, or SMQ merely to avoid a page reload. Keep ren
 
 Define method/path or topic, input shape, size limits, authorization, output, errors, timeout, retry, idempotency, and side effects before implementation. Treat every client, file, database, network, and device input as untrusted and encode output for its actual context.
 
-Use `request:rawrdr()` for one streamable request payload and multipart handling only when the protocol needs multipart fields/files. Do not use GET for state changes. Keep request handlers bounded and use deferred response handling only under its documented ownership/threading contract.
+Use `request:rawrdr()` for one streamable request payload and multipart handling only when the protocol needs multipart fields/files. Do not use GET for state changes. Keep request handlers bounded.
+
+When an LSP page or request handler queues asynchronous work and its HTTP
+result depends on that work completing, use `response:deferred()` in the
+original request context and complete the deferred response from a callback
+running in a BAS Lua thread. Pass only the deferred object and required
+application-owned state. Do not poll a flag, spin, or call `ba.sleep()` to keep
+the request waiting for the callback. Read
+[deferred-responses.md](references/deferred-responses.md) for method order,
+ownership, queue rejection, and disconnect handling.
 
 For SQLite, serialize schema changes and writes through one dedicated BAS writer thread per database. Let it own one persistent write connection, keep transactions short, and never use a request's normal response object from that writer.
 
-For native bindings, use target headers, define ownership/GC/callback references/blocking/unload order, and never call the Lua C API while the BAS dispatcher mutex is released. Route C/C++ implementation details through `../build-bas-bws-native-apps/SKILL.md`.
+## Native Lua Bindings
+
+Use the [BAS Lua binding skill](../build-bas-lua-bindings/SKILL.md) for target
+headers, ownership, garbage collection, callbacks, blocking work, and unload
+order. Its [stack guidance](../build-bas-lua-bindings/SKILL.md#keep-lua-stack-use-bounded)
+covers table iteration, helper stack effects, oversized-input checks, and
+`LUA_USE_APICHECK`. Never call the Lua C API while the BAS dispatcher mutex is
+released.
 
 ## Package and Verify
 

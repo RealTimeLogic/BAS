@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build BAS Lua Bindings"
+  short_description: "Build C/C++ Lua bindings for BAS, Mako, and Xedge"
+  default_prompt: "Use $build-bas-lua-bindings to create or review a native Lua binding for my BAS, Mako, or Xedge runtime."

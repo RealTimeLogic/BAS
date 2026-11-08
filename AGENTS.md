@@ -4,6 +4,8 @@ This repository contains the public amalgamated Barracuda App Server (BAS) and B
 
 ## Start Here
 
+See the [skills index](skills/README.md) for the available entry points and shared-reference layout.
+
 For native C or C++ BAS/BWS application work, first read:
 
 - [skills/build-bas-bws-native-apps/SKILL.md](skills/build-bas-bws-native-apps/SKILL.md)
@@ -22,9 +24,13 @@ For Lua and Lua Server Pages applications targeting Mako Server, Xedge, or Xedge
 
 - [skills/build-xedge-mako-lua-apps/SKILL.md](skills/build-xedge-mako-lua-apps/SKILL.md)
 
-Use that skill for application lifecycle, VFS routing, LSP/browser interfaces, authentication, SMQ, SQLite, Xedge packages, Mako deployment, and Lua/native bindings. It vendors the applicable official API and specialist skill components and explains how to refresh them.
+Use that skill for application lifecycle, VFS routing, LSP/browser interfaces, authentication, SMQ, SQLite, Xedge packages, and Mako deployment. It vendors the applicable official API and specialist skill components and explains how to refresh them.
 
-For a native Lua/C/C++ binding, use both local skills: the Lua skill controls the Lua application contract and the native C/C++ skill controls the BAS ABI, ownership, and build integration.
+For native Lua/C/C++ bindings, first read:
+
+- [skills/build-bas-lua-bindings/SKILL.md](skills/build-bas-lua-bindings/SKILL.md)
+
+Use it for native modules, userdata ownership, native-to-Lua callbacks, peripheral bindings, and BAS directory or I/O objects exposed to Lua. It routes to the shared binding guides and the native C/C++ skill for build integration. Also use the Lua application skill when changing application startup, routing, packaging, or unload behavior.
 
 ## Choose an Example
 
@@ -38,7 +44,7 @@ Select an example before copying code or build settings. Read its README and the
 | [MakoServer](examples/MakoServer/) | Building or customizing the native standalone Mako executable, platform startup, Windows service support, native extensions, or Mako resource packaging. See [Mako Server compilation](doc/compiling.md#mako-server-hlos). | This is the native Mako host implementation, not the starting point for an ordinary Lua/LSP application running on Mako. |
 | [xedge](examples/xedge/) | Porting or embedding the native Xedge runtime into firmware/RTOS, or integrating storage, hardware hooks, embedded resources, and native extensions. See [Xedge compilation](doc/compiling.md#xedge-rtos). | This is the native Xedge host. Use the Lua skill for `.preload`, `.lua`, `.config`, `.xlua`, and LSP application work. |
 
-Use `build-bas-bws-native-apps` for the native examples. Use `build-xedge-mako-lua-apps` for Lua/LSP applications running on Mako, Xedge, or Xedge32. Use both when changing a native Mako/Xedge host and its Lua integration boundary.
+Use `build-bas-bws-native-apps` for the native examples. Use `build-xedge-mako-lua-apps` for Lua/LSP applications running on Mako, Xedge, or Xedge32. Start with `build-bas-lua-bindings` when changing their Lua/native integration boundary.
 
 `examples/HostInit` is shared HLOS startup scaffolding, not a standalone application choice. Use it only when the selected host example or build documentation calls for it, and replace it with target-specific startup for RTOS or firmware integrations.
 

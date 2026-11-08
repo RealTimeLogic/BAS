@@ -99,22 +99,16 @@ These checks never execute target code, so they also work when cross-compiling.
 Unsupported targets or failed automatic checks retain the C implementation.
 At runtime, feature checks select the cipher paths supported by the CPU and OS.
 
-Automatic selection enables AES-GCM/GHASH, ChaCha20, Poly1305 and the dedicated
-X25519 hook. x64 also enables VAES when the assembler supports it. ARM64 enables
-the SHA-256, SHA-384/SHA-512, BigInt, P-256 and P-384 hooks for configured algorithms.
-Common C keeps the compiler's baseline CPU target.
+Automatic selection enables AES, AES-GCM/GHASH, SHA-256, SHA-384/SHA-512,
+ChaCha20, Poly1305 and the dedicated X25519 hook. x64 also enables VAES when
+the assembler supports it. ARM64 enables the BigInt, P-256 and P-384 hooks for
+configured algorithms. Common C keeps the compiler's baseline CPU target.
 
-Native AES assembly requires the integer options `SHARKSSL_AES_SOFTWARE_CT=0`
-and `SHARKSSL_AES_GCM_SOFTWARE_CT=0`. The selector supplies these values only
-when enabling AES assembly and only if you have not defined them. An explicit
-value of `1` for either option retains constant-time (CT) software AES and disables automatic
-AES assembly. Explicit per-algorithm settings are preserved. PSA consumers
-leave acceleration to their separate provider.
-
-On x86/x64,
-CPUs without AES-NI use table-based C AES/GHASH; software AES outside GCM also
-uses the non-CT implementation in this profile. To retain the software CT
-defaults, use `SHARKSSL_ASM=off` and remove manual assembly and CT overrides.
+Runtime CPU checks retain the constant-time C fallback when the required
+instructions are unavailable. The old `SHARKSSL_AES_SOFTWARE_CT` and
+`SHARKSSL_AES_GCM_SOFTWARE_CT` options have been removed; delete them from custom
+build flags. Explicit per-algorithm assembly settings are preserved. PSA
+consumers leave acceleration to their separate provider.
 
 From the repository root, inspect the selection before building:
 
@@ -160,8 +154,18 @@ systems must add their backend files and definitions separately.
 
 Open [mako.sln](../examples/MakoServer/VcMake/mako.sln) and select Debug or Release,
 with Win32 or x64. The project uses the installed Visual Studio C++ toolset and
-Windows 10/11 SDK. All four configurations enable `BA_ENABLE_MDNS=1` and `BA_ENABLE_MDNS_LUA=1` and build SharkSSL
-with C implementations only; no assembler setup is needed.
+Windows 10/11 SDK. All four configurations enable `BA_ENABLE_MDNS=1` and
+`BA_ENABLE_MDNS_LUA=1`, plus SharkSSL AES and SHA-256 assembly
+(`SHARKSSL_OPTIMIZED_AES_ASM=1` and `SHARKSSL_OPTIMIZED_SHA256_ASM=1`). x64 also
+enables SHA-384/SHA-512 assembly (`SHARKSSL_OPTIMIZED_SHA384_ASM=1`); Win32 uses
+C for SHA-384/SHA-512 (`SHARKSSL_OPTIMIZED_SHA384_ASM=0`).
+
+The project assembles the packaged files in `src/crypto/X86_MSVC` or
+`src/crypto/X64_MSVC` using the MASM tools included with the Visual Studio C++
+toolset. No separate assembler setup is needed. CPU checks select AES-NI,
+SHA extensions, or BMI2 at runtime and retain the constant-time C fallback
+when those instructions are unavailable. Common C retains the compiler's
+baseline CPU target. Other SharkSSL algorithms use their C implementations.
 
 Executables are written to
 `examples/MakoServer/obj/VcMake/<platform>/<configuration>/`, with separate

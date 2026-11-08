@@ -127,7 +127,7 @@ Set status and content type before writing. Do not retain `HttpCommand`, `HttpRe
 
 - REST, JSON, request bodies, response encoding, or WebSockets: read [references/http-json-websocket.md](references/http-json-websocket.md).
 - Authentication, authorization, TLS, uploads, asynchronous responses, WebDAV, custom `IoIntf`, outbound clients, or socket takeover: read [references/security-io-async.md](references/security-io-async.md).
-- Lua/C bindings: use `src/BAS.c`, then read [Lua binding guidance](../build-xedge-mako-lua-apps/references/upstream/Lua-Binding-Skill.md) and, for peripherals, [hardware binding guidance](../build-xedge-mako-lua-apps/references/hardware-bindings.md). Never call the Lua C API while the BAS dispatcher mutex is released.
+- Lua/C/C++ bindings: use `src/BAS.c` and the [BAS Lua binding skill](../build-bas-lua-bindings/SKILL.md), which routes to the shared binding and hardware guides. Never call the Lua C API while the BAS dispatcher mutex is released.
 
 ## Enforce Ownership and Concurrency
 
