@@ -33,11 +33,15 @@
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
     <BasRoot>$(ProjectDir)..\..\..\</BasRoot>
+    <SharkSslNativeDefines Condition="'$(SharkSslAsm)'!='off' And '$(SHARKSSL_PSA_CONSUMER)'!='1'">SHARKSSL_OPTIMIZED_AES_ASM=1;SHARKSSL_OPTIMIZED_SHA256_ASM=1;</SharkSslNativeDefines>
     <!-- SQLite is optional in the public source distribution. -->
     <UseSqlite Condition="'$(UseSqlite)' == '' and Exists('$(BasRoot)src\sqlite3.c') and Exists('$(BasRoot)src\sqlite3.h')">true</UseSqlite>
     <UseSqlite Condition="'$(UseSqlite)' == ''">false</UseSqlite>
@@ -55,7 +59,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(BasRoot)inc;$(BasRoot)inc\arch\Windows;$(BasRoot)inc\arch\NET\Windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>BA_ENABLE_MDNS=1;BA_ENABLE_MDNS_LUA=1;BA_FILE_OFFSET_BITS=64;MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0;BA_BYTE_ORDER=BA_BYTE_ORDER_LITTLE_ENDIAN;BA_ENABLE_LUA_DEBUGGER=1;MAKO;MAKO_ENABLE_LUA_MODULE_INTERFACE=1;$(MakoSqlDefine);_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;WIN32;_CONSOLE;SHARKSSL_OPTIMIZED_BIGINT_ASM=0;SHARKSSL_OPTIMIZED_CHACHA_ASM=0;SHARKSSL_OPTIMIZED_POLY1305_ASM=0;SHARKSSL_OPTIMIZED_GHASH_ASM=0;SHARKSSL_OPTIMIZED_GCM_ASM=0;SHARKSSL_OPTIMIZED_GCM_VAES_ASM=0;SHARKSSL_X25519_ASM=0;SHARKSSL_X25519_ASM_HOOK=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BA_ENABLE_MDNS=1;BA_ENABLE_MDNS_LUA=1;BA_FILE_OFFSET_BITS=64;MAKO_ENABLE_EMBEDDED_ZIP_FALLBACK=0;BA_BYTE_ORDER=BA_BYTE_ORDER_LITTLE_ENDIAN;BA_ENABLE_LUA_DEBUGGER=1;MAKO;MAKO_ENABLE_LUA_MODULE_INTERFACE=1;$(MakoSqlDefine);_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN=1;WIN32;_CONSOLE;$(SharkSslNativeDefines)SHARKSSL_OPTIMIZED_CHACHA_ASM=0;SHARKSSL_OPTIMIZED_POLY1305_ASM=0;SHARKSSL_OPTIMIZED_GHASH_ASM=0;SHARKSSL_OPTIMIZED_GCM_ASM=0;SHARKSSL_OPTIMIZED_GCM_VAES_ASM=0;SHARKSSL_X25519_ASM=0;SHARKSSL_X25519_ASM_HOOK=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level3</WarningLevel>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -91,7 +95,31 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
-  <!-- This project deliberately compiles C only: no MASM imports or kernels. -->
+  <ItemDefinitionGroup Condition="'$(Platform)' == 'Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>SHARKSSL_OPTIMIZED_SHA384_ASM=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <MASM>
+      <UseSafeExceptionHandlers>true</UseSafeExceptionHandlers>
+    </MASM>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Platform)' == 'x64' And '$(SharkSslAsm)'!='off' And '$(SHARKSSL_PSA_CONSUMER)'!='1'">
+    <ClCompile>
+      <PreprocessorDefinitions>SHARKSSL_ECC_P256_ASM=1;SHARKSSL_ECC_P384_ASM=1;SHARKSSL_OPTIMIZED_BIGINT_ASM=1;SHARKSSL_OPTIMIZED_SHA384_ASM=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup Condition="'$(Platform)' == 'Win32' And '$(SharkSslAsm)'!='off' And '$(SHARKSSL_PSA_CONSUMER)'!='1'">
+    <MASM Include="..\..\..\src\crypto\X86_MSVC\SharkSslAes_X86.asm" />
+    <MASM Include="..\..\..\src\crypto\X86_MSVC\SharkSslSha256_X86.asm" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Platform)' == 'x64' And '$(SharkSslAsm)'!='off' And '$(SHARKSSL_PSA_CONSUMER)'!='1'">
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslAes_X64.asm" />
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslSha256_X64.asm" />
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslSha512_X64.asm" />
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslP256_X64.asm" />
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslP384_X64.asm" />
+    <MASM Include="..\..\..\src\crypto\X64_MSVC\SharkSslBigInt_X64.asm" />
+  </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\BAS.c" />
     <ClCompile Include="..\..\..\src\arch\NET\generic\SoDisp.c" />
@@ -108,6 +136,9 @@
     <ClCompile Include="..\..\..\src\sqlite3.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
   <Target Name="ValidateMakoOptions" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(UseSqlite)' != 'true' and '$(UseSqlite)' != 'false'" Text="UseSqlite must be true or false." />
     <Error Condition="'$(UseSqlite)' == 'true' and (!Exists('$(BasRoot)src\sqlite3.c') or !Exists('$(BasRoot)src\sqlite3.h'))" Text="UseSqlite=true requires src\sqlite3.c and src\sqlite3.h. Add the SQLite amalgamation or set UseSqlite=false." />

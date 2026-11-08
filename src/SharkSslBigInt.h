@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslBigInt.h 6757 2026-11-05 20:10:17Z gianluca $
+ *   $Id: SharkSslBigInt.h 6778 2026-11-06 23:13:54Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -224,6 +224,9 @@ int     SharkSslBigInt_expmod(const SharkSslBigInt *base, SharkSslBigInt *exp,
                               const SharkSslBigInt *mod,  SharkSslBigInt *res,
                               U8 window);
 
+int     SharkSslBigInt_expmodPublicCT(const SharkSslBigInt *base, const SharkSslBigInt *exp,
+                                      const SharkSslBigInt *mod, SharkSslBigInt *res);
+
 /* RSA private key and DHE operations without data-dependent branches or addresses */
 #define SHARKSSL_RSA_PRIVATE_CT (SHARKSSL_ENABLE_RSA &&                                       \
         (SHARKSSL_ENABLE_DHE_RSA || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA_API ||    \
@@ -237,7 +240,7 @@ void    SharkSslBigInt_submodCT(SharkSslBigInt *o1, const SharkSslBigInt *o2, co
 int     SharkSslBigInt_invmodOddCT(SharkSslBigInt *o, const SharkSslBigInt *mod);
 #endif
 
-#if (SHARKSSL_RSA_PRIVATE_CT || SHARKSSL_ECDSA_ORDER_CT || (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSAKEY_CREATE))
+#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ECDSA_ORDER_CT)
 void    SharkSslBigInt_addmodCT(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkSslBigInt *mod);
 int     SharkSslBigInt_montR2CT(const SharkSslBigInt *mod, SharkSslBigInt *r2);
 

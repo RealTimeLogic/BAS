@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslGcm_ARM64.S 6739 2026-11-04 08:10:12Z gianluca $
+ *   $Id: SharkSslGcm_ARM64.S 6794 2026-11-07 21:54:22Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -443,111 +443,5 @@ sharkssl_arm64_gcm_crypto:
 .cfi_endproc
 .size sharkssl_arm64_gcm_crypto, .-sharkssl_arm64_gcm_crypto
 
-/* AES-GCM without AES instructions, one block at a time.
- * SharkSslAesGcmCtx_encryptBlock is the bitsliced AES in this configuration, so
- * the path keeps the constant-time properties of the hardware one. */
-.p2align 4
-.global sharkssl_arm64_gcm_neon
-.hidden sharkssl_arm64_gcm_neon
-.type sharkssl_arm64_gcm_neon, %function
-sharkssl_arm64_gcm_neon:
-.cfi_startproc
-    mov w7, #2
-    b .Lgcm_enter
-.cfi_endproc
-.size sharkssl_arm64_gcm_neon, .-sharkssl_arm64_gcm_neon
-.p2align 4
-.global sharkssl_arm64_gcm_scalar
-.hidden sharkssl_arm64_gcm_scalar
-.type sharkssl_arm64_gcm_scalar, %function
-sharkssl_arm64_gcm_scalar:
-.cfi_startproc
-    mov w7, #0
-.cfi_endproc
-.size sharkssl_arm64_gcm_scalar, .-sharkssl_arm64_gcm_scalar
-
-.type .Lgcm_enter, %function
-.Lgcm_enter:
-.cfi_startproc
-    cbz w5, .Lgcm_empty
-    stp x29, x30, [sp, #-112]!
-.cfi_def_cfa_offset 112
-.cfi_offset 29, -112
-.cfi_offset 30, -104
-    mov x29, sp
-    stp x19, x20, [sp, #16]
-.cfi_offset 19, -96
-.cfi_offset 20, -88
-    stp x21, x22, [sp, #32]
-.cfi_offset 21, -80
-.cfi_offset 22, -72
-    stp x23, x24, [sp, #48]
-.cfi_offset 23, -64
-.cfi_offset 24, -56
-    stp x25, x26, [sp, #64]
-.cfi_offset 25, -48
-.cfi_offset 26, -40
-    mov x19, x0
-    mov x20, x1
-    mov x21, x2
-    mov x22, x3
-    mov x23, x4
-    mov w24, w5
-    mov w25, w6
-    mov w26, w7
-.Lgcm_loop:
-    ldr w9, [x20, #12]
-    rev w9, w9
-    add w9, w9, #1
-    rev w9, w9
-    str w9, [x20, #12]
-    mov x0, x19
-    mov x1, x20
-    add x2, sp, #80
-    bl SharkSslAesGcmCtx_encryptBlock
-    ldp x9, x10, [x22], #16
-    ldp x11, x12, [sp, #80]
-    eor x11, x11, x9
-    eor x12, x12, x10
-    cmp w25, #1
-    csel x9, x11, x9, eq
-    csel x10, x12, x10, eq
-    stp x11, x12, [x23], #16
-    ldp x11, x12, [x21]
-    eor x11, x11, x9
-    eor x12, x12, x10
-    stp x11, x12, [x21]
-    add x0, x19, #SHARKSSL_GCM_M0
-    mov x1, x21
-    cbz w26, .Lgcm_hash_scalar
-    bl sharkssl_arm64_gmult_neon_core
-    b .Lgcm_hashed
-.Lgcm_hash_scalar:
-    bl sharkssl_arm64_gmult_scalar_core
-.Lgcm_hashed:
-    subs w24, w24, #16
-    b.ne .Lgcm_loop
-    stp xzr, xzr, [sp, #80]
-    bl sharkssl_arm64_ghash_clear
-    ldp x19, x20, [sp, #16]
-.cfi_restore 19
-.cfi_restore 20
-    ldp x21, x22, [sp, #32]
-.cfi_restore 21
-.cfi_restore 22
-    ldp x23, x24, [sp, #48]
-.cfi_restore 23
-.cfi_restore 24
-    ldp x25, x26, [sp, #64]
-.cfi_restore 25
-.cfi_restore 26
-    ldp x29, x30, [sp], #112
-.cfi_restore 29
-.cfi_restore 30
-.cfi_def_cfa_offset 0
-.Lgcm_empty:
-    ret
-.cfi_endproc
-.size .Lgcm_enter, .-.Lgcm_enter
 #endif
 .section .note.GNU-stack,"",%progbits

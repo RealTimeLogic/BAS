@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: BaConfig.h 6773 2026-11-06 17:36:44Z wini $
+ *   $Id: BaConfig.h 6807 2026-11-08 14:20:27Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2023 - 2026
  *
@@ -809,15 +809,6 @@
 #define SHARKSSL_PSA_CONSUMER_STANDALONE_AES 1
 #elif BA_ENABLE_TPM && (SHARKSSL_PSA_CONSUMER_STANDALONE_AES != 1)
 #error BA_ENABLE_TPM requires SHARKSSL_PSA_CONSUMER_STANDALONE_AES=1 with PSA
-#endif
-/* These native AES implementations do not apply to provider-backed AES. */
-#if SHARKSSL_PSA_CONSUMER_STANDALONE_AES
-#ifndef SHARKSSL_AES_SOFTWARE_CT
-#define SHARKSSL_AES_SOFTWARE_CT 0
-#endif
-#ifndef SHARKSSL_AES_GCM_SOFTWARE_CT
-#define SHARKSSL_AES_GCM_SOFTWARE_CT 0
-#endif
 #endif
 #ifndef SHARKSSL_ENABLE_RSA_API
 #define SHARKSSL_ENABLE_RSA_API 0

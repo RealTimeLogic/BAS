@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslEndian.h 6697 2026-10-31 12:03:41Z gianluca $
+ *   $Id: SharkSslEndian.h 6786 2026-11-07 16:55:42Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -70,20 +70,10 @@ static inline asm U32 __declspec(register_abi) sharkssl_byteswap (U32 d) { byter
 #include <intrinsics.h>
 #define SHARKSSL_BYTESWAP_U32  __REV
 #define __sharkssl_packed      __packed  /* force 1-byte alignment */
-   #if ((__CORE__==__ARM7M__) || (__CORE__==__ARM7EM__))  /* ARM Cortex-M3/M4 */
-   #ifndef SHARKSSL_AES_DISABLE_SBOX
-   #define SHARKSSL_AES_DISABLE_SBOX 1
-   #endif
-   #endif
 
 #elif (__CC_ARM && __TARGET_PROFILE_M)   /* ARM Cortex-M, Keil MDK */
 #define SHARKSSL_BYTESWAP_U32  __rev
 #define __sharkssl_packed      __packed  /* force 1-byte alignment */
-   #if ((__TARGET_ARCH_ARM == 0) && (__TARGET_ARCH_THUMB == 4))  /* v7-M, v7E-M */
-   #ifndef SHARKSSL_AES_DISABLE_SBOX
-   #define SHARKSSL_AES_DISABLE_SBOX 1
-   #endif
-   #endif
 
 #elif (__ICCRX__)  /* Renesas RX */
 static volatile inline U32 sharkssl_byteswap(U32 value) { asm ("REVL %0, %0" : "+r"(value)); return value; }

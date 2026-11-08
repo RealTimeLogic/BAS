@@ -11,7 +11,7 @@
  ****************************************************************************
  *			      HEADER
  *
- *   $Id: HttpCfg.h 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: HttpCfg.h 6807 2026-11-08 14:20:27Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
@@ -130,6 +130,7 @@ void HttpSockaddr_gethostbynameF(
 
 /* Include the default HttpSocket functions */
 #define HttpSocket_send HttpSocket_sendZephyr
+#define HttpSocket_waitRead HttpSocket_waitReadZephyr
 #include <gBsdDspO.h>
 #include <gBsdSock.h>
 
@@ -140,6 +141,8 @@ extern "C" {
 void HttpSocket_sendZephyr(HttpSocket* o, struct ThreadMutex* m,
                           BaBool* isTerminated, const void* data,
                           int len, int* retLen);
+/* Wait up to timeout milliseconds: zero means readable, -1 means timeout/error. */
+int HttpSocket_waitReadZephyr(HttpSocket* o, int timeout);
 #ifdef __cplusplus
 }
 #endif

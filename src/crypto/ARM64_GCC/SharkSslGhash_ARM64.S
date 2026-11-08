@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslGhash_ARM64.S 6739 2026-11-04 08:10:12Z gianluca $
+ *   $Id: SharkSslGhash_ARM64.S 6794 2026-11-07 21:54:22Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -193,49 +193,6 @@ sharkssl_arm64_gmult_neon_core:
 .cfi_endproc
 .size sharkssl_arm64_gmult_neon_core, .-sharkssl_arm64_gmult_neon_core
 
-/* Fixed 128 iterations; no secret-indexed table accesses or branches.
- * Used when Linux does not expose ASIMD.
- */
-.p2align 4
-.global sharkssl_arm64_gmult_scalar_core
-.hidden sharkssl_arm64_gmult_scalar_core
-.type sharkssl_arm64_gmult_scalar_core, %function
-sharkssl_arm64_gmult_scalar_core:
-.cfi_startproc
-
-    ldp x2, x3, [x1]
-    rev x2, x2
-    rev x3, x3
-    ldp w4, w5, [x0, #128]
-    orr x4, x5, x4, lsl #32
-    ldp w6, w7, [x0, #136]
-    orr x6, x7, x6, lsl #32
-    mov x8, #0
-    mov x9, #0
-    mov x12, #0xe100000000000000
-    mov w13, #128
-.Lghash_bits:
-    asr x10, x2, #63
-    and x11, x4, x10
-    eor x8, x8, x11
-    and x11, x6, x10
-    eor x9, x9, x11
-    and x10, x6, #1
-    neg x10, x10
-    and x10, x10, x12
-    extr x6, x4, x6, #1
-    lsr x4, x4, #1
-    eor x4, x4, x10
-    extr x2, x2, x3, #63
-    lsl x3, x3, #1
-    subs w13, w13, #1
-    b.ne .Lghash_bits
-    rev x8, x8
-    rev x9, x9
-    stp x8, x9, [x1]
-    ret
-.cfi_endproc
-.size sharkssl_arm64_gmult_scalar_core, .-sharkssl_arm64_gmult_scalar_core
 .p2align 4
 .global sharkssl_arm64_ghash_clear
 .hidden sharkssl_arm64_ghash_clear
@@ -293,27 +250,6 @@ sharkssl_arm64_gmult_neon:
     ret
 .cfi_endproc
 .size sharkssl_arm64_gmult_neon, .-sharkssl_arm64_gmult_neon
-
-.p2align 4
-.global sharkssl_arm64_gmult_scalar
-.hidden sharkssl_arm64_gmult_scalar
-.type sharkssl_arm64_gmult_scalar, %function
-sharkssl_arm64_gmult_scalar:
-.cfi_startproc
-    stp x29, x30, [sp, #-16]!
-.cfi_def_cfa_offset 16
-.cfi_offset 29, -16
-.cfi_offset 30, -8
-    mov x29, sp
-    bl sharkssl_arm64_gmult_scalar_core
-    bl sharkssl_arm64_ghash_clear
-    ldp x29, x30, [sp], #16
-.cfi_restore 29
-.cfi_restore 30
-.cfi_def_cfa_offset 0
-    ret
-.cfi_endproc
-.size sharkssl_arm64_gmult_scalar, .-sharkssl_arm64_gmult_scalar
 
 #endif
 .section .note.GNU-stack,"",%progbits

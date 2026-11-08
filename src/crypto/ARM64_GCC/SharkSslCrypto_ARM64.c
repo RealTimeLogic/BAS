@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_ARM64.c 6737 2026-11-04 05:37:01Z gianluca $
+ *   $Id: SharkSslCrypto_ARM64.c 6794 2026-11-07 21:54:22Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2026
  *
@@ -159,32 +159,25 @@ typedef char arm64_gcm_type[(SharkSslAesCtx_Encrypt == 1) ? 1 : -1];
 #define ARM64_JOIN(a,b) ARM64_JOIN_(a,b)
 void ARM64_JOIN(sharkssl_arm64_gcm_layout_,SHARKSSL_GCM_M0)(void);
 void sharkssl_arm64_gcm_crypto(SharkSslAesGcmCtx*, U8*, U8*, const U8*, U8*, U32, SharkSslAesCtx_Type);
-void sharkssl_arm64_gcm_scalar(SharkSslAesGcmCtx*, U8*, U8*, const U8*, U8*, U32, SharkSslAesCtx_Type);
-void sharkssl_arm64_gcm_neon(SharkSslAesGcmCtx*, U8*, U8*, const U8*, U8*, U32, SharkSslAesCtx_Type);
+/* Called only with AES-CE and PMULL (capability 4); without them
+ * SharkSslCrypto.c runs the bitsliced AES. */
 void sharkssl_gcm_crypt_blocks(SharkSslAesGcmCtx *ctx, U8 *ctr, U8 *tag,
                              const U8 *in, U8 *out, U32 len, SharkSslAesCtx_Type type)
 {
    ARM64_JOIN(sharkssl_arm64_gcm_layout_,SHARKSSL_GCM_M0)();
-   if (sharkssl_arm64_capabilities() & 4)
-      sharkssl_arm64_gcm_crypto(ctx, ctr, tag, in, out, len, type);
-   else if (sharkssl_arm64_capabilities() & 2)
-      sharkssl_arm64_gcm_neon(ctx, ctr, tag, in, out, len, type);
-   else
-      sharkssl_arm64_gcm_scalar(ctx, ctr, tag, in, out, len, type);
+   sharkssl_arm64_gcm_crypto(ctx, ctr, tag, in, out, len, type);
 }
 #endif
 #if SHARKSSL_OPTIMIZED_GHASH_ASM
 void sharkssl_arm64_gmult_pmull(U8 (*)[16], U8*);
-void sharkssl_arm64_gmult_scalar(U8 (*)[16], U8*);
 void sharkssl_arm64_gmult_neon(U8 (*)[16], U8*);
+/* Called only with ASIMD (capability 2); without it SharkSslCrypto.c uses the C GHASH. */
 void sharkssl_gcm_gmult32M0(U8 (*table)[16], U8 *tag)
 {
    if (sharkssl_arm64_capabilities() & 4)
       sharkssl_arm64_gmult_pmull(table, tag);
-   else if (sharkssl_arm64_capabilities() & 2)
-      sharkssl_arm64_gmult_neon(table, tag);
    else
-      sharkssl_arm64_gmult_scalar(table, tag);
+      sharkssl_arm64_gmult_neon(table, tag);
 }
 #endif
 #endif

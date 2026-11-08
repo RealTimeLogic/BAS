@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 6756 2026-11-05 17:13:26Z gianluca $
+ *   $Id: SharkSslCrypto.h 6776 2026-11-06 21:59:08Z wini $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -316,13 +316,33 @@ extern "C" {
  * by the provider. Returns zero on success, -1 on initialization failure.
  */
 SHARKSSL_API int sharkssl_entropy(void);
-#else
+#endif
+#if !SHARKSSL_PSA_CONSUMER || defined(__DOXYGEN__)
 /**
- * Seed the native global DRBG atomically from an entropy buffer. Before the
- * first output supply at least 48 entropy bytes; later reseeds require at
- * least 32. The source must provide the required entropy, not just length.
- * Initialize before starting threads. Returns zero only when ready, -1 on
- * invalid input.
+ * Seed or reseed the native random-number generator.
+ * \ingroup RayCryptoApi
+ *
+ * Available when SHARKSSL_PSA_CONSUMER is 0. A PSA consumer instead uses
+ * sharkssl_entropy() to initialize its provider, which manages entropy.
+ *
+ * Supply the complete seed in one call before requesting random output or
+ * starting threads that use SharkSSL. The native deterministic random bit
+ * generator (DRBG) needs at least 48 entropy bytes for its first seed and
+ * at least 32 fresh entropy bytes for each later reseed. Buffer length alone
+ * does not establish entropy quality; obtain the bytes from a suitable
+ * platform entropy source. The function does not collect entropy itself.
+ *
+ * With SHARKSSL_RNG_MULTITHREADED=1, later reseeds and random output are
+ * serialized by the global RNG mutex. With this option disabled, the
+ * application must serialize all access to the global RNG.
+ *
+ * \param entropy const U8 *; required readable buffer containing len entropy
+ * bytes. Borrowed for this call only; it is neither retained nor erased.
+ * Clear a temporary seed buffer with sharkssl_clear() after the call.
+ * \param len U16; buffer length in bytes, 48 through 65535 for initial
+ * seeding or 32 through 65535 for reseeding. No default.
+ * \return int: 0 after successful seeding or reseeding; -1 for a NULL buffer
+ * or insufficient input length. Invalid input leaves the DRBG state unchanged.
  */
 SHARKSSL_API int sharkssl_entropyEx(const U8 *entropy, U16 len);
 #endif

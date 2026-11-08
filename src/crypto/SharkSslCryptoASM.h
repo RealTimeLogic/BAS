@@ -17,7 +17,7 @@
 #define SHARKSSL_X64_ASM_PLATFORM 0
 #endif
 
-#if SHARKSSL_X86_ASM_PLATFORM && (SHARKSSL_OPTIMIZED_CHACHA_ASM || SHARKSSL_OPTIMIZED_POLY1305_ASM || (SHARKSSL_OPTIMIZED_GCM_ASM && SHARKSSL_OPTIMIZED_GHASH_ASM))
+#if SHARKSSL_X86_ASM_PLATFORM && (SHARKSSL_OPTIMIZED_CHACHA_ASM || SHARKSSL_OPTIMIZED_POLY1305_ASM || SHARKSSL_OPTIMIZED_AES_ASM || (SHARKSSL_OPTIMIZED_SHA256_ASM && SHARKSSL_USE_SHA_256 && (!SHARKSSL_PSA_CONSUMER)) || (SHARKSSL_OPTIMIZED_GCM_ASM && SHARKSSL_OPTIMIZED_GHASH_ASM) || (SHARKSSL_OPTIMIZED_SHA384_ASM && SHARKSSL_X64_ASM_PLATFORM && (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512) && (!SHARKSSL_PSA_CONSUMER)))
 #if defined(_MSC_VER)
 #include <intrin.h>
 #define SHARKSSL_ASM_LOAD(p) ((U8)_InterlockedCompareExchange8((volatile char*)(p), (char)-1, (char)-1))
@@ -63,6 +63,26 @@ SHARKSSL_ASM_AVAILABILITY(sharkssl_gcm_asmAvailable, sharkssl_x86_64_gcm_availab
 int sharkssl_x86_64_vaes_available(void);
 SHARKSSL_ASM_AVAILABILITY(sharkssl_gcm_vaesAvailable, sharkssl_x86_64_vaes_available())
 #endif
+#endif
+#if SHARKSSL_OPTIMIZED_AES_ASM && (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
+/* AES-NI, from SharkSslAes_X86 or SharkSslAes_X64 */
+int sharkssl_aes_hw_probe(void);
+SHARKSSL_ASM_AVAILABILITY(sharkssl_aes_hwAvailable, sharkssl_aes_hw_probe())
+#endif
+#if (SHARKSSL_OPTIMIZED_SHA256_ASM && SHARKSSL_USE_SHA_256 && (!SHARKSSL_PSA_CONSUMER))
+/**
+ * SHA, SSSE3 and SSE2 only; no AVX or OS extended-state requirement.
+ * The cached feature result is public and does not depend on hash input.
+ */
+int sharkssl_sha256_hw_probe(void);
+SHARKSSL_ASM_AVAILABILITY(sharkssl_sha256_hwAvailable, sharkssl_sha256_hw_probe())
+#endif
+#if (SHARKSSL_OPTIMIZED_SHA384_ASM && SHARKSSL_X64_ASM_PLATFORM && (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512) && (!SHARKSSL_PSA_CONSUMER))
+/**
+ * BMI2 integer rotates only; no vector or extended OS state is used.
+ */
+int sharkssl_sha512_bmi2_probe(void);
+SHARKSSL_ASM_AVAILABILITY(sharkssl_sha512_bmi2Available, sharkssl_sha512_bmi2_probe())
 #endif
 #undef SHARKSSL_ASM_AVAILABILITY
 #undef SHARKSSL_ASM_LOAD

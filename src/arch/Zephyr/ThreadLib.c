@@ -10,7 +10,7 @@
  *
  ****************************************************************************
  *
- *   $Id: ThreadLib.c 6435 2026-10-16 23:06:16Z wini $
+ *   $Id: ThreadLib.c 6807 2026-11-08 14:20:27Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2022 - 2026
  *
@@ -48,6 +48,27 @@
 #include <BaErrorCodes.h>
 #include <HttpCfg.h>
 #include <sys/time.h>  /* For gettimeofday */
+
+/* Zephyr's FIFO poll notification wakes one waiter. A dispatcher select
+   snapshot can still contain a socket moved to a blocking reader, taking
+   its notification without consuming the data. Recheck readiness in bounded
+   waits so queued data is found while retaining the original read deadline. */
+int HttpSocket_waitReadZephyr(HttpSocket* o, int timeout)
+{
+   struct zsock_pollfd fd={o->hndl, ZSOCK_POLLIN, 0};
+   int64_t end=k_uptime_get()+timeout;
+   for(;;)
+   {
+      int64_t remaining=end-k_uptime_get();
+      int delay=remaining > 50 ? 50 : remaining > 0 ? (int)remaining : 0;
+      int status=zsock_poll(&fd, 1, delay);
+      if(status)
+         return status > 0 ? 0 : -1;
+      /* Also do a final nonblocking readiness check at the deadline. */
+      if(!delay)
+         return -1;
+   }
+}
 
 /* Zephyr can accept only the available TCP send window even on a blocking
    socket. BAS blocking writes require the whole buffer. Nonblocking writes

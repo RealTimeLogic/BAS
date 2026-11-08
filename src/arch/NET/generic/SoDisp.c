@@ -10,7 +10,7 @@
  ****************************************************************************
  *            PROGRAM MODULE
  *
- *   $Id: SoDisp.c 6657 2026-10-28 18:19:39Z wini $
+ *   $Id: SoDisp.c 6807 2026-11-08 14:20:27Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2002 - 2026
  *
@@ -115,70 +115,62 @@ baFatalEf(BaFatalErrorCodes ecode1, unsigned int ecode2,
    Returns 0 on pending data and -1 on timeout.
 */
 static int
-SoDispCon_rtmo(SoDispCon* o)
+SoDispCon_rtmo(HttpSocket* sock, int tmo)
 {
+#ifdef HttpSocket_waitRead
+   return HttpSocket_waitRead(sock, tmo);
+#else
    baFdSet recSet;
    struct timeval tv;
-   int highSockDesc=0;
-   int tmo = o->rtmo*50;
-   o->rtmo=0;
+   int highSockDesc=(int)sock->hndl;
    tv.tv_sec = tmo / 1000;
    tv.tv_usec = (tmo % 1000) * 1000;
    BA_FD_ZERO(&recSet);
-   SoDispCon_add2SockSet(o, recSet, highSockDesc);
+   BA_FD_SET(sock->hndl, &recSet);
    return socketSelect(highSockDesc+1, &recSet, 0, 0, &tv) > 0 ? 0 : -1;
+#endif
 }
 
 
-/* Returns 0 if no data, >0 if data and <0 on error.
-   This function is called unprotected i.e. the SoDisp mutex is not set.
-   isTerminated is a variable handled by the caller.
-   Can be set to TRUE by a another thread.
-   If TRUE, the object "o" is no longer valid.
+/* Called with the supplied mutex held, or with exclusive ownership when
+   no mutex is supplied. The caller's termination flag survives destruction
+   of o while the mutex is released. Never inspect o before checking it.
+   Returns 0 if no data, >0 if data and <0 on error.
 */
 int
 SoDispCon_platReadData(SoDispCon* o, ThreadMutex* m, BaBool* isTerminated,
                        void* data, int len)
 {
    int status;
-   if(m && ThreadMutex_isOwner(m))
+   int timeout=(int)o->rtmo * 50;
+   SoDisp* disp=0;
+   HttpSocket sock=o->httpSocket;
+   if(m && !ThreadMutex_isOwner(m))
+      m=0;
+   o->rtmo=0;
+   if(timeout && SoDispCon_recEvActive(o))
    {
-      ThreadMutex_release(m);
-      if(o->rtmo)
-      {
-         SoDisp* disp;
-         if(SoDispCon_recEvActive(o))
-         {
-            disp=SoDispCon_getDispatcher(o);
-            SoDisp_deactivateRec(disp, o);
-         }
-         else
-            disp=0;
-         status=SoDispCon_rtmo(o);
-         if(*isTerminated || status)
-         {
-            ThreadMutex_set(m);
-            if(*isTerminated)
-               return E_SOCKET_READ_FAILED;
-            return E_TIMEOUT;
-         }
-         if(disp)
-            SoDisp_activateRec(disp, o);
-      }
-      HttpSocket_recv(&o->httpSocket,data,len,&status);
+      disp=SoDispCon_getDispatcher(o);
+      SoDisp_deactivateRec(disp, o);
+   }
+   if(m) ThreadMutex_release(m);
+   if(timeout && SoDispCon_rtmo(&sock, timeout))
+      status=E_TIMEOUT;
+   else
+      HttpSocket_recv(&sock,data,len,&status);
+   if(m)
+   {
       ThreadMutex_set(m);
       if(*isTerminated)
          return E_SOCKET_READ_FAILED;
    }
-   else
+   if(status >= 0 || status == E_TIMEOUT)
    {
-      if(o->rtmo)
-      {
-         status=SoDispCon_rtmo(o);
-         if(status)
-            return E_TIMEOUT;
-      }
-      HttpSocket_recv(&o->httpSocket,data,len,&status);
+      if(disp && SoDispCon_dispatcherHasCon(o) && SoDispCon_isValid(o) &&
+         !SoDispCon_recEvActive(o))
+         SoDisp_activateRec(disp, o);
+      if(status == E_TIMEOUT)
+         return status;
    }
    if( ! SoDispCon_isNonBlocking(o) )
       SoDispCon_clearSocketHasNonBlockData(o);
@@ -410,15 +402,18 @@ SoDisp_run(SoDisp* o, S32 timeout)
             SoDispCon* con = link2Con(curL);
             if(SoDispCon_isValid(con))
             {
-               if(BA_FD_ISSET(con->httpSocket.hndl, &sendSet)
+               /* Interests can change while select or a callback releases
+                  the mutex. Never dispatch a now-disabled event. */
+               if(SoDispCon_sendEvActive(con) &&
+                  (BA_FD_ISSET(con->httpSocket.hndl, &sendSet)
 #ifdef NON_BLOCK_CON_EX
                   || BA_FD_ISSET(con->httpSocket.hndl, &exceptSet)
 #endif
-                  )
+                  ))
                {
                   SoDispCon_dispSendEvent(con);
                }
-               if(o->curL == curL &&
+               if(o->curL == curL && SoDispCon_recEvActive(con) &&
                   BA_FD_ISSET(con->httpSocket.hndl, &recSet))
                {
                   SoDispCon_setDispHasRecData(con);

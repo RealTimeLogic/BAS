@@ -9,7 +9,7 @@
  *                  Barracuda Embedded Web-Server 
  ****************************************************************************
  *
- *   $Id: xedge.c 6770 2026-11-06 15:33:36Z wini $
+ *   $Id: xedge.c 6808 2026-11-08 14:58:03Z wini $
  *
  *   COPYRIGHT:  Real Time Logic, 2008 - 2026
  *               http://www.realtimelogic.com
@@ -295,7 +295,8 @@ createServer(HttpServer* server)
    HttpServerConfig_setNoOfHttpCommands(&scfg,cmdInstances);
 
    HttpServerConfig_setNoOfHttpConnections(
-      &scfg, cmdInstances+3 < 8 ? 8 : cmdInstances+3);
+      &scfg, cmdInstances+3 < XEDGE_HTTP_CONNECTIONS ?
+      XEDGE_HTTP_CONNECTIONS : cmdInstances+3);
 
    /* For huge url encoded data, if any. */
    HttpServerConfig_setRequest(&scfg,2*1024, 8*1024);

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL_cfg.h 6759 2026-11-05 21:18:27Z gianluca $
+ *   $Id: SharkSSL_cfg.h 6811 2026-11-08 16:03:25Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -170,46 +170,32 @@
 #endif
 
 /**
- * AES-GCM require AES:
- * relevant ciphersuites are included
+ * AES-GCM requires AES:
+ * the AES-GCM ciphersuites are included
  */
 #ifndef SHARKSSL_ENABLE_AES_GCM
 #define SHARKSSL_ENABLE_AES_GCM                          1
 #endif
 
 /**
- * Software AES constant-time protection is enabled by default.
- * Setting either software CT option to 0 can expose secret-dependent table
- * accesses and timing. Disable these protections at your own risk, after
- * assessing the selected backend and the target's side-channel exposure.
- * The assembler helper options below accelerate the CT implementation;
- * they do not disable its protections.
+ * The native software AES is constant time: SharkSslAesCtx (block
+ * encryption and decryption, CBC, CTR, CCM, the PSA AES ciphers and key
+ * wrap) and AES-GCM use a fixed-access bitsliced AES, and AES-GCM a
+ * fixed-access GHASH. No key or data value selects a memory address, a
+ * branch or a shift count, and no AES lookup table is linked. CTR, CBC
+ * decryption, CCM and GCM process two blocks per bitsliced call.
+ * SHARKSSL_AES_CIPHER_LOOP_UNROLL selects the faster (1) or the smaller (0)
+ * code. The assembler helper options below accelerate this implementation;
+ * the x86/x64 (AES-NI, PCLMULQDQ, VAES) and ARM64 (AES-CE, PMULL, ASIMD)
+ * assembler AES-GCM is constant time too. Hardware AES backends have their
+ * own security properties.
+ * The former options SHARKSSL_AES_SOFTWARE_CT and
+ * SHARKSSL_AES_GCM_SOFTWARE_CT have been removed; the table AES and the
+ * table GHASH no longer exist.
  */
-
-/**
- * Select fixed-access bitsliced software AES for SharkSslAesCtx: the
- * constructor, block encryption and decryption, and the modes built on them
- * (CBC, CTR, CCM, the PSA AES ciphers and key wrap).
- * The AES lookup tables are then not linked. CTR, CBC decryption and CCM
- * process two blocks per bitsliced call. The context layout and public API
- * stay unchanged. AES-GCM keeps its own option: also select
- * SHARKSSL_AES_GCM_SOFTWARE_CT for a fixed-access GHASH. Not supported with
- * the x86/x64 and ARM64 assembler GCM, which reads FIPS 197 round keys.
- */
-#ifndef SHARKSSL_AES_SOFTWARE_CT
-#define SHARKSSL_AES_SOFTWARE_CT                         1
-#endif
-
-/**
- * Select fixed-access software AES encryption and GHASH for AES-GCM.
- * The AES-GCM context layout and public API stay unchanged. Other AES modes
- * retain their selected backend. Hardware or assembler GCM backends use
- * their own security properties. The option is enabled by default and
- * uses more cycles and stack. SHARKSSL_AES_CIPHER_LOOP_UNROLL also
- * selects the faster (1) or the smaller (0) code for this option.
- */
-#ifndef SHARKSSL_AES_GCM_SOFTWARE_CT
-#define SHARKSSL_AES_GCM_SOFTWARE_CT                     1
+#if ((defined(SHARKSSL_AES_SOFTWARE_CT) && (!SHARKSSL_AES_SOFTWARE_CT)) || \
+     (defined(SHARKSSL_AES_GCM_SOFTWARE_CT) && (!SHARKSSL_AES_GCM_SOFTWARE_CT)))
+#error The table AES and GHASH have been removed: remove SHARKSSL_AES_SOFTWARE_CT and SHARKSSL_AES_GCM_SOFTWARE_CT
 #endif
 
 /**
@@ -236,7 +222,17 @@
 #endif
 
 /**
- * AES-CCM require AES:
+ * Run the AES-128/192/256 key expansion of the bitsliced AES in Thumb-2 on
+ * little-endian Cortex-M4/M7/M33/M85: compile crypto/Cortex-M_GCC/SharkSslAesCT_M4.S
+ * (GCC) or crypto/Cortex-M_IAR/SharkSslAesCT_M4.s (IAR) with the same
+ * options. The context and the API are unchanged.
+ */
+#ifndef SHARKSSL_AES_CT_KEY_ASM
+#define SHARKSSL_AES_CT_KEY_ASM                          0
+#endif
+
+/**
+ * AES-CCM requires AES:
  * only for crypto functions - CCM TLS ciphersuites removed
  */
 #ifndef SHARKSSL_ENABLE_AES_CCM
@@ -244,7 +240,7 @@
 #endif
 
 /**
- * AES-CBC require AES:
+ * AES-CBC requires AES:
  * CBC TLS ciphersuites removed
  * for crypto functions and PEM certificate decryption
  */
@@ -253,9 +249,10 @@
 #endif
 
 /**
- * Enable/disable CHACHA20 support and also include
- * CHACHA20-POLY1305 ciphersuites when TLS1.2 and POLY1305 are enabled
- * (#SHARKSSL_USE_POLY1305)
+ * Enable/disable CHACHA20 support. When POLY1305 is also enabled
+ * (#SHARKSSL_USE_POLY1305), the CHACHA20-POLY1305 ciphersuites are
+ * included: TLS_CHACHA20_POLY1305_SHA256 for TLS 1.3 and the
+ * ECDHE_ECDSA, ECDHE_RSA and DHE_RSA variants for TLS 1.2
  */
 #ifndef SHARKSSL_USE_CHACHA20
 #define SHARKSSL_USE_CHACHA20                            1
@@ -269,9 +266,9 @@
 
 
 /**
- * Enable/disable SHA256 support for certificate signatures (SHA256
- * ciphersuites are not included).
- * SHA256 must be included (mandatory) for TLS 1.2 and TLS 1.3
+ * SHA256 support for certificate signatures and the SHA256
+ * ciphersuites. SHA256 is mandatory for TLS 1.2 and TLS 1.3 and is
+ * always enabled: this setting is overridden below
  */
 #ifndef SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
@@ -302,25 +299,30 @@
 #endif
 
 /**
- * SHA1 is not used by the SharkSSL TLS stack unless you use RSA OAEP
- * (public RSA API). SHA1 is used by some examples. You can disable
- * SHA1 if you are not using RSA OAEP and/or the examples using SHA1
+ * Enable/disable SHA1 support. When enabled, TLS 1.2 also offers and
+ * accepts the legacy RSA and ECDSA signature schemes with SHA-1, and
+ * certificates signed with SHA-1 can be verified. SHA1 is also used by
+ * RSA OAEP (public RSA API) and by some examples. Keep it disabled
+ * unless legacy peers or certificates, RSA OAEP or those examples
+ * require it
  */
 #ifndef SHARKSSL_USE_SHA1
 #define SHARKSSL_USE_SHA1                                0
 #endif
 
 /**
- * MD5 must be enabled to support PCKS1-encoded certificates (public PEM API).
+ * MD5 must be enabled to decrypt traditional OpenSSL encrypted PKCS#1
+ * private keys (PEM with DEK-Info, public PEM API; AES must also be
+ * enabled) and to verify certificates signed with MD5.
  */
 #ifndef SHARKSSL_USE_MD5
 #define SHARKSSL_USE_MD5                                 0
 #endif
 
 /**
- * Enable/disable POLY1305 support and also include
- * CHACHA20-POLY1305 ciphersuites when TLS1.2 and CHACHA20 are enabled
- * (#SHARKSSL_USE_CHACHA20)
+ * Enable/disable POLY1305 support. When CHACHA20 is also enabled
+ * (#SHARKSSL_USE_CHACHA20), the CHACHA20-POLY1305 ciphersuites are
+ * included for TLS 1.3 and TLS 1.2
  */
 #ifndef SHARKSSL_USE_POLY1305
 #define SHARKSSL_USE_POLY1305                            1
@@ -446,14 +448,15 @@
 /**
  * Select 1 to enable support for Certificate Authorities extension
  * (RFC 8446 section 4.2.4)
- * Note: #SHARKSSL_TLS_1_3 must be enabled
+ * Note: #SHARKSSL_TLS_1_3 and #SHARKSSL_ENABLE_CA_LIST must be enabled
  */
 #ifndef SHARKSSL_ENABLE_CA_EXTENSION
 #define SHARKSSL_ENABLE_CA_EXTENSION                     1
 #endif
 
 /**
- * Select 0 to disable RSA ciphersuites
+ * Select 0 to disable RSA: the RSA ciphersuites in TLS 1.2 and RSA
+ * certificates and signatures in TLS 1.2 and TLS 1.3
  */
 #ifndef SHARKSSL_ENABLE_RSA
 #define SHARKSSL_ENABLE_RSA                              1
@@ -498,7 +501,6 @@
 
 /**
  * TLS 1.2/1.3 require SHA-256, do not modify the following settings
- * DES and ClientHello v2.0 are deprecated in TLS 1.2 - RFC5246
  */
 #undef  SHARKSSL_USE_SHA_256
 #define SHARKSSL_USE_SHA_256                             1
@@ -544,8 +546,10 @@
 
 /**
  * Enable/disable PKCS1 padding in RSA API
- * (#SHARKSSL_ENABLE_RSA_API must be enabled)
- * note: always enabled when SSL client or server enabled
+ * (#SHARKSSL_ENABLE_RSA_API must be enabled to use PKCS1 through the
+ * RSA API)
+ * Also used by TLS for RSA certificate signatures, TLS 1.2 RSA signatures
+ * and the TLS 1.3 signature_algorithms_cert extension
  */
 #ifndef SHARKSSL_ENABLE_RSA_PKCS1
 #define SHARKSSL_ENABLE_RSA_PKCS1                        1
@@ -582,9 +586,9 @@
 /**
  * Disable ECDSA sign API functions (sharkssl_ECDSA_sign,
  * SharkSslECDSA_siglen) - effective only if ECDSA API is
- * compiled (#SHARKSSL_ENABLE_ECDSA_API must be enabled)
- * and no SSL/TLS library used (only RayCrypto); used to
- * achieve minimum code size
+ * compiled (#SHARKSSL_ENABLE_ECDSA_API must be enabled);
+ * used to achieve minimum code size in crypto-only builds.
+ * Must be 0 when the TLS client or server code is enabled
  */
 #ifndef SHARKSSL_ECDSA_ONLY_VERIFY
 #define SHARKSSL_ECDSA_ONLY_VERIFY                       0
@@ -604,14 +608,15 @@
 /**
  * Enable/disable support for encrypted PKCS#8 certificates
  * in sharkssl_PEM function
- * (requires SHARKSSL_ENABLE_AES_CBC)
+ * (requires SHARKSSL_ENABLE_AES_CBC and SHARKSSL_USE_SHA_256)
  */
 #ifndef SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
 #define SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT          0
 #endif
 
 /**
- * Enable/disable #SharkSslCon_getCiphersuite
+ * Enable/disable #SharkSslCon_getCiphersuite, #SharkSslCon_getProtocol
+ * and #SharkSslCon_isResumed
  */
 #ifndef SHARKSSL_ENABLE_INFO_API
 #define SHARKSSL_ENABLE_INFO_API                         1
@@ -665,16 +670,15 @@
 #endif
 
 /**
- * Select 1 (small ROM footprint, slow) or 0 (large, fast)
- *
- * SHA 384 is only available in small footprint version,
- * being the fast version only 20% faster at the expense
- * of an 8x code size (benchmarked on ARM Cortex M3)
+ * Select 1 for smaller, but slower MD5
  */
 #ifndef SHARKSSL_MD5_SMALL_FOOTPRINT
 #define SHARKSSL_MD5_SMALL_FOOTPRINT                     0
 #endif
 
+/**
+ * Select 1 for smaller, but slower SHA1
+ */
 #ifndef SHARKSSL_SHA1_SMALL_FOOTPRINT
 #define SHARKSSL_SHA1_SMALL_FOOTPRINT                    0
 #endif
@@ -867,7 +871,7 @@
 #endif
 
 /**
- * Select 1 to enable ECDHE_RSA ciphersuites (RFC 4492)
+ * Select 1 to enable ECDHE_RSA ciphersuites (RFC 8422)
  * Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
  * RSA (#SHARKSSL_ENABLE_RSA) must be enabled
  */
@@ -876,7 +880,7 @@
 #endif
 
 /**
- * Select 1 to enable ECDHE_ECDSA ciphersuites (RFC 4492)
+ * Select 1 to enable ECDHE_ECDSA ciphersuites (RFC 8422)
  * Elliptic Curve Cryptography (#SHARKSSL_USE_ECC) must be enabled
  * SHARKSSL_ENABLE_ECDSA must be set
  */
@@ -885,7 +889,11 @@
 #endif
 
 /**
- * Enabling big integer assembler library requires SharkSslBigInt_XX.s
+ * Select the full BigInt assembly backend: add, subtract, right shift,
+ * multiplication and Montgomery reduction. Link the matching port file.
+ * On x64 use SharkSslBigInt_X64.S (GCC ELF LP64) or
+ * SharkSslBigInt_X64.asm (MSVC x64), with baseline integer instructions
+ * and constant-time public-length loops. Zero retains the C backend.
  */
 #ifndef SHARKSSL_OPTIMIZED_BIGINT_ASM
 #define SHARKSSL_OPTIMIZED_BIGINT_ASM                    0
@@ -905,7 +913,11 @@
  * Select 1 to use the assembly for the P-256 (secp256r1) field arithmetic:
  * on Cortex-M4/M7 SharkSslP256_M4.S for GCC, SharkSslP256_M4.s for IAR
  * and Keil; on RXv2/RXv3 SharkSslP256_RX.S for GCC, SharkSslP256_RX.s
- * for IAR; on AArch64 SharkSslP256_ARM64.S for GCC. Multiplication, addition and subtraction modulo the P-256
+ * for IAR; on AArch64 SharkSslP256_ARM64.S for GCC; on RV32IM
+ * SharkSslP256_RISCV.S for GCC. On x64 link SharkSslP256_X64.S for
+ * GCC or SharkSslP256_X64.asm for MSVC: BMI2 is selected at run time,
+ * otherwise the constant-time C field arithmetic remains in use.
+ * Multiplication, addition and subtraction modulo the P-256
  * prime then run in assembly and in constant time; the other curves are
  * not affected. Independent of #SHARKSSL_OPTIMIZED_BIGINT_ASM.
  */
@@ -917,7 +929,11 @@
  * Select 1 to use the assembly for the P-384 (secp384r1) field arithmetic:
  * on Cortex-M4/M7 SharkSslP384_M4.S for GCC, SharkSslP384_M4.s for IAR
  * and Keil; on RXv2/RXv3 SharkSslP384_RX.S for GCC, SharkSslP384_RX.s
- * for IAR; on AArch64 SharkSslP384_ARM64.S for GCC. Multiplication, addition and subtraction modulo the P-384
+ * for IAR; on AArch64 SharkSslP384_ARM64.S for GCC. On x64 link
+ * SharkSslP384_X64.S for GCC or SharkSslP384_X64.asm for MSVC: BMI2
+ * is selected at run time, otherwise the constant-time C field
+ * arithmetic remains in use.
+ * Multiplication, addition and subtraction modulo the P-384
  * prime then run in assembly and in constant time; the other curves are
  * not affected. Independent of #SHARKSSL_ECC_P256_ASM and
  * #SHARKSSL_OPTIMIZED_BIGINT_ASM.
@@ -941,22 +957,30 @@
 #endif
 
 /**
- * Enabling assembler optimized SHA-256 requires SharkSslCrypto_XX.s
+ * Enabling assembler SHA-256 requires the target backend. On x86/x64,
+ * link SharkSslSha256_X86 or SharkSslSha256_X64: SHA-NI is selected at
+ * run time when SHA, SSSE3 and SSE2 are available, with the constant-time
+ * C compressor retained as fallback. Cortex-M and RX use SharkSslCrypto_XX.s.
+ * PSA consumers use their provider instead of these native compressors.
  */
 #ifndef SHARKSSL_OPTIMIZED_SHA256_ASM
 #define SHARKSSL_OPTIMIZED_SHA256_ASM                    0
 #endif
 
 /**
- * Enabling assembler optimized SHA-384 and SHA-512 requires
- * SharkSslCrypto_XX.s
+ * Enabling assembler SHA-384 and SHA-512 requires the target backend.
+ * On x64, link SharkSslSha512_X64: BMI2 is selected at run time with
+ * the constant-time C compressor retained as fallback. Other targets
+ * keep their existing backend. PSA consumers use their provider.
  */
 #ifndef SHARKSSL_OPTIMIZED_SHA384_ASM
 #define SHARKSSL_OPTIMIZED_SHA384_ASM                    0
 #endif
 
 /**
- * Enabling assembler optimized GHASH requires SharkSslCrypto_XX.s
+ * Enabling assembler optimized GHASH requires SharkSslCrypto_XX.s.
+ * Constant-time x86/x64 and ARM64 assembler only, and only together with
+ * SHARKSSL_OPTIMIZED_GCM_ASM.
  */
 #ifndef SHARKSSL_OPTIMIZED_GHASH_ASM
 #define SHARKSSL_OPTIMIZED_GHASH_ASM                     0
@@ -964,10 +988,53 @@
 
 /**
  * Enabling the combined assembler AES-GCM block kernel requires
- * SharkSslCrypto_XX.s. GHASH may use either its C or assembler implementation.
+ * SharkSslCrypto_XX.s. Constant-time x86/x64 (AES-NI, PCLMULQDQ) and
+ * ARM64 (AES-CE, PMULL, ASIMD) assembler only, together with
+ * SHARKSSL_OPTIMIZED_GHASH_ASM. An x86/x64 processor without AES-NI and
+ * PCLMULQDQ uses the constant-time software AES-GCM at run time.
  */
 #ifndef SHARKSSL_OPTIMIZED_GCM_ASM
 #define SHARKSSL_OPTIMIZED_GCM_ASM                       0
+#endif
+
+/**
+ * Enabling the assembler AES block cipher requires SharkSslAes_XX.s:
+ * AES-NI on x86/x64, AES-CE on ARM64 (with SharkSslCrypto_ARM64.c). 
+ * It serves SharkSslAesCtx: the block API, CBC, CTR and CCM. A processor
+ * without the AES instructions uses the constant-time bitsliced AES at run
+ * time. AES-GCM keeps its own selection, SHARKSSL_OPTIMIZED_GCM_ASM.
+ */
+#ifndef SHARKSSL_OPTIMIZED_AES_ASM
+#define SHARKSSL_OPTIMIZED_AES_ASM                       0
+#endif
+
+/**
+ * The constant-time bitsliced AES on AArch64 Advanced SIMD (NEON)
+ * registers, eight blocks per call: CTR, CBC decryption and the software
+ * AES-GCM use it for three or more blocks. The software AES-GCM also
+ * takes a NEON GHASH (PMULL.8B, four blocks per reduction). It is C with
+ * arm_neon.h intrinsics in SharkSslCrypto.c, so no assembler file is
+ * needed, and it serves the cores without the AES instructions
+ * (Cortex-A53, A72, ...); a context that uses AES-CE through
+ * SHARKSSL_OPTIMIZED_AES_ASM or SHARKSSL_OPTIMIZED_GCM_ASM does not reach it. Defaults to 1 when the
+ * compiler targets little-endian AArch64 with Advanced SIMD, with IAR only
+ * when SHARKSSL_ARM64_IAR_HAS_ASIMD is 1; set 0 for the portable C.
+ */
+#ifndef SHARKSSL_AES_CT_NEON
+#if (defined(__aarch64__) && defined(__ARM_NEON) && (!defined(__AARCH64EB__)))
+#if defined(__ICCARM__)
+/* IAR: the ASIMD setting of the IAR ARM64 port, which has no run-time probe */
+#if (defined(SHARKSSL_ARM64_IAR_HAS_ASIMD) && SHARKSSL_ARM64_IAR_HAS_ASIMD)
+#define SHARKSSL_AES_CT_NEON                             1
+#else
+#define SHARKSSL_AES_CT_NEON                             0
+#endif
+#else
+#define SHARKSSL_AES_CT_NEON                             1
+#endif
+#else
+#define SHARKSSL_AES_CT_NEON                             0
+#endif
 #endif
 
 /**
@@ -999,7 +1066,9 @@
 #endif
 
 /**
- * Do not pack option
+ * Select 1 to keep every optional field of the public structures
+ * whatever the configuration, so that their layout does not depend
+ * on the selected options
  */
 #ifndef SHARKSSL_NOPACK
 #define SHARKSSL_NOPACK                                  0
@@ -1125,11 +1194,18 @@
 #endif
 #endif  /* SHARKSSL_RFC_9846_CONFORMANCE_PROFILE */
 
-/* Check the selected PSA consumer profile after all TLS options are resolved. */
-#if SHARKSSL_AES_GCM_CT_M4_ASM
-#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
-#error SHARKSSL_AES_GCM_CT_M4_ASM requires SHARKSSL_AES_GCM_SOFTWARE_CT
+/* Check the AES assembler and PSA consumer options after all TLS options are resolved. */
+#if SHARKSSL_AES_CT_KEY_ASM
+/* An instruction-set check: ARMv7E-M or ARMv8-M Mainline, with or without DSP. */
+#if (defined(__ICCARM__) || defined(__IAR_SYSTEMS_ASM__))
+#if ((!defined(__ARM_PROFILE_M__)) || ((__CORE__ != __ARM7EM__) && (__CORE__ != __ARM8M_MAINLINE__) && (__CORE__ != __ARM8EM_MAINLINE__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_CT_KEY_ASM requires little-endian Cortex-M4/M7/M33/M85 and GCC Thumb or IAR
 #endif
+#elif (((!defined(__ARM_ARCH_7EM__)) && (!defined(__ARM_ARCH_8M_MAIN__)) && (!defined(__ARM_ARCH_8_1M_MAIN__))) || (!defined(__GNUC__)) || (!defined(__thumb__)) || (BA_BYTE_ORDER != BA_BYTE_ORDER_LITTLE_ENDIAN))
+#error SHARKSSL_AES_CT_KEY_ASM requires little-endian Cortex-M4/M7/M33/M85 and GCC Thumb or IAR
+#endif
+#endif
+#if SHARKSSL_AES_GCM_CT_M4_ASM
 /**
  * GCC 13 identifies M85 as ARMv8-M Mainline (Clang 18 as ARMv8.1-M Mainline)
  * with the ARMv8.1-M BTI feature.
@@ -1145,9 +1221,6 @@
 #endif
 #endif
 #if SHARKSSL_AES_GCM_CT_MVE_ASM
-#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
-#error SHARKSSL_AES_GCM_CT_MVE_ASM requires SHARKSSL_AES_GCM_SOFTWARE_CT
-#endif
 #if SHARKSSL_AES_GCM_CT_M4_ASM
 #error SHARKSSL_AES_GCM_CT_MVE_ASM and SHARKSSL_AES_GCM_CT_M4_ASM are exclusive
 #endif
@@ -1164,17 +1237,17 @@
 #error SHARKSSL_AES_GCM_CT_MVE_ASM requires little-endian Cortex-M85 and GCC Thumb or IAR
 #endif
 #endif
-#if (SHARKSSL_AES_GCM_SOFTWARE_CT && (!SHARKSSL_ENABLE_AES_GCM))
-#error SHARKSSL_AES_GCM_SOFTWARE_CT requires AES-GCM
+#if (SHARKSSL_OPTIMIZED_GCM_ASM != SHARKSSL_OPTIMIZED_GHASH_ASM)
+#error SHARKSSL_OPTIMIZED_GCM_ASM and SHARKSSL_OPTIMIZED_GHASH_ASM must be enabled together
 #endif
-#if (SHARKSSL_AES_GCM_SOFTWARE_CT && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
-#error SHARKSSL_AES_GCM_SOFTWARE_CT requires the native AES context
+#if (SHARKSSL_OPTIMIZED_GCM_VAES_ASM && (!SHARKSSL_OPTIMIZED_GCM_ASM))
+#error SHARKSSL_OPTIMIZED_GCM_VAES_ASM requires SHARKSSL_OPTIMIZED_GCM_ASM
 #endif
-#if (SHARKSSL_AES_SOFTWARE_CT && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
-#error SHARKSSL_AES_SOFTWARE_CT requires the native AES context
+#if ((SHARKSSL_OPTIMIZED_GCM_ASM || SHARKSSL_OPTIMIZED_GCM_VAES_ASM) &&      (SHARKSSL_AES_GCM_CT_M4_ASM || SHARKSSL_AES_GCM_CT_MVE_ASM))
+#error The x86/x64 and ARM64 assembler AES-GCM excludes the Cortex-M GHASH helpers
 #endif
-#if (SHARKSSL_AES_GCM_SOFTWARE_CT && (SHARKSSL_OPTIMIZED_GHASH_ASM || SHARKSSL_OPTIMIZED_GCM_ASM || SHARKSSL_OPTIMIZED_GCM_VAES_ASM))
-#error SHARKSSL_AES_GCM_SOFTWARE_CT cannot be combined with GCM/GHASH assembler
+#if (SHARKSSL_OPTIMIZED_AES_ASM && SHARKSSL_PSA_CONSUMER_STANDALONE_AES)
+#error SHARKSSL_OPTIMIZED_AES_ASM does not apply to the standalone PSA AES
 #endif
 #if (SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY && (!SHARKSSL_PSA_CONSUMER))
 #error SHARKSSL_PSA_CONSUMER_STRICT_IDENTITY requires the PSA consumer

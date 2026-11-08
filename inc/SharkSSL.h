@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6726 2026-11-03 10:41:29Z gianluca $
+ *   $Id: SharkSSL.h 6786 2026-11-07 16:55:42Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *
@@ -1924,12 +1924,33 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEM(
    const char *passphrase, SharkSslCert *sharkSslCert);
 
 /**
- * Length-explicit variant of sharkssl_PEM. The passphrase may contain NUL
- * bytes; passphraseLen is public and no password terminator is scanned.
- * The legacy sharkssl_PEM API scans the password once to obtain that length.
+ * Convert PEM data using an explicit passphrase length.
+ *
+ * Like sharkssl_PEM(), but the passphrase may contain NUL bytes and does
+ * not need a terminator. passphraseLen is public; sharkssl_PEM() obtains
+ * this length by scanning its NUL-terminated passphrase.
  * PEM labels, whitespace, encoded length and ASN.1 structure are public
- * format information. For native encrypted AES keys, also enable
- * SHARKSSL_AES_SOFTWARE_CT to avoid AES table accesses during decryption.
+ * format information. Native encrypted AES keys are decrypted with the
+ * constant-time software AES.
+ *
+ * \param certPEM const char *; NUL-terminated PEM certificate or certificate
+ * chain, or NULL for key-only conversion. Borrowed for this call.
+ * \param keyPEM const char *; NUL-terminated PEM public or private key,
+ * borrowed for this call. Required except when a PSA consumer converts a
+ * certificate chain without a private key; that case requires certPEM.
+ * Native conversion with certPEM requires a private key.
+ * \param passphrase const char *; passphraseLen readable password bytes for
+ * an encrypted key. May be NULL only when passphraseLen is 0. Borrowed for
+ * this call; embedded NUL bytes are included in the password.
+ * \param sharkSslCert SharkSslCert *; required pointer to the result variable.
+ * The caller owns any allocated result. Keep a successful result alive while
+ * SharkSSL references it, then release it with baFree(). On failure, discard
+ * and free any non-NULL result; an error does not always clear this pointer.
+ * \param passphraseLen U16; password length in bytes, 0 through 65535. Use 0
+ * with a NULL passphrase. No default.
+ * \return sharkssl_PEM_RetVal: SHARKSSL_PEM_OK (0) for a private-key result,
+ * SHARKSSL_PEM_OK_PUBLIC (1) for a public-only result, or a negative
+ * SHARKSSL_PEM_* error. Check both success codes explicitly.
  */
 SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEMEx(const char *certPEM, const char *keyPEM,
                                                 const char *passphrase, SharkSslCert *sharkSslCert, 
@@ -1937,10 +1958,36 @@ SHARKSSL_API sharkssl_PEM_RetVal sharkssl_PEMEx(const char *certPEM, const char 
 
 #if SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT
 /**
- * PBKDF2 with an explicit public password length, including embedded NUL
- * bytes. Work depends on the public password/salt/output lengths, hash
- * and iteration count, not password bytes. The legacy API below obtains
- * the password length with strlen. PSA builds use the selected provider.
+ * Derive a key with PBKDF2-HMAC using an explicit password length.
+ *
+ * The password may contain NUL bytes and does not need a terminator.
+ * Work depends on the public password, salt and output lengths, hash, and
+ * iteration count, not password bytes. sharkssl_PEM_PBKDF2() instead obtains
+ * the password length with strlen(). PSA builds use the selected provider.
+ * Requires SHARKSSL_ENABLE_PEM_API=1 and
+ * SHARKSSL_ENABLE_ENCRYPTED_PKCS8_SUPPORT=1.
+ *
+ * \param dk U8 *; required caller-owned writable buffer of at least dkLen
+ * bytes. Receives the derived key on success. Do not overlap it with the
+ * password or salt. Discard its contents on failure.
+ * \param passphrase const char *; required readable password buffer, borrowed
+ * for this call. Supply a non-NULL pointer even for a zero-length password.
+ * \param salt const char *; saltLen readable salt bytes, borrowed for this
+ * call. May be NULL when saltLen is 0. No terminator is needed.
+ * \param saltLen U32; salt length in bytes, including zero. No default.
+ * \param iterations U32; iteration count, 1 through 4294967295. No default.
+ * \param passphraseLen U16; password length in bytes, 0 through 65535,
+ * including embedded NUL bytes. No default.
+ * \param dkLen U16; derived-key length in bytes, 1 through 65535. No default.
+ * \param hashID U8; enabled HMAC hash identifier. Native builds accept
+ * SHARKSSL_HASHID_MD5, SHARKSSL_HASHID_SHA1, SHARKSSL_HASHID_SHA256,
+ * SHARKSSL_HASHID_SHA384, or SHARKSSL_HASHID_SHA512 when the corresponding
+ * hash is enabled. PSA consumers accept SHA-1, SHA-224, SHA-256, SHA-384, or
+ * SHA-512 identifiers when enabled and supported by the provider; MD5 is
+ * not accepted. No default.
+ * \return int: 0 on success; -1 for invalid input, an unavailable hash,
+ * or a hash/provider operation failure. Early input rejection can leave
+ * dk unchanged; do not assume that every failure erases it.
  */
 SHARKSSL_API int sharkssl_PEM_PBKDF2Ex(U8 *dk, const char *passphrase, const char *salt,
                                        U32 saltLen, U32 iterations, U16 passphraseLen, 

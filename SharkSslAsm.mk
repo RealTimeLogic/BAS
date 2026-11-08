@@ -66,6 +66,10 @@ $(error Explicitly enabled SharkSSL option is unsupported by the target assemble
 endif
 SHARKSSL_SELECTED_ASM := $(filter-out $(foreach option,$(SHARKSSL_UNSUPPORTED),$(SHARKSSL_$(SHARKSSL_BACKEND)_$(option)_ASM)),$(SHARKSSL_$(SHARKSSL_BACKEND)_ASM))
 SHARKSSL_DEFAULTS := $(filter-out $(SHARKSSL_UNSUPPORTED),$(SHARKSSL_$(SHARKSSL_BACKEND)_DEFAULTS))
+# Full x64 BigInt exports public word operations; omit it for explicit C.
+ifneq (,$(filter SHARKSSL_MAKE_BIGINT_DISABLED,$(SHARKSSL_PROBE)))
+SHARKSSL_SELECTED_ASM := $(filter-out $(SHARKSSL_$(SHARKSSL_BACKEND)_BIGINT_ASM),$(SHARKSSL_SELECTED_ASM))
+endif
 # A backend may default a hook only when the configured algorithm supports it.
 SHARKSSL_UNAVAILABLE := $(patsubst SHARKSSL_MAKE_%_UNAVAILABLE,%,$(filter SHARKSSL_MAKE_%_UNAVAILABLE,$(SHARKSSL_PROBE)))
 SHARKSSL_DEFAULTS := $(filter-out $(SHARKSSL_UNAVAILABLE),$(SHARKSSL_DEFAULTS))
@@ -73,13 +77,8 @@ SHARKSSL_DEFAULTS := $(filter-out $(SHARKSSL_UNAVAILABLE),$(SHARKSSL_DEFAULTS))
 ifneq (,$(filter SHARKSSL_MAKE_GCM_DEFINED SHARKSSL_MAKE_GHASH_DEFINED,$(SHARKSSL_PROBE)))
 SHARKSSL_DEFAULTS := $(filter-out GCM GHASH GCM_VAES,$(SHARKSSL_DEFAULTS))
 endif
-sharkssl_option = $(if $(SHARKSSL_OPTION_$(1)),$(SHARKSSL_OPTION_$(1)),SHARKSSL_OPTIMIZED_$(1)_ASM)
+sharkssl_option = $(if $(SHARKSSL_$(SHARKSSL_BACKEND)_OPTION_$(1)),$(SHARKSSL_$(SHARKSSL_BACKEND)_OPTION_$(1)),$(if $(SHARKSSL_OPTION_$(1)),$(SHARKSSL_OPTION_$(1)),SHARKSSL_OPTIMIZED_$(1)_ASM))
 SHARKSSL_AUTO_FLAGS := $(foreach option,$(SHARKSSL_DEFAULTS),$(if $(filter SHARKSSL_MAKE_$(option)_DEFINED,$(SHARKSSL_PROBE)),,$(MFT)$(call sharkssl_option,$(option))=1))
-# Native AES assembly requires the maintainer's non-CT software layout/fallback.
-# Preserve explicit CT choices; unsupported targets and ASM=off keep C defaults.
-ifneq (,$(filter GCM GHASH GCM_VAES,$(SHARKSSL_DEFAULTS))$(filter SHARKSSL_MAKE_GCM_REQUIRED SHARKSSL_MAKE_GHASH_REQUIRED SHARKSSL_MAKE_GCM_VAES_REQUIRED,$(SHARKSSL_PROBE)))
-SHARKSSL_AUTO_FLAGS += $(foreach option,AES_SOFTWARE_CT AES_GCM_SOFTWARE_CT,$(if $(filter SHARKSSL_MAKE_$(option)_DEFINED,$(SHARKSSL_PROBE)),,$(MFT)SHARKSSL_$(option)=0))
-endif
 # Check target C helpers as well as kernels, using the final feature flags.
 # Otherwise a guarded .S file could compile as empty and falsely pass.
 # Like the optional x64 check, compile to the null device; never run target code.

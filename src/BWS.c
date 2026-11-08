@@ -4282,20 +4282,10 @@ static inline asm U32 __declspec(register_abi) blocktemplate (U32 d) { byterev.l
 #include <intrinsics.h>
 #define blockarray  __REV
 #define __sharkssl_packed      __packed  
-   #if ((__CORE__==__ARM7M__) || (__CORE__==__ARM7EM__))  
-   #ifndef SHARKSSL_AES_DISABLE_SBOX
-   #define SHARKSSL_AES_DISABLE_SBOX 1
-   #endif
-   #endif
 
 #elif (__CC_ARM && __TARGET_PROFILE_M)   
 #define blockarray  __rev
 #define __sharkssl_packed      __packed  
-   #if ((__TARGET_ARCH_ARM == 0) && (__TARGET_ARCH_THUMB == 4))  
-   #ifndef SHARKSSL_AES_DISABLE_SBOX
-   #define SHARKSSL_AES_DISABLE_SBOX 1
-   #endif
-   #endif
 
 #elif (__ICCRX__)  
 static volatile inline U32 blocktemplate(U32 value) { asm ("\122\105\126\114\040\045\060\054\040\045\060" : "\053\162"(value)); return value; }
@@ -4529,6 +4519,10 @@ void memmove_endianness(U8 *d, const U8 *s, U16 len);
 #define switcheractive                         0x08  
 #define iommupdata                             0x10  
 #define fixupdevices                           0x20  
+
+#define SHARKSSL_RSA_PKCS1_MIN_PADDING_LENGTH         8
+#define SHARKSSL_RSA_PKCS1_OVERHEAD                   (SHARKSSL_RSA_PKCS1_MIN_PADDING_LENGTH + 3)
+#define SHARKSSL_RSA_NONZERO_RANDOM_CANDIDATES         64
 
 
 
@@ -4768,6 +4762,7 @@ typedef struct SharkSslECDSAParam
 
 #if (SHARKSSL_ENABLE_RSA && (!SHARKSSL_PSA_CONSUMER))
 SHARKSSL_API int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker);
+int SharkSslCertKey_RSA_verify(const SharkSslCertKey *ck, U8 *signature);
 int omap3430common(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U8 padding);
 int writemessage(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U8 padding);
 int clockaccess(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U8 padding);
@@ -5004,6 +4999,9 @@ int     SharkSslBigInt_expmod(const SharkSslBigInt *base, SharkSslBigInt *exp,
                               const SharkSslBigInt *mod,  SharkSslBigInt *res,
                               U8 countersvalid);
 
+int     SharkSslBigInt_expmodPublicCT(const SharkSslBigInt *base, const SharkSslBigInt *exp,
+                                      const SharkSslBigInt *mod, SharkSslBigInt *res);
+
 
 #define SHARKSSL_RSA_PRIVATE_CT (SHARKSSL_ENABLE_RSA &&                                       \
         (SHARKSSL_ENABLE_DHE_RSA || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_ENABLE_RSA_API ||    \
@@ -5017,7 +5015,7 @@ void    SharkSslBigInt_submodCT(SharkSslBigInt *o1, const SharkSslBigInt *o2, co
 int     SharkSslBigInt_invmodOddCT(SharkSslBigInt *o, const SharkSslBigInt *mod);
 #endif
 
-#if (SHARKSSL_RSA_PRIVATE_CT || SHARKSSL_ECDSA_ORDER_CT || (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSAKEY_CREATE))
+#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ECDSA_ORDER_CT)
 void    SharkSslBigInt_addmodCT(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkSslBigInt *mod);
 int     SharkSslBigInt_montR2CT(const SharkSslBigInt *mod, SharkSslBigInt *r2);
 
@@ -5540,6 +5538,13 @@ int     directalloc(SharkSslECCurve *S, SharkSslBigInt *d,
 
 #ifndef SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH        
 #define SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH        0x10
+#endif
+
+
+#if (SHARKSSL_TLS_1_3 && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH > 0) && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH <= 0x100))
+#define SHARKSSL_TLS13_PAD_RAND_LEN                16
+#else
+#define SHARKSSL_TLS13_PAD_RAND_LEN                0
 #endif
 
 
@@ -6152,6 +6157,10 @@ struct SharkSslCon
    U8 reqMajor, reqMinor;
    U8 major, minor;
    U8 alertLevel, alertDescr;
+   #if (SHARKSSL_TLS13_PAD_RAND_LEN > 0)
+   U8 wPadRandLeft;  /* unused bytes at the start of wPadRand */
+   U8 wPadRand[SHARKSSL_TLS13_PAD_RAND_LEN];
+   #endif
    #if ((SHARKSSL_SSL_SERVER_CODE || SHARKSSL_SSL_CLIENT_CODE) && SHARKSSL_ENABLE_SELECT_CIPHERSUITE)
    #if (SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH > 0xFF)
    #error SHARKSSL_SELECT_CIPHERSUITE_LIST_DEPTH must be lower than 256
@@ -40528,6 +40537,65 @@ RSA_cleanup:
 
 
 #if SHARKSSL_ENABLE_RSA
+
+int SharkSslCertKey_RSA_verify(const SharkSslCertKey *ck, U8 *signature)
+{
+   U8 *afterhandler, *temporaryentry;
+   SharkSslBigInt in, mod, exp, result;
+   U32 dm9k1resource;
+   int status = (int)SharkSslCon_Error;
+   U16 modLen, expLen, expAligned, resultLen;
+
+   if ((!ck) || (!signature) || (!ck->mod) || (!ck->exp) || (!machinekexec(ck->expLen)))
+   {
+      return status;
+   }
+   modLen = supportedvector(ck->modLen);
+   expLen = mousethresh(ck->expLen);
+   if ((modLen < (2 * SHARKSSL__M)) || (modLen & (SHARKSSL__M - 1)) || (0 == expLen))
+   {
+      return status;
+   }
+   expAligned = claimresource(expLen);
+   dm9k1resource = pcmciapdata(((U32)3 * modLen) + expAligned);
+   if ((U32)(size_t)dm9k1resource != dm9k1resource)
+   {
+      return (int)SharkSslCon_AllocationError;
+   }
+   afterhandler = (U8*)baMalloc(dm9k1resource);
+   if (NULL == afterhandler)
+   {
+      return (int)SharkSslCon_AllocationError;
+   }
+   temporaryentry = (U8*)selectaudio(afterhandler);
+   memmove_endianness(temporaryentry, signature, modLen);
+   SharkSslBigInt_constructor_w(&in, (U16)(modLen / SHARKSSL__M), temporaryentry);
+   temporaryentry += modLen;
+   memmove_endianness(temporaryentry, ck->mod, modLen);
+   SharkSslBigInt_constructor_w(&mod, (U16)(modLen / SHARKSSL__M), temporaryentry);
+   temporaryentry += modLen;
+   memset(temporaryentry, 0, expAligned - expLen);
+   memcpy(temporaryentry + (expAligned - expLen), ck->exp, expLen);
+   memmove_endianness(temporaryentry, temporaryentry, expAligned);
+   SharkSslBigInt_constructor_w(&exp, (U16)(expAligned / SHARKSSL__M), temporaryentry);
+   temporaryentry += expAligned;
+   SharkSslBigInt_constructor_w(&result, (U16)(modLen / SHARKSSL__M), temporaryentry);
+   if ((mod.beg[0] != 0) && (mod.beg[mod.len - 1] & 1) && (0 == SharkSslBigInt_expmod(&in, &exp, &mod, &result, 1)))
+   {
+      resultLen = (U16)SharkSslBigInt_getLength(&result);
+      if (resultLen <= modLen)
+      {
+         memset(signature, 0, modLen - resultLen);
+         memmove_endianness(signature + (modLen - resultLen), (const U8*)SharkSslBigInt_getDataPtr(&result), resultLen);
+         status = 0;
+      }
+   }
+   sharkssl_clear(afterhandler, dm9k1resource);
+   baFree(afterhandler);
+   return status;
+}
+
+
 int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
 {
    U16 p_len, e_len, size;
@@ -40588,19 +40656,20 @@ int async3clksrc(const SharkSslCertKey *ck, U8 op, U8 *stackchecker)
       SharkSslBigInt_constructor(&mod, (p_len * 8), ckmod);
       SharkSslBigInt_constructor(&u, (p_len * 8), temporaryentry);
       
-      if ((mod.len < 2) || (0 == mod.beg[0]))
+      if ((mod.len < 2) || (0 == mod.beg[0]) || (!(mod.beg[mod.len - 1] & 1)))
       {
+         sharkssl_clear(afterhandler, pcmciapdata(size));
          baFree(afterhandler);
          return (int)SharkSslCon_Error;
       }
-      if ((SharkSslBigInt_expmod(&in, &exp, &mod, &u, 1)) || (SharkSslBigInt_getLength(&u) > p_len))
+      if (SharkSslBigInt_expmodPublicCT(&in, &exp, &mod, &u))
       {
+         sharkssl_clear(afterhandler, pcmciapdata(size));
          baFree(afterhandler);
          return (int)SharkSslCon_Error;
       }
-      size = (U16)SharkSslBigInt_getLength(&u);
-      memset(stackchecker, 0, (U16)(p_len - size));
-      memmove_endianness(stackchecker + (p_len - size), (U8*)SharkSslBigInt_getDataPtr(&u), size);
+      memmove_endianness(stackchecker, (U8*)SharkSslBigInt_getDataPtr(&u), p_len);
+      sharkssl_clear(afterhandler, pcmciapdata(size));
       baFree(afterhandler);
    }
 
@@ -42213,18 +42282,79 @@ static SHARKSSL_CT_MUL_INLINE S64 sharkssl_mulS32x32CT(S32 a, S32 b)
 #include <stddef.h>
 #include "crypto/SharkSslCryptoASM.h"
 
-#if (SHARKSSL_ENABLE_AES_GCM && SHARKSSL_OPTIMIZED_GCM_ASM && (!SHARKSSL_AES_GCM_SOFTWARE_CT) && \
-     (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES) && \
-     (SHARKSSL_X86_ASM_PLATFORM || defined(__aarch64__) || defined(_M_ARM64)))
+#if (SHARKSSL_ENABLE_AES_GCM && SHARKSSL_OPTIMIZED_GCM_ASM && (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES))
+#if (SHARKSSL_X86_ASM_PLATFORM || defined(__aarch64__) || defined(_M_ARM64))
 #define SHARKSSL_AES_GCM_ASM_CT 1
+#else
+#error SHARKSSL_OPTIMIZED_GCM_ASM requires the x86/x64 or ARM64 assembler AES-GCM
+#endif
 #else
 #define SHARKSSL_AES_GCM_ASM_CT 0
 #endif
-#if (SHARKSSL_AES_SOFTWARE_CT && SHARKSSL_ENABLE_AES_GCM && SHARKSSL_OPTIMIZED_GCM_ASM && \
-     (SHARKSSL_X86_ASM_PLATFORM || defined(__aarch64__) || defined(_M_ARM64)))
-#error SHARKSSL_AES_SOFTWARE_CT cannot be combined with the x86/x64 or ARM64 assembler GCM
+
+
+#if (SHARKSSL_AES_GCM_ASM_CT && SHARKSSL_X86_ASM_PLATFORM)
+#define SHARKSSL_X86_GCM_RUNTIME_DISPATCH 1
+#else
+#define SHARKSSL_X86_GCM_RUNTIME_DISPATCH 0
 #endif
-#if (SHARKSSL_AES_GCM_SOFTWARE_CT || SHARKSSL_AES_GCM_ASM_CT || SHARKSSL_AES_SOFTWARE_CT)
+
+
+#if (SHARKSSL_AES_GCM_ASM_CT && (!SHARKSSL_X86_ASM_PLATFORM))
+#if ((!defined(__aarch64__)) || ((!defined(__GNUC__)) && (!defined(__ICCARM__))))
+#error SHARKSSL_OPTIMIZED_GCM_ASM on ARM64 requires GCC, Clang or IAR
+#endif
+#define SHARKSSL_ARM64_GCM_RUNTIME_DISPATCH 1
+#else
+#define SHARKSSL_ARM64_GCM_RUNTIME_DISPATCH 0
+#endif
+
+#define SHARKSSL_GCM_RUNTIME_DISPATCH (SHARKSSL_X86_GCM_RUNTIME_DISPATCH || SHARKSSL_ARM64_GCM_RUNTIME_DISPATCH)
+
+#if (SHARKSSL_X86_GCM_RUNTIME_DISPATCH && SHARKSSL_X64_ASM_PLATFORM && SHARKSSL_OPTIMIZED_GCM_VAES_ASM)
+#define SHARKSSL_X86_GCM_VAES_DISPATCH 1
+#else
+#define SHARKSSL_X86_GCM_VAES_DISPATCH 0
+#endif
+
+
+#if (SHARKSSL_OPTIMIZED_AES_ASM && (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES))
+#if (SHARKSSL_X86_ASM_PLATFORM || defined(__aarch64__))
+#define SHARKSSL_AES_HW 1
+#else
+#error SHARKSSL_OPTIMIZED_AES_ASM requires the x86/x64 or ARM64 assembler AES
+#endif
+#else
+#define SHARKSSL_AES_HW 0
+#endif
+
+
+#if (SHARKSSL_ENABLE_AES_GCM && ((!SHARKSSL_AES_GCM_ASM_CT) || SHARKSSL_GCM_RUNTIME_DISPATCH))
+#define SHARKSSL_AES_GCM_SOFTWARE 1
+#else
+#define SHARKSSL_AES_GCM_SOFTWARE 0
+#endif
+#if SHARKSSL_GCM_RUNTIME_DISPATCH
+
+void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x);
+#if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
+#define SHARKSSL_GHASH_ASM() sharkssl_gcm_asmAvailable()
+#else
+extern unsigned sharkssl_arm64_capabilities(void);
+#define SHARKSSL_GHASH_ASM() (0 != (sharkssl_arm64_capabilities() & (SHARKSSL_GCM_NEON ? 4u : 2u)))
+#define SHARKSSL_GCM_SOFT_GMULT(c,x) simplebuffer(c,x)
+#endif
+#define simplebuffer(c,x) do {                 \
+   if (SHARKSSL_GHASH_ASM())                     \
+   {                                             \
+      sharkssl_gcm_gmult32M0((c)->M0, x);        \
+   }                                             \
+   else                                          \
+   {                                             \
+      sharkssl_gcm_multCT((c), x);               \
+   }                                             \
+} while (0)
+#endif
 
 
 
@@ -42235,11 +42365,31 @@ static SHARKSSL_CT_MUL_INLINE S64 sharkssl_mulS32x32CT(S32 a, S32 b)
 #include <string.h>
 
 
-#define SHARKSSL_AES_CT_SOFTWARE (SHARKSSL_AES_GCM_SOFTWARE_CT || SHARKSSL_AES_SOFTWARE_CT)
-#define SHARKSSL_AES_CT_BLOCK (SHARKSSL_AES_CT_SOFTWARE || (SHARKSSL_AES_GCM_ASM_CT && (!SHARKSSL_X86_ASM_PLATFORM)))
-#define SHARKSSL_AES_CT_DECRYPT (SHARKSSL_AES_SOFTWARE_CT && (!SHARKSSL_DISABLE_AES_ECB_DECRYPT))
+#ifndef SHARKSSL_AES_GCM_SOFTWARE
+#define SHARKSSL_AES_GCM_SOFTWARE 0
+#endif
+#ifndef SHARKSSL_GCM_SOFT_GMULT
+#define SHARKSSL_GCM_SOFT_GMULT(c,x) sharkssl_gcm_multCT((c), x)
+#endif
 
-#if SHARKSSL_AES_CT_BLOCK
+#ifndef SHARKSSL_AES_HW
+#define SHARKSSL_AES_HW 0
+#endif
+#define SHARKSSL_AES_CT_DECRYPT (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
+
+#if (SHARKSSL_AES_CT_NEON && (!SHARKSSL_PSA_CONSUMER_STANDALONE_AES))
+#if ((!defined(__aarch64__)) || defined(__AARCH64EB__))
+#error SHARKSSL_AES_CT_NEON requires little-endian AArch64
+#endif
+#define SHARKSSL_AES_NEON_CT 1
+#else
+#define SHARKSSL_AES_NEON_CT 0
+#endif
+#define SHARKSSL_AES_NEON_ENC (SHARKSSL_AES_NEON_CT && (SHARKSSL_ENABLE_AES_CTR_MODE || SHARKSSL_AES_GCM_SOFTWARE))
+#define SHARKSSL_AES_NEON_DEC (SHARKSSL_AES_NEON_CT && SHARKSSL_ENABLE_AES_CBC && SHARKSSL_AES_CT_DECRYPT)
+
+#define SHARKSSL_GCM_NEON (SHARKSSL_AES_NEON_CT && SHARKSSL_AES_GCM_SOFTWARE)
+
 
 #if (!((__ICCARM__ && __ARM_PROFILE_M__) || (__CC_ARM && __TARGET_PROFILE_M__)) && SHARKSSL_UNALIGNED_ACCESS)
 static U32 _XzY0x310(const U8 *p, int _XzY0x173)
@@ -42274,10 +42424,9 @@ static void _XzY0x311(U8 *p, U32 w, int _XzY0x173)
 #define SHARKSSL_CT_GET_U32_BE(w,a,i) read64uint32(w,a,i)
 #define SHARKSSL_CT_PUT_U32_BE(w,a,i) inputlevel(w,a,i)
 #endif
-#endif  
 
 
-#if SHARKSSL_AES_GCM_SOFTWARE_CT
+#if SHARKSSL_AES_GCM_SOFTWARE
 typedef char sharkssl_gcm_ct_m0_alignment[(0 == (offsetof(SharkSslAesGcmCtx, M0) & 3)) ? 1 : -1];
 #if defined(__clang__) || (defined(__GNUC__) && (!defined(__CC_ARM)) && \
     ((__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7))))
@@ -42299,7 +42448,6 @@ typedef char sharkssl_gcm_ct_m0_alignment[(0 == (offsetof(SharkSslAesGcmCtx, M0)
 
 
 
-#if SHARKSSL_AES_CT_BLOCK
 static void sharkssl_aes_ct_transpose(U32 q[8])
 {
    unsigned k;
@@ -42318,7 +42466,6 @@ static void sharkssl_aes_ct_transpose(U32 q[8])
       SHARKSSL_AES_CT_EXCHANGE(q[k], q[k + 1], 1, 0x55555555u);
    }
 }
-#endif
 
 
 
@@ -42498,7 +42645,6 @@ static SHARKSSL_AES_CT_SBOX_INLINE void sharkssl_aes_ct_sbox(U32 q[8])
 } while (0)
 
 
-#if SHARKSSL_AES_CT_BLOCK
 
 static void sharkssl_aes_ct_addRoundKey(U32 q[8], const U32 *rk)
 {
@@ -42518,19 +42664,19 @@ static void sharkssl_aes_ct_addRoundKey(U32 q[8], const U32 *rk)
 static void sharkssl_aes_ct_rounds(const SharkSslAesCtx *o, U32 q[8])
 {
    const U32 *rk = o->key;
-   unsigned round, i;
+   unsigned _XzY0x6B, i;
 
    sharkssl_aes_ct_transpose(q);
    sharkssl_aes_ct_addRoundKey(q, rk);
-   for (round = 1; ; ++round)
+   for (_XzY0x6B = 1; ; ++_XzY0x6B)
    {
       sharkssl_aes_ct_sbox(q);
       rk += 4;
-      if (round >= (unsigned)o->nr)
+      if (_XzY0x6B >= (unsigned)o->nr)
       {
          break;
       }
-      switch (round & 3)
+      switch (_XzY0x6B & 3)
       {
          case 0:
             SHARKSSL_AES_CT_MIXCOLUMNS(q, 8, 0xffffffffu, 16, 0xffffffffu);
@@ -42562,7 +42708,6 @@ static void sharkssl_aes_ct_rounds(const SharkSslAesCtx *o, U32 q[8])
    }
    sharkssl_aes_ct_transpose(q);
 }
-#endif  
 
 
 #if SHARKSSL_AES_CT_DECRYPT
@@ -42609,22 +42754,22 @@ static void sharkssl_aes_ct_invAffine(U32 q[8])
 static void sharkssl_aes_ct_invRounds(const SharkSslAesCtx *o, U32 q[8])
 {
    const U32 *rk = &o->key[4 * o->nr];
-   unsigned round, i;
+   unsigned _XzY0x6B, i;
 
    sharkssl_aes_ct_transpose(q);
    sharkssl_aes_ct_addRoundKey(q, rk);
-   for (round = (unsigned)o->nr - 1; ; --round)
+   for (_XzY0x6B = (unsigned)o->nr - 1; ; --_XzY0x6B)
    {
       sharkssl_aes_ct_invAffine(q);
       sharkssl_aes_ct_sbox(q);
       sharkssl_aes_ct_invAffine(q);
       rk -= 4;
       sharkssl_aes_ct_addRoundKey(q, rk);
-      if (0 == round)
+      if (0 == _XzY0x6B)
       {
          break;
       }
-      switch ((round - (unsigned)o->nr) & 3)
+      switch ((_XzY0x6B - (unsigned)o->nr) & 3)
       {
          case 0:
             SHARKSSL_AES_CT_INVMIX_PREPARE(q, 16, 0xffffffffu);
@@ -42677,12 +42822,10 @@ static void _XzY0x35E(SharkSslAesCtx *o)
 #endif  
 
 
-#if (SHARKSSL_AES_GCM_ASM_CT || (SHARKSSL_AES_CT_SOFTWARE && SHARKSSL_USE_AES_192))
+#if (SHARKSSL_AES_GCM_ASM_CT || SHARKSSL_AES_HW || (SHARKSSL_USE_AES_192 && (!SHARKSSL_AES_CT_KEY_ASM)))
 
-static U32 _XzY0x31(U32 _XzY0x2F4)
+static U32 _XzY0x31(U32 _XzY0x2F4, U32 q[8])
 {
-   U32 q[8];
-
    q[0] = _XzY0x2F4 & 0x01010101;
    q[1] = (_XzY0x2F4 >> 1) & 0x01010101;
    q[2] = (_XzY0x2F4 >> 2) & 0x01010101;
@@ -42693,92 +42836,68 @@ static U32 _XzY0x31(U32 _XzY0x2F4)
    q[7] = (_XzY0x2F4 >> 7) & 0x01010101;
    sharkssl_aes_ct_sbox(q);
    _XzY0x2F4 = q[0] | (q[1] << 1) | (q[2] << 2) | (q[3] << 3) | (q[4] << 4) | (q[5] << 5) | (q[6] << 6) | (q[7] << 7);
-   _XzY0x2F4 ^= 0x63636363;
-   sharkssl_clear(q, sizeof(q));
-   return _XzY0x2F4;
+   return _XzY0x2F4 ^ 0x63636363;
 }
 #endif
 
 
-#if (SHARKSSL_AES_CT_BLOCK && (SHARKSSL_AES_GCM_ASM_CT || SHARKSSL_USE_AES_192))
+#if SHARKSSL_USE_AES_192
 
-static void sharkssl_aes_ct_roundKey(const U32 column[4], unsigned round, U32 rk[4])
+static void sharkssl_aes_ct_roundKey(const U32 column[4], unsigned _XzY0x6B, U32 rk[4])
 {
-   U32 q[4];
-   unsigned c, m = round & 3;
+   unsigned c, m = _XzY0x6B & 3;
 
    for (c = 0; c < 4; ++c)
    {
-      q[c] = (column[c] & 0x000000ff) |
-             (column[(c - m) & 3] & 0x0000ff00) |
-             (column[(c - 2 * m) & 3] & 0x00ff0000) |
-             (column[(c - 3 * m) & 3] & 0xff000000);
+      rk[c] = (column[c] & 0x000000ff) |
+              (column[(c - m) & 3] & 0x0000ff00) |
+              (column[(c - 2 * m) & 3] & 0x00ff0000) |
+              (column[(c - 3 * m) & 3] & 0xff000000);
    }
-   SHARKSSL_AES_CT_EXCHANGE(q[0], q[2], 2, 0x33333333);
-   SHARKSSL_AES_CT_EXCHANGE(q[1], q[3], 2, 0x33333333);
-   SHARKSSL_AES_CT_EXCHANGE(q[0], q[1], 1, 0x55555555);
-   SHARKSSL_AES_CT_EXCHANGE(q[2], q[3], 1, 0x55555555);
-   for (c = 0; c < 4; ++c)
-   {
-      rk[c] = q[c];
-   }
-   if (round)
+   SHARKSSL_AES_CT_EXCHANGE(rk[0], rk[2], 2, 0x33333333);
+   SHARKSSL_AES_CT_EXCHANGE(rk[1], rk[3], 2, 0x33333333);
+   SHARKSSL_AES_CT_EXCHANGE(rk[0], rk[1], 1, 0x55555555);
+   SHARKSSL_AES_CT_EXCHANGE(rk[2], rk[3], 1, 0x55555555);
+   if (_XzY0x6B)
    {
       rk[0] ^= 0x0f0f0f0f;
       rk[1] ^= 0xffffffff;
       rk[2] ^= 0xf0f0f0f0;
    }
-   sharkssl_clear(q, sizeof(q));
 }
 #endif  
 
 
-#if SHARKSSL_AES_CT_SOFTWARE
 #if (SHARKSSL_USE_AES_128 || SHARKSSL_USE_AES_256)
 
-static void sharkssl_aes_ct_storePlanes(const U32 q[8], U32 rk[4], unsigned round)
+static void sharkssl_aes_ct_storeKey(const U32 w[4], U32 rk[4], unsigned _XzY0x6B)
 {
-   U32 v, d;
-   unsigned b;
+   U32 v, d, mask;
+   unsigned b, m = _XzY0x6B & 3;
 
+   mask = (2 == m) ? 0x33003300 : ((1 == m) ? 0x22331100 : 0x11332200);
    for (b = 0; b < 4; ++b)
    {
-      v = q[b] | (q[b + 4] << 4);
-      switch (round & 3)
+      v = w[b];
+      if (m & 1)
       {
-         case 0:
-            rk[b] = v;
-            break;
-
-         case 1:
-            d = ((v >> 1) ^ v) & 0x55005500;
-            v ^= d ^ (d << 1);
-            d = ((v >> 2) ^ v) & 0x22331100;
-            rk[b] = v ^ d ^ (d << 2);
-            break;
-
-         case 2:
-            d = ((v >> 2) ^ v) & 0x33003300;
-            rk[b] = v ^ d ^ (d << 2);
-            break;
-
-         default:
-            d = ((v >> 1) ^ v) & 0x55005500;
-            v ^= d ^ (d << 1);
-            d = ((v >> 2) ^ v) & 0x11332200;
-            rk[b] = v ^ d ^ (d << 2);
-            break;
+         d = ((v >> 1) ^ v) & 0x55005500;
+         v ^= d ^ (d << 1);
       }
-   }
-   if (round)
-   {
-      rk[0] ^= 0x0f0f0f0f;
-      rk[1] ^= 0xffffffff;
-      rk[2] ^= 0xf0f0f0f0;
+      if (m)
+      {
+         d = ((v >> 2) ^ v) & mask;
+         v ^= d ^ (d << 2);
+      }
+      rk[b] = v;
    }
 }
 
 
+#if SHARKSSL_AES_CT_KEY_ASM
+extern void sharkssl_aes_ct_expand128_m4(U32 *rk, const U32 *w);
+extern void sharkssl_aes_ct_expand256_m4(U32 *rk, const U32 *w);
+#else
 
 #if defined(__ICCARM__)
 static __sharkssl_noinline void sharkssl_aes_ct_keySbox(U32 q[8])
@@ -42787,26 +42906,8 @@ static SHARKSSL_AES_CT_SBOX_INLINE void sharkssl_aes_ct_keySbox(U32 q[8])
 #endif
 {
    sharkssl_aes_ct_sbox(q);
-   q[0] ^= 0x01010101;
-   q[1] ^= 0x01010101;
-   q[5] ^= 0x01010101;
-   q[6] ^= 0x01010101;
 }
-
-
-
-#if defined(__ICCARM__)
-#pragma inline=forced
 #endif
-static U32 _XzY0x5C(U32 _XzY0x5A, U32 _XzY0x5D, U32 _XzY0x5B)
-{
-   _XzY0x5D ^= _XzY0x5B;
-   _XzY0x5D ^= _XzY0x5D << 1;
-   _XzY0x5D ^= _XzY0x5D << 2;
-   _XzY0x5A ^= _XzY0x5A << 1;
-   _XzY0x5A ^= _XzY0x5A << 2;
-   return ((_XzY0x5A & 0x0f0f0f0f) ^ _XzY0x5D);
-}
 
 
 
@@ -42815,55 +42916,96 @@ static U32 _XzY0x5C(U32 _XzY0x5A, U32 _XzY0x5D, U32 _XzY0x5B)
 #endif
 static void _XzY0x59(SharkSslAesCtx *o, const U8 *key, U8 keyLen)
 {
-   U32 q[2][8], t[8], *active;
+   #if SHARKSSL_AES_CT_KEY_ASM
+   U32 w[2][4], *active;
+   unsigned _XzY0x33F, halves, b, nr;
+   #else
+   U32 w[2][4], t[8], *active, *last;
    U32 v, _XzY0x30F = 1;
-   unsigned _XzY0x33F, halves, b, round, nr;
-   U8 rc;
+   unsigned _XzY0x33F, halves, b, _XzY0x6B, nr;
+   #endif
 
    halves = keyLen / 16;
    nr = (1 == halves) ? 10 : 14;
    for (_XzY0x33F = 0; _XzY0x33F < halves; ++_XzY0x33F)
    {
+      active = w[_XzY0x33F];
       for (b = 0; b < 4; ++b)
       {
-         SHARKSSL_CT_GET_U32_LE(q[_XzY0x33F][b], key, 16 * _XzY0x33F + 4 * b);
-         q[_XzY0x33F][b + 4] = 0;
+         SHARKSSL_CT_GET_U32_LE(active[b], key, 16 * _XzY0x33F + 4 * b);
       }
-      sharkssl_aes_ct_transpose(q[_XzY0x33F]);
-      sharkssl_aes_ct_storePlanes(q[_XzY0x33F], &o->key[4 * _XzY0x33F], _XzY0x33F);
+      SHARKSSL_AES_CT_EXCHANGE(active[0], active[2], 2, 0x33333333);
+      SHARKSSL_AES_CT_EXCHANGE(active[1], active[3], 2, 0x33333333);
+      SHARKSSL_AES_CT_EXCHANGE(active[0], active[1], 1, 0x55555555);
+      SHARKSSL_AES_CT_EXCHANGE(active[2], active[3], 1, 0x55555555);
+      sharkssl_aes_ct_storeKey(active, &o->key[4 * _XzY0x33F], _XzY0x33F);
    }
-   for (round = halves; round <= nr; ++round)
+   if (2 == halves)
    {
-      _XzY0x33F = round & (halves - 1);
-      active = q[_XzY0x33F];
-      for (b = 0; b < 8; ++b)
+      o->key[4] ^= 0x0f0f0f0f;
+      o->key[5] ^= 0xffffffff;
+      o->key[6] ^= 0xf0f0f0f0;
+   }
+   #if SHARKSSL_AES_CT_KEY_ASM
+   
+   #if SHARKSSL_USE_AES_128
+   if (1 == halves)
+   {
+      sharkssl_aes_ct_expand128_m4(&o->key[4], w[0]);
+   }
+   #endif
+   #if SHARKSSL_USE_AES_256
+   if (2 == halves)
+   {
+      sharkssl_aes_ct_expand256_m4(&o->key[8], w[0]);
+   }
+   #endif
+   #else
+   for (_XzY0x6B = halves; _XzY0x6B <= nr; ++_XzY0x6B)
+   {
+      _XzY0x33F = _XzY0x6B & (halves - 1);
+      active = w[_XzY0x33F];
+      last = w[_XzY0x33F ^ (halves - 1)];
+      for (b = 0; b < 4; ++b)
       {
-         v = (q[_XzY0x33F ^ (halves - 1)][b] >> 3) & 0x01010101;
          if (0 == _XzY0x33F)
          {
-            v = (v >> 8) | (v << 24);
+            t[b] = ((last[b] >> 11) | (last[b] << 21)) & 0x01010101;
+            t[b + 4] = ((last[b] >> 15) | (last[b] << 17)) & 0x01010101;
          }
-         t[b] = v;
+         else
+         {
+            t[b] = (last[b] >> 3) & 0x01010101;
+            t[b + 4] = (last[b] >> 7) & 0x01010101;
+         }
       }
       sharkssl_aes_ct_keySbox(t);
-      rc = (U8)((0 == _XzY0x33F) ? _XzY0x30F : 0);
-      active[0] = _XzY0x5C(active[0], t[0], (rc >> 0) & 1);
-      active[1] = _XzY0x5C(active[1], t[1], (rc >> 1) & 1);
-      active[2] = _XzY0x5C(active[2], t[2], (rc >> 2) & 1);
-      active[3] = _XzY0x5C(active[3], t[3], (rc >> 3) & 1);
-      active[4] = _XzY0x5C(active[4], t[4], (rc >> 4) & 1);
-      active[5] = _XzY0x5C(active[5], t[5], (rc >> 5) & 1);
-      active[6] = _XzY0x5C(active[6], t[6], (rc >> 6) & 1);
-      active[7] = _XzY0x5C(active[7], t[7], (rc >> 7) & 1);
+      for (b = 0; b < 4; ++b)
+      {
+         v = active[b] ^ t[b] ^ (t[b + 4] << 4);
+         if (0 == _XzY0x33F)
+         {
+            v ^= (_XzY0x30F >> b) & 0x11;
+         }
+         v ^= (v << 1) & 0xeeeeeeee;
+         active[b] = v ^ ((v << 2) & 0xcccccccc);
+      }
+      sharkssl_aes_ct_storeKey(active, &o->key[4 * _XzY0x6B], _XzY0x6B);
+      
+      active[0] ^= 0x0f0f0f0f;
+      active[1] ^= 0xffffffff;
+      active[2] ^= 0xf0f0f0f0;
       if (0 == _XzY0x33F)
       {
          _XzY0x30F = (_XzY0x30F << 1) ^ (0x11b & (0 - (_XzY0x30F >> 7)));
       }
-      sharkssl_aes_ct_storePlanes(active, &o->key[4 * round], round);
    }
+   #endif
    o->nr = (U16)nr;
-   sharkssl_clear(q, sizeof(q));
+   sharkssl_clear(w, sizeof(w));
+   #if (!SHARKSSL_AES_CT_KEY_ASM)
    sharkssl_clear(t, sizeof(t));
+   #endif
 }
 
 
@@ -42886,10 +43028,29 @@ static __sharkssl_noinline void SharkSslAesCtx_construct256CT(SharkSslAesCtx *o,
 
 
 #if SHARKSSL_USE_AES_192
+#if SHARKSSL_AES_CT_KEY_ASM
+extern void sharkssl_aes_ct_expand192_m4(U32 *rk, const U32 *w);
+
 
 static __sharkssl_noinline void SharkSslAesCtx_construct192CT(SharkSslAesCtx *o, const U8 *key)
 {
-   U32 countersvalid[6], column[4], _XzY0x2F4 = 0, *rk = o->key;
+   U32 w[6];
+   unsigned i;
+
+   for (i = 0; i < 6; ++i)
+   {
+      SHARKSSL_CT_GET_U32_LE(w[i], key, 4 * i);
+   }
+   sharkssl_aes_ct_roundKey(w, 0, o->key);
+   sharkssl_aes_ct_expand192_m4(&o->key[4], w);
+   o->nr = 12;
+   sharkssl_clear(w, sizeof(w));
+}
+#else
+
+static __sharkssl_noinline void SharkSslAesCtx_construct192CT(SharkSslAesCtx *o, const U8 *key)
+{
+   U32 countersvalid[6], column[4], q[8], _XzY0x2F4 = 0, *rk = o->key;
    U32 _XzY0x30F = 1;
    unsigned index, _XzY0x22D;
 
@@ -42903,7 +43064,7 @@ static __sharkssl_noinline void SharkSslAesCtx_construct192CT(SharkSslAesCtx *o,
       {
          if (0 == _XzY0x22D)
          {
-            _XzY0x2F4 = _XzY0x31((_XzY0x2F4 >> 8) | (_XzY0x2F4 << 24)) ^ _XzY0x30F;
+            _XzY0x2F4 = _XzY0x31((_XzY0x2F4 >> 8) | (_XzY0x2F4 << 24), q) ^ _XzY0x30F;
             _XzY0x30F = (_XzY0x30F << 1) ^ (0x11b & (0 - (_XzY0x30F >> 7)));
          }
          _XzY0x2F4 ^= countersvalid[_XzY0x22D];
@@ -42923,7 +43084,9 @@ static __sharkssl_noinline void SharkSslAesCtx_construct192CT(SharkSslAesCtx *o,
    o->nr = 12;
    sharkssl_clear(countersvalid, sizeof(countersvalid));
    sharkssl_clear(column, sizeof(column));
+   sharkssl_clear(q, sizeof(q));
 }
+#endif
 #endif
 
 
@@ -42954,10 +43117,8 @@ static void _XzY0x30D(SharkSslAesCtx *o, const U8 *key, U8 keyLen)
    baAssert(0);
    o->nr = 0;
 }
-#endif  
 
 
-#if SHARKSSL_AES_CT_SOFTWARE
 static void SharkSslAesCtx_encryptCT(SharkSslAesCtx *o, const U8 input[16], U8 output[16])
 {
    U32 q[8];
@@ -42974,10 +43135,9 @@ static void SharkSslAesCtx_encryptCT(SharkSslAesCtx *o, const U8 input[16], U8 o
       SHARKSSL_CT_PUT_U32_LE(q[c], output, 4 * c);
    }
 }
-#endif
 
 
-#if SHARKSSL_AES_GCM_ASM_CT
+#if (SHARKSSL_AES_GCM_ASM_CT || SHARKSSL_AES_HW)
 
 
 #if ((!SHARKSSL_AES_SMALL_FOOTPRINT) && SHARKSSL_AES_CIPHER_LOOP_UNROLL)
@@ -42990,7 +43150,7 @@ static void SharkSslAesCtx_encryptCT(SharkSslAesCtx *o, const U8 input[16], U8 o
 
 static void _XzY0x30E(SharkSslAesCtx *o, const U8 *key, U8 keyLen)
 {
-   U32 *countshift = o->key, t, _XzY0x30F = 0x01000000u;
+   U32 *countshift = o->key, q[8], t, _XzY0x30F = 0x01000000u;
    unsigned keyWords, writepmresrn, i;
 
    if (((keyLen != 16) || (!SHARKSSL_USE_AES_128)) &&
@@ -43012,56 +43172,25 @@ static void _XzY0x30E(SharkSslAesCtx *o, const U8 *key, U8 keyLen)
       t = countshift[i - 1];
       if (0 == (i % keyWords))
       {
-         t = _XzY0x31((t << 8) | (t >> 24)) ^ _XzY0x30F;
+         t = _XzY0x31((t << 8) | (t >> 24), q) ^ _XzY0x30F;
          _XzY0x30F = (_XzY0x30F << 1) ^ (0x1b000000u & (0u - (_XzY0x30F >> 31)));
       }
       else if ((keyWords == 8) && (4 == (i % keyWords)))
       {
-         t = _XzY0x31(t);
+         t = _XzY0x31(t, q);
       }
       countshift[i] = countshift[i - keyWords] ^ t;
    }
    o->nr = SHARKSSL_AES_NR_ENCODE(keyWords + 6);
+   sharkssl_clear(q, sizeof(q));
    t = 0;
 }
 
 
-#if SHARKSSL_AES_CT_BLOCK
-
-static void SharkSslAesCtx_encryptStdCT(const SharkSslAesCtx *o, const U8 input[16], U8 output[16])
-{
-   SharkSslAesCtx fix;
-   U32 q[8], column[4];
-   unsigned c, round, nr = SHARKSSL_AES_NR_DECODE(o->nr);
-
-   for (round = 0; round <= nr; ++round)
-   {
-      for (c = 0; c < 4; ++c)
-      {
-         column[c] = blockarray(o->key[4 * round + c]);
-      }
-      sharkssl_aes_ct_roundKey(column, round, &fix.key[4 * round]);
-   }
-   fix.nr = (U16)nr;
-   for (c = 0; c < 4; ++c)
-   {
-      SHARKSSL_CT_GET_U32_LE(q[c], input, 4 * c);
-      q[c + 4] = 0;
-   }
-   sharkssl_aes_ct_rounds(&fix, q);
-   for (c = 0; c < 4; ++c)
-   {
-      SHARKSSL_CT_PUT_U32_LE(q[c], output, 4 * c);
-   }
-   sharkssl_clear(&fix, sizeof(fix));
-   sharkssl_clear(column, sizeof(column));
-   sharkssl_clear(q, sizeof(q));
-}
-#endif
 #endif  
 
 
-#if SHARKSSL_AES_CT_SOFTWARE
+#if (SHARKSSL_ENABLE_AES_CTR_MODE || SHARKSSL_ENABLE_AES_CCM || SHARKSSL_AES_GCM_SOFTWARE)
 
 static void SharkSslAesCtx_encrypt2CT(SharkSslAesCtx *o, const U8 in0[16], const U8 in1[16],
                                       U8 _XzY0x348[16], U8 _XzY0x349[16])
@@ -43081,7 +43210,7 @@ static void SharkSslAesCtx_encrypt2CT(SharkSslAesCtx *o, const U8 in0[16], const
       SHARKSSL_CT_PUT_U32_LE(q[c + 4], _XzY0x349, 4 * c);
    }
 }
-#endif  
+#endif
 
 
 #if SHARKSSL_AES_CT_DECRYPT
@@ -43114,7 +43243,444 @@ static void _XzY0x314(const SharkSslAesCtx *o, const U8 *in0, const U8 *in1,
 #endif  
 
 
-#if SHARKSSL_AES_GCM_SOFTWARE_CT
+#if (SHARKSSL_AES_NEON_ENC || SHARKSSL_AES_NEON_DEC)
+
+#include <arm_neon.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define SHARKSSL_AES_NEON_INLINE __inline__ __attribute__((always_inline))
+#else
+#define SHARKSSL_AES_NEON_INLINE
+#endif
+
+
+typedef struct
+{
+   uint32x4_t rk[8 * 15];
+   unsigned nr;
+} SharkSslAesNeonKeys;
+
+#define SHARKSSL_AES_NEON_ROR(x, n) vsriq_n_u32(vshlq_n_u32((x), 32 - (n)), (x), (n))
+#define SHARKSSL_AES_NEON_ROR16(x) vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+
+#define SHARKSSL_AES_NEON_ROTATE(x, n, mask) \
+   vbslq_u32(vdupq_n_u32(mask), SHARKSSL_AES_NEON_ROR(x, n), SHARKSSL_AES_NEON_ROR(x, (n) - 4))
+
+#define SHARKSSL_AES_NEON_EXCHANGE(a, b, n, mask) do {                                  \
+   uint32x4_t d_ = vandq_u32(veorq_u32(vshrq_n_u32((a), (n)), (b)), vdupq_n_u32(mask)); \
+   (b) = veorq_u32((b), d_);                                                            \
+   (a) = veorq_u32((a), vshlq_n_u32(d_, (n)));                                          \
+} while (0)
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_transpose(uint32x4_t q[8])
+{
+   SHARKSSL_AES_NEON_EXCHANGE(q[0], q[4], 4, 0x0f0f0f0fu);
+   SHARKSSL_AES_NEON_EXCHANGE(q[1], q[5], 4, 0x0f0f0f0fu);
+   SHARKSSL_AES_NEON_EXCHANGE(q[2], q[6], 4, 0x0f0f0f0fu);
+   SHARKSSL_AES_NEON_EXCHANGE(q[3], q[7], 4, 0x0f0f0f0fu);
+   SHARKSSL_AES_NEON_EXCHANGE(q[0], q[2], 2, 0x33333333u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[1], q[3], 2, 0x33333333u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[4], q[6], 2, 0x33333333u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[5], q[7], 2, 0x33333333u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[0], q[1], 1, 0x55555555u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[2], q[3], 1, 0x55555555u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[4], q[5], 1, 0x55555555u);
+   SHARKSSL_AES_NEON_EXCHANGE(q[6], q[7], 1, 0x55555555u);
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_sbox(uint32x4_t q[8])
+{
+   uint32x4_t u0, u1, u2, u3, u4, u5, u6, u7;
+   uint32x4_t y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11;
+   uint32x4_t y12, y13, y14, y15, y16, y17, y18, y19, y20, y21;
+   uint32x4_t t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15;
+   uint32x4_t t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29;
+   uint32x4_t t30, t31, t32, t33, t34, t35, t36, t37, t38, t39, t40, t41, t42, t43;
+   uint32x4_t t44, t45;
+   uint32x4_t z0, z1, z2, z3, z4, z5, z6, z7, z8, z9;
+   uint32x4_t z10, z11, z12, z13, z14, z15, z16, z17;
+   uint32x4_t tc1, tc2, tc3, tc4, tc5, tc6, tc7, tc8, tc9, tc10, tc11, tc12, tc13;
+   uint32x4_t tc14, tc16, tc17, tc18, tc20, tc21, tc26, s3;
+
+   u0 = q[7]; u1 = q[6]; u2 = q[5]; u3 = q[4];
+   u4 = q[3]; u5 = q[2]; u6 = q[1]; u7 = q[0];
+
+   y14 = veorq_u32(u3, u5);
+   y13 = veorq_u32(u0, u6);
+   y9 = veorq_u32(u0, u3);
+   y8 = veorq_u32(u0, u5);
+   t0 = veorq_u32(u1, u2);
+   y1 = veorq_u32(t0, u7);
+   y4 = veorq_u32(y1, u3);
+   y12 = veorq_u32(y13, y14);
+   y2 = veorq_u32(y1, u0);
+   y5 = veorq_u32(y1, u6);
+   y3 = veorq_u32(y5, y8);
+   t1 = veorq_u32(u4, y12);
+   y15 = veorq_u32(t1, u5);
+   y20 = veorq_u32(t1, u1);
+   y6 = veorq_u32(y15, u7);
+   y10 = veorq_u32(y15, t0);
+   y11 = veorq_u32(y20, y9);
+   y7 = veorq_u32(u7, y11);
+   y17 = veorq_u32(y10, y11);
+   y19 = veorq_u32(y10, y8);
+   y16 = veorq_u32(t0, y11);
+   y21 = veorq_u32(y13, y16);
+   y18 = veorq_u32(u0, y16);
+   t2 = vandq_u32(y12, y15);
+   t3 = vandq_u32(y3, y6);
+   t4 = veorq_u32(t3, t2);
+   t5 = vandq_u32(y4, u7);
+   t6 = veorq_u32(t5, t2);
+   t7 = vandq_u32(y13, y16);
+   t8 = vandq_u32(y5, y1);
+   t9 = veorq_u32(t8, t7);
+   t10 = vandq_u32(y2, y7);
+   t11 = veorq_u32(t10, t7);
+   t12 = vandq_u32(y9, y11);
+   t13 = vandq_u32(y14, y17);
+   t14 = veorq_u32(t13, t12);
+   t15 = vandq_u32(y8, y10);
+   t16 = veorq_u32(t15, t12);
+   t17 = veorq_u32(t4, y20);
+   t18 = veorq_u32(t6, t16);
+   t19 = veorq_u32(t9, t14);
+   t20 = veorq_u32(t11, t16);
+   t21 = veorq_u32(t17, t14);
+   t22 = veorq_u32(t18, y19);
+   t23 = veorq_u32(t19, y21);
+   t24 = veorq_u32(t20, y18);
+   t25 = veorq_u32(t21, t22);
+   t26 = vandq_u32(t21, t23);
+   t27 = veorq_u32(t24, t26);
+   t28 = vandq_u32(t25, t27);
+   t29 = veorq_u32(t28, t22);
+   t30 = veorq_u32(t23, t24);
+   t31 = veorq_u32(t22, t26);
+   t32 = vandq_u32(t31, t30);
+   t33 = veorq_u32(t32, t24);
+   t34 = veorq_u32(t23, t33);
+   t35 = veorq_u32(t27, t33);
+   t36 = vandq_u32(t24, t35);
+   t37 = veorq_u32(t36, t34);
+   t38 = veorq_u32(t27, t36);
+   t39 = vandq_u32(t29, t38);
+   t40 = veorq_u32(t25, t39);
+   t41 = veorq_u32(t40, t37);
+   t42 = veorq_u32(t29, t33);
+   t43 = veorq_u32(t29, t40);
+   t44 = veorq_u32(t33, t37);
+   t45 = veorq_u32(t42, t41);
+   z0 = vandq_u32(t44, y15);
+   z1 = vandq_u32(t37, y6);
+   z2 = vandq_u32(t33, u7);
+   z3 = vandq_u32(t43, y16);
+   z4 = vandq_u32(t40, y1);
+   z5 = vandq_u32(t29, y7);
+   z6 = vandq_u32(t42, y11);
+   z7 = vandq_u32(t45, y17);
+   z8 = vandq_u32(t41, y10);
+   z9 = vandq_u32(t44, y12);
+   z10 = vandq_u32(t37, y3);
+   z11 = vandq_u32(t33, y4);
+   z12 = vandq_u32(t43, y13);
+   z13 = vandq_u32(t40, y5);
+   z14 = vandq_u32(t29, y2);
+   z15 = vandq_u32(t42, y9);
+   z16 = vandq_u32(t45, y14);
+   z17 = vandq_u32(t41, y8);
+   tc1 = veorq_u32(z15, z16);
+   tc2 = veorq_u32(z10, tc1);
+   tc3 = veorq_u32(z9, tc2);
+   tc4 = veorq_u32(z0, z2);
+   tc5 = veorq_u32(z1, z0);
+   tc6 = veorq_u32(z3, z4);
+   tc7 = veorq_u32(z12, tc4);
+   tc8 = veorq_u32(z7, tc6);
+   tc9 = veorq_u32(z8, tc7);
+   tc10 = veorq_u32(tc8, tc9);
+   tc11 = veorq_u32(tc6, tc5);
+   tc12 = veorq_u32(z3, z5);
+   tc13 = veorq_u32(z13, tc1);
+   tc14 = veorq_u32(tc4, tc12);
+   s3 = veorq_u32(tc3, tc11);
+   tc16 = veorq_u32(z6, tc8);
+   tc17 = veorq_u32(z14, tc10);
+   tc18 = veorq_u32(tc13, tc14);
+   tc20 = veorq_u32(z15, tc16);
+   tc21 = veorq_u32(tc2, z11);
+   tc26 = veorq_u32(tc17, tc20);
+
+   q[7] = veorq_u32(tc3, tc16);     
+   q[6] = veorq_u32(s3, tc16);      
+   q[5] = veorq_u32(tc26, z17);     
+   q[4] = s3;             
+   q[3] = veorq_u32(tc14, s3);      
+   q[2] = veorq_u32(tc21, tc17);    
+   q[1] = veorq_u32(tc10, tc18);    
+   q[0] = veorq_u32(z12, tc18);     
+}
+
+
+
+#define SHARKSSL_AES_NEON_MIXCOLUMNS(q, R1, R2) do {                            \
+   uint32x4_t r0_, r1_, r2_, r3_, r4_, r5_, r6_, r7_;                           \
+   uint32x4_t t0_, t1_, t2_, t3_, t4_, t5_, t6_, t7_;                           \
+   r0_ = R1((q)[0]); t0_ = veorq_u32((q)[0], r0_);                              \
+   r1_ = R1((q)[1]); t1_ = veorq_u32((q)[1], r1_);                              \
+   r2_ = R1((q)[2]); t2_ = veorq_u32((q)[2], r2_);                              \
+   r3_ = R1((q)[3]); t3_ = veorq_u32((q)[3], r3_);                              \
+   r4_ = R1((q)[4]); t4_ = veorq_u32((q)[4], r4_);                              \
+   r5_ = R1((q)[5]); t5_ = veorq_u32((q)[5], r5_);                              \
+   r6_ = R1((q)[6]); t6_ = veorq_u32((q)[6], r6_);                              \
+   r7_ = R1((q)[7]); t7_ = veorq_u32((q)[7], r7_);                              \
+   (q)[0] = veorq_u32(veorq_u32(t7_, r0_), R2(t0_));                            \
+   (q)[1] = veorq_u32(veorq_u32(t0_, t7_), veorq_u32(r1_, R2(t1_)));            \
+   (q)[2] = veorq_u32(veorq_u32(t1_, r2_), R2(t2_));                            \
+   (q)[3] = veorq_u32(veorq_u32(t2_, t7_), veorq_u32(r3_, R2(t3_)));            \
+   (q)[4] = veorq_u32(veorq_u32(t3_, t7_), veorq_u32(r4_, R2(t4_)));            \
+   (q)[5] = veorq_u32(veorq_u32(t4_, r5_), R2(t5_));                            \
+   (q)[6] = veorq_u32(veorq_u32(t5_, r6_), R2(t6_));                            \
+   (q)[7] = veorq_u32(veorq_u32(t6_, r7_), R2(t7_));                            \
+} while (0)
+
+
+#define SHARKSSL_AES_NEON_R1M0(x) SHARKSSL_AES_NEON_ROR(x, 8)
+#define SHARKSSL_AES_NEON_R1M1(x) SHARKSSL_AES_NEON_ROTATE(x, 9, 0x77777777u)
+#define SHARKSSL_AES_NEON_R1M2(x) SHARKSSL_AES_NEON_ROTATE(x, 10, 0x33333333u)
+#define SHARKSSL_AES_NEON_R1M3(x) SHARKSSL_AES_NEON_ROTATE(x, 11, 0x11111111u)
+#define SHARKSSL_AES_NEON_R2M02(x) SHARKSSL_AES_NEON_ROR16(x)
+#define SHARKSSL_AES_NEON_R2M13(x) SHARKSSL_AES_NEON_ROTATE(x, 18, 0x33333333u)
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_addRoundKey(uint32x4_t q[8], const uint32x4_t *rk)
+{
+   unsigned j;
+
+   for (j = 0; j < 8; ++j)
+   {
+      q[j] = veorq_u32(q[j], rk[j]);
+   }
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_sr2(uint32x4_t q[8])
+{
+   unsigned i;
+
+   for (i = 0; i < 8; ++i)
+   {
+      uint32x4_t d = vandq_u32(veorq_u32(vshrq_n_u32(q[i], 2), q[i]), vdupq_n_u32(0x33003300u));
+      q[i] = veorq_u32(q[i], veorq_u32(d, vshlq_n_u32(d, 2)));
+   }
+}
+
+
+
+static void _XzY0x67(SharkSslAesNeonKeys *k, const SharkSslAesCtx *o)
+{
+   unsigned i, n = 4 * ((unsigned)o->nr + 1);
+
+   for (i = 0; i < n; ++i)
+   {
+      U32 lo = o->key[i] & 0x0f0f0f0fu;
+      U32 hi = o->key[i] & 0xf0f0f0f0u;
+
+      k->rk[2 * (i & ~3u) + (i & 3)] = vdupq_n_u32(lo | (lo << 4));
+      k->rk[2 * (i & ~3u) + (i & 3) + 4] = vdupq_n_u32(hi | (hi >> 4));
+   }
+   k->nr = (unsigned)o->nr;
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_transpose4(uint32x4_t r[4], const uint32x4_t b[4])
+{
+   uint32x4_t t0 = vtrn1q_u32(b[0], b[1]);
+   uint32x4_t t1 = vtrn2q_u32(b[0], b[1]);
+   uint32x4_t t2 = vtrn1q_u32(b[2], b[3]);
+   uint32x4_t t3 = vtrn2q_u32(b[2], b[3]);
+
+   r[0] = vreinterpretq_u32_u64(vtrn1q_u64(vreinterpretq_u64_u32(t0), vreinterpretq_u64_u32(t2)));
+   r[1] = vreinterpretq_u32_u64(vtrn1q_u64(vreinterpretq_u64_u32(t1), vreinterpretq_u64_u32(t3)));
+   r[2] = vreinterpretq_u32_u64(vtrn2q_u64(vreinterpretq_u64_u32(t0), vreinterpretq_u64_u32(t2)));
+   r[3] = vreinterpretq_u32_u64(vtrn2q_u64(vreinterpretq_u64_u32(t1), vreinterpretq_u64_u32(t3)));
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_load(uint32x4_t q[8], const uint32x4_t b[8])
+{
+   sharkssl_aes_neon_transpose4(&q[0], &b[0]);
+   sharkssl_aes_neon_transpose4(&q[4], &b[4]);
+}
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_store(uint32x4_t b[8], const uint32x4_t q[8])
+{
+   sharkssl_aes_neon_transpose4(&b[0], &q[0]);
+   sharkssl_aes_neon_transpose4(&b[4], &q[4]);
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_xor16(U8 *r, const U8 *a, const U8 *b)
+{
+   vst1q_u8(r, veorq_u8(vld1q_u8(a), vld1q_u8(b)));
+}
+
+
+#if SHARKSSL_AES_NEON_ENC
+
+static void sharkssl_aes_neon_encrypt8(const SharkSslAesNeonKeys *k, uint32x4_t b[8])
+{
+   const uint32x4_t *rk = k->rk;
+   uint32x4_t q[8];
+   unsigned _XzY0x6B;
+
+   sharkssl_aes_neon_load(q, b);
+   sharkssl_aes_neon_transpose(q);
+   sharkssl_aes_neon_addRoundKey(q, rk);
+   for (_XzY0x6B = 1; ; ++_XzY0x6B)
+   {
+      sharkssl_aes_neon_sbox(q);
+      rk += 8;
+      if (_XzY0x6B >= k->nr)
+      {
+         break;
+      }
+      switch (_XzY0x6B & 3)
+      {
+         case 0:
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M0, SHARKSSL_AES_NEON_R2M02);
+            break;
+
+         case 1:
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M1, SHARKSSL_AES_NEON_R2M13);
+            break;
+
+         case 2:
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M2, SHARKSSL_AES_NEON_R2M02);
+            break;
+
+         default:
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M3, SHARKSSL_AES_NEON_R2M13);
+            break;
+      }
+      sharkssl_aes_neon_addRoundKey(q, rk);
+   }
+   sharkssl_aes_neon_addRoundKey(q, rk);
+   if (k->nr & 2)
+   {
+      sharkssl_aes_neon_sr2(q);
+   }
+   sharkssl_aes_neon_transpose(q);
+   sharkssl_aes_neon_store(b, q);
+}
+#endif  
+
+
+#if SHARKSSL_AES_NEON_DEC
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_aes_neon_invAffine(uint32x4_t q[8])
+{
+   uint32x4_t a0 = q[0], a1 = q[1], a2 = q[2], a3 = q[3];
+   uint32x4_t a4 = q[4], a5 = q[5], a6 = q[6], a7 = q[7];
+
+   q[0] = veorq_u32(veorq_u32(a2, a5), a7);
+   q[1] = veorq_u32(veorq_u32(a3, a6), a0);
+   q[2] = veorq_u32(veorq_u32(a4, a7), a1);
+   q[3] = veorq_u32(veorq_u32(a5, a0), a2);
+   q[4] = veorq_u32(veorq_u32(a6, a1), a3);
+   q[5] = veorq_u32(veorq_u32(a7, a2), a4);
+   q[6] = veorq_u32(veorq_u32(a0, a3), a5);
+   q[7] = veorq_u32(veorq_u32(a1, a4), a6);
+}
+
+
+
+#define SHARKSSL_AES_NEON_INVMIX_PREPARE(q, R2) do {                            \
+   uint32x4_t d0_, d1_, d2_, d3_, d4_, d5_, d6_, d7_;                           \
+   d0_ = veorq_u32((q)[0], R2((q)[0]));                                         \
+   d1_ = veorq_u32((q)[1], R2((q)[1]));                                         \
+   d2_ = veorq_u32((q)[2], R2((q)[2]));                                         \
+   d3_ = veorq_u32((q)[3], R2((q)[3]));                                         \
+   d4_ = veorq_u32((q)[4], R2((q)[4]));                                         \
+   d5_ = veorq_u32((q)[5], R2((q)[5]));                                         \
+   d6_ = veorq_u32((q)[6], R2((q)[6]));                                         \
+   d7_ = veorq_u32((q)[7], R2((q)[7]));                                         \
+   (q)[0] = veorq_u32((q)[0], d6_);                                             \
+   (q)[1] = veorq_u32((q)[1], veorq_u32(d6_, d7_));                             \
+   (q)[2] = veorq_u32((q)[2], veorq_u32(d0_, d7_));                             \
+   (q)[3] = veorq_u32((q)[3], veorq_u32(d1_, d6_));                             \
+   (q)[4] = veorq_u32((q)[4], veorq_u32(veorq_u32(d2_, d6_), d7_));             \
+   (q)[5] = veorq_u32((q)[5], veorq_u32(d3_, d7_));                             \
+   (q)[6] = veorq_u32((q)[6], d4_);                                             \
+   (q)[7] = veorq_u32((q)[7], d5_);                                             \
+} while (0)
+
+
+
+static void sharkssl_aes_neon_decrypt8(const SharkSslAesNeonKeys *k, uint32x4_t b[8])
+{
+   const uint32x4_t *rk = &k->rk[8 * k->nr];
+   uint32x4_t q[8];
+   unsigned _XzY0x6B;
+
+   sharkssl_aes_neon_load(q, b);
+   sharkssl_aes_neon_transpose(q);
+   sharkssl_aes_neon_addRoundKey(q, rk);
+   for (_XzY0x6B = k->nr - 1; ; --_XzY0x6B)
+   {
+      sharkssl_aes_neon_invAffine(q);
+      sharkssl_aes_neon_sbox(q);
+      sharkssl_aes_neon_invAffine(q);
+      rk -= 8;
+      sharkssl_aes_neon_addRoundKey(q, rk);
+      if (0 == _XzY0x6B)
+      {
+         break;
+      }
+      switch ((_XzY0x6B - k->nr) & 3)
+      {
+         case 0:
+            SHARKSSL_AES_NEON_INVMIX_PREPARE(q, SHARKSSL_AES_NEON_R2M02);
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M0, SHARKSSL_AES_NEON_R2M02);
+            break;
+
+         case 1:
+            SHARKSSL_AES_NEON_INVMIX_PREPARE(q, SHARKSSL_AES_NEON_R2M13);
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M1, SHARKSSL_AES_NEON_R2M13);
+            break;
+
+         case 2:
+            SHARKSSL_AES_NEON_INVMIX_PREPARE(q, SHARKSSL_AES_NEON_R2M02);
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M2, SHARKSSL_AES_NEON_R2M02);
+            break;
+
+         default:
+            SHARKSSL_AES_NEON_INVMIX_PREPARE(q, SHARKSSL_AES_NEON_R2M13);
+            SHARKSSL_AES_NEON_MIXCOLUMNS(q, SHARKSSL_AES_NEON_R1M3, SHARKSSL_AES_NEON_R2M13);
+            break;
+      }
+   }
+   if (k->nr & 2)
+   {
+      sharkssl_aes_neon_sr2(q);
+   }
+   sharkssl_aes_neon_transpose(q);
+   sharkssl_aes_neon_store(b, q);
+}
+#endif  
+#endif  
+
+
+#if SHARKSSL_AES_GCM_SOFTWARE
 
 
 
@@ -43254,6 +43820,119 @@ static void sharkssl_gcm_multCT(const SharkSslAesGcmCtx *o, U8 x[16])
 #endif  
 
 
+#elif SHARKSSL_GCM_NEON
+
+
+
+#define SHARKSSL_GCM_NEON_ROTATION(acc, a, b, r, _XzY0x28B) do {                    \
+   uint8x16_t l_ = veorq_u8(                                                    \
+      vreinterpretq_u8_p16(vmull_p8(vreinterpret_p8_u8(a), vreinterpret_p8_u8(vext_u8((b), (b), (r))))), \
+      vreinterpretq_u8_p16(vmull_p8(vreinterpret_p8_u8(vext_u8((a), (a), (r))), vreinterpret_p8_u8(b)))); \
+   uint8x16_t lo_ = vandq_u8(l_, (_XzY0x28B));                                       \
+   (acc) = veorq_u8((acc), vextq_u8(vdupq_n_u8(0), lo_, 16 - (r)));             \
+   (acc) = veorq_u8((acc), vextq_u8(veorq_u8(l_, lo_), vdupq_n_u8(0), 8 - (r)));\
+} while (0)
+
+static SHARKSSL_AES_NEON_INLINE uint8x16_t sharkssl_gcm_neon_clmul64(uint8x8_t a, uint8x8_t b)
+{
+   
+   static const U8 _XzY0x28B[3][16] =
+   {
+      {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0},
+      {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0},
+      {255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0}
+   };
+   uint8x16_t acc, l;
+   uint8x8_t t;
+
+   acc = vreinterpretq_u8_p16(vmull_p8(vreinterpret_p8_u8(a), vreinterpret_p8_u8(b)));
+   SHARKSSL_GCM_NEON_ROTATION(acc, a, b, 1, vld1q_u8(_XzY0x28B[0]));
+   SHARKSSL_GCM_NEON_ROTATION(acc, a, b, 2, vld1q_u8(_XzY0x28B[1]));
+   SHARKSSL_GCM_NEON_ROTATION(acc, a, b, 3, vld1q_u8(_XzY0x28B[2]));
+   
+   l = vreinterpretq_u8_p16(vmull_p8(vreinterpret_p8_u8(a), vreinterpret_p8_u8(vext_u8(b, b, 4))));
+   t = veor_u8(vget_low_u8(l), vget_high_u8(l));
+   return veorq_u8(acc, vextq_u8(vdupq_n_u8(0), vcombine_u8(t, vdup_n_u8(0)), 12));
+}
+
+
+
+static SHARKSSL_AES_NEON_INLINE void sharkssl_gcm_neon_mulAdd(uint8x16_t s[3], uint8x16_t a, uint8x16_t b)
+{
+   uint8x8_t a0 = vget_low_u8(a), a1 = vget_high_u8(a);
+   uint8x8_t b0 = vget_low_u8(b), b1 = vget_high_u8(b);
+
+   s[0] = veorq_u8(s[0], sharkssl_gcm_neon_clmul64(a0, b0));
+   s[1] = veorq_u8(s[1], sharkssl_gcm_neon_clmul64(veor_u8(a0, a1), veor_u8(b0, b1)));
+   s[2] = veorq_u8(s[2], sharkssl_gcm_neon_clmul64(a1, b1));
+}
+
+
+
+static uint8x16_t sharkssl_gcm_neon_reduce(const uint8x16_t s[3])
+{
+   uint64x2_t lo = vreinterpretq_u64_u8(s[0]), hi = vreinterpretq_u64_u8(s[2]);
+   uint64x2_t mid = vreinterpretq_u64_u8(veorq_u8(veorq_u8(s[1], s[0]), s[2]));
+   U64 z0 = vgetq_lane_u64(lo, 0);
+   U64 z1 = vgetq_lane_u64(lo, 1) ^ vgetq_lane_u64(mid, 0);
+   U64 z2 = vgetq_lane_u64(hi, 0) ^ vgetq_lane_u64(mid, 1);
+   U64 z3 = vgetq_lane_u64(hi, 1);
+   U64 c;
+
+   z0 ^= z2 ^ (z2 << 1) ^ (z2 << 2) ^ (z2 << 7);
+   z1 ^= z3 ^ (z3 << 1) ^ (z3 << 2) ^ (z3 << 7) ^ (z2 >> 63) ^ (z2 >> 62) ^ (z2 >> 57);
+   c = (z3 >> 63) ^ (z3 >> 62) ^ (z3 >> 57);
+   z0 ^= c ^ (c << 1) ^ (c << 2) ^ (c << 7);
+   return vreinterpretq_u8_u64(vcombine_u64(vcreate_u64(z0), vcreate_u64(z1)));
+}
+
+
+static uint8x16_t _XzY0x6C(uint8x16_t a, uint8x16_t b)
+{
+   uint8x16_t s[3];
+
+   s[0] = s[1] = s[2] = vdupq_n_u8(0);
+   sharkssl_gcm_neon_mulAdd(s, a, b);
+   return sharkssl_gcm_neon_reduce(s);
+}
+
+
+
+static void _XzY0x312(SharkSslAesGcmCtx *o)
+{
+   uint8x16_t h = vrbitq_u8(vld1q_u8(o->M0[8]));
+   uint8x16_t p = h;
+   unsigned i;
+
+   vst1q_u8(o->M0[0], h);
+   for (i = 1; i < 4; ++i)
+   {
+      p = _XzY0x6C(p, h);
+      vst1q_u8(o->M0[i], p);
+   }
+}
+
+
+static void sharkssl_gcm_multCT(const SharkSslAesGcmCtx *o, U8 x[16])
+{
+   vst1q_u8(x, vrbitq_u8(_XzY0x6C(vrbitq_u8(vld1q_u8(x)), vld1q_u8(o->M0[0]))));
+}
+
+
+
+static void sharkssl_gcm_mult4CT(const SharkSslAesGcmCtx *o, U8 x[16], const U8 b[64])
+{
+   uint8x16_t s[3];
+
+   s[0] = s[1] = s[2] = vdupq_n_u8(0);
+   sharkssl_gcm_neon_mulAdd(s, vrbitq_u8(veorq_u8(vld1q_u8(x), vld1q_u8(b))), vld1q_u8(o->M0[3]));
+   sharkssl_gcm_neon_mulAdd(s, vrbitq_u8(vld1q_u8(b + 16)), vld1q_u8(o->M0[2]));
+   sharkssl_gcm_neon_mulAdd(s, vrbitq_u8(vld1q_u8(b + 32)), vld1q_u8(o->M0[1]));
+   sharkssl_gcm_neon_mulAdd(s, vrbitq_u8(vld1q_u8(b + 48)), vld1q_u8(o->M0[0]));
+   vst1q_u8(x, vrbitq_u8(sharkssl_gcm_neon_reduce(s)));
+}
+
+
 #else
 static void _XzY0x312(SharkSslAesGcmCtx *o)
 {
@@ -43333,7 +44012,16 @@ static void _XzY0x313(U8 *r, const U8 *a, const U8 *b, U32 len)
 {
    #if SHARKSSL_UNALIGNED_ACCESS
    U32 u, v;
+   #endif
 
+   #if SHARKSSL_AES_NEON_ENC
+   if (16u == len)
+   {
+      sharkssl_aes_neon_xor16(r, a, b);
+      return;
+   }
+   #endif
+   #if SHARKSSL_UNALIGNED_ACCESS
    while (len >= 4)
    {
       SHARKSSL_CT_GET_U32_LE(u, a, 0);
@@ -43358,26 +44046,58 @@ static void sharkssl_gcm_cryptCT(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[1
                                  const U8 *input, U8 *output, U32 len,
                                  SharkSslAesCtx_Type type, U8 mask[16])
 {
+   #if SHARKSSL_AES_NEON_ENC
+   SharkSslAesNeonKeys keys;
+   uint32x4_t blocks[8];
+   U8 (*block)[16], (*stream)[16];
+   U8 _XzY0x61[2][16], pairStream[2][16];
+   unsigned _XzY0x6A;
+   #else
    U8 block[2][16], stream[2][16];
+   #endif
    U32 count, take;
-   unsigned contextoffset, lanes, _XzY0x2B2;
+   unsigned contextoffset, lanes, _XzY0x2B2, _XzY0x2F3;
 
    SHARKSSL_CT_GET_U32_BE(count, counter, 12);
-   memcpy(block[0], counter, 12);
-   memcpy(block[1], counter, 12);
-   contextoffset = 0;
+   contextoffset = mask ? 1 : 0;
+   _XzY0x2F3 = 2;
+   #if SHARKSSL_AES_NEON_ENC
+   
+   _XzY0x6A = (len > 16u * (2 - contextoffset));
+   if (_XzY0x6A)
+   {
+      _XzY0x67(&keys, &o->super);
+      memset(blocks, 0, sizeof(blocks));
+      block = (U8 (*)[16])(void *)blocks;
+      stream = block;
+      _XzY0x2F3 = 8;
+   }
+   else
+   {
+      block = _XzY0x61;
+      stream = pairStream;
+   }
+   #endif
    if (mask)
    {
+      memcpy(block[0], counter, 12);
       SHARKSSL_CT_PUT_U32_BE(count, block[0], 12);
-      contextoffset = 1;
    }
    while (contextoffset || len)
    {
-      for (lanes = contextoffset; (lanes < 2) && (len > 16u * (lanes - contextoffset)); ++lanes)
+      for (lanes = contextoffset; (lanes < _XzY0x2F3) && (len > 16u * (lanes - contextoffset)); ++lanes)
       {
          ++count;
+         memcpy(block[lanes], counter, 12);
          SHARKSSL_CT_PUT_U32_BE(count, block[lanes], 12);
       }
+      #if SHARKSSL_AES_NEON_ENC
+      if (_XzY0x6A)
+      {
+         sharkssl_aes_neon_encrypt8(&keys, blocks);
+      }
+      else
+      #endif
       if (lanes == 2)
       {
          SharkSslAesCtx_encrypt2CT(&o->super, block[0], block[1], stream[0], stream[1]);
@@ -43390,8 +44110,30 @@ static void sharkssl_gcm_cryptCT(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[1
       {
          memcpy(mask, stream[0], 16);
       }
-      for (_XzY0x2B2 = contextoffset; _XzY0x2B2 < lanes; ++_XzY0x2B2)
+      for (_XzY0x2B2 = contextoffset; _XzY0x2B2 < lanes; )
       {
+         #if SHARKSSL_GCM_NEON
+         if (((lanes - _XzY0x2B2) >= 4) && (len >= 64))
+         {
+            
+            if (SharkSslAesCtx_Decrypt == type)
+            {
+               sharkssl_gcm_mult4CT(o, hash, input);
+            }
+            for (take = 0; take < 64; take += 16)
+            {
+               _XzY0x313(output + take, input + take, stream[_XzY0x2B2++], 16);
+            }
+            if (SharkSslAesCtx_Encrypt == type)
+            {
+               sharkssl_gcm_mult4CT(o, hash, output);
+            }
+            input += 64;
+            output += 64;
+            len -= 64;
+            continue;
+         }
+         #endif
          take = (len < 16u) ? len : 16u;
          if (SharkSslAesCtx_Decrypt == type)
          {
@@ -43402,22 +44144,34 @@ static void sharkssl_gcm_cryptCT(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[1
          {
             _XzY0x313(hash, hash, output, take);
          }
-         sharkssl_gcm_multCT(o, hash);
+         SHARKSSL_GCM_SOFT_GMULT(o, hash);
          input += take;
          output += take;
          len -= take;
+         ++_XzY0x2B2;
       }
       contextoffset = 0;
    }
    SHARKSSL_CT_PUT_U32_BE(count, counter, 12);
+   #if SHARKSSL_AES_NEON_ENC
+   if (_XzY0x6A)
+   {
+      sharkssl_clear(&keys, sizeof(keys));
+      sharkssl_clear(blocks, sizeof(blocks));
+   }
+   else
+   {
+      sharkssl_clear(pairStream, sizeof(pairStream));
+   }
+   #else
    sharkssl_clear(stream, sizeof(stream));
+   #endif
 }
 
 #endif  
 
 #endif  
 
-#endif
 #if SHARKSSL_PSA_CONSUMER
 #include <psa/crypto.h>
 #endif
@@ -43427,20 +44181,24 @@ static void sharkssl_gcm_cryptCT(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[1
 
 void sharkssl_clear(void *data, U32 len)
 {
-   volatile U8 *p;
-   #if SHARKSSL_UNALIGNED_ACCESS
-   volatile SHARKSSL_UNALIGNED_U32 *p32 = (volatile SHARKSSL_UNALIGNED_U32*)data;
+   volatile U8 *p = (volatile U8*)data;
+   volatile SHARKSSL_UNALIGNED_U32 *p32;
 
+   #if (!SHARKSSL_UNALIGNED_ACCESS)
+   
+   while (len && ((unsigned int)(UPTR)p & 3))
+   {
+      *p++ = 0;
+      --len;
+   }
+   #endif
+   p32 = (volatile SHARKSSL_UNALIGNED_U32*)p;
    while (len >= 4)
    {
       *p32++ = 0;
       len -= 4;
    }
    p = (volatile U8*)p32;
-   #else
-   p = (volatile U8*)data;
-   #endif
-
    while (len--)
    {
       *p++ = 0;
@@ -44432,7 +45190,7 @@ SHARKSSL_API int sharkssl_sha1(const U8 *data, U32 len, U8 *digest)
 
 
 #if SHARKSSL_USE_SHA_256
-#if SHARKSSL_OPTIMIZED_SHA256_ASM
+#if (SHARKSSL_OPTIMIZED_SHA256_ASM && (!SHARKSSL_X86_ASM_PLATFORM))
 #if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 #error SHARKSSL_OPTIMIZED_SHA256_ASM requires a little-endian target
 #endif
@@ -44444,6 +45202,12 @@ extern void alignmentfinish(SharkSslSha256Ctx *ctx, const U8 data[64]);
 #endif
 extern int sharkssl_arm64_sha2_available(void);
 extern void SharkSslSha256Ctx_process_arm64(SharkSslSha256Ctx *ctx, const U8 data[64], const U32 *write64uint32);
+#endif
+
+#if (SHARKSSL_OPTIMIZED_SHA256_ASM && SHARKSSL_X86_ASM_PLATFORM)
+
+typedef char sharkssl_sha256_state_offset[(offsetof(SharkSslSha256Ctx, state) == (2 * sizeof(U32))) ? 1 : -1];
+void SharkSslSha256Ctx_processSHA(SharkSslSha256Ctx *o, const U8 *data, const U32 *write64uint32);
 #endif
 
 static const U32 callchainentry[64] =
@@ -44489,6 +45253,13 @@ static void alignmentfinish(SharkSslSha256Ctx *ctx, U32 countshift[16])
    #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
    U32 countshift[16];
 
+   #if (SHARKSSL_OPTIMIZED_SHA256_ASM && SHARKSSL_X86_ASM_PLATFORM)
+   if (sharkssl_sha256_hwAvailable())
+   {
+      SharkSslSha256Ctx_processSHA(ctx, data, callchainentry);
+      return;
+   }
+   #endif
    #if SHARKSSL_SHA256_SMALL_FOOTPRINT
    for (i = 0; !(i & 16); i++)
    {
@@ -44769,12 +45540,19 @@ SHARKSSL_API int sharkssl_sha256(const U8 *data, U32 len, U8 *digest)
 
 
 #if (SHARKSSL_USE_SHA_384 || SHARKSSL_USE_SHA_512)
-#if SHARKSSL_OPTIMIZED_SHA384_ASM
+#if (SHARKSSL_OPTIMIZED_SHA384_ASM && (!SHARKSSL_X64_ASM_PLATFORM))
 #if (BA_BYTE_ORDER == BA_BYTE_ORDER_BIG_ENDIAN)
 #error SHARKSSL_OPTIMIZED_SHA384_ASM requires a little-endian target
 #endif
 extern void SharkSslSha384Ctx_process(SharkSslSha384Ctx *ctx, const U8 data[128]);
 #else
+
+#if (SHARKSSL_OPTIMIZED_SHA384_ASM && SHARKSSL_X64_ASM_PLATFORM)
+#include <stddef.h>
+typedef char sharkssl_sha512_state_offset[(offsetof(SharkSslSha384Ctx, state) == (4 * sizeof(U32))) ? 1 : -1];
+void SharkSslSha384Ctx_processBMI2(SharkSslSha384Ctx *o, const U8 *data, const U64 *write64uint32);
+#endif
+
 
 static const U64 pxa270income[80] =
 {
@@ -44863,6 +45641,14 @@ static void SharkSslSha384Ctx_process(SharkSslSha384Ctx *ctx, U64 countshift[16]
    unsigned int i;
    #if (BA_BYTE_ORDER != BA_BYTE_ORDER_BIG_ENDIAN)
    U64 countshift[16];
+
+   #if (SHARKSSL_OPTIMIZED_SHA384_ASM && SHARKSSL_X64_ASM_PLATFORM)
+   if (sharkssl_sha512_bmi2Available())
+   {
+      SharkSslSha384Ctx_processBMI2(ctx, data, pxa270income);
+      return;
+   }
+   #endif
 
    detectboard(countshift[0],  data,   0);
    detectboard(countshift[1],  data,   8);
@@ -46229,743 +47015,94 @@ SHARKSSL_API int sharkssl_kmemcmp(const void *a, const void *b, U32 n)
 
 
 #if (SHARKSSL_USE_AES_256 || SHARKSSL_USE_AES_192 || SHARKSSL_USE_AES_128)
-#if (!SHARKSSL_AES_SOFTWARE_CT)
+#if SHARKSSL_AES_HW
 
-#if SHARKSSL_AES_TABLES_IN_RAM
-static U32 alloczeroed[256];
-static U32 domainalways[256];
-static U32 timeoutshift[10];
-#if (!SHARKSSL_AES_DISABLE_SBOX)
-static U8 class3configure[256];
-#endif
-#if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-static U8 powerpdata[256];
-#endif
-#endif
+void sharkssl_aes_hw_ecb_encrypt(const U32 *rk, U32 nr, const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_ecb_decrypt(const U32 *rk, U32 nr, const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_cbc_encrypt(const U32 *rk, U32 nr, U8 vect[16], const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_cbc_decrypt(const U32 *rk, U32 nr, U8 vect[16], const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_ctr(const U32 *rk, U32 nr, U8 ctr[16], const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_ccm_encrypt(const U32 *rk, U32 nr, U8 state[32], const U8 *in, U8 *out, U32 blocks);
+void sharkssl_aes_hw_ccm_decrypt(const U32 *rk, U32 nr, U8 state[32], const U8 *in, U8 *out, U32 blocks);
 
-#if (!SHARKSSL_AES_DISABLE_SBOX)
-#if SHARKSSL_AES_TABLES_IN_RAM
-static const U8 singlefuito[256] =
+#if SHARKSSL_X86_ASM_PLATFORM
+#define SHARKSSL_AES_HW_ON() sharkssl_aes_hwAvailable()
 #else
-static const U8 class3configure[256] =
+extern unsigned sharkssl_arm64_capabilities(void);
+#define SHARKSSL_AES_HW_ON() (0 != (sharkssl_arm64_capabilities() & 4))
 #endif
-{
-   0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5,
-   0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
-   0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0,
-   0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
-   0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC,
-   0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
-   0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A,
-   0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
-   0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0,
-   0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
-   0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B,
-   0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
-   0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85,
-   0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
-   0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5,
-   0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
-   0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17,
-   0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
-   0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88,
-   0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
-   0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C,
-   0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
-   0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9,
-   0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
-   0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6,
-   0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
-   0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E,
-   0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
-   0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94,
-   0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
-   0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68,
-   0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
-};
-#endif
+#define SHARKSSL_AES_HW_NR(ctx) ((U32)SHARKSSL_AES_NR_DECODE((ctx)->nr))
+
 
 #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-#if SHARKSSL_AES_TABLES_IN_RAM
-static const U8 spinboxhwmod[256] =
-#else
-static const U8 powerpdata[256] =
-#endif
+
+static U32 _XzY0x62(U32 w)
 {
-   0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38,
-   0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
-   0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87,
-   0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
-   0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2, 0x23, 0x3D,
-   0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E,
-   0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2,
-   0x76, 0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25,
-   0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16,
-   0xD4, 0xA4, 0x5C, 0xCC, 0x5D, 0x65, 0xB6, 0x92,
-   0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA,
-   0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D, 0x84,
-   0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A,
-   0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06,
-   0xD0, 0x2C, 0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02,
-   0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B,
-   0x3A, 0x91, 0x11, 0x41, 0x4F, 0x67, 0xDC, 0xEA,
-   0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73,
-   0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85,
-   0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E,
-   0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89,
-   0x6F, 0xB7, 0x62, 0x0E, 0xAA, 0x18, 0xBE, 0x1B,
-   0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20,
-   0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD, 0x5A, 0xF4,
-   0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31,
-   0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F,
-   0x60, 0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D,
-   0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF,
-   0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0,
-   0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61,
-   0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26,
-   0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D
-};
-#endif
+   U32 x2, x4, x8, m9, m11, m13, m14;
 
-#if SHARKSSL_AES_TABLES_IN_RAM
-static const U32 timerevtstrm[256] =
-#else
-static const U32 alloczeroed[256] =
-#endif
-{
-   0xc66363a5, 0xf87c7c84, 0xee777799, 0xf67b7b8d,
-   0xfff2f20d, 0xd66b6bbd, 0xde6f6fb1, 0x91c5c554,
-   0x60303050, 0x02010103, 0xce6767a9, 0x562b2b7d,
-   0xe7fefe19, 0xb5d7d762, 0x4dababe6, 0xec76769a,
-   0x8fcaca45, 0x1f82829d, 0x89c9c940, 0xfa7d7d87,
-   0xeffafa15, 0xb25959eb, 0x8e4747c9, 0xfbf0f00b,
-   0x41adadec, 0xb3d4d467, 0x5fa2a2fd, 0x45afafea,
-   0x239c9cbf, 0x53a4a4f7, 0xe4727296, 0x9bc0c05b,
-   0x75b7b7c2, 0xe1fdfd1c, 0x3d9393ae, 0x4c26266a,
-   0x6c36365a, 0x7e3f3f41, 0xf5f7f702, 0x83cccc4f,
-   0x6834345c, 0x51a5a5f4, 0xd1e5e534, 0xf9f1f108,
-   0xe2717193, 0xabd8d873, 0x62313153, 0x2a15153f,
-   0x0804040c, 0x95c7c752, 0x46232365, 0x9dc3c35e,
-   0x30181828, 0x379696a1, 0x0a05050f, 0x2f9a9ab5,
-   0x0e070709, 0x24121236, 0x1b80809b, 0xdfe2e23d,
-   0xcdebeb26, 0x4e272769, 0x7fb2b2cd, 0xea75759f,
-   0x1209091b, 0x1d83839e, 0x582c2c74, 0x341a1a2e,
-   0x361b1b2d, 0xdc6e6eb2, 0xb45a5aee, 0x5ba0a0fb,
-   0xa45252f6, 0x763b3b4d, 0xb7d6d661, 0x7db3b3ce,
-   0x5229297b, 0xdde3e33e, 0x5e2f2f71, 0x13848497,
-   0xa65353f5, 0xb9d1d168, 0x00000000, 0xc1eded2c,
-   0x40202060, 0xe3fcfc1f, 0x79b1b1c8, 0xb65b5bed,
-   0xd46a6abe, 0x8dcbcb46, 0x67bebed9, 0x7239394b,
-   0x944a4ade, 0x984c4cd4, 0xb05858e8, 0x85cfcf4a,
-   0xbbd0d06b, 0xc5efef2a, 0x4faaaae5, 0xedfbfb16,
-   0x864343c5, 0x9a4d4dd7, 0x66333355, 0x11858594,
-   0x8a4545cf, 0xe9f9f910, 0x04020206, 0xfe7f7f81,
-   0xa05050f0, 0x783c3c44, 0x259f9fba, 0x4ba8a8e3,
-   0xa25151f3, 0x5da3a3fe, 0x804040c0, 0x058f8f8a,
-   0x3f9292ad, 0x219d9dbc, 0x70383848, 0xf1f5f504,
-   0x63bcbcdf, 0x77b6b6c1, 0xafdada75, 0x42212163,
-   0x20101030, 0xe5ffff1a, 0xfdf3f30e, 0xbfd2d26d,
-   0x81cdcd4c, 0x180c0c14, 0x26131335, 0xc3ecec2f,
-   0xbe5f5fe1, 0x359797a2, 0x884444cc, 0x2e171739,
-   0x93c4c457, 0x55a7a7f2, 0xfc7e7e82, 0x7a3d3d47,
-   0xc86464ac, 0xba5d5de7, 0x3219192b, 0xe6737395,
-   0xc06060a0, 0x19818198, 0x9e4f4fd1, 0xa3dcdc7f,
-   0x44222266, 0x542a2a7e, 0x3b9090ab, 0x0b888883,
-   0x8c4646ca, 0xc7eeee29, 0x6bb8b8d3, 0x2814143c,
-   0xa7dede79, 0xbc5e5ee2, 0x160b0b1d, 0xaddbdb76,
-   0xdbe0e03b, 0x64323256, 0x743a3a4e, 0x140a0a1e,
-   0x924949db, 0x0c06060a, 0x4824246c, 0xb85c5ce4,
-   0x9fc2c25d, 0xbdd3d36e, 0x43acacef, 0xc46262a6,
-   0x399191a8, 0x319595a4, 0xd3e4e437, 0xf279798b,
-   0xd5e7e732, 0x8bc8c843, 0x6e373759, 0xda6d6db7,
-   0x018d8d8c, 0xb1d5d564, 0x9c4e4ed2, 0x49a9a9e0,
-   0xd86c6cb4, 0xac5656fa, 0xf3f4f407, 0xcfeaea25,
-   0xca6565af, 0xf47a7a8e, 0x47aeaee9, 0x10080818,
-   0x6fbabad5, 0xf0787888, 0x4a25256f, 0x5c2e2e72,
-   0x381c1c24, 0x57a6a6f1, 0x73b4b4c7, 0x97c6c651,
-   0xcbe8e823, 0xa1dddd7c, 0xe874749c, 0x3e1f1f21,
-   0x964b4bdd, 0x61bdbddc, 0x0d8b8b86, 0x0f8a8a85,
-   0xe0707090, 0x7c3e3e42, 0x71b5b5c4, 0xcc6666aa,
-   0x904848d8, 0x06030305, 0xf7f6f601, 0x1c0e0e12,
-   0xc26161a3, 0x6a35355f, 0xae5757f9, 0x69b9b9d0,
-   0x17868691, 0x99c1c158, 0x3a1d1d27, 0x279e9eb9,
-   0xd9e1e138, 0xebf8f813, 0x2b9898b3, 0x22111133,
-   0xd26969bb, 0xa9d9d970, 0x078e8e89, 0x339494a7,
-   0x2d9b9bb6, 0x3c1e1e22, 0x15878792, 0xc9e9e920,
-   0x87cece49, 0xaa5555ff, 0x50282878, 0xa5dfdf7a,
-   0x038c8c8f, 0x59a1a1f8, 0x09898980, 0x1a0d0d17,
-   0x65bfbfda, 0xd7e6e631, 0x844242c6, 0xd06868b8,
-   0x824141c3, 0x299999b0, 0x5a2d2d77, 0x1e0f0f11,
-   0x7bb0b0cb, 0xa85454fc, 0x6dbbbbd6, 0x2c16163a
-};
-
-#if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-#if SHARKSSL_AES_TABLES_IN_RAM
-static const U32 thumb32break[256] =
-#else
-static const U32 domainalways[256] =
-#endif
-{
-   0x51f4a750, 0x7e416553, 0x1a17a4c3, 0x3a275e96,
-   0x3bab6bcb, 0x1f9d45f1, 0xacfa58ab, 0x4be30393,
-   0x2030fa55, 0xad766df6, 0x88cc7691, 0xf5024c25,
-   0x4fe5d7fc, 0xc52acbd7, 0x26354480, 0xb562a38f,
-   0xdeb15a49, 0x25ba1b67, 0x45ea0e98, 0x5dfec0e1,
-   0xc32f7502, 0x814cf012, 0x8d4697a3, 0x6bd3f9c6,
-   0x038f5fe7, 0x15929c95, 0xbf6d7aeb, 0x955259da,
-   0xd4be832d, 0x587421d3, 0x49e06929, 0x8ec9c844,
-   0x75c2896a, 0xf48e7978, 0x99583e6b, 0x27b971dd,
-   0xbee14fb6, 0xf088ad17, 0xc920ac66, 0x7dce3ab4,
-   0x63df4a18, 0xe51a3182, 0x97513360, 0x62537f45,
-   0xb16477e0, 0xbb6bae84, 0xfe81a01c, 0xf9082b94,
-   0x70486858, 0x8f45fd19, 0x94de6c87, 0x527bf8b7,
-   0xab73d323, 0x724b02e2, 0xe31f8f57, 0x6655ab2a,
-   0xb2eb2807, 0x2fb5c203, 0x86c57b9a, 0xd33708a5,
-   0x302887f2, 0x23bfa5b2, 0x02036aba, 0xed16825c,
-   0x8acf1c2b, 0xa779b492, 0xf307f2f0, 0x4e69e2a1,
-   0x65daf4cd, 0x0605bed5, 0xd134621f, 0xc4a6fe8a,
-   0x342e539d, 0xa2f355a0, 0x058ae132, 0xa4f6eb75,
-   0x0b83ec39, 0x4060efaa, 0x5e719f06, 0xbd6e1051,
-   0x3e218af9, 0x96dd063d, 0xdd3e05ae, 0x4de6bd46,
-   0x91548db5, 0x71c45d05, 0x0406d46f, 0x605015ff,
-   0x1998fb24, 0xd6bde997, 0x894043cc, 0x67d99e77,
-   0xb0e842bd, 0x07898b88, 0xe7195b38, 0x79c8eedb,
-   0xa17c0a47, 0x7c420fe9, 0xf8841ec9, 0x00000000,
-   0x09808683, 0x322bed48, 0x1e1170ac, 0x6c5a724e,
-   0xfd0efffb, 0x0f853856, 0x3daed51e, 0x362d3927,
-   0x0a0fd964, 0x685ca621, 0x9b5b54d1, 0x24362e3a,
-   0x0c0a67b1, 0x9357e70f, 0xb4ee96d2, 0x1b9b919e,
-   0x80c0c54f, 0x61dc20a2, 0x5a774b69, 0x1c121a16,
-   0xe293ba0a, 0xc0a02ae5, 0x3c22e043, 0x121b171d,
-   0x0e090d0b, 0xf28bc7ad, 0x2db6a8b9, 0x141ea9c8,
-   0x57f11985, 0xaf75074c, 0xee99ddbb, 0xa37f60fd,
-   0xf701269f, 0x5c72f5bc, 0x44663bc5, 0x5bfb7e34,
-   0x8b432976, 0xcb23c6dc, 0xb6edfc68, 0xb8e4f163,
-   0xd731dcca, 0x42638510, 0x13972240, 0x84c61120,
-   0x854a247d, 0xd2bb3df8, 0xaef93211, 0xc729a16d,
-   0x1d9e2f4b, 0xdcb230f3, 0x0d8652ec, 0x77c1e3d0,
-   0x2bb3166c, 0xa970b999, 0x119448fa, 0x47e96422,
-   0xa8fc8cc4, 0xa0f03f1a, 0x567d2cd8, 0x223390ef,
-   0x87494ec7, 0xd938d1c1, 0x8ccaa2fe, 0x98d40b36,
-   0xa6f581cf, 0xa57ade28, 0xdab78e26, 0x3fadbfa4,
-   0x2c3a9de4, 0x5078920d, 0x6a5fcc9b, 0x547e4662,
-   0xf68d13c2, 0x90d8b8e8, 0x2e39f75e, 0x82c3aff5,
-   0x9f5d80be, 0x69d0937c, 0x6fd52da9, 0xcf2512b3,
-   0xc8ac993b, 0x10187da7, 0xe89c636e, 0xdb3bbb7b,
-   0xcd267809, 0x6e5918f4, 0xec9ab701, 0x834f9aa8,
-   0xe6956e65, 0xaaffe67e, 0x21bccf08, 0xef15e8e6,
-   0xbae79bd9, 0x4a6f36ce, 0xea9f09d4, 0x29b07cd6,
-   0x31a4b2af, 0x2a3f2331, 0xc6a59430, 0x35a266c0,
-   0x744ebc37, 0xfc82caa6, 0xe090d0b0, 0x33a7d815,
-   0xf104984a, 0x41ecdaf7, 0x7fcd500e, 0x1791f62f,
-   0x764dd68d, 0x43efb04d, 0xccaa4d54, 0xe49604df,
-   0x9ed1b5e3, 0x4c6a881b, 0xc12c1fb8, 0x4665517f,
-   0x9d5eea04, 0x018c355d, 0xfa877473, 0xfb0b412e,
-   0xb3671d5a, 0x92dbd252, 0xe9105633, 0x6dd64713,
-   0x9ad7618c, 0x37a10c7a, 0x59f8148e, 0xeb133c89,
-   0xcea927ee, 0xb761c935, 0xe11ce5ed, 0x7a47b13c,
-   0x9cd2df59, 0x55f2733f, 0x1814ce79, 0x73c737bf,
-   0x53f7cdea, 0x5ffdaa5b, 0xdf3d6f14, 0x7844db86,
-   0xcaaff381, 0xb968c43e, 0x3824342c, 0xc2a3405f,
-   0x161dc372, 0xbce2250c, 0x283c498b, 0xff0d9541,
-   0x39a80171, 0x080cb3de, 0xd8b4e49c, 0x6456c190,
-   0x7bcb8461, 0xd532b670, 0x486c5c74, 0xd0b85742
-};
-#endif
-
-#if SHARKSSL_AES_TABLES_IN_RAM
-static const U32 enterlowpower[10] =
-#else
-static const U32 timeoutshift[10] =
-#endif
-{
-   0x01000000, 0x02000000, 0x04000000, 0x08000000,
-   0x10000000, 0x20000000, 0x40000000, 0x80000000,
-   0x1B000000, 0x36000000
-};
-
-#define mcspidevice(a, n) (((a) >> n) | ((a) << (32 - n)))
-
-
-#if SHARKSSL_AES_TABLES_IN_RAM
-static void SharkSslAesCtx_initTables(void)
-{
-   if (!alloczeroed[0])
-   {
-      memcpy(alloczeroed, timerevtstrm, sizeof(timerevtstrm));
-      memcpy(domainalways, thumb32break, sizeof(thumb32break));
-      memcpy(timeoutshift, enterlowpower, sizeof(enterlowpower));
-      #if (!SHARKSSL_AES_DISABLE_SBOX)
-      memcpy(class3configure, singlefuito, sizeof(singlefuito));
-      #endif
-      #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-      memcpy(powerpdata, spinboxhwmod, sizeof(spinboxhwmod));
-      #endif
-   }
+   x2 = ((w & 0x7f7f7f7fu) << 1) ^ (((w >> 7) & 0x01010101u) * 0x1bu);
+   x4 = ((x2 & 0x7f7f7f7fu) << 1) ^ (((x2 >> 7) & 0x01010101u) * 0x1bu);
+   x8 = ((x4 & 0x7f7f7f7fu) << 1) ^ (((x4 >> 7) & 0x01010101u) * 0x1bu);
+   m9 = x8 ^ w;
+   m11 = m9 ^ x2;
+   m13 = m9 ^ x4;
+   m14 = x8 ^ x4 ^ x2;
+   
+   return m14 ^ ((m11 >> 8) | (m11 << 24)) ^ ((m13 >> 16) | (m13 << 16)) ^ ((m9 >> 24) | (m9 << 8));
 }
 #endif
 
 
-SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *ctx,
-                                             SharkSslAesCtx_Type type,
-                                             const U8 *key, U8 keyLen)
+
+static void _XzY0x5E(SharkSslAesCtx *o, SharkSslAesCtx_Type type,
+                                       const U8 *key, U8 keyLen)
 {
-   U32 *countshift, brightnesslimit;
-   U16 i;
+   U8 *k = (U8*)o->key;
+   U32 w;
+   unsigned i, nr;
+
+   _XzY0x30E(o, key, keyLen);
+   if (0 == o->nr)
+   {
+      return;
+   }
+   nr = SHARKSSL_AES_NR_DECODE(o->nr);
+   for (i = 0; i < 4 * (nr + 1); ++i)
+   {
+      w = o->key[i];
+      inputlevel(w, k, 4 * i);
+   }
    #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-   U16 j;
-   #endif
-
-   baAssert(ctx);
-   baAssert(key);
-   #if (SHARKSSL_USE_AES_256)
-   #if (SHARKSSL_USE_AES_192)
-   #if (SHARKSSL_USE_AES_128)
-   baAssert((keyLen == 32) || (keyLen == 24) || (keyLen == 16));
-   #else  
-   baAssert((keyLen == 32) || (keyLen == 24));
-   #endif
-   #else  
-   #if (SHARKSSL_USE_AES_128)
-   baAssert((keyLen == 32) || (keyLen == 16));
-   #else  
-   baAssert(keyLen == 32);
-   #endif
-   #endif
-   #else  
-   #if (SHARKSSL_USE_AES_192)
-   #if (SHARKSSL_USE_AES_128)
-   baAssert((keyLen == 24) || (keyLen == 16));
-   #else  
-   baAssert((keyLen == 24));
-   #endif
-   #else
-   baAssert((SHARKSSL_USE_AES_128) && (keyLen == 16));
-   #endif
-   #endif
-
-   #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-   baAssert((type == SharkSslAesCtx_Decrypt) || (type == SharkSslAesCtx_Encrypt));
-   #else
-   baAssert(type == SharkSslAesCtx_Decrypt);
-   #endif
-
-   #if SHARKSSL_AES_TABLES_IN_RAM
-   SharkSslAesCtx_initTables();
-   #endif
-
-   countshift = ctx->key;
-   read64uint32(countshift[0], key, 0);
-   read64uint32(countshift[1], key, 4);
-   read64uint32(countshift[2], key, 8);
-   read64uint32(countshift[3], key, 12);
-
-   switch (keyLen)
+   if (SharkSslAesCtx_Decrypt == type)
    {
-      #if (SHARKSSL_USE_AES_128)
-      case 16:
-         ctx->nr = 10;
-         for (i = 0; i < 10; i++, countshift += 4)
-         {
-            brightnesslimit = countshift[3];
-            #if SHARKSSL_AES_DISABLE_SBOX
-            brightnesslimit  = ((alloczeroed[exceptionupdates(brightnesslimit)] << 8) & 0xFF000000) |
-                     (alloczeroed[iisv4resource(brightnesslimit)]       & 0x00FF0000) |
-                     (alloczeroed[translationfault(brightnesslimit)]       & 0x0000FF00) |
-                    ((alloczeroed[setupcmdline(brightnesslimit)] >> 8) & 0x000000FF);
-            #else
-            brightnesslimit  = ((U32)class3configure[exceptionupdates(brightnesslimit)] << 24) |
-                    ((U32)class3configure[iisv4resource(brightnesslimit)] << 16) |
-                    ((U32)class3configure[translationfault(brightnesslimit)] <<  8) |
-                    ((U32)class3configure[setupcmdline(brightnesslimit)]      );
-            #endif
-            countshift[4] = brightnesslimit ^ countshift[0] ^ timeoutshift[i];
-            countshift[5] = countshift[1] ^ countshift[4];
-            countshift[6] = countshift[2] ^ countshift[5];
-            countshift[7] = countshift[3] ^ countshift[6];
-         }
-         break;
-      #endif
+      unsigned j, c;
 
-      #if (SHARKSSL_USE_AES_192)
-      case 24:
-         read64uint32(countshift[4], key, 16);
-         read64uint32(countshift[5], key, 20);
-         ctx->nr = 12;
-         for (i = 0; i < 8; i++, countshift += 6)
-         {
-            brightnesslimit  = countshift[5];
-            #if SHARKSSL_AES_DISABLE_SBOX
-            brightnesslimit  = ((alloczeroed[exceptionupdates(brightnesslimit)] << 8) & 0xFF000000) |
-                     (alloczeroed[iisv4resource(brightnesslimit)]       & 0x00FF0000) |
-                     (alloczeroed[translationfault(brightnesslimit)]       & 0x0000FF00) |
-                    ((alloczeroed[setupcmdline(brightnesslimit)] >> 8) & 0x000000FF);
-            #else
-            brightnesslimit  = ((U32)class3configure[exceptionupdates(brightnesslimit)] << 24) |
-                    ((U32)class3configure[iisv4resource(brightnesslimit)] << 16) |
-                    ((U32)class3configure[translationfault(brightnesslimit)] <<  8) |
-                    ((U32)class3configure[setupcmdline(brightnesslimit)]      );
-            #endif
-            countshift[6]  = brightnesslimit ^ countshift[0] ^ timeoutshift[i];
-            countshift[7]  = countshift[1] ^ countshift[6];
-            countshift[8]  = countshift[2] ^ countshift[7];
-            countshift[9]  = countshift[3] ^ countshift[8];
-            if (i < 7)
-            {
-               countshift[10] = countshift[4] ^ countshift[9];
-               countshift[11] = countshift[5] ^ countshift[10];
-            }
-         }
-         break;
-      #endif
-
-      #if (SHARKSSL_USE_AES_256)
-      case 32:
-         read64uint32(countshift[4], key, 16);
-         read64uint32(countshift[5], key, 20);
-         read64uint32(countshift[6], key, 24);
-         read64uint32(countshift[7], key, 28);
-         ctx->nr = 14;
-         for (i = 0; i < 7; i++, countshift += 8)
-         {
-            brightnesslimit  = countshift[7];
-            #if SHARKSSL_AES_DISABLE_SBOX
-            brightnesslimit  = ((alloczeroed[exceptionupdates(brightnesslimit)] << 8) & 0xFF000000) |
-                     (alloczeroed[iisv4resource(brightnesslimit)]       & 0x00FF0000) |
-                     (alloczeroed[translationfault(brightnesslimit)]       & 0x0000FF00) |
-                    ((alloczeroed[setupcmdline(brightnesslimit)] >> 8) & 0x000000FF);
-            #else
-            brightnesslimit  = ((U32)class3configure[exceptionupdates(brightnesslimit)] << 24) |
-                    ((U32)class3configure[iisv4resource(brightnesslimit)] << 16) |
-                    ((U32)class3configure[translationfault(brightnesslimit)] <<  8) |
-                    ((U32)class3configure[setupcmdline(brightnesslimit)]      );
-            #endif
-            countshift[8]  = brightnesslimit ^ countshift[0] ^ timeoutshift[i];
-            countshift[9]  = countshift[1] ^ countshift[8];
-            countshift[10] = countshift[2] ^ countshift[9];
-            countshift[11] = countshift[3] ^ countshift[10];
-
-            if (i < 6)
-            {
-               brightnesslimit  = countshift[11];
-               #if SHARKSSL_AES_DISABLE_SBOX
-               brightnesslimit  = ((alloczeroed[setupcmdline(brightnesslimit)] << 8) & 0xFF000000) |
-                        (alloczeroed[exceptionupdates(brightnesslimit)]       & 0x00FF0000) |
-                        (alloczeroed[iisv4resource(brightnesslimit)]       & 0x0000FF00) |
-                       ((alloczeroed[translationfault(brightnesslimit)] >> 8) & 0x000000FF);
-               #else
-               brightnesslimit  = ((U32)class3configure[setupcmdline(brightnesslimit)] << 24) |
-                       ((U32)class3configure[exceptionupdates(brightnesslimit)] << 16) |
-                       ((U32)class3configure[iisv4resource(brightnesslimit)] <<  8) |
-                       ((U32)class3configure[translationfault(brightnesslimit)]      );
-               #endif
-               countshift[12] = brightnesslimit ^ countshift[4];
-               countshift[13] = countshift[5] ^ countshift[12];
-               countshift[14] = countshift[6] ^ countshift[13];
-               countshift[15] = countshift[7] ^ countshift[14];
-            }
-         }
-         break;
-      #endif
-
-      default:
-         baAssert(0); 
-         break;
-   }
-
-   #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-   if (type == SharkSslAesCtx_Decrypt)
-   {
-      countshift += 4;
-
-      for (i = 1; i < ctx->nr; i++)
+      for (i = 0, j = nr; i < j; ++i, --j)
       {
-         countshift -= 8;
-
-         for (j = 4; j > 0; j--)
+         for (c = 0; c < 4; ++c)
          {
-            brightnesslimit = *countshift;
-            #if SHARKSSL_AES_DISABLE_SBOX
-            *countshift++ =      domainalways[(U8)(alloczeroed[setupcmdline(brightnesslimit)] >> 8)]      ^
-                   mcspidevice(domainalways[(U8)(alloczeroed[exceptionupdates(brightnesslimit)] >> 8)], 8)  ^
-                   mcspidevice(domainalways[(U8)(alloczeroed[iisv4resource(brightnesslimit)] >> 8)], 16) ^
-                   mcspidevice(domainalways[(U8)(alloczeroed[translationfault(brightnesslimit)] >> 8)], 24);
-            #else
-            *countshift++ =      domainalways[class3configure[setupcmdline(brightnesslimit)]]      ^
-                   mcspidevice(domainalways[class3configure[exceptionupdates(brightnesslimit)]], 8)  ^
-                   mcspidevice(domainalways[class3configure[iisv4resource(brightnesslimit)]], 16) ^
-                   mcspidevice(domainalways[class3configure[translationfault(brightnesslimit)]], 24);
-            #endif
+            w = o->key[4 * i + c];
+            o->key[4 * i + c] = o->key[4 * j + c];
+            o->key[4 * j + c] = w;
          }
       }
-   }
-   #endif
-
-   #if ((!SHARKSSL_AES_SMALL_FOOTPRINT) && SHARKSSL_AES_CIPHER_LOOP_UNROLL)
-   ctx->nr >>= 1;
-   #endif
-   ctx->nr--;
-}
-
-
-#define AES_ENC_ROUND(s, t, k, mixtable)  do {              \
-   k += 4;                                                  \
-   t[0] = k[0] ^       mixtable[setupcmdline(s[0])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[1])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[2])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[3])], 24);       \
-   t[1] = k[1] ^       mixtable[setupcmdline(s[1])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[2])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[3])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[0])], 24);       \
-   t[2] = k[2] ^       mixtable[setupcmdline(s[2])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[3])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[0])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[1])], 24);       \
-   t[3] = k[3] ^       mixtable[setupcmdline(s[3])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[0])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[1])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[2])], 24);       \
-} while (0);
-
-#if SHARKSSL_AES_DISABLE_SBOX
-#define AES_ENC_FINAL_ROUND(out, s, k, sbox) do {           \
-   k += 4;                                                  \
-   out[0]  = (U8)((setupcmdline(k[0])) ^ ((U8)(sbox[setupcmdline(s[0])] >> 8))); \
-   out[1]  = (U8)((exceptionupdates(k[0])) ^ ((U8)(sbox[exceptionupdates(s[1])] >> 8))); \
-   out[2]  = (U8)((iisv4resource(k[0])) ^ ((U8)(sbox[iisv4resource(s[2])] >> 8))); \
-   out[3]  = (U8)((translationfault(k[0])) ^ ((U8)(sbox[translationfault(s[3])] >> 8))); \
-   out[4]  = (U8)((setupcmdline(k[1])) ^ ((U8)(sbox[setupcmdline(s[1])] >> 8))); \
-   out[5]  = (U8)((exceptionupdates(k[1])) ^ ((U8)(sbox[exceptionupdates(s[2])] >> 8))); \
-   out[6]  = (U8)((iisv4resource(k[1])) ^ ((U8)(sbox[iisv4resource(s[3])] >> 8))); \
-   out[7]  = (U8)((translationfault(k[1])) ^ ((U8)(sbox[translationfault(s[0])] >> 8))); \
-   out[8]  = (U8)((setupcmdline(k[2])) ^ ((U8)(sbox[setupcmdline(s[2])] >> 8))); \
-   out[9]  = (U8)((exceptionupdates(k[2])) ^ ((U8)(sbox[exceptionupdates(s[3])] >> 8))); \
-   out[10] = (U8)((iisv4resource(k[2])) ^ ((U8)(sbox[iisv4resource(s[0])] >> 8))); \
-   out[11] = (U8)((translationfault(k[2])) ^ ((U8)(sbox[translationfault(s[1])] >> 8))); \
-   out[12] = (U8)((setupcmdline(k[3])) ^ ((U8)(sbox[setupcmdline(s[3])] >> 8))); \
-   out[13] = (U8)((exceptionupdates(k[3])) ^ ((U8)(sbox[exceptionupdates(s[0])] >> 8))); \
-   out[14] = (U8)((iisv4resource(k[3])) ^ ((U8)(sbox[iisv4resource(s[1])] >> 8))); \
-   out[15] = (U8)((translationfault(k[3])) ^ ((U8)(sbox[translationfault(s[2])] >> 8))); \
-} while (0);
-#else
-#define AES_ENC_FINAL_ROUND(out, s, k, sbox) do {           \
-   k += 4;                                                  \
-   out[0]  = (U8)((setupcmdline(k[0])) ^ sbox[setupcmdline(s[0])]); \
-   out[1]  = (U8)((exceptionupdates(k[0])) ^ sbox[exceptionupdates(s[1])]); \
-   out[2]  = (U8)((iisv4resource(k[0])) ^ sbox[iisv4resource(s[2])]); \
-   out[3]  = (U8)((translationfault(k[0])) ^ sbox[translationfault(s[3])]); \
-   out[4]  = (U8)((setupcmdline(k[1])) ^ sbox[setupcmdline(s[1])]); \
-   out[5]  = (U8)((exceptionupdates(k[1])) ^ sbox[exceptionupdates(s[2])]); \
-   out[6]  = (U8)((iisv4resource(k[1])) ^ sbox[iisv4resource(s[3])]); \
-   out[7]  = (U8)((translationfault(k[1])) ^ sbox[translationfault(s[0])]); \
-   out[8]  = (U8)((setupcmdline(k[2])) ^ sbox[setupcmdline(s[2])]); \
-   out[9]  = (U8)((exceptionupdates(k[2])) ^ sbox[exceptionupdates(s[3])]); \
-   out[10] = (U8)((iisv4resource(k[2])) ^ sbox[iisv4resource(s[0])]); \
-   out[11] = (U8)((translationfault(k[2])) ^ sbox[translationfault(s[1])]); \
-   out[12] = (U8)((setupcmdline(k[3])) ^ sbox[setupcmdline(s[3])]); \
-   out[13] = (U8)((exceptionupdates(k[3])) ^ sbox[exceptionupdates(s[0])]); \
-   out[14] = (U8)((iisv4resource(k[3])) ^ sbox[iisv4resource(s[1])]); \
-   out[15] = (U8)((translationfault(k[3])) ^ sbox[translationfault(s[2])]); \
-} while (0);
-#endif
-
-
-SHARKSSL_API void SharkSslAesCtx_encrypt(SharkSslAesCtx *ctx, U8 input[16], U8 output[16])
-{
-   U32 *K, S[4], T[4];
-   U16  i;
-   #if SHARKSSL_AES_SMALL_FOOTPRINT
-   U16 j, z, y;
-   #endif
-
-   baAssert(ctx->nr > 0);
-   i = ctx->nr;
-   K = ctx->key;
-
-   read64uint32(S[0], input,  0); S[0] ^= K[0];
-   read64uint32(S[1], input,  4); S[1] ^= K[1];
-   read64uint32(S[2], input,  8); S[2] ^= K[2];
-   read64uint32(S[3], input, 12); S[3] ^= K[3];
-
-   #if SHARKSSL_AES_SMALL_FOOTPRINT
-   K += 4;
-   do
-   {
-      for (j = 0; !(j & 4); j++)
+      for (i = 16; i < 16 * nr; i += 4)
       {
-         T[j] = *K++;
-         for (z = 0, y = 0; !(z & 4); z++, y += 8)
-         {
-            U32 r = alloczeroed[(U8)(S[(j + z) & 3] >> (24 - y))];
-            T[j] ^= mcspidevice(r, y);
-         }
-      }
-
-      S[0] = T[0]; S[1] = T[1]; S[2] = T[2]; S[3] = T[3];
-   } while (--i);
-
-   i = 0;
-   for (j = 0; !(j & 4); j++)
-   {
-      for (z = 0, y = 24; !(z & 4); z++, y -= 8)
-      {
-         #if SHARKSSL_AES_DISABLE_SBOX
-         output[i++] = (U8)((K[j] >> y) ^ (U8)(alloczeroed[(U8)(T[(j + z) & 3] >> y)] >> 8));
-         #else
-         output[i++] = (U8)((K[j] >> y) ^ class3configure[(U8)(T[(j + z) & 3] >> y)]);
-         #endif
+         w = (U32)k[i] | ((U32)k[i + 1] << 8) | ((U32)k[i + 2] << 16) | ((U32)k[i + 3] << 24);
+         w = _XzY0x62(w);
+         k[i]     = (U8)w;
+         k[i + 1] = (U8)(w >> 8);
+         k[i + 2] = (U8)(w >> 16);
+         k[i + 3] = (U8)(w >> 24);
       }
    }
-
    #else
-   #if SHARKSSL_AES_CIPHER_LOOP_UNROLL
-   AES_ENC_ROUND(S, T, K, alloczeroed);
-   #endif
-   do
-   {
-      #if SHARKSSL_AES_CIPHER_LOOP_UNROLL
-      AES_ENC_ROUND(T, S, K, alloczeroed);
-      AES_ENC_ROUND(S, T, K, alloczeroed);
-
-      #else
-      AES_ENC_ROUND(S, T, K, alloczeroed);
-      S[0] = T[0]; S[1] = T[1]; S[2] = T[2]; S[3] = T[3];
-
-      #endif
-
-   } while (--i);
-
-   #if SHARKSSL_AES_DISABLE_SBOX
-   AES_ENC_FINAL_ROUND(output, T, K, alloczeroed);
-   #else
-   AES_ENC_FINAL_ROUND(output, T, K, class3configure);
-   #endif
+   (void)type;
    #endif
 }
-
-
-#undef AES_ENC_ROUND
-#undef AES_ENC_FINAL_ROUND
-
-#if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
-#define AES_DEC_ROUND(s, t, k, mixtable)  do {              \
-   k -= 4;                                                  \
-   t[0] = k[0] ^       mixtable[setupcmdline(s[0])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[3])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[2])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[1])], 24);       \
-   t[1] = k[1] ^       mixtable[setupcmdline(s[1])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[0])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[3])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[2])], 24);       \
-   t[2] = k[2] ^       mixtable[setupcmdline(s[2])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[1])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[0])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[3])], 24);       \
-   t[3] = k[3] ^       mixtable[setupcmdline(s[3])]      ^      \
-                  mcspidevice(mixtable[exceptionupdates(s[2])], 8)  ^      \
-                  mcspidevice(mixtable[iisv4resource(s[1])], 16) ^      \
-                  mcspidevice(mixtable[translationfault(s[0])], 24);       \
-} while (0);
-
-
-#define AES_DEC_FINAL_ROUND(out, s, k, sbox) do {           \
-   k -= 4;                                                  \
-   out[0]  = (U8)((setupcmdline(k[0])) ^ sbox[setupcmdline(s[0])]); \
-   out[1]  = (U8)((exceptionupdates(k[0])) ^ sbox[exceptionupdates(s[3])]); \
-   out[2]  = (U8)((iisv4resource(k[0])) ^ sbox[iisv4resource(s[2])]); \
-   out[3]  = (U8)((translationfault(k[0])) ^ sbox[translationfault(s[1])]); \
-   out[4]  = (U8)((setupcmdline(k[1])) ^ sbox[setupcmdline(s[1])]); \
-   out[5]  = (U8)((exceptionupdates(k[1])) ^ sbox[exceptionupdates(s[0])]); \
-   out[6]  = (U8)((iisv4resource(k[1])) ^ sbox[iisv4resource(s[3])]); \
-   out[7]  = (U8)((translationfault(k[1])) ^ sbox[translationfault(s[2])]); \
-   out[8]  = (U8)((setupcmdline(k[2])) ^ sbox[setupcmdline(s[2])]); \
-   out[9]  = (U8)((exceptionupdates(k[2])) ^ sbox[exceptionupdates(s[1])]); \
-   out[10] = (U8)((iisv4resource(k[2])) ^ sbox[iisv4resource(s[0])]); \
-   out[11] = (U8)((translationfault(k[2])) ^ sbox[translationfault(s[3])]); \
-   out[12] = (U8)((setupcmdline(k[3])) ^ sbox[setupcmdline(s[3])]); \
-   out[13] = (U8)((exceptionupdates(k[3])) ^ sbox[exceptionupdates(s[2])]); \
-   out[14] = (U8)((iisv4resource(k[3])) ^ sbox[iisv4resource(s[1])]); \
-   out[15] = (U8)((translationfault(k[3])) ^ sbox[translationfault(s[0])]); \
-} while (0);
-
-
-SHARKSSL_API void SharkSslAesCtx_decrypt(SharkSslAesCtx *ctx, const U8 input[16], U8 output[16])
-{
-   U32 *K, S[4], T[4];
-   U16  i;
-   #if SHARKSSL_AES_SMALL_FOOTPRINT
-   U16 j, z, y;
-   #endif
-
-   baAssert(ctx->nr > 0);
-   i = ctx->nr;
-   #if ((!SHARKSSL_AES_SMALL_FOOTPRINT) && SHARKSSL_AES_CIPHER_LOOP_UNROLL)
-   K = &ctx->key[(i + 1) << 3];
-   #else
-   K = &ctx->key[(i + 1) << 2];
-   #endif
-
-   read64uint32(S[0], input,  0); S[0] ^= K[0];
-   read64uint32(S[1], input,  4); S[1] ^= K[1];
-   read64uint32(S[2], input,  8); S[2] ^= K[2];
-   read64uint32(S[3], input, 12); S[3] ^= K[3];
-
-   #if SHARKSSL_AES_SMALL_FOOTPRINT
-   do
-   {
-      j = 3;
-      do
-      {
-         T[j] = *(--K);
-         for (z = 4, y = 0; z > 0; z--, y += 8)
-         {
-            U32 r = domainalways[(U8)(S[(j + z) & 3] >> (24 - y))];
-            T[j] ^= mcspidevice(r, y);
-         }
-      } while (j--);
-
-      S[0] = T[0]; S[1] = T[1]; S[2] = T[2]; S[3] = T[3];
-   } while (--i);
-
-   i = 0;
-   K -= 4;
-   for (j = 0; !(j & 4); j++)
-   {
-      for (z = 0, y = 24; !(z & 4); z++, y -= 8)
-      {
-         output[i++] = (U8)((K[j] >> y) ^ powerpdata[(U8)(T[((U8)(j - z)) & 3] >> y)]);
-      }
-   }
-
-   #else
-   #if SHARKSSL_AES_CIPHER_LOOP_UNROLL
-   AES_DEC_ROUND(S, T, K, domainalways);
-   #endif
-   do
-   {
-      #if SHARKSSL_AES_CIPHER_LOOP_UNROLL
-      AES_DEC_ROUND(T, S, K, domainalways);
-      AES_DEC_ROUND(S, T, K, domainalways);
-
-      #else
-      AES_DEC_ROUND(S, T, K, domainalways);
-      S[0] = T[0]; S[1] = T[1]; S[2] = T[2]; S[3] = T[3];
-      #endif
-   } while (--i);
-
-   AES_DEC_FINAL_ROUND(output, T, K, powerpdata);
-   #endif
-}
-
-#undef AES_DEC_ROUND
-#undef AES_DEC_FINAL_ROUND
 #endif  
 
-#undef mcspidevice
 
-#else  
 
 SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *ctx,
                                              SharkSslAesCtx_Type type,
@@ -46977,6 +47114,13 @@ SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *ctx,
    baAssert((type == SharkSslAesCtx_Decrypt) || (type == SharkSslAesCtx_Encrypt));
    #else
    baAssert(type == SharkSslAesCtx_Encrypt);
+   #endif
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      _XzY0x5E(ctx, type, key, keyLen);
+      return;
+   }
    #endif
    _XzY0x30D(ctx, key, keyLen);
    #if (!SHARKSSL_DISABLE_AES_ECB_DECRYPT)
@@ -46993,6 +47137,13 @@ SHARKSSL_API void SharkSslAesCtx_constructor(SharkSslAesCtx *ctx,
 SHARKSSL_API void SharkSslAesCtx_encrypt(SharkSslAesCtx *ctx, U8 input[16], U8 output[16])
 {
    baAssert(ctx->nr > 0);
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      sharkssl_aes_hw_ecb_encrypt(ctx->key, SHARKSSL_AES_HW_NR(ctx), input, output, 1);
+      return;
+   }
+   #endif
    SharkSslAesCtx_encryptCT(ctx, input, output);
 }
 
@@ -47001,6 +47152,13 @@ SHARKSSL_API void SharkSslAesCtx_encrypt(SharkSslAesCtx *ctx, U8 input[16], U8 o
 SHARKSSL_API void SharkSslAesCtx_decrypt(SharkSslAesCtx *ctx, const U8 input[16], U8 output[16])
 {
    baAssert(ctx->nr > 0);
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      sharkssl_aes_hw_ecb_decrypt(ctx->key, SHARKSSL_AES_HW_NR(ctx), input, output, 1);
+      return;
+   }
+   #endif
    _XzY0x314(ctx, input, NULL, output, NULL);
 }
 #endif
@@ -47009,15 +47167,18 @@ SHARKSSL_API void SharkSslAesCtx_decrypt(SharkSslAesCtx *ctx, const U8 input[16]
 #if (SHARKSSL_ENABLE_AES_CBC || SHARKSSL_ENABLE_AES_CTR_MODE)
 static void _XzY0x315(U8 *r, const U8 *a, const U8 *b)
 {
+   #if (SHARKSSL_AES_NEON_ENC || SHARKSSL_AES_NEON_DEC)
+   sharkssl_aes_neon_xor16(r, a, b);
+   #else
    unsigned i;
 
    for (i = 0; i < 16; ++i)
    {
       r[i] = (U8)(a[i] ^ b[i]);
    }
+   #endif
 }
 #endif
-#endif  
 
 
 #if SHARKSSL_ENABLE_AES_CBC
@@ -47032,6 +47193,16 @@ SHARKSSL_API void SharkSslAesCtx_cbc_encrypt(SharkSslAesCtx *ctx, U8 vect[16],
    baAssert(output);
    baAssert((len & 0x0F) == 0);
    len &= ~0xF;
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      if (len)
+      {
+         sharkssl_aes_hw_cbc_encrypt(ctx->key, SHARKSSL_AES_HW_NR(ctx), vect, input, output, len >> 4);
+      }
+      return;
+   }
+   #endif
    while (len > 0)
    {
       #if SHARKSSL_UNALIGNED_ACCESS
@@ -47087,6 +47258,23 @@ SHARKSSL_API void SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *ctx, U8 vect[16],
       return;
    }
 
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      if (vect)
+      {
+         sharkssl_aes_hw_cbc_decrypt(ctx->key, SHARKSSL_AES_HW_NR(ctx), vect, input, output, len >> 4);
+      }
+      else if (len > 16)
+      {
+         
+         memcpy(rememberstate, input, 16);
+         sharkssl_aes_hw_cbc_decrypt(ctx->key, SHARKSSL_AES_HW_NR(ctx), rememberstate, input + 16, output + 16, (len >> 4) - 1);
+      }
+      return;
+   }
+   #endif
+
    if (vect)
    {
       memcpy(rememberstate, input + len - 16, 16);
@@ -47094,6 +47282,36 @@ SHARKSSL_API void SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *ctx, U8 vect[16],
 
    
    contextoffset = vect ? 0 : 16;
+   #if SHARKSSL_AES_NEON_DEC
+   if ((len - contextoffset) >= 48)
+   {
+      
+      SharkSslAesNeonKeys keys;
+      uint32x4_t blocks[8];
+      U32 m, j;
+
+      _XzY0x67(&keys, ctx);
+      memset(blocks, 0, sizeof(blocks));
+      while (len > contextoffset)
+      {
+         m = (len - contextoffset) >> 4;
+         if (m > 8)
+         {
+            m = 8;
+         }
+         len -= 16 * m;
+         memcpy(blocks, input + len, 16 * m);
+         sharkssl_aes_neon_decrypt8(&keys, blocks);
+         for (j = m; j-- > 0; )
+         {
+            _XzY0x315(output + len + 16 * j, (const U8 *)(const void *)&blocks[j],
+                                 (len + 16 * j) ? (input + len + 16 * j - 16) : vect);
+         }
+      }
+      sharkssl_clear(&keys, sizeof(keys));
+      sharkssl_clear(blocks, sizeof(blocks));
+   }
+   #endif
    while (len > contextoffset)
    {
       if ((len - contextoffset) >= 32)
@@ -47196,7 +47414,6 @@ SHARKSSL_API void SharkSslAesCtx_cbc_decrypt(SharkSslAesCtx *ctx, U8 vect[16],
 
 
 #if (SHARKSSL_ENABLE_AES_CTR_MODE)  
-#if SHARKSSL_AES_SOFTWARE_CT
 
 SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
                                           const U8 *input, U8 *output, U32 len)
@@ -47211,6 +47428,52 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
    baAssert((len & 0x0F) == 0);
 
    len >>= 4;
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      if (len)
+      {
+         sharkssl_aes_hw_ctr(ctx->key, SHARKSSL_AES_HW_NR(ctx), ctr, input, output, len);
+      }
+      return;
+   }
+   #endif
+   #if SHARKSSL_AES_NEON_ENC
+   if (len >= 3)
+   {
+      
+      SharkSslAesNeonKeys keys;
+      uint32x4_t blocks[8];
+
+      _XzY0x67(&keys, ctx);
+      memset(blocks, 0, sizeof(blocks));
+      while (len)
+      {
+         lanes = (len >= 8) ? 8 : (unsigned)len;
+         for (_XzY0x2B2 = 0; _XzY0x2B2 < lanes; ++_XzY0x2B2)
+         {
+            
+            k = 0;
+            while ((k < 16) && (0 == ++ctr[k]))
+            {
+               k++;
+            }
+            memcpy(&blocks[_XzY0x2B2], ctr, 16);
+         }
+         sharkssl_aes_neon_encrypt8(&keys, blocks);
+         for (_XzY0x2B2 = 0; _XzY0x2B2 < lanes; ++_XzY0x2B2)
+         {
+            _XzY0x315(output, input, (const U8 *)(const void *)&blocks[_XzY0x2B2]);
+            input  += 16;
+            output += 16;
+         }
+         len -= lanes;
+      }
+      sharkssl_clear(&keys, sizeof(keys));
+      sharkssl_clear(blocks, sizeof(blocks));
+      return;
+   }
+   #endif
    while (len)
    {
       lanes = (len >= 2) ? 2 : 1;
@@ -47243,65 +47506,6 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
    sharkssl_clear(sossirecalc, sizeof(sossirecalc));
 }
 
-#else
-SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
-                                          const U8 *input, U8 *output, U32 len)
-{
-   U8 sossirecalc[16], k;
-
-   baAssert(ctx);
-   baAssert(ctr);
-   baAssert(input);
-   baAssert(output);
-   baAssert((len & 0x0F) == 0);
-
-   len >>= 4;
-   while (len--)
-   {
-      
-      k = 0;
-      #if ((BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN) && SHARKSSL_UNALIGNED_ACCESS)
-      while ((k < 4)  && (0 == ++((SHARKSSL_UNALIGNED_U32*)ctr)[k]))
-      #else
-      while ((k < 16) && (0 == ++ctr[k]))
-      #endif
-      {
-         k++;
-      }
-
-      
-      SharkSslAesCtx_encrypt(ctx, ctr, sossirecalc);
-
-      
-      #if SHARKSSL_UNALIGNED_ACCESS
-      ((SHARKSSL_UNALIGNED_U32*)output)[0] = ((SHARKSSL_UNALIGNED_U32*)input)[0] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[0];
-      ((SHARKSSL_UNALIGNED_U32*)output)[1] = ((SHARKSSL_UNALIGNED_U32*)input)[1] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[1];
-      ((SHARKSSL_UNALIGNED_U32*)output)[2] = ((SHARKSSL_UNALIGNED_U32*)input)[2] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[2];
-      ((SHARKSSL_UNALIGNED_U32*)output)[3] = ((SHARKSSL_UNALIGNED_U32*)input)[3] ^ ((SHARKSSL_UNALIGNED_U32*)sossirecalc)[3];
-      #else
-      output[0]  = (U8)(input[0]  ^ sossirecalc[0]);
-      output[1]  = (U8)(input[1]  ^ sossirecalc[1]);
-      output[2]  = (U8)(input[2]  ^ sossirecalc[2]);
-      output[3]  = (U8)(input[3]  ^ sossirecalc[3]);
-      output[4]  = (U8)(input[4]  ^ sossirecalc[4]);
-      output[5]  = (U8)(input[5]  ^ sossirecalc[5]);
-      output[6]  = (U8)(input[6]  ^ sossirecalc[6]);
-      output[7]  = (U8)(input[7]  ^ sossirecalc[7]);
-      output[8]  = (U8)(input[8]  ^ sossirecalc[8]);
-      output[9]  = (U8)(input[9]  ^ sossirecalc[9]);
-      output[10] = (U8)(input[10] ^ sossirecalc[10]);
-      output[11] = (U8)(input[11] ^ sossirecalc[11]);
-      output[12] = (U8)(input[12] ^ sossirecalc[12]);
-      output[13] = (U8)(input[13] ^ sossirecalc[13]);
-      output[14] = (U8)(input[14] ^ sossirecalc[14]);
-      output[15] = (U8)(input[15] ^ sossirecalc[15]);
-      #endif
-
-      input  += 16;
-      output += 16;
-   }
-}
-#endif  
 #endif
 
 
@@ -47331,23 +47535,6 @@ SHARKSSL_API void SharkSslAesCtx_ctr_mode(SharkSslAesCtx *ctx, U8 ctr[16],
 
 
 #if SHARKSSL_ENABLE_AES_GCM
-
-
-#if (SHARKSSL_OPTIMIZED_GCM_ASM && SHARKSSL_OPTIMIZED_GHASH_ASM && SHARKSSL_X86_ASM_PLATFORM)
-#define SHARKSSL_X86_GCM_RUNTIME_DISPATCH 1
-#else
-#define SHARKSSL_X86_GCM_RUNTIME_DISPATCH 0
-#endif
-
-#if (SHARKSSL_X86_GCM_RUNTIME_DISPATCH && SHARKSSL_X64_ASM_PLATFORM && SHARKSSL_OPTIMIZED_GCM_VAES_ASM)
-#define SHARKSSL_X86_GCM_VAES_DISPATCH 1
-#else
-#define SHARKSSL_X86_GCM_VAES_DISPATCH 0
-#endif
-
-#if (SHARKSSL_OPTIMIZED_GCM_ASM && (!SHARKSSL_OPTIMIZED_GHASH_ASM) && SHARKSSL_X86_ASM_PLATFORM)
-#error "\123\110\101\122\113\123\123\114\137\117\120\124\111\115\111\132\105\104\137\107\103\115\137\101\123\115\040\162\145\161\165\151\162\145\163\040\123\110\101\122\113\123\123\114\137\117\120\124\111\115\111\132\105\104\137\107\110\101\123\110\137\101\123\115\040\157\156\040\163\165\160\160\157\162\164\145\144\040\170\070\066\057\170\066\064"
-#endif
 
 #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
 
@@ -47398,11 +47585,6 @@ static void sharkssl_gcm_validateAsmLayout(void)
 }
 #endif
 
-#if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-static void sharkssl_gcm_gmult32M0_c(U8 (*M0)[16], U8 *x);
-static void sharkssl_gcm_gmult_dispatch(U8 (*M0)[16], U8 *x);
-#endif  
-
 
 #if (SHARKSSL_AES_GCM_ASM_CT && SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
 #if defined(_MSC_VER)
@@ -47416,13 +47598,13 @@ static void sharkssl_gcm_gmult_dispatch(U8 (*M0)[16], U8 *x);
 static SHARKSSL_AESNI_TARGET void sharkssl_x86_aesniBlock(const SharkSslAesCtx *o, const U8 input[16], U8 output[16])
 {
    const __m128i bswap = _mm_set_epi8(12, 13, 14, 15, 8, 9, 10, 11, 4, 5, 6, 7, 0, 1, 2, 3);
-   unsigned nr = SHARKSSL_AES_NR_DECODE(o->nr), round;
+   unsigned nr = SHARKSSL_AES_NR_DECODE(o->nr), _XzY0x6B;
    __m128i b = _mm_loadu_si128((const __m128i*)input);
 
    b = _mm_xor_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[0]), bswap));
-   for (round = 1; round < nr; ++round)
+   for (_XzY0x6B = 1; _XzY0x6B < nr; ++_XzY0x6B)
    {
-      b = _mm_aesenc_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[4 * round]), bswap));
+      b = _mm_aesenc_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[4 * _XzY0x6B]), bswap));
    }
    b = _mm_aesenclast_si128(b, _mm_shuffle_epi8(_mm_loadu_si128((const __m128i*)&o->key[4 * nr]), bswap));
    _mm_storeu_si128((__m128i*)output, b);
@@ -47430,275 +47612,30 @@ static SHARKSSL_AESNI_TARGET void sharkssl_x86_aesniBlock(const SharkSslAesCtx *
 #endif
 
 
-#if (SHARKSSL_AES_GCM_ASM_CT && defined(__aarch64__) && (defined(__GNUC__) || defined(__ICCARM__)))
-#define SHARKSSL_ARM64_AES_BLOCK 1
-extern unsigned sharkssl_arm64_capabilities(void);
+#if SHARKSSL_ARM64_GCM_RUNTIME_DISPATCH
 extern void sharkssl_arm64_aes_block(const SharkSslAesCtx *o, const U8 input[16], U8 output[16]);
-#else
-#define SHARKSSL_ARM64_AES_BLOCK 0
 #endif
 
 
-void SharkSslAesGcmCtx_encryptBlock(SharkSslAesGcmCtx *o, U8 input[16], U8 output[16])
-{
-   #if SHARKSSL_AES_GCM_SOFTWARE_CT
-   SharkSslAesCtx_encryptCT(&o->super, input, output);
-   #else
-   #if SHARKSSL_AES_GCM_ASM_CT
-   #if SHARKSSL_ARM64_AES_BLOCK
-   
-   if (sharkssl_arm64_capabilities() & 4)
-   {
-      sharkssl_arm64_aes_block(&o->super, input, output);
-      return;
-   }
-   #endif
-   #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-   
-   if (sharkssl_gcm_asmAvailable())
-   {
-      sharkssl_x86_aesniBlock(&o->super, input, output);
-      return;
-   }
-   #else
-   SharkSslAesCtx_encryptStdCT(&o->super, input, output);
-   return;
-   #endif
-   #endif
-   SharkSslAesCtx_encrypt(&o->super, input, output);
-   #endif
-}
-
-
-#if SHARKSSL_AES_GCM_SOFTWARE_CT
-static void pcibiossetup(SharkSslAesGcmCtx *o)
-{
-   memset(o->M0, 0, sizeof(o->M0));
-   SharkSslAesGcmCtx_encryptBlock(o, o->M0[8], o->M0[8]);
-   _XzY0x312(o);
-}
-#else
-#if ((!SHARKSSL_OPTIMIZED_GHASH_ASM) || SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
-static const U16 serialsetup[16] =
-{
-    0x0000, 0x1C20, 0x3840, 0x2460,
-    0x7080, 0x6ca0, 0x48c0, 0x54e0,
-    0xe100, 0xfd20, 0xd940, 0xc560,
-    0x9180, 0x8da0, 0xa9c0, 0xb5e0
-};
-#endif
-
-
-static void machinecheck(U8 *X)
-{
-   U32 Z[4];
-   U8  b;
-
-   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
-   {
-      cleanupcount(Z[0], X, 0);
-      cleanupcount(Z[1], X, 4);
-      cleanupcount(Z[2], X, 8);
-      cleanupcount(Z[3], X, 12);
-   }
-   #else
-   {
-      read64uint32(Z[0], X, 0);
-      read64uint32(Z[1], X, 4);
-      read64uint32(Z[2], X, 8);
-      read64uint32(Z[3], X, 12);
-   }
-   #endif
-
-   b = (U8)(Z[3] & 0x01);
-   Z[3] >>= 1;
-   if (Z[2] & 0x00000001)
-   {
-      Z[3] |= 0x80000000;
-   }
-   Z[2] >>= 1;
-   if (Z[1] & 0x00000001)
-   {
-      Z[2] |= 0x80000000;
-   }
-   Z[1] >>= 1;
-   if (Z[0] & 0x00000001)
-   {
-      Z[1] |= 0x80000000;
-   }
-   Z[0] >>= 1;
-   if (b)
-   {
-      Z[0] ^= 0xE1000000;
-   }
-
-   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
-   {
-      hsotgpdata(Z[0], X, 0);
-      hsotgpdata(Z[1], X, 4);
-      hsotgpdata(Z[2], X, 8);
-      hsotgpdata(Z[3], X, 12);
-   }
-   #else
-   {
-      inputlevel(Z[0], X, 0);
-      inputlevel(Z[1], X, 4);
-      inputlevel(Z[2], X, 8);
-      inputlevel(Z[3], X, 12);
-   }
-   #endif
-}
-
-
-static void pcibiossetup(SharkSslAesGcmCtx *aes)
-{
-   U8 (*m)[16] = aes->M0;
-   #if 0
-   U8 i, j;
-   #endif
-
-   memset(m[0], 0, 16);
-   memset(m[8], 0, 16);
-   SharkSslAesGcmCtx_encryptBlock(aes, m[8], m[8]);
-
-   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
-   {
-      U32 t;
-
-      cleanupcount(t, (U8*)(&m[8]), 0);  inputlevel(t, m[8], 0);
-      cleanupcount(t, (U8*)(&m[8]), 4);  inputlevel(t, m[8], 4);
-      cleanupcount(t, (U8*)(&m[8]), 8);  inputlevel(t, m[8], 8);
-      cleanupcount(t, (U8*)(&m[8]), 12); inputlevel(t, m[8], 12);
-   }
-   #endif
-
-   memcpy(m[4], m[8], 16);
-   machinecheck(m[4]);
-   memcpy(m[2], m[4], 16);
-   machinecheck(m[2]);
-   memcpy(m[1], m[2], 16);
-   machinecheck(m[1]);
-
-   #if 1  
-   memcpy(m[3],  m[2], 16);
-   memcpy(m[5],  m[4], 16);
-   memcpy(m[6],  m[4], 16);
-   memcpy(m[7],  m[4], 16);
-   memcpy(m[9],  m[8], 16);
-   memcpy(m[10], m[8], 16);
-   memcpy(m[11], m[8], 16);
-   memcpy(m[12], m[8], 16);
-   memcpy(m[13], m[8], 16);
-   memcpy(m[14], m[8], 16);
-   memcpy(m[15], m[8], 16);
-   paz00wifikill(m[3],  m[3],  m[1]);
-   paz00wifikill(m[5],  m[5],  m[1]);
-   paz00wifikill(m[6],  m[6],  m[2]);
-   paz00wifikill(m[7],  m[7],  m[3]);
-   paz00wifikill(m[9],  m[9],  m[1]);
-   paz00wifikill(m[10], m[10], m[2]);
-   paz00wifikill(m[11], m[11], m[3]);
-   paz00wifikill(m[12], m[12], m[4]);
-   paz00wifikill(m[13], m[13], m[5]);
-   paz00wifikill(m[14], m[14], m[6]);
-   paz00wifikill(m[15], m[15], m[7]);
-
-   #else
-   for (i = 2; i <= 8; i <<= 1)
-   {
-      for (j = 1; j < i; j++)
-      {
-         memcpy(m[i+j], m[i], 16);
-         paz00wifikill(m[i+j], m[i+j], m[j]);
-      }
-   }
-   #endif
-}
-#endif  
-
-
-#if SHARKSSL_AES_GCM_SOFTWARE_CT
-#define simplebuffer(c,x) sharkssl_gcm_multCT((c), x)
-#elif SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-#define simplebuffer(c,x) sharkssl_gcm_gmult_dispatch(c->M0, x)
-#else
-#define simplebuffer(c,x) sharkssl_gcm_gmult32M0(c->M0, x)
-#endif
-#if (!SHARKSSL_AES_GCM_SOFTWARE_CT)
-#if ((!SHARKSSL_OPTIMIZED_GHASH_ASM) || SHARKSSL_X86_GCM_RUNTIME_DISPATCH)
-#if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-static void sharkssl_gcm_gmult32M0_c(U8 (*M0)[16], U8 *x)
-#elif SHARKSSL_OPTIMIZED_GCM_ASM
-void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x)
-#else
-static void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x)
-#endif
-{
-    U32 Z[4];
-    U8  i, a;
-
-    Z[0] = Z[1] = Z[2] = Z[3] = 0;
-
-    for (i = 15; ; i--)
-    {
-        paz00wifikill((U8*)&Z[0], (U8*)&Z[0], M0[x[i]&0xF]);
-        a = (U8)(Z[3] & 0xF);
-        Z[3] = (Z[3] >> 4) | (Z[2] << 28);
-        Z[2] = (Z[2] >> 4) | (Z[1] << 28);
-        Z[1] = (Z[1] >> 4) | (Z[0] << 28);
-        Z[0] >>= 4;
-        Z[0] ^= ((U32)serialsetup[a]) << 16;
-
-
-        paz00wifikill((U8*)&Z[0], (U8*)&Z[0], M0[x[i]>>4]);
-        if (i == 0) break;
-        a = (U8)(Z[3] & 0xF);
-        Z[3] = (Z[3] >> 4) | (Z[2] << 28);
-        Z[2] = (Z[2] >> 4) | (Z[1] << 28);
-        Z[1] = (Z[1] >> 4) | (Z[0] << 28);
-        Z[0] >>= 4;
-        Z[0] ^= ((U32)serialsetup[a]) << 16;
-    }
-
-    inputlevel(Z[0], x, 0);
-    inputlevel(Z[1], x, 4);
-    inputlevel(Z[2], x, 8);
-    inputlevel(Z[3], x, 12);
-}
-#else
-void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x);
-#endif
+#if SHARKSSL_AES_GCM_ASM_CT
 
 #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x);
-
-static void sharkssl_gcm_gmult_dispatch(U8 (*M0)[16], U8 *x)
-{
-   if (sharkssl_gcm_asmAvailable())
-   {
-      sharkssl_gcm_gmult32M0(M0, x);
-   }
-   else
-   {
-      sharkssl_gcm_gmult32M0_c(M0, x);
-   }
-}
+#define SHARKSSL_GCM_ASM() sharkssl_gcm_asmAvailable()
+#else
+#define SHARKSSL_GCM_ASM() (0 != (sharkssl_arm64_capabilities() & 4))
 #endif
-#endif  
 
-#if SHARKSSL_OPTIMIZED_GCM_ASM
+
+void sharkssl_gcm_gmult32M0(U8 (*M0)[16], U8 *x);
 void sharkssl_gcm_crypt_blocks(SharkSslAesGcmCtx *ctx, U8 counter[16],
                                U8 tag[16], const U8 *input, U8 *output,
                                U32 len, SharkSslAesCtx_Type type);
-#endif
-
 #if SHARKSSL_X86_GCM_VAES_DISPATCH
 void sharkssl_gcm_crypt_blocks_vaes(SharkSslAesGcmCtx *ctx, U8 counter[16],
                                     U8 tag[16], const U8 *input, U8 *output,
                                     U32 len, SharkSslAesCtx_Type type);
 #endif
-
-#if (SHARKSSL_X86_GCM_RUNTIME_DISPATCH || (SHARKSSL_OPTIMIZED_GHASH_ASM && (!SHARKSSL_OPTIMIZED_GCM_ASM) && SHARKSSL_X86_ASM_PLATFORM))
+#if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
 void sharkssl_gcm_prepare32M0(U8 (*M0)[16]);
    #if SHARKSSL_X86_GCM_VAES_DISPATCH
 void sharkssl_gcm_prepare64M0(U8 (*M0)[16]);
@@ -47706,40 +47643,113 @@ void sharkssl_gcm_prepare64M0(U8 (*M0)[16]);
 #endif
 
 
-SHARKSSL_API void SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *ctx,
-                                                const U8 *key, U8 keyLen)
+
+static void sharkssl_gcm_asmBlocks(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[16],
+                                   const U8 *input, U8 *output, U32 length,
+                                   SharkSslAesCtx_Type type)
 {
-   #if SHARKSSL_AES_GCM_SOFTWARE_CT
-   _XzY0x30D(&ctx->super, key, keyLen);
-   #elif SHARKSSL_AES_GCM_ASM_CT
-   
-   #if SHARKSSL_AES_TABLES_IN_RAM
-   SharkSslAesCtx_initTables();
+   #if SHARKSSL_X86_GCM_VAES_DISPATCH
+   if (sharkssl_gcm_vaesAvailable())
+   {
+      sharkssl_gcm_crypt_blocks_vaes(o, counter, hash, input, output, length, type);
+      return;
+   }
    #endif
-   _XzY0x30E(&ctx->super, key, keyLen);
-   #else
-   SharkSslAesCtx_constructor((SharkSslAesCtx*)ctx, SharkSslAesCtx_Encrypt, key, keyLen);
+   sharkssl_gcm_crypt_blocks(o, counter, hash, input, output, length, type);
+}
+#endif  
+
+
+#if (!SHARKSSL_GCM_RUNTIME_DISPATCH)
+#define simplebuffer(c,x) sharkssl_gcm_multCT((c), x)
+#endif
+
+
+void SharkSslAesGcmCtx_encryptBlock(SharkSslAesGcmCtx *o, U8 input[16], U8 output[16])
+{
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   if (SHARKSSL_GCM_ASM())
+   {
+      #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
+      sharkssl_x86_aesniBlock(&o->super, input, output);
+      #else
+      sharkssl_arm64_aes_block(&o->super, input, output);
+      #endif
+      return;
+   }
    #endif
-   #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-   sharkssl_gcm_validateAsmLayout();
+   SharkSslAesCtx_encryptCT(&o->super, input, output);
+}
+
+
+
+static void pcibiossetup(SharkSslAesGcmCtx *o)
+{
+   memset(o->M0, 0, sizeof(o->M0));
+   SharkSslAesGcmCtx_encryptBlock(o, o->M0[8], o->M0[8]);
+   #if SHARKSSL_AES_GCM_ASM_CT
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   if (!SHARKSSL_GHASH_ASM())
+   {
+      _XzY0x312(o);
+      return;
+   }
    #endif
-   pcibiossetup(ctx);
+   #if (BA_BYTE_ORDER == BA_BYTE_ORDER_LITTLE_ENDIAN)
+   {
+      
+      U32 t;
+      unsigned i;
+
+      for (i = 0; i < 16; i += 4)
+      {
+         cleanupcount(t, o->M0[8], i);
+         inputlevel(t, o->M0[8], i);
+      }
+   }
+   #endif
    #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
       #if SHARKSSL_X86_GCM_VAES_DISPATCH
    if (sharkssl_gcm_vaesAvailable())
    {
-      sharkssl_gcm_prepare64M0(ctx->M0);
+      sharkssl_gcm_prepare64M0(o->M0);
    }
    else
       #endif
-   if (sharkssl_gcm_asmAvailable())
    {
-      sharkssl_gcm_prepare32M0(ctx->M0);
+      sharkssl_gcm_prepare32M0(o->M0);
    }
-   #elif (SHARKSSL_OPTIMIZED_GHASH_ASM && SHARKSSL_X86_ASM_PLATFORM)
-   
-   sharkssl_gcm_prepare32M0(ctx->M0);
    #endif
+   #else
+   _XzY0x312(o);
+   #endif
+}
+
+
+SHARKSSL_API void SharkSslAesGcmCtx_constructor(SharkSslAesGcmCtx *ctx,
+                                                const U8 *key, U8 keyLen)
+{
+   #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
+   sharkssl_gcm_validateAsmLayout();
+   #endif
+   #if SHARKSSL_AES_GCM_ASM_CT
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   if (SHARKSSL_GCM_ASM())
+   #endif
+   {
+      
+      _XzY0x30E(&ctx->super, key, keyLen);
+   }
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   else
+   #endif
+   #endif
+   #if SHARKSSL_AES_GCM_SOFTWARE
+   {
+      _XzY0x30D(&ctx->super, key, keyLen);
+   }
+   #endif
+   pcibiossetup(ctx);
 }
 
 
@@ -47763,60 +47773,24 @@ void SharkSslAesGcmCtx_authBlocks(SharkSslAesGcmCtx *o, U8 hash[16], const U8 *i
 
 
 
+
 void SharkSslAesGcmCtx_cryptBlocks(SharkSslAesGcmCtx *o, U8 counter[16], U8 hash[16], const U8 *input, U8 *output, U32 length, SharkSslAesCtx_Type type)
 {
-   #if SHARKSSL_AES_GCM_SOFTWARE_CT
    baAssert((length & 15u) == 0u);
-   sharkssl_gcm_cryptCT(o, counter, hash, input, output, length, type, NULL);
-   #else
-   U8 stream[16];
-   U32 count;
-   U8 i;
-
-   baAssert((length & 15u) == 0u);
-   if (length == 0u)
+   #if SHARKSSL_AES_GCM_ASM_CT
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   if (SHARKSSL_GCM_ASM())
+   #endif
    {
-      return;
-   }
-   #if SHARKSSL_OPTIMIZED_GCM_ASM
-      #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-         #if SHARKSSL_X86_GCM_VAES_DISPATCH
-   if (sharkssl_gcm_vaesAvailable())
-   {
-      sharkssl_gcm_crypt_blocks_vaes(o, counter, hash, input, output, length, type);
-      return;
-   }
-         #endif
-   if (sharkssl_gcm_asmAvailable())
-      #endif
-   {
-      sharkssl_gcm_crypt_blocks(o, counter, hash, input, output, length, type);
+      if (length)
+      {
+         sharkssl_gcm_asmBlocks(o, counter, hash, input, output, length, type);
+      }
       return;
    }
    #endif
-   while (length)
-   {
-      read64uint32(count, counter, 12);
-      ++count;
-      inputlevel(count, counter, 12);
-      SharkSslAesGcmCtx_encryptBlock(o, counter, stream);
-      if (SharkSslAesCtx_Decrypt == type)
-      {
-         SharkSslAesGcmCtx_authBlocks(o, hash, input, 16);
-      }
-      for (i = 0; i < 16; ++i)
-      {
-         output[i] = input[i] ^ stream[i];
-      }
-      if (SharkSslAesCtx_Encrypt == type)
-      {
-         SharkSslAesGcmCtx_authBlocks(o, hash, output, 16);
-      }
-      input += 16;
-      output += 16;
-      length -= 16;
-   }
-   sharkssl_clear(stream, sizeof(stream));
+   #if SHARKSSL_AES_GCM_SOFTWARE
+   sharkssl_gcm_cryptCT(o, counter, hash, input, output, length, type, NULL);
    #endif
 }
 
@@ -47863,68 +47837,27 @@ static int pcmciaregister(SharkSslAesGcmCtx *ctx,
    memcpy(&counter[0], vect, 12);
    inputlevel(1, counter, 12);  
 
-#if SHARKSSL_AES_GCM_SOFTWARE_CT
-   
-   sharkssl_gcm_cryptCT(ctx, counter, tagi, input, output, len, type, sossirecalc);
-#else
-#if SHARKSSL_OPTIMIZED_GCM_ASM
-   if (len >= 16)
+
+   #if SHARKSSL_AES_GCM_ASM_CT
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   if (SHARKSSL_GCM_ASM())
+   #endif
    {
-      #if SHARKSSL_X86_GCM_RUNTIME_DISPATCH
-         #if SHARKSSL_X86_GCM_VAES_DISPATCH
-      if (sharkssl_gcm_vaesAvailable())
+      U32 computingstrict = len & ~((U32)15);
+
+      if (computingstrict)
       {
-         U32 computingstrict = len & ~((U32)15);
-         sharkssl_gcm_crypt_blocks_vaes(ctx, counter, tagi, input, output, computingstrict, type);
+         sharkssl_gcm_asmBlocks(ctx, counter, tagi, input, output, computingstrict, type);
          input += computingstrict;
          output += computingstrict;
          len -= computingstrict;
       }
-      else
-         #endif
-      if (sharkssl_gcm_asmAvailable())
-      #endif
+      if (len)  
       {
-         U32 computingstrict = len & ~((U32)15);
-         sharkssl_gcm_crypt_blocks(ctx, counter, tagi, input, output, computingstrict, type);
-         input += computingstrict;
-         output += computingstrict;
-         len -= computingstrict;
-      }
-   }
-#endif
-
-   while (len)
-   {
-      
-      U32 requestflags;
-      read64uint32(requestflags, counter, 12);
-      requestflags++;
-      inputlevel(requestflags, counter, 12);
-
-      
-      SharkSslAesGcmCtx_encryptBlock(ctx, counter, sossirecalc);
-
-      
-      if (len >= 16)
-      {
-         if (SharkSslAesCtx_Encrypt == type)
-         {
-            paz00wifikill(output, input, sossirecalc);
-            paz00wifikill(tagi, tagi, output);
-         }
-         else
-         {
-            paz00wifikill(tagi, tagi, input);
-            paz00wifikill(output, input, sossirecalc);
-         }
-
-         input  += 16;
-         output += 16;
-         len -= 16;
-      }
-      else
-      {
+         read64uint32(computingstrict, counter, 12);
+         computingstrict++;
+         inputlevel(computingstrict, counter, 12);
+         SharkSslAesGcmCtx_encryptBlock(ctx, counter, sossirecalc);
          if (SharkSslAesCtx_Encrypt == type)
          {
             ntosd2nandflash(output, input, sossirecalc, len);
@@ -47935,33 +47868,40 @@ static int pcmciaregister(SharkSslAesGcmCtx *ctx,
             ntosd2nandflash(tagi, tagi, input, len);
             ntosd2nandflash(output, input, sossirecalc, len);
          }
-         len = 0;
+         simplebuffer(ctx, tagi);
       }
 
+      
+      inputlevel(0,    sossirecalc, 0);
+      inputlevel(_XzY0x2A, sossirecalc, 4);
+      inputlevel(0,    sossirecalc, 8);
+      inputlevel(pxafbmodes, sossirecalc, 12);
+      paz00wifikill(tagi, tagi, sossirecalc);
+      simplebuffer(ctx, tagi);
+
+      
+      inputlevel(1, counter, 12);
+      SharkSslAesGcmCtx_encryptBlock(ctx, counter, sossirecalc);
+   }
+   #if SHARKSSL_GCM_RUNTIME_DISPATCH
+   else
+   #endif
+   #endif
+   #if SHARKSSL_AES_GCM_SOFTWARE
+   {
+      
+      sharkssl_gcm_cryptCT(ctx, counter, tagi, input, output, len, type, sossirecalc);
+
+      
+      inputlevel(0,    counter, 0);
+      inputlevel(_XzY0x2A, counter, 4);
+      inputlevel(0,    counter, 8);
+      inputlevel(pxafbmodes, counter, 12);
+      paz00wifikill(tagi, tagi, counter);
       simplebuffer(ctx, tagi);
    }
-#endif
-
-   
-   #if SHARKSSL_AES_GCM_SOFTWARE_CT
-   inputlevel(0,    counter, 0);
-   inputlevel(_XzY0x2A, counter, 4);
-   inputlevel(0,    counter, 8);
-   inputlevel(pxafbmodes, counter, 12);
-   paz00wifikill(tagi, tagi, counter);
-   simplebuffer(ctx, tagi);
-   #else
-   inputlevel(0,    sossirecalc, 0);
-   inputlevel(_XzY0x2A, sossirecalc, 4);
-   inputlevel(0,    sossirecalc, 8);
-   inputlevel(pxafbmodes, sossirecalc, 12);
-   paz00wifikill(tagi, tagi, sossirecalc);
-   simplebuffer(ctx, tagi);
-
-   
-   inputlevel(1, counter, 12);
-   SharkSslAesGcmCtx_encryptBlock(ctx, counter, sossirecalc);
    #endif
+
    if (SharkSslAesCtx_Encrypt == type)
    {
       paz00wifikill(tag, tagi, sossirecalc);
@@ -48018,12 +47958,21 @@ SHARKSSL_API void SharkSslAesCcmCtx_constructor(SharkSslAesCcmCtx *ctx,
 static void SharkSslAesCcmCtx_encryptPair(SharkSslAesCcmCtx *ctx, U8 tagi[16],
                                           U8 counter[16], U8 sossirecalc[16])
 {
-   #if SHARKSSL_AES_SOFTWARE_CT
-   SharkSslAesCtx_encrypt2CT(&ctx->super, tagi, counter, tagi, sossirecalc);
-   #else
-   SharkSslAesCtx_encrypt((SharkSslAesCtx*)ctx, tagi, tagi);
-   SharkSslAesCtx_encrypt((SharkSslAesCtx*)ctx, counter, sossirecalc);
+   #if SHARKSSL_AES_HW
+   if (SHARKSSL_AES_HW_ON())
+   {
+      U8 _XzY0x61[32];
+
+      memcpy(_XzY0x61, tagi, 16);
+      memcpy(_XzY0x61 + 16, counter, 16);
+      sharkssl_aes_hw_ecb_encrypt(ctx->super.key, SHARKSSL_AES_HW_NR(&ctx->super), _XzY0x61, _XzY0x61, 2);
+      memcpy(tagi, _XzY0x61, 16);
+      memcpy(sossirecalc, _XzY0x61 + 16, 16);
+      sharkssl_clear(_XzY0x61, sizeof(_XzY0x61));
+      return;
+   }
    #endif
+   SharkSslAesCtx_encrypt2CT(&ctx->super, tagi, counter, tagi, sossirecalc);
 }
 
 static int modifyparam(SharkSslAesCcmCtx *ctx,
@@ -48100,6 +48049,32 @@ static int modifyparam(SharkSslAesCcmCtx *ctx,
    inputlevel(0, counter, 12);  
    memcpy(&counter[1], vect, 12);
    counter[0] = (3 - 1);  
+
+   #if SHARKSSL_AES_HW
+   
+   if ((len >= 16) && SHARKSSL_AES_HW_ON())
+   {
+      U8 state[32];
+      U32 _XzY0x5F = len & ~(U32)15;
+
+      memcpy(state, tagi, 16);
+      memcpy(state + 16, counter, 16);
+      if (SharkSslAesCtx_Encrypt == type)
+      {
+         sharkssl_aes_hw_ccm_encrypt(ctx->super.key, SHARKSSL_AES_HW_NR(&ctx->super), state, input, output, _XzY0x5F >> 4);
+      }
+      else
+      {
+         sharkssl_aes_hw_ccm_decrypt(ctx->super.key, SHARKSSL_AES_HW_NR(&ctx->super), state, input, output, _XzY0x5F >> 4);
+      }
+      memcpy(tagi, state, 16);
+      memcpy(counter, state + 16, 16);
+      sharkssl_clear(state, sizeof(state));
+      input += _XzY0x5F;
+      output += _XzY0x5F;
+      len -= _XzY0x5F;
+   }
+   #endif
 
    while (len)
    {
@@ -52749,14 +52724,16 @@ int omap3430common(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out
    #if (SHARKSSL_ENABLE_RSA_PKCS1 || SHARKSSL_SSL_SERVER_CODE || SHARKSSL_SSL_CLIENT_CODE)
    if (padding == SHARKSSL_RSA_PKCS1_PADDING)
    {
-      U16 kl;
+      U8 _XzY0x6[SHARKSSL_RSA_NONZERO_RANDOM_CANDIDATES];
+      U32 setupiocoherency, _XzY0x1E1, bad = 0;
+      U16 kl, i;
 
-      if (keyLen < 11)
+      if (keyLen < SHARKSSL_RSA_PKCS1_OVERHEAD)
       {
          return (int)SHARKSSL_RSA_WRONG_KEY_LENGTH;
       }
 
-      if (len > (keyLen - 11))
+      if (len > (keyLen - SHARKSSL_RSA_PKCS1_OVERHEAD))
       {
          return (int)SHARKSSL_RSA_INPUT_DATA_LENGTH_TOO_BIG;
       }
@@ -52766,31 +52743,31 @@ int omap3430common(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out
       *in++ = 0x00;  
       *in++ = 0x02;
       kl -= 3;
-      len = (kl & 0x0003);
-      kl &= 0xFFFC;  
-      if (sharkssl_rng(in, kl) < 0)
+      
+      while (kl--)
+      {
+         if (sharkssl_rng(_XzY0x6, sizeof(_XzY0x6)) < 0)
+         {
+            sharkssl_clear(_XzY0x6, sizeof(_XzY0x6));
+            return (int)SHARKSSL_RSA_INTERNAL_ERROR;
+         }
+         setupiocoherency = 0;
+         *in = 0;
+         for (i = 0; i < sizeof(_XzY0x6); i++)
+         {
+            _XzY0x1E1 = (((U32)_XzY0x6[i] - 1) >> 31) ^ 1;
+            *in |= (U8)(_XzY0x6[i] & (U8)(0 - (_XzY0x1E1 & (setupiocoherency ^ 1))));
+            setupiocoherency |= _XzY0x1E1;
+         }
+         bad |= setupiocoherency ^ 1;
+         in++;
+      }
+      sharkssl_clear(_XzY0x6, sizeof(_XzY0x6));
+      if (bad)
       {
          return (int)SHARKSSL_RSA_INTERNAL_ERROR;
       }
-      in += kl;
-      if (len)
-      {
-         in -= (4 - len);
-         if (sharkssl_rng(in, 4) < 0)
-         {
-            return (int)SHARKSSL_RSA_INTERNAL_ERROR;
-         }
-         in += 4;
-      }
-      *in-- = 0x00;
-      while (in != out)
-      {
-         if (0x00 == *in)
-         {
-            *in = 0x55;
-         }
-         in--;
-      }
+      *in = 0;
    }
    else  
    #endif
@@ -52846,19 +52823,20 @@ int writemessage(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, 
       U32 good, setupiocoherency, _XzY0x257;
       U16 i, sep;
 
-      if (keyLen < 4)
+      if (keyLen < SHARKSSL_RSA_PKCS1_OVERHEAD)
       {
          return (int)SHARKSSL_RSA_PKCS1_PADDING_ERROR;
       }
       good = (((U32)in[0] | ((U32)in[1] ^ 0x02)) - 1) >> 31;
       setupiocoherency = 0;
       sep = 0;
-      for (i = 2; i < (U16)(keyLen - 1); i++)
+      for (i = 2; i < keyLen; i++)
       {
          _XzY0x257 = ((U32)in[i] - 1) >> 31;
          sep |= (U16)(i & (U16)(0 - (_XzY0x257 & (setupiocoherency ^ 1))));
          setupiocoherency |= _XzY0x257;
       }
+      good &= (((U32)sep - (SHARKSSL_RSA_PKCS1_OVERHEAD - 1)) >> 31) ^ 1;
       if (0 == (good & setupiocoherency))
       {
          return (int)SHARKSSL_RSA_PKCS1_PADDING_ERROR;
@@ -52949,7 +52927,8 @@ int handleguest(const SharkSslCertKey *disableclock, U16 len, U8 *in, U8 *out, U
    {
       return (int)SHARKSSL_RSA_INPUT_DATA_LENGTH_AND_KEY_LENGTH_MISMATCH;
    }
-   status = async3clksrc(disableclock, hsmmcplatform, in);
+   
+   status = SharkSslCertKey_RSA_verify(disableclock, in);
    if (status)
    {
       return populatekernel(status);
@@ -54005,6 +53984,19 @@ static SHARKSSL_CT_MUL_INLINE S64 sharkssl_mulS32x32CT(S32 a, S32 b)
 #include <string.h>
 
 
+#if (SHARKSSL_OPTIMIZED_BIGINT_ASM && ((defined(_MSC_VER) && defined(_M_X64) && (!defined(_M_ARM64EC))) || ((defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__) && defined(__ELF__) && defined(__LP64__) && (!defined(__ILP32__)))))
+#define SHARKSSL_BIGINT_X64_WRAPPERS 1
+#else
+#define SHARKSSL_BIGINT_X64_WRAPPERS 0
+#endif
+
+#if SHARKSSL_BIGINT_X64_WRAPPERS
+
+extern void sharkssl_bigint_mul_x64(U32 *r, const U32 *a, const U32 *b, U32 _XzY0x2A, U32 blen);
+extern void sharkssl_bigint_redc_x64(U32 *t, const U32 *mod, U32 n, U32 mu);
+#endif
+
+
 
 void SharkSslBigInt_constructor_w(SharkSslBigInt *o, U16 writepmresrn, void *data)
 {
@@ -54240,7 +54232,7 @@ void SharkSslBigInt_addmod(SharkSslBigInt *o1,
 }
 
 
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
+#if (SHARKSSL_OPTIMIZED_BIGINT_ASM && (!SHARKSSL_BIGINT_X64_WRAPPERS))
 extern
 #else
 static
@@ -54249,10 +54241,15 @@ static
 void SharkSslBigInt_mult_(const SharkSslBigInt *o1,
                           const SharkSslBigInt *o2,
                           SharkSslBigInt *result)
-#if SHARKSSL_OPTIMIZED_BIGINT_ASM
+#if (SHARKSSL_OPTIMIZED_BIGINT_ASM && (!SHARKSSL_BIGINT_X64_WRAPPERS))
 ;
 #else
 {
+   #if SHARKSSL_BIGINT_X64_WRAPPERS
+   result->beg = result->mem;
+   memset(result->beg, 0, (result->len - o1->len - o2->len) * SHARKSSL__M);
+   sharkssl_bigint_mul_x64(result->beg + result->len - o1->len - o2->len, o1->beg, o2->beg, o1->len, o2->len);
+   #else
    SharkSslBigIntWord *p1, *p2, *pr, *pt;
    SharkSslBigIntDoubleWord s;
    U16 x1, x2;
@@ -54372,6 +54369,7 @@ void SharkSslBigInt_mult_(const SharkSslBigInt *o1,
          s >>= SHARKSSL_BIGINT_WORDSIZE;
       }
    }
+   #endif
 }
 #endif
 
@@ -54889,13 +54887,20 @@ SharkSslBigIntWord SharkSslBigInt_calcmu(const SharkSslBigInt *mod)
 #endif
 
 
-#if (!SHARKSSL_OPTIMIZED_BIGINT_ASM)
+#if ((!SHARKSSL_OPTIMIZED_BIGINT_ASM) || SHARKSSL_BIGINT_X64_WRAPPERS)
 void SharkSslBigInt_monpro(const SharkSslBigInt *o1,
                            const SharkSslBigInt *o2,
                            SharkSslBigInt *result,
                            const SharkSslBigInt *mod,
                            SharkSslBigIntWord mu)
 {
+   #if SHARKSSL_BIGINT_X64_WRAPPERS
+   result->len = (U16)((2 * mod->len) + 1);
+   SharkSslBigInt_mult_(o1, o2, result);
+   sharkssl_bigint_redc_x64(result->beg, mod->beg, mod->len, mu);
+   result->beg++;
+   result->len = mod->len;
+   #else
    SharkSslBigIntWord m0, *pr, *p1, *p2;
    SharkSslBigIntDoubleWord s;
    U16 x1, x2;
@@ -54962,6 +54967,7 @@ void SharkSslBigInt_monpro(const SharkSslBigInt *o1,
 
    result->beg++;
    result->len--;
+   #endif
 }
 #endif
 
@@ -55182,7 +55188,7 @@ void SharkSslBigInt_submodCT(SharkSslBigInt *o1, const SharkSslBigInt *o2, const
 #endif
 
 
-#if (SHARKSSL_RSA_PRIVATE_CT || SHARKSSL_ECDSA_ORDER_CT || (SHARKSSL_ENABLE_RSA && SHARKSSL_ENABLE_RSAKEY_CREATE))
+#if (SHARKSSL_ENABLE_RSA || SHARKSSL_ECDSA_ORDER_CT)
 
 
 
@@ -55399,6 +55405,86 @@ int SharkSslBigInt_expmodCT(const SharkSslBigInt *base,
    return 0;
 }
 #endif  
+
+
+#if SHARKSSL_ENABLE_RSA
+
+int SharkSslBigInt_expmodPublicCT(const SharkSslBigInt *base, const SharkSslBigInt *exp,
+                                  const SharkSslBigInt *mod, SharkSslBigInt *res)
+{
+   SharkSslBigInt a, b, g, r2, one, *r, *s, *t;
+   SharkSslBigIntWord *tmp_b, *p, mu, bit, word1;
+   U32 dm9k1resource;
+   U16 n, i;
+   int status;
+
+   n = mod->len;
+   if ((n < 2) || (n > ((0xFFFF - 1) / 2)) || (base->len != n) || (0 == exp->len) || (0 == mod->beg[0]) || (!(mod->beg[n - 1] & 1)))
+   {
+      return 1;
+   }
+   dm9k1resource = pcmciapdata(((U32)6 * n + 2) * SHARKSSL__M);
+   if ((U32)(size_t)dm9k1resource != dm9k1resource)
+   {
+      return 1;
+   }
+   tmp_b = (SharkSslBigIntWord*)baMalloc(dm9k1resource);
+   if (NULL == tmp_b)
+   {
+      return 1;
+   }
+   p = (SharkSslBigIntWord*)selectaudio(tmp_b);
+   SharkSslBigInt_constructor_w(&a, (U16)(2 * n + 1), p);
+   p += 2 * n + 1;
+   SharkSslBigInt_constructor_w(&b, (U16)(2 * n + 1), p);
+   p += 2 * n + 1;
+   SharkSslBigInt_constructor_w(&g, n, p);
+   p += n;
+   SharkSslBigInt_constructor_w(&r2, n, p);
+   status = SharkSslBigInt_montR2CT(mod, &r2);
+   if (0 == status)
+   {
+      word1 = 1;
+      SharkSslBigInt_constructor_w(&one, 1, &word1);
+      mu = SharkSslBigInt_calcmu(mod);
+      SharkSslBigInt_monpro(base, &r2, &a, mod, mu);
+      memcpy(g.beg, a.beg, n * SHARKSSL__M);
+      SharkSslBigInt_monpro(&r2, &one, &a, mod, mu);
+      r = &a;
+      s = &b;
+      
+      for (i = 0; (i < (exp->len - 1)) && (0 == exp->beg[i]); i++)
+      {
+      }
+      bit = (SharkSslBigIntWord)((SharkSslBigIntWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
+      while ((bit > 1) && (!(exp->beg[i] & bit)))
+      {
+         bit >>= 1;
+      }
+      for (; i < exp->len; i++)
+      {
+         for (; bit; bit >>= 1)
+         {
+            SharkSslBigInt_monpro(r, r, s, mod, mu);
+            t = r; r = s; s = t;
+            if (exp->beg[i] & bit)
+            {
+               SharkSslBigInt_monpro(r, &g, s, mod, mu);
+               t = r; r = s; s = t;
+            }
+         }
+         bit = (SharkSslBigIntWord)((SharkSslBigIntWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
+      }
+      SharkSslBigInt_monpro(r, &one, s, mod, mu);
+      res->beg = res->mem;
+      res->len = n;
+      memcpy(res->beg, s->beg, n * SHARKSSL__M);
+   }
+   sharkssl_clear(tmp_b, dm9k1resource);
+   baFree(tmp_b);
+   return status;
+}
+#endif
 
 
 #if SHARKSSL_RSA_PRIVATE_CT
@@ -55670,10 +55756,7 @@ void SharkSslBigInt_shiftr(SharkSslBigInt *o)
 
       if (p > o->beg)
       {
-         if (*q & 0x1)
-         {
-            *p |= (SharkSslBigIntWord)((SharkSslBigIntWord)1 << (SHARKSSL_BIGINT_WORDSIZE - 1));
-         }
+         *p |= (SharkSslBigIntWord)((*q & 1) << (SHARKSSL_BIGINT_WORDSIZE - 1));
       }
       else
       {
@@ -55929,7 +56012,7 @@ int SharkSslBigInt_invmod65537CT(SharkSslBigInt *o, const SharkSslBigInt *mod)
    U32 residue, inverse, coefficient, _XzY0x1E1, bad, _XzY0x2F4, _XzY0x41, _XzY0x3D7, _XzY0x21E, _XzY0x184, bootmemalloc, result;
    volatile U32 mask;
    U16 i;
-   U8 round, _XzY0x33F;
+   U8 _XzY0x6B, _XzY0x33F;
 
    if ((!mod->len) || (o->len != mod->len))
    {
@@ -55948,7 +56031,7 @@ int SharkSslBigInt_invmod65537CT(SharkSslBigInt *o, const SharkSslBigInt *mod)
    }
    bad = ((residue - 1) >> (SHARKSSL_BIGINT_WORDSIZE - 1)) | (((_XzY0x1E1 | (0 - _XzY0x1E1)) >> (SHARKSSL_BIGINT_WORDSIZE - 1)) ^ 1);
    inverse = residue;
-   for (round = 1; round < SHARKSSL_RSA_KEYGEN_DIGIT_BITS; round++)
+   for (_XzY0x6B = 1; _XzY0x6B < SHARKSSL_RSA_KEYGEN_DIGIT_BITS; _XzY0x6B++)
    {
       inverse = _XzY0x46(inverse, inverse);
       inverse = _XzY0x46(inverse, residue);
@@ -56074,7 +56157,7 @@ static int SharkSslBigInt_notPrimalityTest(SharkSslBigInt *o)
    U32 dm9k1resource;
    int ret;
    U16 _XzY0x2F3 = (U16)(o->len * SHARKSSL__M), i;
-   U8 round, _XzY0x1FE;
+   U8 _XzY0x6B, _XzY0x1FE;
 
    dm9k1resource = pcmciapdata((U32)_XzY0x2F3 * 4);
    allocation = (U8*)baMalloc(dm9k1resource);
@@ -56097,7 +56180,7 @@ static int SharkSslBigInt_notPrimalityTest(SharkSslBigInt *o)
    {
       goto iommucreate;
    }
-   for (round = 0; round < SHARKSSL_RSA_PRIME_ROUNDS; round++)
+   for (_XzY0x6B = 0; _XzY0x6B < SHARKSSL_RSA_PRIME_ROUNDS; _XzY0x6B++)
    {
       setupiocoherency = 0;
       memset(base.beg, 0, _XzY0x2F3);
@@ -56312,8 +56395,8 @@ int SharkSslBigInt_GCD(const SharkSslBigInt *o1,
 #endif
 
 #if (SHARKSSL_ECC_USE_CURVE25519 && SHARKSSL_X25519_DEDICATED)
-#if (SHARKSSL_X25519_ASM && (!defined(__ARM_FEATURE_DSP)) && ((!defined(__ARM_ARCH_ISA_THUMB)) || (__ARM_ARCH_ISA_THUMB != 1)) && ((!defined(__RX__)) || (!defined(__RX_LITTLE_ENDIAN__))) && ((!defined(__ICCRX__)) || (!__LITTLE_ENDIAN__)))
-#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support, ARMv6-M/ARMv8-M Baseline or little-endian GNU/IAR RX
+#if (SHARKSSL_X25519_ASM && (!defined(__ARM_FEATURE_DSP)) && ((!defined(__ARM_ARCH_ISA_THUMB)) || (__ARM_ARCH_ISA_THUMB != 1)) && ((!defined(__RX__)) || (!defined(__RX_LITTLE_ENDIAN__))) && ((!defined(__ICCRX__)) || (!__LITTLE_ENDIAN__)) && ((!defined(__riscv)) || (__riscv_xlen != 32)))
+#error SHARKSSL_X25519_ASM requires Cortex-M4 DSP support, ARMv6-M/ARMv8-M Baseline, little-endian GNU/IAR RX or RV32IM
 #endif
 #if SHARKSSL_X25519_ASM
 typedef struct { U32 w[8]; } fe25519;
@@ -58912,20 +58995,61 @@ HttpSharkSslServCon_destructor(HttpSharkSslServCon* o)
 
 #if (SHARKSSL_TLS_1_3 && (SHARKSSL_ENABLE_AES_GCM || (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)))
 
+#define SHARKSSL_TLS13_NZMASK(v) ((U32)0 - (((v) | ((U32)0 - (v))) >> 31))
 static U16 _XzY0x3C7(U8 *type, const U8 *stackchecker, U16 len)
 {
-   U32 value, mask;
-   U16 i, simulatebxblx = 0;
+   U32 w[4], last[4], value, mask, groupPos = 0, t = 0, simulatebxblx = 0;
+   U32 i, groupLen = (U32)len & ~(U32)15;
+   U8 _XzY0x69[16];
 
-   *type = 0;
-   for (i = 0; i < len; i++)
+   last[0] = last[1] = last[2] = last[3] = 0;
+   for (i = 0; i < groupLen; i += 16)
+   {
+      memcpy(w, &stackchecker[i], 16);
+      mask = SHARKSSL_TLS13_NZMASK(w[0] | w[1] | w[2] | w[3]);
+      last[0] ^= (last[0] ^ w[0]) & mask;
+      last[1] ^= (last[1] ^ w[1]) & mask;
+      last[2] ^= (last[2] ^ w[2]) & mask;
+      last[3] ^= (last[3] ^ w[3]) & mask;
+      groupPos ^= (groupPos ^ i) & mask;
+   }
+   memcpy(_XzY0x69, last, 16);
+   for (i = 0; i < 16; i++)
+   {
+      value = _XzY0x69[i];
+      mask = SHARKSSL_TLS13_NZMASK(value);
+      t ^= (t ^ value) & mask;
+      simulatebxblx ^= (simulatebxblx ^ (groupPos + i)) & mask;
+   }
+   for (i = groupLen; i < len; i++)
    {
       value = stackchecker[i];
-      mask = (U32)0 - ((value | ((U32)0 - value)) >> 31);
-      *type = (U8)((*type & ~mask) | (value & mask));
-      simulatebxblx = (U16)((simulatebxblx & ~mask) | (i & mask));
+      mask = SHARKSSL_TLS13_NZMASK(value);
+      t ^= (t ^ value) & mask;
+      simulatebxblx ^= (simulatebxblx ^ i) & mask;
    }
-   return simulatebxblx;
+   *type = (U8)t;
+   return (U16)simulatebxblx;
+}
+#undef SHARKSSL_TLS13_NZMASK
+#endif
+
+
+#if ((SHARKSSL_TLS13_PAD_RAND_LEN > 0) && (SHARKSSL_ENABLE_AES_GCM || (SHARKSSL_USE_CHACHA20 && SHARKSSL_USE_POLY1305)))
+
+static int _XzY0x68(SharkSslCon *o)
+{
+   baAssert(0 == (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1)));
+   baAssert(0 == (SHARKSSL_TLS13_PAD_RAND_LEN & 3));
+   if (0 == o->wPadRandLeft)
+   {
+      if (sharkssl_rng(o->wPadRand, SHARKSSL_TLS13_PAD_RAND_LEN) < 0)
+      {
+         return -1;
+      }
+      o->wPadRandLeft = SHARKSSL_TLS13_PAD_RAND_LEN;
+   }
+   return (int)(o->wPadRand[--o->wPadRandLeft] & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1));
 }
 #endif
 
@@ -59072,23 +59196,19 @@ int offsetkernel(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
       
       stackchecker[len++] = stackchecker[-clkctrlmanaged];  
       #if ((SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH > 0) && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH <= 0x100))
-      baAssert(0 == (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1)));
-      baAssert((sizeof(ret) == 4) || (sizeof(ret) == 8));
-      if (sharkssl_rng((U8*)&ret, sizeof(ret)) < 0)
+      ret = _XzY0x68(o);
+      if (ret < 0)
       {
          *(U32*)&o->wIV[4] ^= *(U32*)&o->wSeqNum[0];
          *(U32*)&o->wIV[8] ^= *(U32*)&o->wSeqNum[4];
          return -1;
       }
-      ret = (U16)ret & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1);
       if (ret > (SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len))
       {
          ret = SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len;
       }
-      while (ret--)
-      {
-         stackchecker[len++] = 0;
-      }
+      memset(&stackchecker[len], 0, (size_t)ret);
+      len += (U16)ret;
       #endif
       templateentry(o, polledbutton, stackchecker - clkctrlmanaged, len + 16);  
       #if SHARKSSL_PSA_CONSUMER
@@ -59269,20 +59389,17 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
    baAssert(16 == o->wCipherSuite->digestLen);
    stackchecker[len++] = stackchecker[-clkctrlmanaged];
    #if ((SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH > 0) && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH <= 0x100))
-   baAssert(0 == (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1)));
-   if (sharkssl_rng((U8*)&ret, sizeof(ret)) < 0)
+   ret = _XzY0x68(o);
+   if (ret < 0)
    {
       return -1;
    }
-   ret = (U16)ret & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1);
    if (ret > (SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len))
    {
       ret = SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len;
    }
-   while (ret--)
-   {
-      stackchecker[len++] = 0;
-   }
+   memset(&stackchecker[len], 0, (size_t)ret);
+   len += (U16)ret;
    #endif
    templateentry(o, polledbutton, stackchecker - clkctrlmanaged, len + 16);
    ret = (int)psa_aead_encrypt(*ctx, PSA_ALG_CHACHA20_POLY1305, nonce, sizeof(nonce),
@@ -59388,22 +59505,23 @@ int updatecontext(SharkSslCon *o, U8 op, U8 *stackchecker, U16 len)
        if (op & ptraceregsets)
        {
           #if ((SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH > 0) && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH < 0x100))
-          U32 ret;
+          int ret;
           #endif
           
           stackchecker[len++] = stackchecker[-clkctrlmanaged];  
          #if ((SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH > 0) && (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH < 0x100))
-         baAssert(0 == (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH & (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1)));
-         sharkssl_rng((U8*)&ret, sizeof(ret));
-         ret &= (SHARKSSL_TLS_1_3_PADDING_MAX_LENGTH - 1);
-         if (ret > (U32)(SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len))
+         ret = _XzY0x68(o);
+         if (ret < 0)
+         {
+            SharkSslPoly1305Ctx_destructor(&timer8hwmod);
+            return -1;
+         }
+         if (ret > (SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len))
          {
             ret = SHARKSSL_TLS_1_3_MAX_INNER_PLAINTEXT_LEN - len;
          }
-         while (ret--)
-         {
-            stackchecker[len++] = 0;
-         }
+         memset(&stackchecker[len], 0, (size_t)ret);
+         len += (U16)ret;
          #endif
          
          templateentry(o, polledbutton, stackchecker - clkctrlmanaged, len + 16);
@@ -66661,20 +66779,24 @@ SharkSslSCMgr_constructor(SharkSslSCMgr* o, SharkSsl* ssl, U32 maxTime)
 
 void sharkssl_clear(void *data, U32 len)
 {
-   volatile U8 *p;
-   #if SHARKSSL_UNALIGNED_ACCESS
-   volatile SHARKSSL_UNALIGNED_U32 *p32 = (volatile SHARKSSL_UNALIGNED_U32*)data;
+   volatile U8 *p = (volatile U8*)data;
+   volatile SHARKSSL_UNALIGNED_U32 *p32;
 
+   #if (!SHARKSSL_UNALIGNED_ACCESS)
+   
+   while (len && ((unsigned int)(UPTR)p & 3))
+   {
+      *p++ = 0;
+      --len;
+   }
+   #endif
+   p32 = (volatile SHARKSSL_UNALIGNED_U32*)p;
    while (len >= 4)
    {
       *p32++ = 0;
       len -= 4;
    }
    p = (volatile U8*)p32;
-   #else
-   p = (volatile U8*)data;
-   #endif
-
    while (len--)
    {
       *p++ = 0;
@@ -68768,6 +68890,8 @@ static int SharkSslAesCtx_processAEAD(const SharkSslAesCtx *aes, const U8 vect[1
    psa_key_id_t key = PSA_KEY_ID_NULL;
    psa_status_t status, abortStatus, _XzY0x1CD;
    size_t updateLen = 0, finishLen = 0, actualTagLen = 0;
+   U8 _XzY0x60[(PSA_AEAD_FINISH_OUTPUT_MAX_SIZE > PSA_AEAD_VERIFY_OUTPUT_MAX_SIZE) ?
+                 PSA_AEAD_FINISH_OUTPUT_MAX_SIZE : PSA_AEAD_VERIFY_OUTPUT_MAX_SIZE];
    if ((!aes) || (!aes->valid) || (!vect) || (!tag) || (!output) || ((!auth) && authlen) ||
        ((!input) && len))
    {
@@ -68804,12 +68928,12 @@ static int SharkSslAesCtx_processAEAD(const SharkSslAesCtx *aes, const U8 vect[1
    {
       if (loongsonclear)
       {
-         status = psa_aead_finish(&operation, output + updateLen, len - updateLen, &finishLen,
-                                  tag, tagLen, &actualTagLen);
+         
+         status = psa_aead_finish(&operation, _XzY0x60, sizeof(_XzY0x60), &finishLen, tag, tagLen, &actualTagLen);
       }
       else
       {
-         status = psa_aead_verify(&operation, output + updateLen, len - updateLen, &finishLen,
+         status = psa_aead_verify(&operation, _XzY0x60, sizeof(_XzY0x60), &finishLen,
                                   tag, tagLen);
          actualTagLen = tagLen;
       }
@@ -68817,8 +68941,10 @@ static int SharkSslAesCtx_processAEAD(const SharkSslAesCtx *aes, const U8 vect[1
    abortStatus = psa_aead_abort(&operation);
    _XzY0x1CD = psa_destroy_key(key);
    if ((PSA_SUCCESS != status) || (PSA_SUCCESS != abortStatus) || (PSA_SUCCESS != _XzY0x1CD) ||
-       (len != updateLen + finishLen) || (tagLen != actualTagLen))
+       (updateLen > len) || (finishLen > sizeof(_XzY0x60)) ||
+       (len - updateLen != finishLen) || (tagLen != actualTagLen))
    {
+      sharkssl_clear(_XzY0x60, sizeof(_XzY0x60));
       if (len)
       {
          sharkssl_clear(output, len);
@@ -68829,6 +68955,11 @@ static int SharkSslAesCtx_processAEAD(const SharkSslAesCtx *aes, const U8 vect[1
       }
       return -1;
    }
+   if (finishLen)
+   {
+      memcpy(output + updateLen, _XzY0x60, finishLen);
+   }
+   sharkssl_clear(_XzY0x60, sizeof(_XzY0x60));
    return 0;
 }
 #endif
@@ -69537,9 +69668,61 @@ void clearerrors(SharkSslECCurve *o, U16 type)
 #error SHARKSSL_ECC_P256_ASM requires SHARKSSL_ECC_USE_SECP256R1
 #endif
 
+#if (defined(_MSC_VER) && defined(_M_X64) && (!defined(_M_ARM64EC))) ||     ((defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && defined(__ELF__) && defined(__x86_64__) && defined(__LP64__) && (!defined(__ILP32__)))
+
+int sharkssl_p256_hw_probe(void);
+void sharkssl_p256_mulmod64(U32 *r, const U32 *a, const U32 *b);
+void sharkssl_p256_addmod64(U32 *r, const U32 *a, const U32 *b);
+void sharkssl_p256_submod64(U32 *r, const U32 *a, const U32 *b);
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+static U8 sharkssl_p256_hwAvailable(void)
+{
+   static volatile U8 _XzY0x332 = 0xFF;
+   #if defined(_MSC_VER)
+   if (0xFF == (U8)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)-1, (char)-1))
+   {
+      U8 _XzY0x111 = sharkssl_p256_hw_probe() ? 1 : 0;
+      (void)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)_XzY0x111, (char)-1);
+   }
+   return (U8)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)-1, (char)-1);
+   #else
+   if (0xFF == __atomic_load_n(&_XzY0x332, __ATOMIC_RELAXED))
+   {
+      U8 _XzY0x111 = sharkssl_p256_hw_probe() ? 1 : 0;
+      __atomic_store_n(&_XzY0x332, _XzY0x111, __ATOMIC_RELAXED);
+   }
+   return __atomic_load_n(&_XzY0x332, __ATOMIC_RELAXED);
+   #endif
+}
+
+
+static void SharkSslP256_mulmod(const SharkSslBigInt *o1, const SharkSslBigInt *o2, SharkSslBigInt *result)
+{
+   sharkssl_p256_mulmod64(result->mem + 8, o1->beg, o2->beg);
+   result->beg = result->mem + 8;
+   result->len = 8;
+}
+
+
+static void SharkSslP256_addmod(SharkSslBigInt *o1, const SharkSslBigInt *o2)
+{
+   sharkssl_p256_addmod64(o1->beg, o1->beg, o2->beg);
+}
+
+
+static void SharkSslP256_submod(SharkSslBigInt *o1, const SharkSslBigInt *o2)
+{
+   sharkssl_p256_submod64(o1->beg, o1->beg, o2->beg);
+}
+#define SHARKSSL_P256_ASM_AVAILABLE() sharkssl_p256_hwAvailable()
+#else
 void SharkSslP256_mulmod(const SharkSslBigInt *o1, const SharkSslBigInt *o2, SharkSslBigInt *result);
 void SharkSslP256_addmod(SharkSslBigInt *o1, const SharkSslBigInt *o2);
 void SharkSslP256_submod(SharkSslBigInt *o1, const SharkSslBigInt *o2);
+#define SHARKSSL_P256_ASM_AVAILABLE() 1
+#endif
 
 
 #define SharkSslECC_isP256(mod) (((mod)->len == 8) && ((mod)->beg[0] == 0xFFFFFFFF) && ((mod)->beg[1] == 1))
@@ -69550,9 +69733,61 @@ void SharkSslP256_submod(SharkSslBigInt *o1, const SharkSslBigInt *o2);
 #error SHARKSSL_ECC_P384_ASM requires SHARKSSL_ECC_USE_SECP384R1
 #endif
 
+#if (defined(_MSC_VER) && defined(_M_X64) && (!defined(_M_ARM64EC))) ||     ((defined(__GNUC__) || defined(__clang__)) && (defined(__linux__) || defined(__QNXNTO__)) && defined(__ELF__) && defined(__x86_64__) && defined(__LP64__) && (!defined(__ILP32__)))
+
+int sharkssl_p384_hw_probe(void);
+void sharkssl_p384_mulmod64(U32 *r, const U32 *a, const U32 *b);
+void sharkssl_p384_addmod64(U32 *r, const U32 *a, const U32 *b);
+void sharkssl_p384_submod64(U32 *r, const U32 *a, const U32 *b);
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+static U8 sharkssl_p384_hwAvailable(void)
+{
+   static volatile U8 _XzY0x332 = 0xFF;
+   #if defined(_MSC_VER)
+   if (0xFF == (U8)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)-1, (char)-1))
+   {
+      U8 _XzY0x111 = sharkssl_p384_hw_probe() ? 1 : 0;
+      (void)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)_XzY0x111, (char)-1);
+   }
+   return (U8)_InterlockedCompareExchange8((volatile char*)&_XzY0x332, (char)-1, (char)-1);
+   #else
+   if (0xFF == __atomic_load_n(&_XzY0x332, __ATOMIC_RELAXED))
+   {
+      U8 _XzY0x111 = sharkssl_p384_hw_probe() ? 1 : 0;
+      __atomic_store_n(&_XzY0x332, _XzY0x111, __ATOMIC_RELAXED);
+   }
+   return __atomic_load_n(&_XzY0x332, __ATOMIC_RELAXED);
+   #endif
+}
+
+
+static void SharkSslP384_mulmod(const SharkSslBigInt *o1, const SharkSslBigInt *o2, SharkSslBigInt *result)
+{
+   sharkssl_p384_mulmod64(result->mem + 12, o1->beg, o2->beg);
+   result->beg = result->mem + 12;
+   result->len = 12;
+}
+
+
+static void SharkSslP384_addmod(SharkSslBigInt *o1, const SharkSslBigInt *o2)
+{
+   sharkssl_p384_addmod64(o1->beg, o1->beg, o2->beg);
+}
+
+
+static void SharkSslP384_submod(SharkSslBigInt *o1, const SharkSslBigInt *o2)
+{
+   sharkssl_p384_submod64(o1->beg, o1->beg, o2->beg);
+}
+#define SHARKSSL_P384_ASM_AVAILABLE() sharkssl_p384_hwAvailable()
+#else
 void SharkSslP384_mulmod(const SharkSslBigInt *o1, const SharkSslBigInt *o2, SharkSslBigInt *result);
 void SharkSslP384_addmod(SharkSslBigInt *o1, const SharkSslBigInt *o2);
 void SharkSslP384_submod(SharkSslBigInt *o1, const SharkSslBigInt *o2);
+#define SHARKSSL_P384_ASM_AVAILABLE() 1
+#endif
 
 
 #define SharkSslECC_isP384(mod) (((mod)->len == 12) && ((mod)->beg[0] == 0xFFFFFFFF) && ((mod)->beg[7] == 0xFFFFFFFE))
@@ -69624,14 +69859,14 @@ static void _XzY0x303(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkS
 static void _XzY0x2FB(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkSslBigInt *mod)
 {
    #if SHARKSSL_ECC_P256_ASM
-   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8))
+   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8) && SHARKSSL_P256_ASM_AVAILABLE())
    {
       SharkSslP256_addmod(o1, o2);
       return;
    }
    #endif
    #if SHARKSSL_ECC_P384_ASM
-   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12))
+   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12) && SHARKSSL_P384_ASM_AVAILABLE())
    {
       SharkSslP384_addmod(o1, o2);
       return;
@@ -69648,14 +69883,14 @@ static void _XzY0x2FB(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkS
 static void _XzY0x302(SharkSslBigInt *o1, const SharkSslBigInt *o2, const SharkSslBigInt *mod)
 {
    #if SHARKSSL_ECC_P256_ASM
-   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8))
+   if (SharkSslECC_isP256(mod) && (o1->len == 8) && (o2->len == 8) && SHARKSSL_P256_ASM_AVAILABLE())
    {
       SharkSslP256_submod(o1, o2);
       return;
    }
    #endif
    #if SHARKSSL_ECC_P384_ASM
-   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12))
+   if (SharkSslECC_isP384(mod) && (o1->len == 12) && (o2->len == 12) && SHARKSSL_P384_ASM_AVAILABLE())
    {
       SharkSslP384_submod(o1, o2);
       return;
@@ -69685,14 +69920,14 @@ static __sharkssl_noinline void SharkSslECC_multfastmod(const SharkSslBigInt *o1
 static void _XzY0x300(const SharkSslBigInt *o1, const SharkSslBigInt *o2, SharkSslBigInt *result, SharkSslBigInt *cpuidfeature)
 {
    #if SHARKSSL_ECC_P256_ASM
-   if ((cpuidfeature->len == 8) && (o1->len == 8) && (o2->len == 8))  
+   if ((cpuidfeature->len == 8) && (o1->len == 8) && (o2->len == 8) && SHARKSSL_P256_ASM_AVAILABLE())  
    {
       SharkSslP256_mulmod(o1, o2, result);
       return;
    }
    #endif
    #if SHARKSSL_ECC_P384_ASM
-   if ((cpuidfeature->len == 12) && (o1->len == 12) && (o2->len == 12))  
+   if ((cpuidfeature->len == 12) && (o1->len == 12) && (o2->len == 12) && SHARKSSL_P384_ASM_AVAILABLE())  
    {
       SharkSslP384_mulmod(o1, o2, result);
       return;
@@ -70355,14 +70590,14 @@ static void _XzY0x2FF(SharkSslBigInt *z, SharkSslBigInt *mod, SharkSslEC_temp *b
 static void _XzY0x2FE(SharkSslBigInt *z, SharkSslBigInt *mod, SharkSslEC_temp *brightnesslimit)
 {
    #if SHARKSSL_ECC_P256_ASM
-   if (SharkSslECC_isP256(mod) && (z->len == 8))
+   if (SharkSslECC_isP256(mod) && (z->len == 8) && SHARKSSL_P256_ASM_AVAILABLE())
    {
       _XzY0x3(SharkSslP256_mulmod, SharkSslECC_invP256, 12, z, mod, brightnesslimit);
       return;
    }
    #endif
    #if SHARKSSL_ECC_P384_ASM
-   if (SharkSslECC_isP384(mod) && (z->len == 12))
+   if (SharkSslECC_isP384(mod) && (z->len == 12) && SHARKSSL_P384_ASM_AVAILABLE())
    {
       _XzY0x3(SharkSslP384_mulmod, SharkSslECC_invP384, 14, z, mod, brightnesslimit);
       return;
@@ -72120,6 +72355,7 @@ typedef struct
       BaTimer_CB cb;
       void* cbData;
       U32 ticks;
+      U32 created;
       size_t lapCounter;
 } BaTimerNode;
 
@@ -72137,6 +72373,7 @@ pgtablevisit(BaTimerNode* o, BaTimer_CB cb, void* data,
    o->cb=cb;
    o->cbData=data;
    o->ticks=uart0readl;
+   o->created=baGetMsClock();
    freememcallback(o);
 }
 
@@ -72196,12 +72433,21 @@ hammerdevice(BaTimer* o, BaTimerNode* tn)
 
 
 static void
-backlightregister(BaTimer* o)
+backlightregister(BaTimer* o, U32 _XzY0x66)
 {
    BaTimerNode* tn;
    while( (tn = (BaTimerNode*)DoubleList_removeFirst(&o->readyQ)) != 0)
    {
-      DoubleList* list=o->slots+((o->curIndex+tn->ticks+1)&(BA_TIMER_SLOTS-1));
+      U64 uart0readl=tn->ticks;
+      DoubleList* list;
+      
+      if(tn->cb)
+      {
+         if(fdpicparams(tn->created,_XzY0x66))
+            uart0readl+=(U32)(tn->created-_XzY0x66)/o->ticklen;
+         tn->lapCounter=(size_t)(uart0readl >> eventattribute);
+      }
+      list=o->slots+((o->curIndex+uart0readl+1)&(BA_TIMER_SLOTS-1));
       DoubleList_insertLast(list,tn);
       o->dataInReadyQ--;
    }
@@ -72248,6 +72494,7 @@ octeonconfig(Thread* super)
    U32 rdhwrnoopt=o->ticklen;
    U32 flashdriver=o->ticklen;
    U32 start = baGetMsClock();
+   U32 _XzY0x66 = start;
    for(;;)
    {
       DoubleList* dl;
@@ -72280,7 +72527,7 @@ octeonconfig(Thread* super)
       {
          ThreadMutex_set(o->mutex);
          if(o->dataInReadyQ > 0)
-            backlightregister(o);
+            backlightregister(o, _XzY0x66);
          else
          {
             shashfinal(o);
@@ -72291,6 +72538,7 @@ octeonconfig(Thread* super)
       }
       dl=o->slots+o->curIndex;
       if(++o->curIndex == BA_TIMER_SLOTS) o->curIndex = 0;
+      _XzY0x66+=o->ticklen;
       if( ! DoubleList_isEmpty(dl) )
       {
          DoubleListEnumerator iter;

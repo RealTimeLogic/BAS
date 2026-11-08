@@ -140,6 +140,15 @@
 #error XEDGE_THREAD_COUNT must be between 1 and 65535
 #endif
 
+/* HTTP and HTTPS share this connection pool. The server also requires at
+ * least three connections beyond its HTTP command count. */
+#ifndef XEDGE_HTTP_CONNECTIONS
+#define XEDGE_HTTP_CONNECTIONS 16
+#endif
+#if XEDGE_HTTP_CONNECTIONS < 4 || XEDGE_HTTP_CONNECTIONS > 65535
+#error XEDGE_HTTP_CONNECTIONS must be between 4 and 65535
+#endif
+
 /* An explicit resource directory selects disk-backed VM resources. This is
  * independent of XEDGE_ENABLE_DISK_IO, which controls the application disk IO.
  */
