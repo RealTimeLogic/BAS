@@ -100,15 +100,20 @@ Unsupported targets or failed automatic checks retain the C implementation.
 At runtime, feature checks select the cipher paths supported by the CPU and OS.
 
 Automatic selection enables AES, AES-GCM/GHASH, SHA-256, SHA-384/SHA-512,
-ChaCha20, Poly1305 and the dedicated X25519 hook. x64 also enables VAES when
-the assembler supports it. ARM64 enables the BigInt, P-256 and P-384 hooks for
-configured algorithms. Common C keeps the compiler's baseline CPU target.
+ChaCha20, Poly1305 and the dedicated X25519 hook. Both backends enable BigInt,
+P-256 and P-384 assembly for configured algorithms. x64 also enables VAES when
+the assembler supports it. Common C keeps the compiler's baseline CPU target.
 
 Runtime CPU checks retain the constant-time C fallback when the required
 instructions are unavailable. The old `SHARKSSL_AES_SOFTWARE_CT` and
 `SHARKSSL_AES_GCM_SOFTWARE_CT` options have been removed; delete them from custom
 build flags. Explicit per-algorithm assembly settings are preserved. PSA
 consumers leave acceleration to their separate provider.
+
+The x64 full BigInt backend uses baseline integer instructions and needs no
+runtime CPU probe. Set the integer option `SHARKSSL_OPTIMIZED_BIGINT_ASM=0`
+to retain C BigInt while using the other accelerators. The selector then omits
+the BigInt assembly object, which would otherwise duplicate the C symbols.
 
 From the repository root, inspect the selection before building:
 
@@ -157,15 +162,29 @@ with Win32 or x64. The project uses the installed Visual Studio C++ toolset and
 Windows 10/11 SDK. All four configurations enable `BA_ENABLE_MDNS=1` and
 `BA_ENABLE_MDNS_LUA=1`, plus SharkSSL AES and SHA-256 assembly
 (`SHARKSSL_OPTIMIZED_AES_ASM=1` and `SHARKSSL_OPTIMIZED_SHA256_ASM=1`). x64 also
-enables SHA-384/SHA-512 assembly (`SHARKSSL_OPTIMIZED_SHA384_ASM=1`); Win32 uses
-C for SHA-384/SHA-512 (`SHARKSSL_OPTIMIZED_SHA384_ASM=0`).
+enables SHA-384/SHA-512, P-256, P-384 and full BigInt assembly through the integer
+options `SHARKSSL_OPTIMIZED_SHA384_ASM=1`, `SHARKSSL_ECC_P256_ASM=1`,
+`SHARKSSL_ECC_P384_ASM=1`, and `SHARKSSL_OPTIMIZED_BIGINT_ASM=1`.
+Win32 uses C for those algorithms.
 
 The project assembles the packaged files in `src/crypto/X86_MSVC` or
 `src/crypto/X64_MSVC` using the MASM tools included with the Visual Studio C++
 toolset. No separate assembler setup is needed. CPU checks select AES-NI,
 SHA extensions, or BMI2 at runtime and retain the constant-time C fallback
 when those instructions are unavailable. Common C retains the compiler's
-baseline CPU target. Other SharkSSL algorithms use their C implementations.
+baseline CPU target. Full x64 BigInt uses baseline instructions without a CPU
+probe. Other SharkSSL algorithms use their C implementations.
+
+Set the optional MSBuild string property `SharkSslAsm` to `off` for a C build;
+omitting it enables the assembly described above. This excludes the assembly
+objects and their automatic definitions. Native assembly is also suppressed
+when the MSBuild property `SHARKSSL_PSA_CONSUMER=1` is supplied; a PSA consumer
+still requires its separate provider integration.
+
+```bat
+rem Build the public x64 Mako project with C cryptography.
+msbuild examples\MakoServer\VcMake\mako.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:SharkSslAsm=off
+```
 
 Executables are written to
 `examples/MakoServer/obj/VcMake/<platform>/<configuration>/`, with separate

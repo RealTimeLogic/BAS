@@ -1,179 +1,161 @@
 Barracuda Web Server and App Server on Eclipse ThreadX / NetX Duo
+===============================================================
 
-Use this port to add a web interface, HTTP APIs and WebSockets to a ThreadX
-device. Barracuda App Server (BAS) also runs Lua and Lua Server Pages (LSP).
-Xedge builds on BAS with a browser-based development environment for these
-applications. C code keeps control of the board and its drivers.
+Build connected ThreadX products with a web interface, network services,
+and application logic you can update independently of the firmware. The
+Barracuda App Server (BAS) runs Lua and Lua Server Pages (LSP); Xedge adds
+the browser-based workspace for developing and managing those applications.
+Keep hardware drivers and time-sensitive work in C.
+
+For a native C/C++ web application, use the Barracuda Web Server (BWS).
+BAS adds the Lua runtime and application services needed by Xedge. Both
+use the same ThreadX and NetX Duo port.
 
 The port uses threads from the ThreadX real-time operating system (RTOS)
 and native NetX Duo sockets, with NetX Duo 6 or newer. FileX storage is
 optional for a general BAS integration.
 
-This guide also describes the full SDK's MIMXRT1020-EVK board example,
-which uses FileX and LevelX. Its XedgeStartup.c and board project are not
-included in the GitHub source package. If you are integrating this
-package into your own board project, start with "Build the Barracuda
-library" and use the board sections as an explanation of the startup
-sequence.
+This guide covers the ThreadX/NetX Duo port and the integration requirements
+for your platform. For a ready-to-run Xedge example, see:
+  https://github.com/RealTimeLogic/Xedge4ThreadX
 
-Start here
-----------
+The example project provides build instructions, hardware setup, and a
+browser-to-Lua getting-started tutorial. See its documentation for supported
+boards, development tools, and programming instructions.
 
-  1. Read "How startup works" to see where ThreadX hands control to BAS.
-  2. For the RT1020 example, follow "Build the Xedge board example" and
-     its memory-layout requirements. For another board, use "Build the
-     Barracuda library" and adapt the board services to your hardware.
-  3. Read "Debugger restarts and hook lifetime" before adding Lua bindings
-     or native workers. Those two kinds of code have different lifetimes.
+Getting started
+---------------
 
-The final sections are a reference for network options and FileX storage.
-BAS source paths below are relative to the GitHub package root. Board-specific
-files and settings refer to the full SDK example.
-The general Xedge build guide explains resource generation and integration:
+  1. Start with the Xedge4ThreadX example linked above, or use "Build the
+     Barracuda library" to integrate with your own ThreadX project. Supply
+     your platform's startup, network configuration, and storage services.
+  2. Read "How startup works" to connect those services to Xedge.
+  3. Add application behavior in Lua. Read "Debugger restarts and hook
+     lifetime" when adding native bindings or workers.
+
+All source paths in the instructions are relative to the full BAS SDK
+root. "SDK and GitHub source layouts" lists the amalgamated package
+equivalents. Keep the SDK paths when working in this source tree.
+
+The network and storage sections provide the porting reference. For shared
+Xedge resource-generation and integration steps, see:
   https://realtimelogic.com/ba/examples/xedge/readme.html
+For the browser environment and Lua application model, see:
+  https://realtimelogic.com/ba/doc/en/Xedge.html
 
-Which code owns each service
-----------------------------
+Understanding the Xedge architecture
+-----------------------------------
+
+Xedge follows the same model across ThreadX, Xedge32, and other ports:
+BAS supplies the application server and Lua runtime, Xedge supplies the
+application environment and browser tools, and the board port connects
+them to the operating system, network, and storage.
 
 ThreadX schedules threads and supplies the kernel tick. NetX Duo owns the
 IP interfaces, packets, DHCP address acquisition and DNS hostname lookup.
-NXP drivers operate the board hardware. FileX provides the file system;
-LevelX spreads flash writes across blocks to reduce wear.
+Your platform's drivers operate the hardware. FileX can provide writable
+storage; LevelX can manage flash wear when required by the storage driver.
 
-BAS uses these services through its ThreadX socket/thread port and FileX
-DiskIo adapter. BAS owns the web server, Lua virtual machine (VM), timers
-and Lua worker pool. Xedge's common startup is in
-examples/xedge/src/xedge.c; the board-specific startup is XedgeStartup.c
-in the full SDK's ThreadX example directory.
-
-The section headings in XedgeStartup.c mark board support, BAS/Xedge hooks,
-native workers, and the startup code that connects them.
+BAS uses these services through its ThreadX socket/thread port and optional
+FileX DiskIo adapter. BAS owns the web server, Lua virtual machine (VM),
+timers and Lua worker pool. Xedge's common startup is in
+examples/xedge/src/xedge.c. Your platform startup connects the hardware and
+RTOS services to that common code.
 
 How startup works
 -----------------
 
-The RT1020 example starts in this order:
+A typical Xedge integration follows this sequence:
 
-  1. The board's C runtime calls main(). It configures the board and
-     Ethernet hardware, then calls tx_kernel_enter() to start ThreadX.
+  1. Initialize the hardware and start ThreadX using your platform's
+     startup code and ThreadX port.
 
-  2. ThreadX calls _tx_initialize_low_level() to set up its Cortex-M7 tick,
-     then tx_application_define() to create NetX services and the Xedge
-     application thread. SoDisp_nxInit registers the network objects with
-     BAS. Scheduled threads have not started yet.
+  2. Create the NetX interfaces, packet pools, required network services,
+     and the thread that will run Xedge. Register the initialized network
+     objects with BAS through SoDisp_nxInit before creating BAS sockets.
 
-  3. ThreadX runs application(). It prepares the BAS heap, initial clock,
-     trace output and cryptographic entropy, mounts FileX, waits for DHCP,
-     and configures DNS. It starts separate time and storage workers.
+  3. In the application thread, prepare the BAS heap, clock, trace output,
+     and cryptographic entropy. Open any required filesystem, establish
+     network connectivity, and configure DNS.
 
-  4. application() calls barracuda(). The common Xedge code creates BAS
-     server objects and Lua, calls xedgeInitDiskIo() to attach the opened
-     FileX volume, and loads Xedge's embedded .config script.
+  4. Call barracuda(). The common Xedge code creates BAS server objects and
+     Lua, calls xedgeInitDiskIo() when using application-provided DiskIo
+     initialization, and loads Xedge's embedded .config script.
 
-  5. Xedge calls xedgeOpenAUX() to install the board's Lua-side additions,
-     then starts the configured applications and runs the socket dispatcher
-     on the application thread. The native workers continue independently.
+  5. Xedge calls xedgeOpenAUX() when auxiliary initialization is enabled.
+     This hook installs your native Lua bindings and other per-VM setup.
+     Xedge then starts the configured applications and runs the socket
+     dispatcher on the application thread.
 
 The public hooks are called by their owning framework; your code supplies
 their implementations. Do not call xedgeOpenAUX() from a ThreadX worker.
 Its caller supplies XedgeOpenAUX* aux and holds the BAS server mutex, which
-protects Lua and server state. A zero return means success; this example
-returns -1 on setup failure and Xedge treats that as a fatal startup error.
+protects Lua and server state. Return 0 on success or -1 on setup failure;
+Xedge treats a nonzero return as a fatal startup error.
 
-xedgeInitDiskIo(DiskIo* io) receives an already constructed DiskIo object.
-It attaches the board-owned FX_MEDIA object and sets the root to "/".
-Return 0 on success or the adapter error code. The media must already be
-open and remain valid while DiskIo uses it.
+For FileX, xedgeInitDiskIo(DiskIo* io) receives an already constructed
+DiskIo object. Attach your opened FX_MEDIA object and set the filesystem
+root. Return 0 on success or the adapter error code. Keep the media open
+and valid while DiskIo uses it.
 
-Build the Xedge board example
------------------------------
+Integrating Xedge with your firmware
+------------------------------------
 
-XedgeStartup.c contains the application startup for the MIMXRT1020-EVK:
-Cortex-M7 ThreadX tick setup, Ethernet and DHCP, IPv6, DNS, entropy, BAS heap,
-FileX/LevelX mounting, Xedge startup and initial time acquisition using
-Simple Network Time Protocol (SNTP).
-Compile this file once, together with examples/xedge/src/xedge.c. It supplies
-main, tx_application_define, _tx_initialize_low_level, SysTick_Handler,
-xedgeOpenAUX and xedgeInitDiskIo; omit duplicate definitions from your
-project. This file supplies the board integration; your project must
-also provide the libraries, drivers, resources and linker layout below.
+Build the BAS library as described below, then compile
+examples/xedge/src/xedge.c together with your platform startup code.
+Provide one implementation of each application entry point, interrupt
+handler, and Xedge hook; avoid duplicate startup definitions.
 
-Required libraries, drivers and BAS settings:
+Your project needs:
 
-  - RTOS middleware: ThreadX Cortex-M7 GNU port, NetX Duo with DNS and DHCP,
-    FileX and LevelX.
-    The example does not require the NetX SNTP add-on.
+  - ThreadX and NetX Duo libraries built for your processor and toolchain,
+    plus the DNS, DHCP, and other add-ons required by your network setup.
 
-  - Board support: MCUXpresso SDK 26.09 RT1020 board, clock, pin and boot
-    Device Configuration Data (DCD) files; Arm CMSIS support;
-    GPIO, UART/debug console, ENET/KSZ8081 PHY, TRNG, FlexSPI and mflash.
-    The pin configuration is from the RT1020 ENET transfer example.
+  - Hardware startup, linker configuration, network drivers, a clock
+    source, and a cryptographic entropy source. Make network buffers
+    accessible to DMA and handle cache coherency as required by the driver.
+    Initialize external memory before using it for heaps or static data.
 
-  - Driver adapters: the platform's nx_link_driver and NetX interrupt
-    adapter, plus the legacy NXP FileX/LevelX mflash example's
-    fx_levelx_driver.c/.h and LevelX flash adapter. The NetX and FileX/LevelX
-    adapters remain from NXP's 2.16 integration; SDK 26.09 supplies the
-    peripheral drivers.
-    Ethernet buffers must be DMA-accessible and cache-coherent;
-    flash-programming code and constants must execute from RAM.
+  - Xedge's embedded Lua and web resources. Follow the standalone Xedge
+    build guide linked above to generate them. Enable
+    BA_ENABLE_EMBEDDED_CA=1 in both BAS and Xedge for the embedded
+    certificate-authority bundle used by TLS clients.
 
-  - BAS/Xedge: BAS with the ThreadX port, xrc/DiskIo/FileX/BaFile.c,
-    the FileX DiskIo headers, Xedge's embedded resources and key material.
-    Enable XEDGE_ENABLE_AUX=1, XEDGE_ENABLE_DISK_IO=1 and
-    XEDGE_USE_DEFAULT_DISK_IO_INIT=0. Standalone Xedge also requires
-    BA_ENABLE_EMBEDDED_CA=1 in both BAS and Xedge so TLS clients have the
-    embedded certificate-authority bundle. This example uses software-based
-    key derivation (softTPM, BA_ENABLE_SOFTTPM_KEY_MATERIAL=1) and seeds
-    SharkSSL from NXP's hardware true random number generator (TRNG).
+  - XEDGE_ENABLE_AUX=1 when supplying xedgeOpenAUX(). For writable FileX
+    storage, add xrc/DiskIo/FileX/BaFile.c and the matching DiskIo headers,
+    FileX, and your storage driver. Use XEDGE_ENABLE_DISK_IO=1 and
+    XEDGE_USE_DEFAULT_DISK_IO_INIT=0 when supplying xedgeInitDiskIo().
+    Add LevelX if your flash storage driver requires it.
 
-  - Network options: use the asynchronous socket and DNS settings in the
-    reference sections below. Define NX_ENABLE_INTERFACE_CAPABILITY for
-    NXP ENET checksum offload. Define
-    NX_DHCP_CLIENT_USER_CREATE_PACKET_POOL and
-    NX_DNS_CLIENT_USER_CREATE_PACKET_POOL. Both clients use the noncached
-    network pool. Compile fsl_phyksz8081.c with
-    FSL_FEATURE_PHYKSZ8081_USE_RMII50M_MODE for the EVK reference clock.
+Use matching ThreadX and NetX tick rates and compile all consumers with
+consistent tx_user.h, nx_user.h, and applicable storage-library settings.
+Size stacks, heaps, packet pools, and storage for your application. Keep
+writable files separate from firmware and embedded resources, and choose
+an update and recovery policy that preserves saved applications and keys.
+If firmware and writable storage share a flash device, follow the driver's
+requirements for executing code during erase and write operations.
 
-  - Timing and stacks: configure matching ThreadX/NetX tick rates and
-    compile all consumers with the same tx_user.h, nx_user.h, fx_user.h
-    and lx_user.h settings. The offset-addressed NXP flash adapter requires
-    LX_DIRECT_READ_DISABLED.
-    The example profile uses TX_TIMER_TICKS_PER_SECOND=100,
-    TX_TIMER_THREAD_STACK_SIZE=4096, TX_ENABLE_STACK_CHECKING and
-    BA_THREAD_STACK_SIZE=65536.
+softTPM and SharkSSL
+-------------------
 
-  - Initial clock: define RT1020_BUILD_EPOCH as an unsigned integer giving
-    UTC Unix seconds, supplied by the build system. This fallback lets
-    Xedge create its initial certificate; it does not signal successful
-    synchronization.
+Xedge's softTPM integration provides device identity and TLS private-key
+operations without a separate TPM chip. Applications refer to named keys
+through ba.tpm; softTPM derives the private keys when needed, keeping them
+out of application files.
 
-Compiler and boot settings
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Before production, replace the example product secret and supply stable
+per-device input through xedgeOpenAUX(). A device identifier is public,
+not secret key material or a hardware-isolated key. Protect the secret and
+firmware according to the softTPM integration guide. The Xedge host accepts
+a generated secret header through XEDGE_SOFTTPM_KEY_HEADER; see the
+standalone Xedge build guide. Changing the secret changes derived keys,
+so plan migration of identities and encrypted data before replacing it on
+a deployed device.
 
-The firmware executes from external flash (execute in place, or XIP).
-Use the SDK's RT1020 GNU XIP build settings, including CPU_MIMXRT1021DAG5A,
-XIP_EXTERNAL_FLASH=1, XIP_BOOT_HEADER_ENABLE=1,
-XIP_BOOT_HEADER_DCD_ENABLE=1, SKIP_SYSCLK_INIT,
-__STARTUP_INITIALIZE_NONCACHEDATA and __STARTUP_CLEAR_BSS. Enable the SDK's
-UART debug console and LX_USE_MFLASH. Use Cortex-M7/Thumb with the FPv5-D16
-hard-float ABI consistently across the application and libraries.
-
-Memory and flash layout
-~~~~~~~~~~~~~~~~~~~~~~~
-
-The linker and memory protection unit (MPU) setup must match these regions:
-
-  Start address   Size     Use
-  0x60000000       4 MiB   Firmware in external flash
-  0x60400000       4 MiB   FileX data in external flash
-  0x80000000      30 MiB   Cacheable SDRAM, including the 24 MiB BAS heap
-  0x81e00000       2 MiB   Noncacheable SDRAM for Ethernet DMA buffers
-
-Initialize SDRAM using the board's boot DCD before clearing the BSS data
-section, and preserve the SDRAM clock during startup. Flash-writing code
-must run from the processor's data tightly coupled memory (DTCM).
-An unmountable data partition is erased and formatted by this evaluation
-startup. Choose your application's recovery policy before reusing it.
+Seed native SharkSSL from your platform's cryptographic entropy source
+before using TLS or other cryptographic services. See "Memory and BAS
+initialization" below. For the softTPM security model, see:
+  https://realtimelogic.com/ba/doc/en/SoftTPM.html
 
 Debugger restarts and hook lifetime
 -----------------------------------
@@ -181,25 +163,19 @@ Debugger restarts and hook lifetime
 When built with BA_ENABLE_LUA_DEBUGGER=1, Xedge can restart its Lua
 environment at the debugger's request. barracuda() shuts down the old BAS
 objects and Lua VM, then creates replacements within the same call. It
-calls xedgeInitDiskIo(), reloads .config and calls xedgeOpenAUX() again.
+reloads .config and calls the enabled initialization hooks again.
 
-The board keeps running during this restart. main(), tx_application_define()
-and application() do not run again. NetX interfaces, the mounted FileX
-volume, the storage worker and the time-synchronization flag remain alive.
+The ThreadX kernel and your platform services continue running during this
+restart. Put Lua bindings and other per-VM setup in xedgeOpenAUX(), so each
+new VM gets its own registrations. Put one-time hardware setup and native
+worker creation in platform startup. Keep network objects and any mounted
+FileX volume alive across the restart.
 
-Put Lua bindings and other per-VM setup in xedgeOpenAUX(), so every new VM
-gets its own registrations. Put one-time hardware setup and native worker
-creation in the board startup. Never keep lua_State pointers, Lua registry
-references or old server/manager pointers in a native worker across a
-debugger restart.
-
-The time notification illustrates this separation: xedgeOpenAUX() creates
-a new Lua-owned timer for every VM. If SNTP has already succeeded, the new
-timer sees the existing flag and queues an event for the new applications.
-The native time worker does not need to run again.
-
-A debugger termination without a restart request lets barracuda() return.
-This board example treats that return as a stop condition and halts.
+Never keep lua_State pointers, Lua registry references, or old server and
+manager pointers in native workers across a debugger restart. Dispatch
+callbacks through BAS's Lua worker mechanism and associate them with the
+current VM. A debugger termination without a restart request lets
+barracuda() return; define how your application handles that return.
 
 The standalone build guide documents the restart behavior under
 BA_ENABLE_LUA_DEBUGGER:
@@ -207,81 +183,29 @@ BA_ENABLE_LUA_DEBUGGER:
 The debugger API describes connections and the restartonmod option:
   https://realtimelogic.com/ba/doc/en/lua/auxlua.html#dbgmon
 
-Internet time: from a ThreadX worker to Lua
--------------------------------------------
+Clock synchronization
+---------------------
 
-The board uses Simple Network Time Protocol (SNTP) to obtain its initial
-UTC time without making the web server wait for the time server. Until a
-reply arrives, RT1020_BUILD_EPOCH supplies an approximate build-time clock
-so Xedge can create its initial certificate. That fallback never announces
-successful synchronization.
+Provide a valid UTC clock for certificate generation and validation. Use
+baSetUnixTime() to set or update the BAS clock from your platform's clock
+source. If you acquire time over the network, run the blocking work in a
+native worker so the web server can continue serving requests. Update the
+FileX clock as well when using timestamped files.
 
-There are three stages:
-
-  1. synchronizeTime(), a native ThreadX worker, calls fetchTime(). On
-     success it updates the BAS and FileX clocks and sets timeSynchronized.
-     It then exits; BAS and FileX advance their clocks from that sample.
-
-  2. A BAS Lua timer checks the flag once per second. xedgeOpenAUX() passes
-     pollTimeEvent to Lua using lua_pushcfunction(), so ba.timer can call
-     the C function just as it would call a Lua function. The timer belongs
-     to the current VM and runs with the BAS mutex held.
-
-  3. When the flag is set, pollTimeEvent queues a ThreadJob with LThreadMgr.
-     A BAS worker calls timeEvent(), which invokes _XedgeEvent("sntp").
-     Application event handlers therefore run on a worker, where blocking
-     bindings do not occupy the timer thread. The native time worker never
-     calls Lua or keeps a pointer to the current VM.
-
-In timer:set(1000, true), 1000 is the interval in milliseconds and true
-keeps the timer referenced after xedgeOpenAUX() returns. The callback's
-return value controls repetition: Lua true retries; no return value stops
-the timer. This also retries a failed ThreadJob allocation. Each VM queues
-at most one time event, and shutdown can discard a pending job.
-
-Xedge retains the delivered "sntp" event for later subscribers. An
-application can register a function with xedge.event("sntp", callback) to
-start time-dependent TLS clients; this event passes no extra arguments.
-See the C-to-Lua callback patterns in:
+A build-time fallback is not a synchronized clock. Keep synchronization
+state in your platform code and notify Lua through BAS's supported callback
+mechanism. Native ThreadX workers must not call Lua directly. For callback
+patterns and VM lifetime requirements, see:
   https://realtimelogic.com/ba/doc/en/C/reference/html/md_en_C_md_LuaBindings.html
-
-Time-server settings and retry behavior
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The native time worker resolves pool.ntp.org and sends the 48-byte SNTP
-request over IPv4 UDP port 123. XEDGE_NTP_SERVER may override the hostname
-with a C string; XEDGE_NTP_PORT may override the integer port (1 through
-65535, default 123). IPv6 remains enabled for BAS network connections.
-
-Each failed attempt closes its socket and sleeps for one second. Receiving
-a reply has a five-second timeout, so a timeout followed by the retry delay
-takes about six seconds. DNS has its own NetX retry behavior. These waits
-run outside the BAS mutex and independently of FileX flushing and the UI.
-
-The client checks the source address/port, packet length, server mode,
-version, leap/stratum status and transmit timestamp. It accepts NTP v3/v4
-replies and handles the 2036 era rollover within BAS's 32-bit Unix clock
-range. Dates before 2020 and an all-zero timestamp are rejected. This small
-client obtains an initial time sample; it does not implement periodic
-resynchronization or authenticate the time server.
-
-Use the serial log to distinguish startup from successful synchronization:
-
-  CLOCK_BUILD_FALLBACK=...   Approximate clock; SNTP is still pending.
-  SNTP_RETRY status=...     An attempt failed; the worker will retry.
-  SNTP UTC=...              The native worker has set both clocks.
-  SNTP_EVENT UTC=...        The BAS worker has called the Xedge event handler.
-
-A ready web interface alone does not prove that SNTP succeeded.
 
 Build the Barracuda library
 ---------------------------
 
-The source lists below use the full BAS SDK layout. See "Full SDK source
-layout" at the end of this guide for the GitHub package equivalents.
+The source lists below use the full BAS SDK layout. See "SDK and GitHub
+source layouts" at the end for the amalgamated package equivalents.
 
-Compile amalgamation/BWSCore.c for a native C/C++ web application, or amalgamation/BASCore.c for
-Lua or Xedge. Add these ThreadX port files:
+Compile amalgamation/BWSCore.c for a native C/C++ web application, or
+amalgamation/BASCore.c for Lua or Xedge. Add these ThreadX port files:
 
   src/arch/ThreadX/ThreadLib.c
   src/arch/ThreadX/SoDisp.c
@@ -350,7 +274,7 @@ Call SoDisp_nxInit once before constructing Barracuda sockets:
     recommended to preserve receive capacity. NULL uses each IP instance's
     default pool. Keep the selected pool alive while BAS uses it.
   tcpWindowBytes (ULONG, required): TCP receive-window size in bytes.
-    The RT1020 example uses 65535.
+    Select it to suit your network throughput and memory budget.
 
 Keep the IP list, IP instances, selected pools and Barracuda heap alive for
 the server's lifetime. Allow heap space for listeners, client sockets and
@@ -385,13 +309,14 @@ clock. Register your platform's fatal-error handler and trace output before
 entering the server.
 
 For native SharkSSL, seed the random generator before entering barracuda()
-or starting any other random-number consumer. The RT1020 example obtains
-48 bytes from the NXP hardware TRNG and passes the complete buffer to
-sharkssl_entropyEx(const U8* entropy, U16 len) in one call. Check its int
-return value: zero means ready; nonzero is a startup failure. Then erase
-the temporary buffer with sharkssl_clear. Do not split the initial seed
-into word-sized calls. BAS's compatibility bootstrap does not replace a
-hardware entropy source or discard the platform's earlier contribution.
+or starting any other random-number consumer. Obtain the seed from your
+platform's cryptographic entropy source and pass the complete buffer to
+sharkssl_entropyEx(const U8* entropy, U16 len) in one call. entropy points to
+the seed bytes; len is their count. Check its int return value: zero means
+ready; nonzero is a startup failure. Then erase the temporary buffer with
+sharkssl_clear. Do not split the initial seed into word-sized calls. BAS's
+compatibility bootstrap does not replace your platform's entropy source
+or discard its earlier contribution.
 
 Lua obtains current time from baGetUnixTime(), which returns BaTime. With
 BA_USE_C_RUNTIME_TIME=1, Lua retains C-runtime calendar conversion and
@@ -474,8 +399,8 @@ UDP and DNS
 Set BA_ENABLE_UDP=1 to enable Barracuda's native datagram adapter and the Lua
 UDP API. Its default is 0. TCP and UDP socket state use the Barracuda heap
 through baMalloc and baFree. NetX packets use the configured packet pools.
-General Lua UDP multicast membership and dontroute are not implemented. IPv4 broadcast is
-available through the Lua socket broadcast option.
+General Lua UDP multicast membership and dontroute are not implemented.
+IPv4 broadcast is available through the Lua socket broadcast option.
 
 For hostname resolution, define BA_NX_DNS, compile the NetX Duo DNS add-on
 and include nxd_dns.h in your initialization code. Enable NetX UDP, create
@@ -497,18 +422,19 @@ Set BA_ENABLE_MDNS=1 and BA_ENABLE_UDP=1 for the native NetX mDNS responder.
 Set BA_ENABLE_MDNS_LUA=1 to expose ba.createmdns to Lua and enable Xedge's
 SharkCA option. With IPv6 enabled, also define NX_ENABLE_IPV6_MULTICAST in
 nx_user.h and rebuild NetX and the application with the same configuration.
-Missing required settings fail at compile time. General port defaults remain
-off; the RT1020 Xedge example enables both mDNS macros.
+Missing required settings fail at compile time. The mDNS options default
+to off; enable them explicitly when your application needs local names or
+SharkCA certificates.
 
 SoDisp.c supplies the native transport; do not compile BamDNS-Sock.c from
 the BSD socket port. SoDisp_nxInit enables IGMP. Automatic discovery selects
 one active physical interface from the registered NX_IP instances, prefers
 an IPv6 link-local address, and refreshes the address snapshot every five
 seconds. IPv4 and IPv6 channels share UDP port 5353 on each NX_IP instance.
-The driver must deliver receive processing in NetX's IP helper thread, as
-the RT1020 deferred driver does. Each channel has a bounded receive queue.
-Closing a responder releases its
-memberships and packets; the last channel releases the shared socket.
+The driver must deliver receive processing in NetX's IP helper thread.
+Each channel has a bounded receive queue.
+Closing a responder releases its memberships and packets; the last channel
+releases the shared socket.
 
 The responder announces the selected host label under .local, with A and
 AAAA records when available. Choose a unique name; this minimal responder
@@ -543,19 +469,20 @@ its setmedia property. For DiskIo* disk and FX_MEDIA* media:
 Check that status is zero before using DiskIo. Initialize and manage the
 FileX media in your platform code before serving files.
 
-Full SDK source layout
-----------------------
+SDK and GitHub source layouts
+----------------------------
 
-The full SDK and the GitHub package use different source layouts. For an
-SDK build with explicitly selected ports, use these equivalents:
+The full SDK and the GitHub package use different source layouts. The
+instructions above use the SDK paths on the left. When working in the
+amalgamated GitHub package, use the equivalents on the right:
 
-  GitHub package                 Full SDK
-  src/BAS.c                      amalgamation/BASCore.c
-  src/BWS.c                      amalgamation/BWSCore.c
-  src/arch/NET/                   src/arch/bsdSocket/
-  inc/arch/NET/                   inc/arch/bsd/
-  src/DiskIo/                    xrc/DiskIo/
-  src/dlmalloc.c                 xrc/malloc/dlmalloc.c
+  Full SDK                       GitHub package
+  amalgamation/BASCore.c          src/BAS.c
+  amalgamation/BWSCore.c          src/BWS.c
+  src/arch/bsdSocket/             src/arch/NET/
+  inc/arch/bsd/                   inc/arch/NET/
+  xrc/DiskIo/                     src/DiskIo/
+  xrc/malloc/dlmalloc.c           src/dlmalloc.c
 
 ThreadLib.c and the OS-specific header directories keep the same paths.
 Both core files include zlib.
