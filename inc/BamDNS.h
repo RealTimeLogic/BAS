@@ -155,7 +155,7 @@ BA_API void BamDNS_luaopen(struct lua_State* L,
 #endif
 
 /* Port implementers only; supplied BSD implementation is in
- * src/arch/bsdSocket/BamDNS-Sock.c. setup configures and binds an open socket;
+ * src/arch/NET/BamDNS-Sock.c. setup configures and binds an open socket;
  * returns 0, E_BIND, or -1. recv returns byte count,
  * 0 for a discarded packet, -2 for would-block, -1 for a local error.
  * send returns byte count, -2 for would-block, -1 for a local error.

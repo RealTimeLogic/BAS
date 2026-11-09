@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslX25519_X64_Adapter.c 6730 2026-11-03 20:10:54Z gianluca $
+ *   $Id: SharkSslX25519_X64_Adapter.c 6818 2026-11-08 21:18:02Z gianluca $
  *
  *   Linux x86-64 (System V) X25519 backend adapter
  *

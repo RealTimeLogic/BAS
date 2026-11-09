@@ -21,7 +21,7 @@ Paths here are relative to the BAS SDK root. Compile one library:
 Add the VxWorks thread and socket ports:
 
   src/arch/VxWorks/ThreadLib.c
-  src/arch/bsdSocket/generic/SoDisp.c
+  src/arch/NET/generic/SoDisp.c
 
 Use these include directories, along with your VxWorks SDK headers:
 
@@ -101,8 +101,8 @@ SDK build with explicitly selected ports, use these equivalents:
   GitHub package                 Full SDK
   src/BAS.c                      amalgamation/BASCore.c
   src/BWS.c                      amalgamation/BWSCore.c
-  src/arch/NET/                   src/arch/bsdSocket/
-  inc/arch/NET/                   inc/arch/bsd/
+  src/arch/NET/                   src/arch/NET/
+  inc/arch/NET/                   inc/arch/NET/
   src/DiskIo/                    xrc/DiskIo/
   src/dlmalloc.c                 xrc/malloc/dlmalloc.c
 

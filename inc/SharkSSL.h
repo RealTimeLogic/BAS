@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSSL.h 6786 2026-11-07 16:55:42Z gianluca $
+ *   $Id: SharkSSL.h 6818 2026-11-08 21:18:02Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *

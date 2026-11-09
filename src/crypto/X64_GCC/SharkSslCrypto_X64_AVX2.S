@@ -11,7 +11,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto_X64_AVX2.S 6728 2026-11-03 16:53:19Z gianluca $
+ *   $Id: SharkSslCrypto_X64_AVX2.S 6818 2026-11-08 21:18:02Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *

@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslCrypto.h 6776 2026-11-06 21:59:08Z wini $
+ *   $Id: SharkSslCrypto.h 6818 2026-11-08 21:18:02Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *

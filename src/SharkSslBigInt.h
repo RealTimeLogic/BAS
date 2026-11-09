@@ -10,7 +10,7 @@
  ****************************************************************************
  *   PROGRAM MODULE
  *
- *   $Id: SharkSslBigInt.h 6778 2026-11-06 23:13:54Z gianluca $
+ *   $Id: SharkSslBigInt.h 6818 2026-11-08 21:18:02Z gianluca $
  *
  *   COPYRIGHT:  Real Time Logic LLC, 2010 - 2026
  *

@@ -27,8 +27,8 @@ Add src/arch/FreeRTOS/ThreadLib.c and select one network port:
     Headers: inc and inc/arch/FreeRTOS
 
   lwIP
-    Source:  src/arch/bsdSocket/LwIP/SoDisp.c
-    Headers: inc, inc/arch/bsd/LwIP, and inc/arch/FreeRTOS
+    Source:  src/arch/NET/LwIP/SoDisp.c
+    Headers: inc, inc/arch/NET/LwIP, and inc/arch/FreeRTOS
 
 For lwIP, put its network headers before the FreeRTOS headers. Define
 BA_FREERTOS in the build and BA_LWIP when using lwIP. Add your application
@@ -182,7 +182,7 @@ in api.h:
 };
 
 Set the Boolean option BA_LWIP_USE_NETCONN_CALLBACK_DATA=1 consistently
-across the build. Its default is 0. See src/arch/bsdSocket/LwIP/SoDisp.c for the
+across the build. Its default is 0. See src/arch/NET/LwIP/SoDisp.c for the
 callback implementation.
 
 Full SDK source layout
@@ -194,8 +194,8 @@ SDK build with explicitly selected ports, use these equivalents:
   GitHub package                 Full SDK
   src/BAS.c                      amalgamation/BASCore.c
   src/BWS.c                      amalgamation/BWSCore.c
-  src/arch/NET/                   src/arch/bsdSocket/
-  inc/arch/NET/                   inc/arch/bsd/
+  src/arch/NET/                   src/arch/NET/
+  inc/arch/NET/                   inc/arch/NET/
   src/DiskIo/                    xrc/DiskIo/
   src/dlmalloc.c                 xrc/malloc/dlmalloc.c
 

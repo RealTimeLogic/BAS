@@ -479,8 +479,8 @@ amalgamated GitHub package, use the equivalents on the right:
   Full SDK                       GitHub package
   amalgamation/BASCore.c          src/BAS.c
   amalgamation/BWSCore.c          src/BWS.c
-  src/arch/bsdSocket/             src/arch/NET/
-  inc/arch/bsd/                   inc/arch/NET/
+  src/arch/NET/             src/arch/NET/
+  inc/arch/NET/                   inc/arch/NET/
   xrc/DiskIo/                     src/DiskIo/
   xrc/malloc/dlmalloc.c           src/dlmalloc.c
 
