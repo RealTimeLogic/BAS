@@ -1,6 +1,11 @@
 #!/bin/bash
 # Compile Mako Server as follows:
 #  wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh | bash
+# In Bash, download Developer Edition resources without requiring the zip tool:
+#  MAKO_ZIP_MODE=developer bash <(wget -O - https://raw.githubusercontent.com/RealTimeLogic/BAS/main/LinuxBuild.sh)
+# MAKO_ZIP_MODE is an optional string: build (default) or developer.
+# XLIB is an optional linker-library string; when unset, Linux libraries are probed.
+# CC is an optional compiler command; defaults to ${CROSS_COMPILE}gcc or gcc.
 # Details: https://github.com/RealTimeLogic/BAS
 
 
@@ -91,6 +96,58 @@ function download_sqlite_amalgamation() {
     printf "Placed SQLite amalgamation in BAS/src\n"
 }
 
+function select_linux_libraries() {
+    local tmpdir candidate
+    local compile_flags link_flags libraries
+
+    # Preserve explicit overrides, including an intentionally empty XLIB.
+    [ -n "${XLIB+set}" ] && return
+    tmpdir="$(mktemp -d)" || abort "Could not create linker probe directory"
+    cat > "$tmpdir/probe.c" <<'EOF'
+#include <pthread.h>
+#include <dlfcn.h>
+#include <math.h>
+static void *worker(void *p)
+{
+   return p;
+}
+int main(int argc, char **argv)
+{
+   pthread_t thread;
+   volatile double value = argc;
+   void *handle = dlopen(0, RTLD_NOW);
+   void *symbol = dlsym(handle, "main");
+   int status = pthread_create(&thread, 0, worker, argv);
+   if (!status)
+   {
+      status = pthread_join(thread, 0);
+   }
+   if (handle)
+   {
+      dlclose(handle);
+   }
+   return status + (int)cos(value) + (symbol != 0);
+}
+EOF
+    read -r -a compile_flags <<< "${CFLAGS:-}"
+    read -r -a link_flags <<< "${HEXEFLAGS:-}"
+    # Link only: the selected compiler may target another machine.
+    for candidate in '-lpthread -lm -ldl' '-lm'; do
+        read -r -a libraries <<< "$candidate"
+        printf 'Trying XLIB=%s\n' "$candidate" >> "$tmpdir/link.log"
+        if "${compiler[@]}" "${compile_flags[@]}" "${link_flags[@]}" \
+            "$tmpdir/probe.c" -o "$tmpdir/probe" "${libraries[@]}" \
+            >> "$tmpdir/link.log" 2>&1; then
+            XLIB="$candidate"
+            rm -rf "$tmpdir"
+            return
+        fi
+    done
+    cat "$tmpdir/link.log" >&2
+    rm -rf "$tmpdir"
+    abort "Could not link with the selected compiler. Check the toolchain or set XLIB explicitly."
+}
+
 REPOS=(
     "BAS|https://github.com/RealTimeLogic/BAS.git"
     "BAS-Resources|https://github.com/RealTimeLogic/BAS-Resources.git"
@@ -126,13 +183,50 @@ function open_developer_mako_zip_info() {
     fi
 }
 
+function validate_mako_zip() {
+    local archive="$1" entry contents
+
+    # -p also works with BusyBox unzip, which may not provide Info-ZIP's -t.
+    unzip -p "$archive" > /dev/null || return 1
+    for entry in .config .openports; do
+        contents="$(unzip -p "$archive" "$entry")" || return 1
+        [ -n "$contents" ] || return 1
+    done
+}
+
+function download_developer_mako_zip() {
+    local target_zip="$1" tmpdir tmpzip backup
+
+    # Stage beside the destination so the final rename stays on one filesystem.
+    tmpdir="$(mktemp -d "${target_zip}.download.XXXXXX")" || abort "Could not create download directory"
+    tmpzip="${tmpdir}/mako.zip"
+    printf "Downloading Mako Developer Edition mako.zip\n"
+    if ! curl -fL "$DEVELOPER_MAKO_ZIP_URL" -o "$tmpzip" || \
+        ! validate_mako_zip "$tmpzip"; then
+        rm -rf "$tmpdir"
+        abort "Downloading or validating Mako Developer Edition mako.zip failed"
+    fi
+    if [ -e "$target_zip" ]; then
+        backup="${target_zip}.bak-$(date +%Y%m%d-%H%M%S)-$$"
+        if ! cp "$target_zip" "$backup"; then
+            rm -rf "$tmpdir"
+            abort "Could not back up $target_zip"
+        fi
+        printf "Backed up %s to %s\n" "$target_zip" "$backup"
+    fi
+    if ! mv -f "$tmpzip" "$target_zip"; then
+        rm -rf "$tmpdir"
+        abort "Could not replace $target_zip"
+    fi
+    rmdir "$tmpdir"
+}
+
 function ask_install_developer_mako_zip() {
     local target_zip="$1"
-    local tmpdir tmpzip backup
 
     [ -f "$target_zip" ] || abort "Cannot find mako.zip to replace: $target_zip"
 
-    printf "\nMako Developer Edition mako.zip adds Xedge, LSP-Claw, and local MQTT development tools.\n"
+    printf "\nMako Developer Edition mako.zip adds FuguHub, Xedge, LSP-Claw, and local MQTT development tools.\n"
     printf "If you install it, this script backs up the current mako.zip before replacing it.\n"
 
     if [ -r /dev/tty ]; then
@@ -148,26 +242,23 @@ function ask_install_developer_mako_zip() {
         return 0
     fi
 
-    tmpdir="$(mktemp -d)" || abort "Could not create temporary directory"
-    tmpzip="${tmpdir}/mako.zip"
-    backup="${target_zip}.bak-$(date +%Y%m%d-%H%M%S)"
-
-    printf "Downloading Mako Developer Edition mako.zip\n"
-    curl -fL "$DEVELOPER_MAKO_ZIP_URL" -o "$tmpzip" || abort "Downloading Mako Developer Edition mako.zip failed"
-
-    printf "Backing up %s to %s\n" "$target_zip" "$backup"
-    copy_file "$target_zip" "$backup"
-
-    printf "Installing Mako Developer Edition mako.zip to %s\n" "$target_zip"
-    copy_file "$tmpzip" "$target_zip"
-    rm -rf "$tmpdir"
+    download_developer_mako_zip "$target_zip"
 }
 
-executables="git curl zip unzip gcc make"
+MAKO_ZIP_MODE="${MAKO_ZIP_MODE:-build}"
+case "$MAKO_ZIP_MODE" in
+    build|developer) ;;
+    *) abort "Invalid MAKO_ZIP_MODE '$MAKO_ZIP_MODE'; use build or developer." ;;
+esac
+
+CC="${CC:-${CROSS_COMPILE}gcc}"
+read -r -a compiler <<< "$CC"
+executables=(git curl unzip make "${compiler[0]}")
+[ "$MAKO_ZIP_MODE" = build ] && executables+=(zip)
 missing=()
 
-for i in $executables; do
-    if ! command -v $i &> /dev/null; then
+for i in "${executables[@]}"; do
+    if ! command -v "$i" &> /dev/null; then
         missing+=("$i")
     fi
 done
@@ -182,18 +273,13 @@ fi
 
 unameOut="$(uname -s)"
 case "${unameOut}" in
-    Linux*)     XLIB=-ldl;XCFLAGS=-DLUA_USE_LINUX;machine=Linux;export BA_USE_EPOLL=1;;
+    Linux*)     XCFLAGS=-DLUA_USE_LINUX;machine=Linux;export BA_USE_EPOLL=1;;
     Darwin*)    machine=Mac;;
-    CYGWIN*)    XLIB=-ldl;XCFLAGS="-DLUA_USE_LINUX -DBA_ENABLE_LUA_FORKPTY=0";machine=Cygwin;;
+    CYGWIN*)    XCFLAGS="-DLUA_USE_LINUX -DBA_ENABLE_LUA_FORKPTY=0";machine=Cygwin;;
 #    MINGW*)     machine=MinGw;;
     *)          abort "Unknown machine ${unameOut}"
 esac
 
-if [  -z ${CC+x} ]; then
-    command -v gcc >/dev/null 2>&1 || install gcc
-    CC=gcc
-    echo "Setting default compiler"
-fi
 echo "Using compiler $CC"
 
 if [ -f src/BAS.c ]; then
@@ -224,15 +310,34 @@ if [ -n "${NOCOMPILE+set}" ]; then
     exit 0
 fi
 
-make -f mako.mk || abort $LINENO
+make_args=("CC=$CC")
+[ "$machine" = Linux ] && select_linux_libraries
+if [ -n "${XLIB+set}" ]; then
+    printf 'Using link libraries: %s\n' "$XLIB"
+    make_args+=("XLIB=$XLIB")
+fi
 
-MAKO_ZIP=mako.zip
+if [ "$MAKO_ZIP_MODE" = developer ]; then
+    download_developer_mako_zip mako.zip
+else
+    # Regenerate after source updates or a previous Developer Edition build.
+    make -f mako.mk "${make_args[@]}" -B mako.zip || abort $LINENO
+    validate_mako_zip mako.zip || abort "Generated mako.zip is invalid"
+fi
+make -f mako.mk "${make_args[@]}" || abort $LINENO
+
+if [ "$MAKO_ZIP_MODE" = build ]; then
+    ask_install_developer_mako_zip mako.zip
+fi
+
 if [[ -z "${CROSS_COMPILE}" ]]; then
     read -p "Do you want to install the Mako Server in /usr/local/bin (Y/n)?" </dev/tty
     if [ "$REPLY" != "n" ]; then
-        sudo cp mako mako.zip /usr/local/bin/ || abort
+        mkdir -p /usr/local/bin 2>/dev/null || \
+            sudo mkdir -p /usr/local/bin || abort "Could not create /usr/local/bin"
+        copy_file mako /usr/local/bin/mako
+        copy_file mako.zip /usr/local/bin/mako.zip
         echo "Installed; you may now run mako"
-        MAKO_ZIP=/usr/local/bin/mako.zip
         MAKO=mako
     else
         MAKO=BAS/mako
@@ -242,8 +347,6 @@ else
     echo "You may now run BAS/mako"
     MAKO=BAS/mako
 fi
-
-ask_install_developer_mako_zip "$MAKO_ZIP"
 
 cd ..
 read -p "Do you want to download and run the Lua tutorials (Y/n)?"
